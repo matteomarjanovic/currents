@@ -155,6 +155,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /oauth/jwks.json", srv.JWKS)
 	http.HandleFunc("GET /oauth/callback", srv.OAuthCallback)
 
+	http.HandleFunc("GET /api/me", srv.APIMe)
+
 	http.HandleFunc("GET /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)

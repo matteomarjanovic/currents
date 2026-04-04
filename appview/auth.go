@@ -35,6 +35,20 @@ func (s *Server) currentSessionDID(r *http.Request) (*syntax.DID, string, string
 	return &did, sessionID, handle
 }
 
+func (s *Server) APIMe(w http.ResponseWriter, r *http.Request) {
+	did, _, handle := s.currentSessionDID(r)
+	w.Header().Set("Content-Type", "application/json")
+	if did == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "not authenticated"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{
+		"did":    did.String(),
+		"handle": handle,
+	})
+}
+
 func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
 	slog.Info("client metadata request", "url", r.URL, "host", r.Host)
 
