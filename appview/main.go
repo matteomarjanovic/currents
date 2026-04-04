@@ -71,6 +71,11 @@ func main() {
 				Usage:   "base URL for image CDN; defaults to appview base URL in localhost mode",
 				EnvVars: []string{"CDN_URL"},
 			},
+			&cli.StringFlag{
+				Name:    "frontend-url",
+				Usage:   "URL of the SvelteKit frontend; OAuth callback redirects here after login",
+				EnvVars: []string{"FRONTEND_URL"},
+			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -136,8 +141,17 @@ func runServer(cctx *cli.Context) error {
 		}
 	}
 
+	cookieStore := sessions.NewCookieStore([]byte(cctx.String("session-secret")))
+	cookieStore.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   86400 * 90,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	}
+
 	srv := Server{
-		CookieStore: sessions.NewCookieStore([]byte(cctx.String("session-secret"))),
+		CookieStore: cookieStore,
 		Dir:         identity.DefaultDirectory(),
 		OAuth:       oauthClient,
 		Store:       store,
@@ -147,7 +161,8 @@ func runServer(cctx *cli.Context) error {
 			Audience: serviceDID,
 			Dir:      identity.DefaultDirectory(),
 		},
-		Inference: NewInferenceClient(cctx.String("inference-url")),
+		Inference:   NewInferenceClient(cctx.String("inference-url")),
+		FrontendURL: cctx.String("frontend-url"),
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -194,8 +209,13 @@ func runServer(cctx *cli.Context) error {
 	go runTapListener(context.Background(), cctx.String("tap-url"), tapHandler)
 	slog.Info("TAP listener started", "url", cctx.String("tap-url"))
 
+	var handler http.Handler = http.DefaultServeMux
+	if srv.FrontendURL != "" {
+		handler = srv.corsMiddleware(handler)
+	}
+
 	slog.Info("starting http server", "bind", bind)
-	if err := http.ListenAndServe(bind, nil); err != nil {
+	if err := http.ListenAndServe(bind, handler); err != nil {
 		slog.Error("http shutdown", "err", err)
 	}
 	return nil

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import {
@@ -15,6 +16,7 @@
 	let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> = $props();
 
 	const id = $props.id();
+	const loginAction = `${PUBLIC_APPVIEW_URL}/oauth/login`;
 </script>
 
 <div class={cn('flex flex-col gap-6', className)} {...restProps}>
@@ -24,10 +26,11 @@
 			<Card.Description>Login with AT protocol</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			<form>
-				<FieldGroup>
-					<Field>
-						<Button variant="outline" type="button">
+			<FieldGroup>
+				<Field>
+					<form method="POST" action={loginAction}>
+						<input type="hidden" name="username" value="https://bsky.social" />
+						<Button variant="outline" type="submit" class="w-full">
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"
 								><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path
 									d="M407.8 294.7c-3.3-.4-6.7-.8-10-1.3 3.4 .4 6.7 .9 10 1.3zM288 227.1C261.9 176.4 190.9 81.9 124.9 35.3 61.6-9.4 37.5-1.7 21.6 5.5 3.3 13.8 0 41.9 0 58.4S9.1 194 15 213.9c19.5 65.7 89.1 87.9 153.2 80.7 3.3-.5 6.6-.9 10-1.4-3.3 .5-6.6 1-10 1.4-93.9 14-177.3 48.2-67.9 169.9 120.3 124.6 164.8-26.7 187.7-103.4 22.9 76.7 49.2 222.5 185.6 103.4 102.4-103.4 28.1-156-65.8-169.9-3.3-.4-6.7-.8-10-1.3 3.4 .4 6.7 .9 10 1.3 64.1 7.1 133.6-15.1 153.2-80.7 5.9-19.9 15-138.9 15-155.5s-3.3-44.7-21.6-52.9c-15.8-7.1-40-14.9-103.2 29.8-66.1 46.6-137.1 141.1-163.2 191.8z"
@@ -35,7 +38,10 @@
 							>
 							Login with Bluesky
 						</Button>
-						<Button variant="outline" type="button">
+					</form>
+					<form method="POST" action={loginAction}>
+						<input type="hidden" name="username" value="https://eurosky.social" />
+						<Button variant="outline" type="submit" class="w-full">
 							<svg
 								fill="currentColor"
 								viewBox="77.86 113.9 129.15 129.15"
@@ -47,7 +53,10 @@
 							</svg>
 							Login with Eurosky
 						</Button>
-						<Button variant="outline" type="button">
+					</form>
+					<!-- <form method="POST" action={loginAction}>
+						<input type="hidden" name="username" value="https://blacksky.community" />
+						<Button variant="outline" type="submit" class="w-full">
 							<svg fill="currentColor" viewBox="-0.5 1 286 243" xmlns="http://www.w3.org/2000/svg">
 								<g>
 									<path
@@ -66,22 +75,32 @@
 							</svg>
 							Login with Blacksky
 						</Button>
-					</Field>
-					<FieldSeparator class="*:data-[slot=field-separator-content]:bg-card">
-						Or use your custom PDS
-					</FieldSeparator>
-					<Field>
-						<FieldLabel for="handle-{id}">Your handle</FieldLabel>
-						<Input id="handle-{id}" type="text" placeholder="handle.bsky.social" required />
-					</Field>
-					<Field>
-						<Button type="submit">Login</Button>
-						<FieldDescription class="text-center">
-							Don't have an account? <a href="##">Sign up</a>
-						</FieldDescription>
-					</Field>
-				</FieldGroup>
-			</form>
+					</form> -->
+				</Field>
+				<FieldSeparator class="*:data-[slot=field-separator-content]:bg-card">
+					Or use your custom PDS
+				</FieldSeparator>
+				<form method="POST" action={loginAction}>
+					<FieldGroup>
+						<Field>
+							<FieldLabel for="handle-{id}">Your handle</FieldLabel>
+							<Input
+								id="handle-{id}"
+								name="username"
+								type="text"
+								placeholder="handle.bsky.social"
+								required
+							/>
+						</Field>
+						<Field>
+							<Button type="submit" class="w-full">Login</Button>
+							<FieldDescription class="text-center">
+								Don't have an account? <a href="##">Sign up</a>
+							</FieldDescription>
+						</Field>
+					</FieldGroup>
+				</form>
+			</FieldGroup>
 		</Card.Content>
 	</Card.Root>
 	<FieldDescription class="px-6 text-center">

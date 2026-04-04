@@ -171,7 +171,11 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("login successful", "did", sessData.AccountDID.String())
-	http.Redirect(w, r, "/", http.StatusFound)
+	redirectTarget := "/"
+	if s.FrontendURL != "" {
+		redirectTarget = s.FrontendURL
+	}
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
 
 func (s *Server) OAuthLogout(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +194,11 @@ func (s *Server) OAuthLogout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("logged out")
-	http.Redirect(w, r, "/", http.StatusFound)
+	redirectTarget := "/"
+	if s.FrontendURL != "" {
+		redirectTarget = s.FrontendURL
+	}
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
 
 type blobRef struct {

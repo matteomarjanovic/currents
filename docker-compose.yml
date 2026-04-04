@@ -31,6 +31,7 @@ services:
       CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
+      FRONTEND_URL: http://localhost:5173
       TAP_URL: ws://tap:2480/channel
       INFERENCE_URL: http://host.docker.internal:8000
     ports:
