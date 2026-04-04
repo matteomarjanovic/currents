@@ -84,11 +84,41 @@ async function fetchCollections(did: string): Promise<Collection[]> {
 
 // --- Save handler ---
 
+async function handleCreateCollection(message: {
+  name: string;
+}): Promise<{ ok: boolean; uri?: string; error?: string }> {
+  const auth = await getAuth();
+  if (!auth) return { ok: false, error: 'Not logged in' };
+
+  const body = new URLSearchParams({ name: message.name });
+
+  try {
+    const resp = await appviewFetch(`${CURRENTS_URL}/collection`, {
+      method: 'POST',
+      body,
+      redirect: 'manual',
+    });
+    if (resp.type === 'opaqueredirect' || resp.status === 0) {
+      // Refetch collections to get the new one's URI
+      const collections = await fetchCollections(auth.did);
+      const created = collections.find((c) => c.name === message.name);
+      return { ok: true, uri: created?.uri };
+    }
+    const errorText = await resp.text();
+    return { ok: false, error: errorText.trim() || `HTTP ${resp.status}` };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 async function handleSave(message: {
   imgUrl: string;
   collectionUri: string;
   text: string;
   originUrl: string;
+  attributionUrl?: string;
+  attributionLicense?: string;
+  attributionCredit?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const auth = await getAuth();
   if (!auth) return { ok: false, error: 'Not logged in' };
@@ -119,6 +149,9 @@ async function handleSave(message: {
   form.append('collection', message.collectionUri);
   if (message.text) form.append('title', message.text);
   if (message.originUrl) form.append('url', message.originUrl);
+  if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);
+  if (message.attributionLicense) form.append('attribution_license', message.attributionLicense);
+  if (message.attributionCredit) form.append('attribution_credit', message.attributionCredit);
 
   try {
     const resp = await appviewFetch(`${CURRENTS_URL}/save`, {
@@ -177,7 +210,11 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type === 'SAVE_IMAGE') {
       handleSave(message).then(sendResponse);
-      return true; // keep the message channel open for the async response
+      return true;
+    }
+    if (message.type === 'CREATE_COLLECTION') {
+      handleCreateCollection(message).then(sendResponse);
+      return true;
     }
   });
 });
