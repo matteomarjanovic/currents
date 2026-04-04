@@ -73,8 +73,11 @@ type saveRecord struct {
 		License string `json:"license"`
 		Credit  string `json:"credit"`
 	} `json:"attribution"`
-	Text      string `json:"text"`
-	ResaveOf  string `json:"resaveOf"`
+	Text     string `json:"text"`
+	ResaveOf struct {
+		URI string `json:"uri"`
+		CID string `json:"cid"`
+	} `json:"resaveOf"`
 	CreatedAt string `json:"createdAt"`
 }
 
@@ -244,13 +247,13 @@ func handleSaveUpsert(
 		AttributionURL:     s.Attribution.URL,
 		AttributionLicense: s.Attribution.License,
 		AttributionCredit:  s.Attribution.Credit,
-		ResaveOfURI:        s.ResaveOf,
+		ResaveOfURI:        s.ResaveOf.URI,
 		CreatedAt:     createdAt,
 	}
 
 	// Case 1: Resave of a known save — reuse its visual identity and quality score.
-	if s.ResaveOf != "" {
-		viID, qs, w, h, colors, err := handler.Store.GetSaveViIDAndQuality(ctx, s.ResaveOf)
+	if s.ResaveOf.URI != "" {
+		viID, qs, w, h, colors, err := handler.Store.GetSaveViIDAndQuality(ctx, s.ResaveOf.URI)
 		if err == nil && viID != nil {
 			base.VisualIdentityID = viID
 			base.QualityScore = qs

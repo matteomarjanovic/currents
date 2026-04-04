@@ -45,7 +45,7 @@
     <p class="muted">Checking login…</p>
   {:else if auth.status === 'authenticated'}
     <p>Logged in as <strong>@{auth.handle}</strong></p>
-    <a href="{CURRENTS_URL}/saves" target="_blank" rel="noreferrer">View your saves →</a>
+    <a href="{CURRENTS_URL}/save" target="_blank" rel="noreferrer">View your saves →</a>
   {:else}
     <p class="muted">Not logged in.</p>
     <a href={LOGIN_PAGE_URL} target="_blank" rel="noreferrer">Log in to Currents →</a>

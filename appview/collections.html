@@ -7,7 +7,7 @@
 
 <div class="status-card">
   <h3>New Collection</h3>
-  <form method="POST" action="/collections">
+  <form method="POST" action="/collection">
     <label>
       Name
       <input type="text" name="name" required placeholder="My Collection">
@@ -40,7 +40,7 @@
         <td><small>{{ .CreatedAt }}</small></td>
         <td>
           <button onclick="editCollection('{{ .Rkey }}', '{{ .Name }}', '{{ .Description }}')" class="outline">Edit</button>
-          <form method="POST" action="/collections/{{ .Rkey }}/delete" style="display:inline">
+          <form method="POST" action="/collection/{{ .Rkey }}/delete" style="display:inline">
             <button type="submit" class="secondary outline" onclick="return confirm('Delete this collection?')">Delete</button>
           </form>
         </td>
@@ -78,7 +78,7 @@
 
 <script>
 function editCollection(rkey, name, description) {
-  document.getElementById('edit-form').action = '/collections/' + rkey;
+  document.getElementById('edit-form').action = '/collection/' + rkey;
   document.getElementById('edit-name').value = name;
   document.getElementById('edit-description').value = description;
   document.getElementById('edit-dialog').showModal();

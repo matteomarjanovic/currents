@@ -7,7 +7,7 @@
 
 <div class="status-card">
   <h3>New Save</h3>
-  <form method="POST" action="/saves" enctype="multipart/form-data">
+  <form method="POST" action="/save" enctype="multipart/form-data">
     <label>
       URL
       <input type="url" name="url" placeholder="https://example.com/image.jpg">
@@ -56,7 +56,7 @@
         <td><small>{{ .CreatedAt }}</small></td>
         <td>
           <button onclick="editSave('{{ .Rkey }}', '{{ .OriginURL }}', '{{ .Title }}', '{{ .Collection }}')" class="outline">Edit</button>
-          <form method="POST" action="/saves/{{ .Rkey }}/delete" style="display:inline">
+          <form method="POST" action="/save/{{ .Rkey }}/delete" style="display:inline">
             <button type="submit" class="secondary outline" onclick="return confirm('Delete this save?')">Delete</button>
           </form>
         </td>
@@ -103,7 +103,7 @@
 
 <script>
 function editSave(rkey, url, title, collection) {
-  document.getElementById('edit-form').action = '/saves/' + rkey;
+  document.getElementById('edit-form').action = '/save/' + rkey;
   document.getElementById('edit-url').value = url;
   document.getElementById('edit-title').value = title;
   var sel = document.getElementById('edit-collection');

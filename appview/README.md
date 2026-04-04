@@ -112,16 +112,16 @@ The `visual_identity` table stores the canonical blob reference (best-quality so
 | `GET` | `/oauth/logout` | — | Logout and revoke tokens |
 | `GET` | `/oauth-client-metadata.json` | — | OAuth client metadata |
 | `GET` | `/oauth/jwks.json` | — | JWKS (confidential clients only) |
-| `GET` | `/collections` | Required | List and manage collections |
-| `POST` | `/collections` | Required | Create collection |
-| `GET` | `/collections/{id}` | Required | Get collection |
-| `POST` | `/collections/{id}` | Required | Update collection |
-| `POST` | `/collections/{id}/delete` | Required | Delete collection |
-| `GET` | `/saves` | Required | List and manage saves |
-| `POST` | `/saves` | Required | Create save |
-| `GET` | `/saves/{id}` | Required | Get save |
-| `POST` | `/saves/{id}` | Required | Update save |
-| `POST` | `/saves/{id}/delete` | Required | Delete save |
+| `GET` | `/collection` | Required | List and manage collections |
+| `POST` | `/collection` | Required | Create collection |
+| `GET` | `/collection/{id}` | Required | Get collection |
+| `POST` | `/collection/{id}` | Required | Update collection |
+| `POST` | `/collection/{id}/delete` | Required | Delete collection |
+| `GET` | `/save` | Required | List and manage saves |
+| `POST` | `/save` | Required | Create save |
+| `GET` | `/save/{id}` | Required | Get save |
+| `POST` | `/save/{id}` | Required | Update save |
+| `POST` | `/save/{id}/delete` | Required | Delete save |
 | `GET` | `/feed` | — | Feed explorer page (try getFeed, no auth required) |
 | `GET` | `/img/{did}/{cid}` | — | Blob image proxy (long-cache) |
 

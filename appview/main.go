@@ -164,11 +164,11 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /", srv.Homepage)
 	http.HandleFunc("GET /feed", srv.FeedPage)
 
-	http.HandleFunc("GET /collections", srv.ListCollections)
-	http.HandleFunc("POST /collections", srv.CreateCollection)
-	http.HandleFunc("GET /collections/{id}", srv.GetCollection)
-	http.HandleFunc("POST /collections/{id}", srv.UpdateCollection)
-	http.HandleFunc("POST /collections/{id}/delete", srv.DeleteCollection)
+	http.HandleFunc("GET /collection", srv.ListCollections)
+	http.HandleFunc("POST /collection", srv.CreateCollection)
+	http.HandleFunc("GET /collection/{id}", srv.GetCollection)
+	http.HandleFunc("POST /collection/{id}", srv.UpdateCollection)
+	http.HandleFunc("POST /collection/{id}/delete", srv.DeleteCollection)
 
 	http.HandleFunc("GET /img/{did}/{cid}", srv.ImageProxy)
 
@@ -179,11 +179,11 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchSaves", srv.XRPCSearchSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
 
-	http.HandleFunc("GET /saves", srv.ListSaves)
-	http.HandleFunc("POST /saves", srv.CreateSave)
-	http.HandleFunc("GET /saves/{id}", srv.GetSave)
-	http.HandleFunc("POST /saves/{id}", srv.UpdateSave)
-	http.HandleFunc("POST /saves/{id}/delete", srv.DeleteSave)
+	http.HandleFunc("GET /save", srv.ListSaves)
+	http.HandleFunc("POST /save", srv.CreateSave)
+	http.HandleFunc("GET /save/{id}", srv.GetSave)
+	http.HandleFunc("POST /save/{id}", srv.UpdateSave)
+	http.HandleFunc("POST /save/{id}/delete", srv.DeleteSave)
 
 	tapHandler := &TapHandler{
 		Store:      store,

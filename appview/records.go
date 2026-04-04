@@ -209,7 +209,7 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("created collection", "uri", out.Uri)
-	http.Redirect(w, r, "/collections", http.StatusFound)
+	http.Redirect(w, r, "/collection", http.StatusFound)
 }
 
 func (s *Server) GetCollection(w http.ResponseWriter, r *http.Request) {
@@ -275,7 +275,7 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("updated collection", "uri", out.Uri)
-	http.Redirect(w, r, "/collections", http.StatusFound)
+	http.Redirect(w, r, "/collection", http.StatusFound)
 }
 
 func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
@@ -297,7 +297,7 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("deleted collection", "rkey", rkey)
-	http.Redirect(w, r, "/collections", http.StatusFound)
+	http.Redirect(w, r, "/collection", http.StatusFound)
 }
 
 // --- Saves ---
@@ -391,6 +391,10 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	url := strings.TrimSpace(r.PostFormValue("url"))
 	title := strings.TrimSpace(r.PostFormValue("title"))
 	collectionURI := strings.TrimSpace(r.PostFormValue("collection"))
+	resaveOfURI := strings.TrimSpace(r.PostFormValue("resaveOf"))
+	attrURL := strings.TrimSpace(r.PostFormValue("attribution_url"))
+	attrLicense := strings.TrimSpace(r.PostFormValue("attribution_license"))
+	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 
 	if collectionURI == "" {
 		http.Error(w, "collection is required", http.StatusBadRequest)
@@ -451,6 +455,27 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	if title != "" {
 		record["text"] = title
 	}
+	if attrURL != "" || attrLicense != "" || attrCredit != "" {
+		attr := map[string]string{}
+		if attrURL != "" {
+			attr["url"] = attrURL
+		}
+		if attrLicense != "" {
+			attr["license"] = attrLicense
+		}
+		if attrCredit != "" {
+			attr["credit"] = attrCredit
+		}
+		record["attribution"] = attr
+	}
+	if resaveOfURI != "" {
+		resaveRef, err := resolveStrongRef(r.Context(), c, resaveOfURI)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("resolving resaveOf: %s", err), http.StatusBadRequest)
+			return
+		}
+		record["resaveOf"] = resaveRef
+	}
 
 	out, err := comatproto.RepoCreateRecord(r.Context(), c, &comatproto.RepoCreateRecord_Input{
 		Collection: saveNSID,
@@ -463,7 +488,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("created save", "uri", out.Uri)
-	http.Redirect(w, r, "/saves", http.StatusFound)
+	http.Redirect(w, r, "/save", http.StatusFound)
 }
 
 func (s *Server) GetSave(w http.ResponseWriter, r *http.Request) {
@@ -503,21 +528,28 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	url := strings.TrimSpace(r.PostFormValue("url"))
 	title := strings.TrimSpace(r.PostFormValue("title"))
 	collectionURI := strings.TrimSpace(r.PostFormValue("collection"))
+	attrURL := strings.TrimSpace(r.PostFormValue("attribution_url"))
+	attrLicense := strings.TrimSpace(r.PostFormValue("attribution_license"))
+	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 
 	if collectionURI == "" {
 		http.Error(w, "collection is required", http.StatusBadRequest)
 		return
 	}
 
-	// Fetch existing record to preserve image blob
+	// Fetch existing record to preserve image blob and fields not in the form
 	existing, err := comatproto.RepoGetRecord(r.Context(), c, "", saveNSID, did.String(), rkey)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("fetching existing save: %s", err), http.StatusInternalServerError)
 		return
 	}
 	var existingVal struct {
-		Image    json.RawMessage `json:"image"`
-		CreatedAt string         `json:"createdAt"`
+		Image       json.RawMessage `json:"image"`
+		CreatedAt   string          `json:"createdAt"`
+		OriginURL   string          `json:"originUrl"`
+		Text        string          `json:"text"`
+		Attribution json.RawMessage `json:"attribution"`
+		ResaveOf    json.RawMessage `json:"resaveOf"`
 	}
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
@@ -540,11 +572,42 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		"image":      imageAny,
 		"createdAt":  existingVal.CreatedAt,
 	}
+
+	// Use form value if provided, otherwise preserve existing
 	if url != "" {
 		record["originUrl"] = url
+	} else if existingVal.OriginURL != "" {
+		record["originUrl"] = existingVal.OriginURL
 	}
 	if title != "" {
 		record["text"] = title
+	} else if existingVal.Text != "" {
+		record["text"] = existingVal.Text
+	}
+
+	if attrURL != "" || attrLicense != "" || attrCredit != "" {
+		attr := map[string]string{}
+		if attrURL != "" {
+			attr["url"] = attrURL
+		}
+		if attrLicense != "" {
+			attr["license"] = attrLicense
+		}
+		if attrCredit != "" {
+			attr["credit"] = attrCredit
+		}
+		record["attribution"] = attr
+	} else if existingVal.Attribution != nil {
+		var attrAny any
+		json.Unmarshal(existingVal.Attribution, &attrAny)
+		record["attribution"] = attrAny
+	}
+
+	// Preserve resaveOf — not editable
+	if existingVal.ResaveOf != nil {
+		var resaveAny any
+		json.Unmarshal(existingVal.ResaveOf, &resaveAny)
+		record["resaveOf"] = resaveAny
 	}
 
 	out, err := comatproto.RepoPutRecord(r.Context(), c, &comatproto.RepoPutRecord_Input{
@@ -559,7 +622,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("updated save", "uri", out.Uri)
-	http.Redirect(w, r, "/saves", http.StatusFound)
+	http.Redirect(w, r, "/save", http.StatusFound)
 }
 
 func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {
@@ -581,5 +644,5 @@ func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("deleted save", "rkey", rkey)
-	http.Redirect(w, r, "/saves", http.StatusFound)
+	http.Redirect(w, r, "/save", http.StatusFound)
 }

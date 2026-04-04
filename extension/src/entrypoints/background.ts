@@ -121,12 +121,12 @@ async function handleSave(message: {
   if (message.originUrl) form.append('url', message.originUrl);
 
   try {
-    const resp = await appviewFetch(`${CURRENTS_URL}/saves`, {
+    const resp = await appviewFetch(`${CURRENTS_URL}/save`, {
       method: 'POST',
       body: form,
       redirect: 'manual',
     });
-    // POST /saves returns 302 on success; redirect: 'manual' gives us an opaque redirect
+    // POST /save returns 302 on success; redirect: 'manual' gives us an opaque redirect
     if (resp.type === 'opaqueredirect' || resp.status === 0) {
       return { ok: true };
     }
