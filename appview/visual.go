@@ -19,6 +19,7 @@ import (
 
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
+	_ "github.com/gen2brain/avif"
 	_ "golang.org/x/image/webp"
 )
 
