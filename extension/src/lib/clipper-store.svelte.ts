@@ -9,14 +9,30 @@ export interface Collection {
 // Module-level $state — shared between the content script message listener
 // and the Svelte component. Vite bundles them into the same chunk so there
 // is exactly one instance of this module per page.
-export const clipper = $state({
+export interface SiteHints {
+  attributionCredit?: string;
+}
+
+interface ClipperState {
+  visible: boolean;
+  imgUrl: string;
+  originUrl: string;
+  pageTitle: string;
+  collections: Collection[];
+  authState: AuthState;
+  userHandle: string;
+  siteHints: SiteHints;
+}
+
+export const clipper: ClipperState = $state({
   visible: false,
   imgUrl: '',
   originUrl: '',
   pageTitle: '',
-  collections: [] as Collection[],
-  authState: 'unauthenticated' as AuthState,
+  collections: [],
+  authState: 'unauthenticated',
   userHandle: '',
+  siteHints: {},
 });
 
 export function showClipper(data: Omit<typeof clipper, 'visible'>) {

@@ -1,6 +1,15 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
-import { showClipper, hideClipper } from '../../lib/clipper-store.svelte';
+import { showClipper, hideClipper, type SiteHints } from '../../lib/clipper-store.svelte';
+
+function extractSiteHints(): SiteHints {
+  const host = location.hostname.replace(/^www\./, '');
+  if (host === 'cosmos.so') {
+    const caption = document.querySelector<HTMLElement>('[data-testid="element-ml-caption"]');
+    if (caption) return { attributionCredit: caption.textContent?.trim() };
+  }
+  return {};
+}
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -30,6 +39,7 @@ export default defineContentScript({
         collections: message.collections,
         authState: message.authState,
         userHandle: message.userHandle,
+        siteHints: extractSiteHints(),
       });
     });
 

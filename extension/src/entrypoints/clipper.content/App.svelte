@@ -13,7 +13,6 @@
   let attributionLicense = $state("");
   let attributionCredit = $state("");
 
-
   // New collection creation
   let creatingCollection = $state(false);
   let newCollectionName = $state("");
@@ -27,7 +26,7 @@
       text = "";
       attributionUrl = "";
       attributionLicense = "";
-      attributionCredit = "";
+      attributionCredit = clipper.siteHints.attributionCredit ?? "";
 
       selectedCollectionUri = clipper.collections[0]?.uri ?? "";
       creatingCollection = false;
