@@ -1,0 +1,1 @@
+ALTER TABLE collection DROP COLUMN IF EXISTS cid;

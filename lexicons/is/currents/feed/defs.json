@@ -1,0 +1,155 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.feed.defs",
+  "defs": {
+    "collectionView": {
+      "type": "object",
+      "required": ["uri", "cid", "author", "name", "createdAt"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "cid": {
+          "type": "string",
+          "format": "cid"
+        },
+        "author": {
+          "type": "ref",
+          "ref": "is.currents.actor.defs#profileView"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "saveCount": {
+          "type": "integer"
+        },
+        "previewImages": {
+          "type": "array",
+          "maxLength": 4,
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "viewer": {
+          "type": "ref",
+          "ref": "#collectionViewerState",
+          "description": "Viewer-specific state. Only present when the request is authenticated."
+        }
+      }
+    },
+    "collectionViewerState": {
+      "type": "object",
+      "description": "Metadata about the requesting account's relationship with this collection. Only present when the request is authenticated.",
+      "properties": {
+        "starred": {
+          "type": "boolean",
+          "description": "Whether the authenticated user has starred this collection."
+        }
+      }
+    },
+    "saveView": {
+      "type": "object",
+      "required": ["uri", "blobCid", "author", "imageUrl", "createdAt"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "blobCid": {
+          "type": "string",
+          "format": "cid",
+          "description": "CID of the saved image blob."
+        },
+        "author": {
+          "type": "ref",
+          "ref": "is.currents.actor.defs#profileView"
+        },
+        "imageUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "CDN URL of the image, resolved server-side from the blob reference."
+        },
+        "text": {
+          "type": "string"
+        },
+        "originUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "attribution": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "license": {
+              "type": "string"
+            },
+            "credit": {
+              "type": "string"
+            }
+          }
+        },
+        "resaveOf": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "viewer": {
+          "type": "ref",
+          "ref": "#saveViewerState",
+          "description": "Viewer-specific state. Only present when the request is authenticated."
+        },
+        "width": {
+          "type": "integer",
+          "description": "Width of the image in pixels. Absent if unknown."
+        },
+        "height": {
+          "type": "integer",
+          "description": "Height of the image in pixels. Absent if unknown."
+        },
+        "colors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["hex", "fraction"],
+            "properties": {
+              "hex": {
+                "type": "string",
+                "description": "Hex color code, e.g. #ff5733"
+              },
+              "fraction": {
+                "type": "number",
+                "description": "Proportion of the image (0-1)"
+              }
+            }
+          },
+          "description": "Dominant color palette. Absent if unknown."
+        }
+      }
+    },
+    "saveViewerState": {
+      "type": "object",
+      "description": "Metadata about the requesting account's relationship with this save. Only present when the request is authenticated.",
+      "properties": {
+        "resaved": {
+          "type": "boolean",
+          "description": "Whether the authenticated user has resaved this item."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.feed.searchSaves",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Search saves by text query across all actors. Auth is optional; if provided, viewer-specific state is included. The personalized parameter is only effective for authenticated requests.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "q"
+        ],
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Full-text search query."
+          },
+          "personalized": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "A value between 0 and 1 controlling the degree of personalization. Only effective for authenticated requests; ignored otherwise.",
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "saves"
+          ],
+          "properties": {
+            "cursor": {
+              "type": "string"
+            },
+            "saves": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "is.currents.feed.defs#saveView"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

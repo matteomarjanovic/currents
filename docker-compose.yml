@@ -1,0 +1,53 @@
+services:
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: appview
+      POSTGRES_PASSWORD: appview
+      POSTGRES_DB: appview
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appview -d appview"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  appview:
+    build:
+      context: ./appview
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      tap:
+        condition: service_started
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET:-changeme-use-a-strong-random-secret}
+      DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-}
+      CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
+      CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
+      TAP_URL: ws://tap:2480/channel
+      INFERENCE_URL: http://host.docker.internal:8000
+    ports:
+      - "8080:8080"
+
+  tap:
+    image: ghcr.io/bluesky-social/indigo/tap:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TAP_DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      TAP_SIGNAL_COLLECTION: is.currents.actor.profile
+      TAP_COLLECTION_FILTERS: is.currents.*
+    ports:
+      - "2480:2480"
+
+volumes:
+  pgdata:

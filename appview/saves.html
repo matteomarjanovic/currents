@@ -1,0 +1,306 @@
+{{ define "content" }}
+<h2>Saves</h2>
+
+{{ if not .DID }}
+  <p><a href="/oauth/login">Login</a> to manage your saves.</p>
+{{ else }}
+
+<div class="status-card">
+  <h3>New Save</h3>
+  <form method="POST" action="/saves" enctype="multipart/form-data">
+    <label>
+      URL
+      <input type="url" name="url" placeholder="https://example.com/image.jpg">
+    </label>
+    <label>
+      Title
+      <input type="text" name="title" placeholder="Optional title">
+    </label>
+    <label>
+      Collection
+      <select name="collection" required>
+        <option value="" disabled selected>Select a collection</option>
+        {{ range .Collections }}
+          <option value="{{ .URI }}">{{ .Name }}</option>
+        {{ end }}
+      </select>
+    </label>
+    <label>
+      Image
+      <input type="file" name="image" accept="image/*" required>
+    </label>
+    <button type="submit">Save</button>
+  </form>
+</div>
+
+<div class="status-card">
+  <h3>Your Saves</h3>
+  {{ if .Saves }}
+  <table>
+    <thead>
+      <tr>
+        <th>Title / URL</th>
+        <th>Collection</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{ range .Saves }}
+      <tr>
+        <td>
+          {{ if .Title }}<strong>{{ .Title }}</strong><br>{{ end }}
+          <a href="{{ .OriginURL }}" target="_blank" rel="noopener"><small>{{ .OriginURL }}</small></a>
+        </td>
+        <td><small>{{ .Collection }}</small></td>
+        <td><small>{{ .CreatedAt }}</small></td>
+        <td>
+          <button onclick="editSave('{{ .Rkey }}', '{{ .OriginURL }}', '{{ .Title }}', '{{ .Collection }}')" class="outline">Edit</button>
+          <form method="POST" action="/saves/{{ .Rkey }}/delete" style="display:inline">
+            <button type="submit" class="secondary outline" onclick="return confirm('Delete this save?')">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+  {{ else }}
+    <p>No saves yet.</p>
+  {{ end }}
+</div>
+
+<dialog id="edit-dialog">
+  <article>
+    <header>
+      <button aria-label="Close" rel="prev" onclick="document.getElementById('edit-dialog').close()"></button>
+      <h3>Edit Save</h3>
+    </header>
+    <form method="POST" id="edit-form">
+      <label>
+        URL
+        <input type="url" name="url" id="edit-url">
+      </label>
+      <label>
+        Title
+        <input type="text" name="title" id="edit-title">
+      </label>
+      <label>
+        Collection
+        <select name="collection" id="edit-collection" required>
+          <option value="" disabled>Select a collection</option>
+          {{ range .Collections }}
+            <option value="{{ .URI }}">{{ .Name }}</option>
+          {{ end }}
+        </select>
+      </label>
+      <footer>
+        <button type="button" class="secondary" onclick="document.getElementById('edit-dialog').close()">Cancel</button>
+        <button type="submit">Save</button>
+      </footer>
+    </form>
+  </article>
+</dialog>
+
+<script>
+function editSave(rkey, url, title, collection) {
+  document.getElementById('edit-form').action = '/saves/' + rkey;
+  document.getElementById('edit-url').value = url;
+  document.getElementById('edit-title').value = title;
+  var sel = document.getElementById('edit-collection');
+  for (var i = 0; i < sel.options.length; i++) {
+    sel.options[i].selected = sel.options[i].value === collection;
+  }
+  document.getElementById('edit-dialog').showModal();
+}
+</script>
+
+{{ end }}
+
+<hr>
+
+<div class="status-card">
+  <h3>Try getSaves</h3>
+  <p><small>Calls <code>GET /xrpc/is.currents.feed.getSaves</code>. Auth is optional — session cookie is sent automatically.</small></p>
+  <form id="xrpc-form" onsubmit="fetchSaves(event)">
+    <div class="grid">
+      <label>
+        Collection (AT-URI)
+        <input type="text" id="xrpc-collection" name="collection" placeholder="at://did:plc:.../is.currents.feed.collection/..." required>
+      </label>
+      <label>
+        Limit
+        <input type="number" id="xrpc-limit" name="limit" value="50" min="1" max="100">
+      </label>
+    </div>
+    <button type="submit">Fetch</button>
+  </form>
+</div>
+
+<div id="xrpc-result" style="display:none">
+  <div id="xrpc-collection-info" style="margin-bottom:1rem"></div>
+  <div id="xrpc-saves-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem"></div>
+  <div style="margin-top:1rem">
+    <button id="xrpc-more" style="display:none" onclick="fetchMore()">Load more</button>
+  </div>
+</div>
+
+<div id="xrpc-error" style="display:none;color:var(--pico-del-color)"></div>
+
+<script>
+let lastCursor = '';
+
+async function fetchSaves(e) {
+  if (e) e.preventDefault();
+  lastCursor = '';
+  document.getElementById('xrpc-saves-grid').innerHTML = '';
+  document.getElementById('xrpc-result').style.display = 'none';
+  document.getElementById('xrpc-error').style.display = 'none';
+  await loadPage();
+}
+
+async function fetchMore() {
+  await loadPage();
+}
+
+async function loadPage() {
+  const collection = document.getElementById('xrpc-collection').value.trim();
+  const limit = document.getElementById('xrpc-limit').value;
+  const params = new URLSearchParams({ collection, limit });
+  if (lastCursor) params.set('cursor', lastCursor);
+
+  let data;
+  try {
+    const resp = await fetch('/xrpc/is.currents.feed.getSaves?' + params);
+    data = await resp.json();
+    if (!resp.ok) {
+      document.getElementById('xrpc-error').textContent = data.message || data.error || resp.statusText;
+      document.getElementById('xrpc-error').style.display = '';
+      return;
+    }
+  } catch (err) {
+    document.getElementById('xrpc-error').textContent = String(err);
+    document.getElementById('xrpc-error').style.display = '';
+    return;
+  }
+
+  document.getElementById('xrpc-result').style.display = '';
+
+  // Collection info
+  const col = data.collection || {};
+  const a = col.author || {};
+  document.getElementById('xrpc-collection-info').innerHTML =
+    `<strong>${escHtml(col.name)}</strong>` +
+    (col.description ? ` <small>${escHtml(col.description)}</small>` : '') +
+    ` — by ${escHtml(a.displayName || a.handle || a.did)}` +
+    (col.viewer?.starred ? ' <span title="Starred">★</span>' : '');
+
+  const grid = document.getElementById('xrpc-saves-grid');
+  for (const sv of (data.saves || [])) {
+    const resaved = sv.viewer?.resaved ? ' <span title="Resaved">↩</span>' : '';
+    const card = document.createElement('article');
+    card.style.margin = '0';
+    card.innerHTML = `
+      <img src="${escHtml(sv.imageUrl)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--pico-border-radius)" loading="lazy">
+      <div style="padding:.5rem 0">
+        ${sv.text ? `<small>${escHtml(sv.text)}</small>` : ''}
+        ${resaved}
+      </div>`;
+    grid.appendChild(card);
+  }
+
+  lastCursor = data.cursor || '';
+  document.getElementById('xrpc-more').style.display = lastCursor ? '' : 'none';
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+
+<hr>
+
+<div class="status-card">
+  <h3>Try searchSaves</h3>
+  <p><small>Calls <code>GET /xrpc/is.currents.feed.searchSaves</code>. Semantic image search via text query.</small></p>
+  <form id="search-form" onsubmit="fetchSearch(event)">
+    <div class="grid">
+      <label>
+        Query
+        <input type="text" id="search-q" name="q" placeholder="sunset over mountains" required>
+      </label>
+      <label>
+        Limit
+        <input type="number" id="search-limit" name="limit" value="25" min="1" max="100">
+      </label>
+    </div>
+    <button type="submit">Search</button>
+  </form>
+</div>
+
+<div id="search-result" style="display:none">
+  <div id="search-saves-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem"></div>
+  <div style="margin-top:1rem">
+    <button id="search-more" style="display:none" onclick="searchMore()">Load more</button>
+  </div>
+</div>
+
+<div id="search-error" style="display:none;color:var(--pico-del-color)"></div>
+
+<script>
+let searchCursor = '';
+
+async function fetchSearch(e) {
+  if (e) e.preventDefault();
+  searchCursor = '';
+  document.getElementById('search-saves-grid').innerHTML = '';
+  document.getElementById('search-result').style.display = 'none';
+  document.getElementById('search-error').style.display = 'none';
+  await loadSearchPage();
+}
+
+async function searchMore() {
+  await loadSearchPage();
+}
+
+async function loadSearchPage() {
+  const q = document.getElementById('search-q').value.trim();
+  const limit = document.getElementById('search-limit').value;
+  const params = new URLSearchParams({ q, limit });
+  if (searchCursor) params.set('cursor', searchCursor);
+
+  let data;
+  try {
+    const resp = await fetch('/xrpc/is.currents.feed.searchSaves?' + params);
+    data = await resp.json();
+    if (!resp.ok) {
+      document.getElementById('search-error').textContent = data.message || data.error || resp.statusText;
+      document.getElementById('search-error').style.display = '';
+      return;
+    }
+  } catch (err) {
+    document.getElementById('search-error').textContent = String(err);
+    document.getElementById('search-error').style.display = '';
+    return;
+  }
+
+  document.getElementById('search-result').style.display = '';
+
+  const grid = document.getElementById('search-saves-grid');
+  for (const sv of (data.saves || [])) {
+    const card = document.createElement('article');
+    card.style.margin = '0';
+    card.innerHTML = `
+      <img src="${escHtml(sv.imageUrl)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--pico-border-radius)" loading="lazy">
+      <div style="padding:.5rem 0">
+        ${sv.text ? `<small>${escHtml(sv.text)}</small>` : ''}
+        <small style="color:var(--pico-muted-color)">${escHtml(sv.author.displayName || sv.author.handle || sv.author.did)}</small>
+      </div>`;
+    grid.appendChild(card);
+  }
+
+  searchCursor = data.cursor || '';
+  document.getElementById('search-more').style.display = searchCursor ? '' : 'none';
+}
+</script>
+
+{{ end }}
