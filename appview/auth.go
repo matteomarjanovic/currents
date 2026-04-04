@@ -118,6 +118,12 @@ func (s *Server) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 	username, _ := strings.CutPrefix(r.PostFormValue("username"), "@")
 
+	if returnTo := r.PostFormValue("return_to"); returnTo != "" {
+		sess, _ := s.CookieStore.Get(r, "currents-session")
+		sess.Values["return_to"] = returnTo
+		sess.Save(r, w)
+	}
+
 	slog.Info("OAuthLogin", "client_id", s.OAuth.Config.ClientID, "callback_url", s.OAuth.Config.CallbackURL)
 
 	redirectURL, err := s.OAuth.StartAuthFlow(ctx, username)
@@ -174,6 +180,13 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	redirectTarget := "/"
 	if s.FrontendURL != "" {
 		redirectTarget = s.FrontendURL
+	}
+	if returnTo, ok := sess.Values["return_to"].(string); ok && returnTo != "" {
+		if s.FrontendURL != "" && strings.HasPrefix(returnTo, s.FrontendURL) {
+			redirectTarget = returnTo
+		}
+		delete(sess.Values, "return_to")
+		sess.Save(r, w)
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }

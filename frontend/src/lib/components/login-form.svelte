@@ -13,7 +13,11 @@
 	import { cn } from '$lib/utils.js';
 	import type { HTMLAttributes } from 'svelte/elements';
 
-	let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> = $props();
+	let {
+		class: className,
+		returnTo,
+		...restProps
+	}: HTMLAttributes<HTMLDivElement> & { returnTo?: string } = $props();
 
 	const id = $props.id();
 	const loginAction = `${PUBLIC_APPVIEW_URL}/oauth/login`;
@@ -30,6 +34,7 @@
 				<Field>
 					<form method="POST" action={loginAction}>
 						<input type="hidden" name="username" value="https://bsky.social" />
+						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"
 								><!--!Font Awesome Free v7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path
@@ -41,6 +46,7 @@
 					</form>
 					<form method="POST" action={loginAction}>
 						<input type="hidden" name="username" value="https://eurosky.social" />
+						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
 							<svg
 								fill="currentColor"
@@ -81,6 +87,7 @@
 					Or use your custom PDS
 				</FieldSeparator>
 				<form method="POST" action={loginAction}>
+					{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 					<FieldGroup>
 						<Field>
 							<FieldLabel for="handle-{id}">Your handle</FieldLabel>
