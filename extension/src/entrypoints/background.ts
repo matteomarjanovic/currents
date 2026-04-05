@@ -88,7 +88,7 @@ async function handleCreateCollection(message: {
   name: string;
 }): Promise<{ ok: boolean; uri?: string; error?: string }> {
   const auth = await getAuth();
-  if (!auth) return { ok: false, error: 'Not logged in' };
+  if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
   const body = new URLSearchParams({ name: message.name });
 
@@ -128,7 +128,7 @@ async function handleSave(message: {
   attributionCredit?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const auth = await getAuth();
-  if (!auth) return { ok: false, error: 'Not logged in' };
+  if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
   let imageBlob: Blob;
   try {
@@ -211,6 +211,13 @@ export default defineBackground(() => {
       console.log('[currents] sendMessage succeeded');
     } catch (e) {
       console.error('[currents] sendMessage failed', e);
+    }
+  });
+
+  browser.cookies.onChanged.addListener(async (changeInfo) => {
+    if (changeInfo.cookie.name !== 'currents-session') return;
+    if (changeInfo.removed) {
+      await browser.storage.session.remove('authCache');
     }
   });
 

@@ -61,6 +61,8 @@
           response.uri ?? clipper.collections[0]?.uri ?? "";
         creatingCollection = false;
         newCollectionName = "";
+      } else if (response.authError) {
+        clipper.authState = "unauthenticated";
       } else {
         collectionError = response.error ?? "Failed to create collection";
       }
@@ -86,6 +88,8 @@
       if (response.ok) {
         saveState = "saved";
         setTimeout(close, 1500);
+      } else if (response.authError) {
+        clipper.authState = "unauthenticated";
       } else {
         saveState = "error";
         errorMsg = response.error ?? "Unknown error";
