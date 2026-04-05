@@ -96,10 +96,17 @@ async function handleCreateCollection(message: {
     const resp = await appviewFetch(`${CURRENTS_URL}/collection`, {
       method: 'POST',
       body,
+      headers: { Accept: 'application/json' },
       redirect: 'manual',
     });
-    if (resp.type === 'opaqueredirect' || resp.status === 0) {
-      // Refetch collections to get the new one's URI
+    // JSON response from updated server
+    const ct = resp.headers.get('Content-Type') ?? '';
+    if (ct.includes('application/json')) {
+      const data = await resp.json();
+      return { ok: true, uri: data.uri };
+    }
+    // Fallback: server returned a redirect (older server without JSON support)
+    if (resp.type === 'opaqueredirect' || resp.status === 0 || (resp.status >= 300 && resp.status < 400)) {
       const collections = await fetchCollections(auth.did);
       const created = collections.find((c) => c.name === message.name);
       return { ok: true, uri: created?.uri };

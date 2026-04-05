@@ -209,6 +209,12 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("created collection", "uri", out.Uri)
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"uri":%q}`, out.Uri)
+		return
+	}
 	http.Redirect(w, r, "/collection", http.StatusFound)
 }
 
