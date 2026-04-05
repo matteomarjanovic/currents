@@ -251,6 +251,13 @@ func handleSaveUpsert(
 		CreatedAt:     createdAt,
 	}
 
+	// Persist the save immediately so it's visible even if VI enrichment
+	// fails or hangs (blob fetch, inference, etc.). The ON CONFLICT UPDATE
+	// below will enrich the row once visual identity is resolved.
+	if err := handler.Store.UpsertSave(ctx, base); err != nil {
+		return err
+	}
+
 	// Case 1: Resave of a known save — reuse its visual identity and quality score.
 	if s.ResaveOf.URI != "" {
 		viID, qs, w, h, colors, err := handler.Store.GetSaveViIDAndQuality(ctx, s.ResaveOf.URI)
@@ -280,7 +287,7 @@ func handleSaveUpsert(
 	imageBytes, mimeType, err := fetchBlobFromPDS(ctx, handler.Store, handler.Dir, ev.DID, pdsBlobCID)
 	if err != nil {
 		slog.Warn("failed to fetch blob for visual identity", "uri", atURI, "err", err)
-		return handler.Store.UpsertSave(ctx, base) // ack with nil VI; backfill later
+		return nil // save already persisted; backfill VI later
 	}
 
 	var (
@@ -302,7 +309,7 @@ func handleSaveUpsert(
 	})
 	if err := g.Wait(); err != nil {
 		slog.Warn("image analysis failed for visual identity", "uri", atURI, "err", err)
-		return handler.Store.UpsertSave(ctx, base) // ack with nil VI; backfill later
+		return nil // save already persisted; backfill VI later
 	}
 
 	qs32 := float32(qualityScore(imgWidth, imgHeight))
@@ -314,7 +321,7 @@ func handleSaveUpsert(
 	nearestVI, err := handler.Store.FindNearestVI(ctx, embedding, 0.02)
 	if err != nil {
 		slog.Warn("nearest VI search failed", "uri", atURI, "err", err)
-		return handler.Store.UpsertSave(ctx, base)
+		return nil // save already persisted; backfill VI later
 	}
 
 	if nearestVI != nil {
@@ -330,7 +337,7 @@ func handleSaveUpsert(
 	newVI, err := handler.Store.CreateVI(ctx, ev.DID, pdsBlobCID, embedding)
 	if err != nil {
 		slog.Warn("failed to create visual identity", "uri", atURI, "err", err)
-		return handler.Store.UpsertSave(ctx, base)
+		return nil // save already persisted; backfill VI later
 	}
 	base.VisualIdentityID = &newVI
 	if err := handler.Store.UpsertSave(ctx, base); err != nil {
