@@ -23,6 +23,8 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+var blobHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // ── Inference client ──────────────────────────────────────────────────────────
 
 type InferenceClient struct {
@@ -260,7 +262,7 @@ func fetchBlobFromPDS(ctx context.Context, store *PgStore, dir identity.Director
 		return nil, "", err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching blob: %w", err)
 	}

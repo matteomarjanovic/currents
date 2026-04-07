@@ -252,8 +252,8 @@ func handleSaveUpsert(
 	}
 
 	// Persist the save immediately so it's visible even if VI enrichment
-	// fails or hangs (blob fetch, inference, etc.). The ON CONFLICT UPDATE
-	// below will enrich the row once visual identity is resolved.
+	// fails or hangs (blob fetch, inference, etc.). The upsert below will
+	// enrich the row once visual identity is resolved.
 	if err := handler.Store.UpsertSave(ctx, base); err != nil {
 		return err
 	}
