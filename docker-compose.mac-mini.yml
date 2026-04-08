@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     depends_on:
       - nginx
-    command: tunnel --no-autoupdate run
+    command: tunnel --no-autoupdate --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
 
