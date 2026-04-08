@@ -5,11 +5,12 @@
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
+	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 
 	let { children } = $props();
 
-	let user: { did: string; handle: string } | null = $state(null);
+	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null = $state(null);
 	let checked = $state(false);
 
 	onMount(async () => {
@@ -29,12 +30,13 @@
 	});
 </script>
 
+<ModeWatcher />
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
 {#if !checked}
 	<!-- loading -->
 {:else if user}
-	<TopBar />
+	<TopBar {user} />
 	<main class="p-4">
 		{@render children()}
 	</main>

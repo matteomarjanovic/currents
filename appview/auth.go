@@ -43,10 +43,23 @@ func (s *Server) APIMe(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "not authenticated"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]string{
+	resp := map[string]string{
 		"did":    did.String(),
 		"handle": handle,
-	})
+	}
+	var displayName, avatar string
+	err := s.Store.pool.QueryRow(r.Context(),
+		`SELECT COALESCE(display_name, ''), COALESCE(avatar, '') FROM "user" WHERE did = $1`, did.String(),
+	).Scan(&displayName, &avatar)
+	if err == nil {
+		if displayName != "" {
+			resp["displayName"] = displayName
+		}
+		if avatar != "" {
+			resp["avatar"] = avatar
+		}
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
