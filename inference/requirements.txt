@@ -3,3 +3,4 @@ uvicorn[standard]
 torch
 transformers
 Pillow
+python-multipart
