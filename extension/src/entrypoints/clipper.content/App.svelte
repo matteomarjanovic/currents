@@ -243,6 +243,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    color-scheme: light;
     font-family:
       system-ui,
       -apple-system,
@@ -283,6 +284,8 @@
     font-size: 14px;
     box-sizing: border-box;
     font-family: inherit;
+    background-color: #fff;
+    color: #111;
   }
 
   select:focus,
