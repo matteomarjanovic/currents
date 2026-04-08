@@ -1,0 +1,66 @@
+services:
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: appview
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-appview}
+      POSTGRES_DB: appview
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appview -d appview"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  appview:
+    build:
+      context: ./appview
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      tap:
+        condition: service_started
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET}
+      DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
+      CLIENT_HOSTNAME: ${DOMAIN}
+      CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
+      CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
+      FRONTEND_URL: ${FRONTEND_URL}
+      CDN_URL: https://${DOMAIN}
+      TAP_URL: ws://tap:2480/channel
+      INFERENCE_URL: ${INFERENCE_URL:-http://host.docker.internal:8000}
+
+  tap:
+    image: ghcr.io/bluesky-social/indigo/tap:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TAP_DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
+      TAP_SIGNAL_COLLECTION: is.currents.actor.profile
+      TAP_COLLECTION_FILTERS: is.currents.*
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - appview
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    command: tunnel --no-autoupdate run --url http://nginx:80
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+
+volumes:
+  pgdata:
