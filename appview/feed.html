@@ -71,7 +71,7 @@ async function loadFeedPage() {
 
   const grid = document.getElementById('feed-grid');
   for (const sv of (data.feed || [])) {
-    const resaved = sv.viewer?.resaved ? ' <span title="Resaved">↩</span>' : '';
+    const resaved = sv.viewer?.saves?.length ? ' <span title="Resaved">↩</span>' : '';
     const card = document.createElement('article');
     card.style.margin = '0';
     card.innerHTML = `

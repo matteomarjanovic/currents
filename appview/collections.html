@@ -40,9 +40,7 @@
         <td><small>{{ .CreatedAt }}</small></td>
         <td>
           <button onclick="editCollection('{{ .Rkey }}', '{{ .Name }}', '{{ .Description }}')" class="outline">Edit</button>
-          <form method="POST" action="/collection/{{ .Rkey }}/delete" style="display:inline">
-            <button type="submit" class="secondary outline" onclick="return confirm('Delete this collection?')">Delete</button>
-          </form>
+          <button class="secondary outline" onclick="deleteCollection('{{ .Rkey }}')">Delete</button>
         </td>
       </tr>
     {{ end }}
@@ -59,7 +57,7 @@
       <button aria-label="Close" rel="prev" onclick="document.getElementById('edit-dialog').close()"></button>
       <h3>Edit Collection</h3>
     </header>
-    <form method="POST" id="edit-form">
+    <form id="edit-form">
       <label>
         Name
         <input type="text" name="name" id="edit-name" required>
@@ -78,11 +76,32 @@
 
 <script>
 function editCollection(rkey, name, description) {
-  document.getElementById('edit-form').action = '/collection/' + rkey;
+  document.getElementById('edit-form').dataset.rkey = rkey;
   document.getElementById('edit-name').value = name;
   document.getElementById('edit-description').value = description;
   document.getElementById('edit-dialog').showModal();
 }
+
+async function deleteCollection(rkey) {
+  if (!confirm('Delete this collection?')) return;
+  const resp = await fetch('/collection/' + rkey, { method: 'DELETE', credentials: 'include' });
+  if (resp.ok) location.reload();
+  else alert('Delete failed: ' + resp.statusText);
+}
+
+document.getElementById('edit-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const rkey = this.dataset.rkey;
+  const body = new URLSearchParams(new FormData(this));
+  const resp = await fetch('/collection/' + rkey, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (resp.ok) location.reload();
+  else alert('Update failed: ' + resp.statusText);
+});
 </script>
 
 {{ end }}

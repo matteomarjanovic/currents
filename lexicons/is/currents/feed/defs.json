@@ -145,9 +145,17 @@
       "type": "object",
       "description": "Metadata about the requesting account's relationship with this save. Only present when the request is authenticated.",
       "properties": {
-        "resaved": {
-          "type": "boolean",
-          "description": "Whether the authenticated user has resaved this item."
+        "saves": {
+          "type": "array",
+          "description": "The viewer's own saves of this item, one per collection they have saved it in.",
+          "items": {
+            "type": "object",
+            "required": ["collectionUri", "saveUri"],
+            "properties": {
+              "collectionUri": { "type": "string", "format": "at-uri" },
+              "saveUri": { "type": "string", "format": "at-uri" }
+            }
+          }
         }
       }
     }

@@ -9,7 +9,7 @@ A calm, ad-free visual inspiration platform built on the [AT Protocol](https://a
 | `appview/` | Go | AT Protocol AppView — HTTP server with OAuth, TAP listener, backed by PostgreSQL + pgvector |
 | `inference/` | Python | FastAPI inference server — embeds images and text into a shared vector space (SigLIP2) |
 
-The appview subscribes to a [TAP](https://github.com/bluesky-social/indigo/tree/main/cmd/tap) WebSocket at startup to index `is.currents.*` records from the AT Protocol firehose into local `collection` and `save` tables.
+The appview subscribes to a [TAP](https://github.com/bluesky-social/indigo/tree/main/cmd/tap) WebSocket at startup to index `is.currents.*` records from the AT Protocol firehose into local `collection` and `save` tables. Saves are always written to the user's PDS first (via the browser extension or the appview's `POST /resave` endpoint for resaves), then indexed asynchronously by the TAP listener — the appview DB is never written to directly by HTTP handlers for user content.
 
 ## Quick start
 

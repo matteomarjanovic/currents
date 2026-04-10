@@ -182,8 +182,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /collection", srv.ListCollections)
 	http.HandleFunc("POST /collection", srv.CreateCollection)
 	http.HandleFunc("GET /collection/{id}", srv.GetCollection)
-	http.HandleFunc("POST /collection/{id}", srv.UpdateCollection)
-	http.HandleFunc("POST /collection/{id}/delete", srv.DeleteCollection)
+	http.HandleFunc("PUT /collection/{id}", srv.UpdateCollection)
+	http.HandleFunc("DELETE /collection/{id}", srv.DeleteCollection)
 
 	http.HandleFunc("GET /img/{did}/{cid}", srv.ImageProxy)
 
@@ -197,8 +197,9 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /save", srv.ListSaves)
 	http.HandleFunc("POST /save", srv.CreateSave)
 	http.HandleFunc("GET /save/{id}", srv.GetSave)
-	http.HandleFunc("POST /save/{id}", srv.UpdateSave)
-	http.HandleFunc("POST /save/{id}/delete", srv.DeleteSave)
+	http.HandleFunc("PUT /save/{id}", srv.UpdateSave)
+	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)
+	http.HandleFunc("POST /resave", srv.CreateResave)
 
 	tapHandler := &TapHandler{
 		Store:      store,

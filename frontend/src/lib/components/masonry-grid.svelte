@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { SaveView } from '$lib/types';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import ImageCard from '$lib/components/image-card.svelte';
 
 	interface Props {
 		items: SaveView[];
@@ -46,15 +47,7 @@
 	{#each columns as column, i (i)}
 		<div class="flex flex-1 flex-col gap-4">
 			{#each column as item (item.uri)}
-				<img
-					src={item.imageUrl}
-					alt={item.text ?? ''}
-					loading="lazy"
-					class="w-full rounded-lg"
-					style={item.width && item.height
-						? `aspect-ratio: ${item.width} / ${item.height}`
-						: undefined}
-				/>
+				<ImageCard {item} />
 			{/each}
 			{#if loading}
 				<Skeleton class="w-full rounded-lg" style="aspect-ratio: 3 / 4" />

@@ -466,9 +466,9 @@ type SaveRow struct {
 	AttributionLicense string
 	AttributionCredit  string
 	ResaveOfURI        string
-	ResaveOfCID        string // pds_blob_cid of the referenced save; empty if not in DB
+	ResaveOfCID        string          // pds_blob_cid of the referenced save; empty if not in DB
 	CreatedAt          *time.Time
-	Resaved            *bool           // nil when unauthenticated
+	ViewerSaves        json.RawMessage // null when unauthenticated; [{collectionUri,saveUri},...] when authenticated
 	Width              *int
 	Height             *int
 	DominantColors     json.RawMessage // nil when visual identity not yet resolved
@@ -508,10 +508,10 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 			COALESCE(s.resave_of_uri, ''),
 			COALESCE(ros.pds_blob_cid, ''),
 			s.created_at,
-			CASE WHEN $3 != '' THEN EXISTS(
-				SELECT 1 FROM save rv
-				WHERE rv.author_did = $3 AND rv.resave_of_uri = s.uri
-			) END AS resaved,
+			CASE WHEN $3 != '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -532,7 +532,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.Resaved, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -778,10 +778,10 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 			COALESCE(s.resave_of_uri, ''),
 			COALESCE(ros.pds_blob_cid, ''),
 			s.created_at,
-			CASE WHEN $3 != '' THEN EXISTS(
-				SELECT 1 FROM save rv
-				WHERE rv.author_did = $3 AND rv.resave_of_uri = s.uri
-			) END AS resaved,
+			CASE WHEN $3 != '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -799,7 +799,7 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.Resaved, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -925,9 +925,10 @@ func (m *PgStore) queryGlobalFeed(ctx context.Context, viewerDID string, limit, 
 			COALESCE(s.resave_of_uri, ''),
 			COALESCE(ros.pds_blob_cid, ''),
 			s.created_at,
-			CASE WHEN $1 != '' THEN EXISTS(
-				SELECT 1 FROM save rv WHERE rv.author_did = $1 AND rv.resave_of_uri = s.uri
-			) END AS resaved,
+			CASE WHEN $1 != '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $1 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -947,7 +948,7 @@ func (m *PgStore) queryGlobalFeed(ctx context.Context, viewerDID string, limit, 
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.Resaved, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

@@ -293,8 +293,12 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	}
+	type viewerSave struct {
+		CollectionURI string `json:"collectionUri"`
+		SaveURI       string `json:"saveUri"`
+	}
 	type saveViewerState struct {
-		Resaved bool `json:"resaved"`
+		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
 		URI         string           `json:"uri"`
@@ -331,8 +335,15 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
 			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
 		}
-		if viewerDID != nil && row.Resaved != nil {
-			sv.Viewer = &saveViewerState{Resaved: *row.Resaved}
+		if viewerDID != nil {
+			var saves []viewerSave
+			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
+				json.Unmarshal(row.ViewerSaves, &saves)
+			}
+			if saves == nil {
+				saves = []viewerSave{}
+			}
+			sv.Viewer = &saveViewerState{Saves: saves}
 		}
 		if row.Width != nil {
 			sv.Width = *row.Width
@@ -430,8 +441,12 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	}
+	type viewerSave struct {
+		CollectionURI string `json:"collectionUri"`
+		SaveURI       string `json:"saveUri"`
+	}
 	type saveViewerState struct {
-		Resaved bool `json:"resaved"`
+		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
 		URI         string           `json:"uri"`
@@ -468,8 +483,15 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
 			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
 		}
-		if viewerDID != nil && row.Resaved != nil {
-			sv.Viewer = &saveViewerState{Resaved: *row.Resaved}
+		if viewerDID != nil {
+			var saves []viewerSave
+			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
+				json.Unmarshal(row.ViewerSaves, &saves)
+			}
+			if saves == nil {
+				saves = []viewerSave{}
+			}
+			sv.Viewer = &saveViewerState{Saves: saves}
 		}
 		if row.Width != nil {
 			sv.Width = *row.Width
@@ -613,8 +635,12 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	}
+	type viewerSave struct {
+		CollectionURI string `json:"collectionUri"`
+		SaveURI       string `json:"saveUri"`
+	}
 	type saveViewerState struct {
-		Resaved bool `json:"resaved"`
+		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
 		URI         string           `json:"uri"`
@@ -651,8 +677,15 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
 			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
 		}
-		if viewerDID != nil && row.Resaved != nil {
-			sv.Viewer = &saveViewerState{Resaved: *row.Resaved}
+		if viewerDID != nil {
+			var saves []viewerSave
+			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
+				json.Unmarshal(row.ViewerSaves, &saves)
+			}
+			if saves == nil {
+				saves = []viewerSave{}
+			}
+			sv.Viewer = &saveViewerState{Saves: saves}
 		}
 		if row.Width != nil {
 			sv.Width = *row.Width

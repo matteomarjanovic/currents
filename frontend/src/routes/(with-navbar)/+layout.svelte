@@ -8,6 +8,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { loadCollections } from '$lib/stores/collections.svelte';
 
 	let { children } = $props();
 
@@ -27,6 +28,7 @@
 		auth.user = user;
 		checked = true;
 		auth.checked = true;
+		if (user) loadCollections(user.did);
 
 		const isLoginPage = page.url.pathname.startsWith('/login');
 		const isRootPage = page.url.pathname === '/';

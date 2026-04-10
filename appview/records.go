@@ -303,7 +303,7 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("deleted collection", "rkey", rkey)
-	http.Redirect(w, r, "/collection", http.StatusFound)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- Saves ---
@@ -494,6 +494,11 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("created save", "uri", out.Uri)
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"uri":%q}`, out.Uri)
+		return
+	}
 	http.Redirect(w, r, "/save", http.StatusFound)
 }
 
@@ -650,5 +655,90 @@ func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("deleted save", "rkey", rkey)
-	http.Redirect(w, r, "/save", http.StatusFound)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		SaveURI       string `json:"saveUri"`
+		CollectionURI string `json:"collectionUri"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if body.SaveURI == "" || body.CollectionURI == "" {
+		http.Error(w, "saveUri and collectionUri are required", http.StatusBadRequest)
+		return
+	}
+
+	// Look up the original save to get blob info
+	var authorDID, blobCID string
+	err = s.Store.pool.QueryRow(r.Context(),
+		`SELECT author_did, pds_blob_cid FROM save WHERE uri = $1`, body.SaveURI,
+	).Scan(&authorDID, &blobCID)
+	if err != nil {
+		http.Error(w, "save not found", http.StatusNotFound)
+		return
+	}
+
+	// Fetch blob from the original author's PDS
+	imageBytes, contentType, err := fetchBlobFromPDS(r.Context(), s.Store, s.Dir, authorDID, blobCID)
+	if err != nil {
+		slog.Error("fetching blob for resave", "err", err)
+		http.Error(w, "could not fetch image", http.StatusBadGateway)
+		return
+	}
+
+	// Upload blob to the viewer's PDS
+	var uploadOut struct {
+		Blob lexutil.LexBlob `json:"blob"`
+	}
+	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
+		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
+		return
+	}
+	blobJSON, _ := json.Marshal(uploadOut.Blob)
+	var blobAny any
+	json.Unmarshal(blobJSON, &blobAny)
+
+	// Resolve strong refs
+	collectionStrongRef, err := resolveStrongRef(r.Context(), c, body.CollectionURI)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
+		return
+	}
+	resaveRef, err := resolveStrongRef(r.Context(), c, body.SaveURI)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("resolving save: %s", err), http.StatusBadRequest)
+		return
+	}
+
+	record := map[string]any{
+		"$type":      saveNSID,
+		"collection": collectionStrongRef,
+		"image":      blobAny,
+		"resaveOf":   resaveRef,
+		"createdAt":  syntax.DatetimeNow().String(),
+	}
+
+	out, err := comatproto.RepoCreateRecord(r.Context(), c, &comatproto.RepoCreateRecord_Input{
+		Collection: saveNSID,
+		Repo:       did.String(),
+		Record:     record,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("creating record: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("created resave", "uri", out.Uri)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"uri":%q}`, out.Uri)
 }

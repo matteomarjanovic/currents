@@ -56,9 +56,7 @@
         <td><small>{{ .CreatedAt }}</small></td>
         <td>
           <button onclick="editSave('{{ .Rkey }}', '{{ .OriginURL }}', '{{ .Title }}', '{{ .Collection }}')" class="outline">Edit</button>
-          <form method="POST" action="/save/{{ .Rkey }}/delete" style="display:inline">
-            <button type="submit" class="secondary outline" onclick="return confirm('Delete this save?')">Delete</button>
-          </form>
+          <button class="secondary outline" onclick="deleteSave('{{ .Rkey }}')">Delete</button>
         </td>
       </tr>
     {{ end }}
@@ -75,7 +73,7 @@
       <button aria-label="Close" rel="prev" onclick="document.getElementById('edit-dialog').close()"></button>
       <h3>Edit Save</h3>
     </header>
-    <form method="POST" id="edit-form">
+    <form id="edit-form">
       <label>
         URL
         <input type="url" name="url" id="edit-url">
@@ -103,7 +101,7 @@
 
 <script>
 function editSave(rkey, url, title, collection) {
-  document.getElementById('edit-form').action = '/save/' + rkey;
+  document.getElementById('edit-form').dataset.rkey = rkey;
   document.getElementById('edit-url').value = url;
   document.getElementById('edit-title').value = title;
   var sel = document.getElementById('edit-collection');
@@ -112,6 +110,27 @@ function editSave(rkey, url, title, collection) {
   }
   document.getElementById('edit-dialog').showModal();
 }
+
+async function deleteSave(rkey) {
+  if (!confirm('Delete this save?')) return;
+  const resp = await fetch('/save/' + rkey, { method: 'DELETE', credentials: 'include' });
+  if (resp.ok) location.reload();
+  else alert('Delete failed: ' + resp.statusText);
+}
+
+document.getElementById('edit-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const rkey = this.dataset.rkey;
+  const body = new URLSearchParams(new FormData(this));
+  const resp = await fetch('/save/' + rkey, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (resp.ok) location.reload();
+  else alert('Update failed: ' + resp.statusText);
+});
 </script>
 
 {{ end }}
@@ -196,7 +215,7 @@ async function loadPage() {
 
   const grid = document.getElementById('xrpc-saves-grid');
   for (const sv of (data.saves || [])) {
-    const resaved = sv.viewer?.resaved ? ' <span title="Resaved">↩</span>' : '';
+    const resaved = sv.viewer?.saves?.length ? ' <span title="Resaved">↩</span>' : '';
     const card = document.createElement('article');
     card.style.margin = '0';
     card.innerHTML = `
