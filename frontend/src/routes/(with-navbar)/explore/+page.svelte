@@ -22,7 +22,6 @@
 
 	let sentinel: HTMLDivElement = $state(undefined!);
 
-	// Track personalization — reset and refetch on change (also runs on mount)
 	$effect(() => {
 		void personalization.value;
 		untrack(() => {
@@ -45,7 +44,6 @@
 </script>
 
 <MasonryGrid items={feed.items} loading={feed.loading} />
-
 {#if feed.hasMore}
 	<div bind:this={sentinel} class="h-1"></div>
 {/if}

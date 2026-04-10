@@ -1,5 +1,5 @@
 <script lang="ts">
-	import './layout.css';
+	import '../layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -7,10 +7,12 @@
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	let { children } = $props();
 
-	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null = $state(null);
+	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null =
+		$state(null);
 	let checked = $state(false);
 
 	onMount(async () => {
@@ -22,9 +24,14 @@
 		} catch {
 			// appview unreachable
 		}
+		auth.user = user;
 		checked = true;
+		auth.checked = true;
 
-		if (!user && !page.url.pathname.startsWith('/login')) {
+		const isLoginPage = page.url.pathname.startsWith('/login');
+		const isRootPage = page.url.pathname === '/';
+		const isExplorePage = page.url.pathname === '/explore';
+		if (!user && !isLoginPage && !isRootPage && !isExplorePage) {
 			goto('/login');
 		}
 	});
@@ -35,11 +42,10 @@
 
 {#if !checked}
 	<!-- loading -->
-{:else if user}
-	<TopBar {user} />
-	<main class="p-4">
-		{@render children()}
-	</main>
 {:else}
-	{@render children()}
+	{#if page.url.pathname === '/'}
+		{@render children()}
+	{:else}
+		{@render children()}
+	{/if}
 {/if}

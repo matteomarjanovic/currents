@@ -113,6 +113,8 @@
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
+      onmousedown={(e) => e.stopPropagation()}
+      onpointerdown={(e) => e.stopPropagation()}
     >
       <button class="close-btn" onclick={close} aria-label="Close">✕</button>
 
