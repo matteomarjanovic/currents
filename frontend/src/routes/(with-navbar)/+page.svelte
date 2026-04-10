@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { setMode, resetMode } from 'mode-watcher';
 	import { auth } from '$lib/stores/auth.svelte';
 	import LandingPage from '$lib/components/landing-page.svelte';
 
@@ -10,8 +9,11 @@
 	});
 
 	onMount(() => {
-		setMode('dark');
-		return () => resetMode();
+		const wasDark = document.documentElement.classList.contains('dark');
+		document.documentElement.classList.add('dark');
+		return () => {
+			if (!wasDark) document.documentElement.classList.remove('dark');
+		};
 	});
 </script>
 
