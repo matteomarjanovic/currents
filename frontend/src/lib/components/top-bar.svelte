@@ -20,6 +20,7 @@
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
+	import LogoMerged from '$lib/assets/logo_merged.svelte';
 
 	let {
 		user,
@@ -52,15 +53,26 @@
 <header
 	class="{landing
 		? 'fixed bg-background/0'
-		: 'sticky bg-background/95 backdrop-blur-sm'} top-0 z-10 flex w-full items-center gap-3 px-4 py-3 h-15"
+		: 'sticky bg-background/95 backdrop-blur-sm'} top-0 z-10 flex h-15 w-full items-center gap-3 px-4 py-3"
 >
 	{#if !searchOpen}
-		<a transition:fade={{  duration: 250, easing: cubicOut }} href={resolve('/')} class="text-lg font-semibold text-foreground">Currents</a>
+		<a
+			transition:fade={{ duration: 250, easing: cubicOut }}
+			href={resolve('/')}
+			class="h-5 text-lg font-semibold text-foreground"><LogoMerged /></a
+		>
 	{/if}
 
 	<div class="hidden flex-1 items-center justify-center gap-2 md:flex">
 		<form {onsubmit} class="w-full max-w-md">
-			<Input type="search" placeholder="Search images..." bind:value={query} class="{landing ? "bg-accent/50 backdrop-blur-sm placeholder:text-white/70" : ""} h-11 rounded-full" />
+			<Input
+				type="search"
+				placeholder="Search images..."
+				bind:value={query}
+				class="{landing
+					? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
+					: ''} h-11 rounded-full"
+			/>
 		</form>
 
 		{#if user}
@@ -98,25 +110,25 @@
 			<SearchIcon class="size-4" />
 		</Button>
 		{#if user}
-		<Popover.Root>
-			<Popover.Trigger class="shrink-0 rounded-full data-[slot=popover-trigger]:p-0  md:hidden">
-				<Button variant="ghost" size="icon" class="rounded-full" type="button">
-					<SlidersHorizontal class="size-4" />
-				</Button>
-			</Popover.Trigger>
-			<Popover.Content
-				class="flex w-48 flex-col items-center gap-3 rounded-2xl border bg-popover/90 backdrop-blur-sm"
-			>
-				<Slider type="single" bind:value={personalization.value} min={0} max={1} step={0.25} />
-				<span>Personalization: {personalizationLabels[personalization.value]}</span>
-			</Popover.Content>
-		</Popover.Root>
+			<Popover.Root>
+				<Popover.Trigger class="shrink-0 rounded-full data-[slot=popover-trigger]:p-0  md:hidden">
+					<Button variant="ghost" size="icon" class="rounded-full" type="button">
+						<SlidersHorizontal class="size-4" />
+					</Button>
+				</Popover.Trigger>
+				<Popover.Content
+					class="flex w-48 flex-col items-center gap-3 rounded-2xl border bg-popover/90 backdrop-blur-sm"
+				>
+					<Slider type="single" bind:value={personalization.value} min={0} max={1} step={0.25} />
+					<span>Personalization: {personalizationLabels[personalization.value]}</span>
+				</Popover.Content>
+			</Popover.Root>
 		{/if}
 	{/if}
 
 	{#if searchOpen}
 		<div
-			transition:fade={{  duration: 250, easing: cubicOut }}
+			transition:fade={{ duration: 250, easing: cubicOut }}
 			class="absolute inset-0 flex items-center gap-2 px-4 md:hidden"
 		>
 			<form {onsubmit} class="flex-1">
@@ -125,7 +137,9 @@
 					placeholder="Search images..."
 					bind:value={query}
 					autofocus
-					class="{landing ? "bg-accent/50 backdrop-blur-sm placeholder:text-white/70" : ""} h-11 rounded-full"
+					class="{landing
+						? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
+						: ''} h-11 rounded-full"
 				/>
 			</form>
 			<Button
@@ -140,73 +154,73 @@
 	{/if}
 
 	{#if !searchOpen}
-	{#if user}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
-				<Avatar.Root size="default">
-					{#if user.avatar}
-						<Avatar.Image src={user.avatar} alt={user.displayName ?? user.handle} />
-					{/if}
-					<Avatar.Fallback>
-						<UserIcon class="size-4" />
-					</Avatar.Fallback>
-				</Avatar.Root>
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end" class="w-48">
-				<DropdownMenu.Label>
-					{#if user.displayName}
-						<div class="text-base text-primary">{user.displayName}</div>
-					{/if}
-					<div class="font-normal text-muted-foreground">@{user.handle}</div>
-				</DropdownMenu.Label>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item
-					onclick={() => {
-						window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
-					}}
-				>
-					<LogOut class="size-4" />
-					Log out
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<div class="mx-1.5 my-0.5 flex items-center gap-0.5">
-					<button
-						onclick={() => setMode('light')}
-						title="Light"
-						class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
-						'light'
-							? 'bg-foreground/10 text-foreground'
-							: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+		{#if user}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
+					<Avatar.Root size="default">
+						{#if user.avatar}
+							<Avatar.Image src={user.avatar} alt={user.displayName ?? user.handle} />
+						{/if}
+						<Avatar.Fallback>
+							<UserIcon class="size-4" />
+						</Avatar.Fallback>
+					</Avatar.Root>
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-48">
+					<DropdownMenu.Label>
+						{#if user.displayName}
+							<div class="text-base text-primary">{user.displayName}</div>
+						{/if}
+						<div class="font-normal text-muted-foreground">@{user.handle}</div>
+					</DropdownMenu.Label>
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item
+						onclick={() => {
+							window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
+						}}
 					>
-						<Sun class="pointer-events-none size-4 shrink-0" />
-					</button>
-					<button
-						onclick={() => setMode('dark')}
-						title="Dark"
-						class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
-						'dark'
-							? 'bg-foreground/10 text-foreground'
-							: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
-					>
-						<Moon class="pointer-events-none size-4 shrink-0" />
-					</button>
-					<button
-						onclick={() => resetMode()}
-						title="System"
-						class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
-						'system'
-							? 'bg-foreground/10 text-foreground'
-							: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
-					>
-						<Monitor class="pointer-events-none size-4 shrink-0" />
-					</button>
-				</div>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
-	{:else}
-		<a href="/login">
-			<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
-		</a>
-	{/if}
+						<LogOut class="size-4" />
+						Log out
+					</DropdownMenu.Item>
+					<DropdownMenu.Separator />
+					<div class="mx-1.5 my-0.5 flex items-center gap-0.5">
+						<button
+							onclick={() => setMode('light')}
+							title="Light"
+							class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
+							'light'
+								? 'bg-foreground/10 text-foreground'
+								: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+						>
+							<Sun class="pointer-events-none size-4 shrink-0" />
+						</button>
+						<button
+							onclick={() => setMode('dark')}
+							title="Dark"
+							class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
+							'dark'
+								? 'bg-foreground/10 text-foreground'
+								: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+						>
+							<Moon class="pointer-events-none size-4 shrink-0" />
+						</button>
+						<button
+							onclick={() => resetMode()}
+							title="System"
+							class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
+							'system'
+								? 'bg-foreground/10 text-foreground'
+								: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+						>
+							<Monitor class="pointer-events-none size-4 shrink-0" />
+						</button>
+					</div>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{:else}
+			<a href="/login">
+				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
+			</a>
+		{/if}
 	{/if}
 </header>

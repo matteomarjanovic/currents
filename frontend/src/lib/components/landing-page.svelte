@@ -8,7 +8,7 @@
 <div class="relative bg-background text-foreground">
 	<!-- Hero: full-width, flow fills the background at all viewport sizes -->
 	<section
-		class="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-8 pb-16 pt-0 text-center"
+		class="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-8 pt-0 pb-16 text-center"
 	>
 		<!-- Responsive masonry flow fills the entire hero -->
 		<div class="absolute inset-0 z-0">
@@ -24,22 +24,20 @@
 		<!-- Text content -->
 		<div class="relative z-9 max-w-xl">
 			<h1
-				class="font-italiana mb-10 leading-[1.02] tracking-tight text-foreground text-beauty text-6xl md:text-7xl lg:mt-16 xl:text-[5.25rem]"
+				class="text-beauty mb-10 font-italiana text-6xl leading-[1.02] tracking-tight text-foreground md:text-7xl lg:mt-16 xl:text-[5.25rem]"
 				// style="font-size: clamp(3.4rem, 6.5vw, 6.2rem);"
 			>
 				Get carried by the currents.
 			</h1>
 
-			<p class="mb-12 text-lg leading-relaxed text-muted-foreground text-beauty md:text-xl">
-				Or create your own. Save inspiration from anywhere, curate collections that reflect your taste, and tune your feed to find exactly what you love.
+			<p class="text-beauty mb-12 text-lg leading-relaxed text-muted-foreground md:text-xl">
+				Or create your own. Save inspiration from anywhere, curate collections that reflect your
+				taste, and tune your feed to find exactly what you love.
 			</p>
 
 			<div class="flex items-center justify-center gap-4">
 				<a href="/explore">
-					<Button
-						size="lg"
-						class="gap-2 rounded-full px-8 text-base"
-					>
+					<Button size="lg" class="gap-2 rounded-full px-8 text-base">
 						Explore currents
 						<ArrowRight class="size-4" />
 					</Button>
@@ -113,6 +111,9 @@
 	</section> -->
 	<!-- Footer -->
 	<footer class="px-8 py-6 text-center text-sm text-muted-foreground">
-		&copy; {new Date().getFullYear()} Currents. Built by <a href="https://matteomarjanovic.com" class="underline hover:text-foreground">Matteo Marjanovic</a>.
+		&copy; {new Date().getFullYear()} Currents. Built by
+		<a href="https://matteomarjanovic.com" class="underline hover:text-foreground"
+			>Matteo Marjanovic</a
+		>.
 	</footer>
 </div>
