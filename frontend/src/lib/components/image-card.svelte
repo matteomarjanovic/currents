@@ -24,8 +24,9 @@
 		untrack(() => localSaves[0]?.collectionUri ?? collections.lastUsedUri)
 	);
 
-	let pending = $state(false);
 	let dropdownOpen = $state(false);
+
+	const OPTIMISTIC_URI = 'optimistic';
 
 	function isSavedIn(uri: string): string | null {
 		return localSaves.find((s) => s.collectionUri === uri)?.saveUri ?? null;
@@ -40,7 +41,8 @@
 	}
 
 	async function save(collectionUri: string) {
-		pending = true;
+		localSaves = [...localSaves, { collectionUri, saveUri: OPTIMISTIC_URI }];
+		setLastUsedCollection(collectionUri);
 		try {
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/resave`, {
 				method: 'POST',
@@ -50,17 +52,22 @@
 			});
 			if (!res.ok) throw new Error(`save: ${res.status}`);
 			const data = await res.json();
-			localSaves = [...localSaves, { collectionUri, saveUri: data.uri }];
-			setLastUsedCollection(collectionUri);
+			localSaves = localSaves.map((s) =>
+				s.collectionUri === collectionUri && s.saveUri === OPTIMISTIC_URI
+					? { collectionUri, saveUri: data.uri }
+					: s
+			);
 		} catch (e) {
 			console.error('save failed', e);
-		} finally {
-			pending = false;
+			localSaves = localSaves.filter(
+				(s) => !(s.collectionUri === collectionUri && s.saveUri === OPTIMISTIC_URI)
+			);
 		}
 	}
 
 	async function unsave(saveUri: string, collectionUri: string) {
-		pending = true;
+		const prev = localSaves;
+		localSaves = localSaves.filter((s) => s.saveUri !== saveUri);
 		try {
 			const rkey = saveUri.split('/').pop()!;
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}`, {
@@ -68,31 +75,29 @@
 				credentials: 'include'
 			});
 			if (!res.ok) throw new Error(`unsave: ${res.status}`);
-			localSaves = localSaves.filter((s) => s.saveUri !== saveUri);
 		} catch (e) {
 			console.error('unsave failed', e);
-		} finally {
-			pending = false;
+			localSaves = prev;
 		}
 	}
 
-	async function toggleCollection(uri: string) {
+	function toggleCollection(uri: string) {
 		selectedCollectionUri = uri;
 		const existing = isSavedIn(uri);
 		if (existing) {
-			await unsave(existing, uri);
+			unsave(existing, uri);
 		} else {
-			await save(uri);
+			save(uri);
 		}
 	}
 
-	async function handleButtonClick() {
+	function handleButtonClick() {
 		if (!selectedCollectionUri) return;
 		const existing = isSavedIn(selectedCollectionUri);
 		if (existing) {
-			await unsave(existing, selectedCollectionUri);
+			unsave(existing, selectedCollectionUri);
 		} else {
-			await save(selectedCollectionUri);
+			save(selectedCollectionUri);
 		}
 	}
 </script>
@@ -120,7 +125,7 @@
 								variant="secondary"
 								size="sm"
 								class="min-w-0 flex-1 justify-between truncate"
-								disabled={pending}
+			
 							>
 								<span class="truncate">{selectedName}</span>
 								<ChevronDown class="ml-1 size-3 shrink-0" />
@@ -129,7 +134,7 @@
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content>
 						{#each collections.items as col (col.uri)}
-							<DropdownMenu.Item onclick={() => toggleCollection(col.uri)} disabled={pending}>
+							<DropdownMenu.Item onclick={() => toggleCollection(col.uri)}>
 								{#if isSavedIn(col.uri)}
 									<Check class="mr-2 size-4 shrink-0" />
 								{:else}
@@ -145,7 +150,7 @@
 					size="sm"
 					variant={isSavedInSelected() ? 'secondary' : 'default'}
 					onclick={handleButtonClick}
-					disabled={pending || !selectedCollectionUri}
+					disabled={!selectedCollectionUri}
 				>
 					{isSavedInSelected() ? 'Saved' : 'Save'}
 				</Button>
