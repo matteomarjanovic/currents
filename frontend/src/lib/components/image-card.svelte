@@ -4,6 +4,7 @@
 	import type { SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections, setLastUsedCollection } from '$lib/stores/collections.svelte';
+	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Check from '@lucide/svelte/icons/check';
@@ -51,7 +52,10 @@
 				credentials: 'include'
 			});
 			if (!res.ok) {
-				if (res.status === 401) auth.user = null;
+				if (res.status === 401) {
+					auth.user = null;
+					promptLogin();
+				}
 				throw new Error(`save: ${res.status}`);
 			}
 			const data = await res.json();
@@ -78,7 +82,10 @@
 				credentials: 'include'
 			});
 			if (!res.ok) {
-				if (res.status === 401) auth.user = null;
+				if (res.status === 401) {
+					auth.user = null;
+					promptLogin();
+				}
 				throw new Error(`unsave: ${res.status}`);
 			}
 		} catch (e) {
@@ -160,6 +167,16 @@
 				>
 					{isSavedInSelected() ? 'Saved' : 'Save'}
 				</Button>
+			</div>
+		</div>
+	{:else if auth.checked}
+		<div
+			class="absolute inset-0 flex flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 opacity-0 group-hover:opacity-100"
+		>
+			<div
+				class="flex items-center justify-end gap-1.5 transition-transform duration-300 translate-y-2 group-hover:translate-y-0"
+			>
+				<Button size="sm" variant="default" onclick={promptLogin}>Save</Button>
 			</div>
 		</div>
 	{/if}

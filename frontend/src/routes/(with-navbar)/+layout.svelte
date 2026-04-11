@@ -7,6 +7,7 @@
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
+	import LoginDialog from '$lib/components/login-dialog.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
 
@@ -54,3 +55,5 @@
 		</main>
 	{/if}
 {/if}
+
+<LoginDialog />
