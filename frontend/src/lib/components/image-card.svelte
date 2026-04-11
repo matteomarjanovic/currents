@@ -25,6 +25,7 @@
 	);
 
 	let pending = $state(false);
+	let dropdownOpen = $state(false);
 
 	function isSavedIn(uri: string): string | null {
 		return localSaves.find((s) => s.collectionUri === uri)?.saveUri ?? null;
@@ -106,12 +107,12 @@
 	/>
 	{#if auth.user && collections.loaded}
 		<div
-			class="absolute inset-0 flex flex-col justify-end bg-black/60 p-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+			class="absolute inset-0 flex flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 {dropdownOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
 		>
 			<div
-				class="flex translate-y-2 items-center gap-1.5 transition-transform duration-300 group-hover:translate-y-0"
+				class="flex items-center gap-1.5 transition-transform duration-300 {dropdownOpen ? 'translate-y-0' : 'translate-y-2 group-hover:translate-y-0'}"
 			>
-				<DropdownMenu.Root>
+				<DropdownMenu.Root bind:open={dropdownOpen}>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
 							<Button
@@ -128,10 +129,7 @@
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content>
 						{#each collections.items as col (col.uri)}
-							<DropdownMenu.Item
-								onclick={() => toggleCollection(col.uri)}
-								disabled={pending}
-							>
+							<DropdownMenu.Item onclick={() => toggleCollection(col.uri)} disabled={pending}>
 								{#if isSavedIn(col.uri)}
 									<Check class="mr-2 size-4 shrink-0" />
 								{:else}

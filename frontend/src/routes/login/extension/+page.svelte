@@ -3,7 +3,6 @@
 	import LogoMerged from '$lib/assets/logo_merged.svelte';
 	import { page } from '$app/state';
 	import LoginForm from '$lib/components/login-form.svelte';
-	import GalleryVerticalEndIcon from '@lucide/svelte/icons/gallery-vertical-end';
 
 	const returnTo = `${page.url.origin}/login/success`;
 </script>
