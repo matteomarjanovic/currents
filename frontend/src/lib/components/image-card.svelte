@@ -50,7 +50,10 @@
 				body: JSON.stringify({ saveUri: item.uri, collectionUri }),
 				credentials: 'include'
 			});
-			if (!res.ok) throw new Error(`save: ${res.status}`);
+			if (!res.ok) {
+				if (res.status === 401) auth.user = null;
+				throw new Error(`save: ${res.status}`);
+			}
 			const data = await res.json();
 			localSaves = localSaves.map((s) =>
 				s.collectionUri === collectionUri && s.saveUri === OPTIMISTIC_URI
@@ -74,7 +77,10 @@
 				method: 'DELETE',
 				credentials: 'include'
 			});
-			if (!res.ok) throw new Error(`unsave: ${res.status}`);
+			if (!res.ok) {
+				if (res.status === 401) auth.user = null;
+				throw new Error(`unsave: ${res.status}`);
+			}
 		} catch (e) {
 			console.error('unsave failed', e);
 			localSaves = prev;

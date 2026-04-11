@@ -84,6 +84,29 @@ type SavesPageData struct {
 	Collections []CollectionData
 }
 
+// handleSessionError checks if an error from a PDS call is due to a dead OAuth
+// session (e.g. stale refresh token after container restart). If so, it cleans
+// up the session from DB and cookie, returns 401 to the client, and returns true.
+func (s *Server) handleSessionError(err error, w http.ResponseWriter, r *http.Request) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	if strings.Contains(errStr, "invalid_grant") || strings.Contains(errStr, "failed to refresh OAuth tokens") {
+		did, sessionID, _ := s.currentSessionDID(r)
+		if did != nil {
+			s.Store.DeleteSession(r.Context(), *did, sessionID)
+		}
+		sess, _ := s.CookieStore.Get(r, "currents-session")
+		sess.Values = make(map[any]any)
+		sess.Save(r, w)
+		slog.Warn("cleared dead OAuth session", "did", did)
+		http.Error(w, "session expired", http.StatusUnauthorized)
+		return true
+	}
+	return false
+}
+
 func (s *Server) apiClientFromSession(r *http.Request) (*atclient.APIClient, *syntax.DID, error) {
 	did, sessionID, _ := s.currentSessionDID(r)
 	if did == nil {
@@ -135,6 +158,9 @@ func (s *Server) ListCollections(w http.ResponseWriter, r *http.Request) {
 
 	out, err := comatproto.RepoListRecords(r.Context(), c, collectionNSID, "", 0, did.String(), false)
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		slog.Error("listing collections", "err", err)
 		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
 		return
@@ -204,6 +230,9 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 		Record:     record,
 	})
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("creating record: %s", err), http.StatusInternalServerError)
 		return
 	}
@@ -230,6 +259,9 @@ func (s *Server) GetCollection(w http.ResponseWriter, r *http.Request) {
 
 	out, err := comatproto.RepoGetRecord(r.Context(), c, "", collectionNSID, did.String(), rkey)
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
 		return
 	}
@@ -276,6 +308,9 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		Record:     record,
 	})
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("updating record: %s", err), http.StatusInternalServerError)
 		return
 	}
@@ -298,6 +333,9 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 		"collection": collectionNSID,
 		"rkey":       rkey,
 	}, nil); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("deleting record: %s", err), http.StatusInternalServerError)
 		return
 	}
@@ -319,6 +357,9 @@ func (s *Server) ListSaves(w http.ResponseWriter, r *http.Request) {
 
 	savesOut, err := comatproto.RepoListRecords(r.Context(), c, saveNSID, "", 0, did.String(), false)
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		slog.Error("listing saves", "err", err)
 		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
 		return
@@ -435,6 +476,9 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		Blob lexutil.LexBlob `json:"blob"`
 	}
 	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
 		return
 	}
@@ -513,6 +557,9 @@ func (s *Server) GetSave(w http.ResponseWriter, r *http.Request) {
 
 	out, err := comatproto.RepoGetRecord(r.Context(), c, "", saveNSID, did.String(), rkey)
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		_, _, handle := s.currentSessionDID(r)
 		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
 		return
@@ -551,6 +598,9 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	// Fetch existing record to preserve image blob and fields not in the form
 	existing, err := comatproto.RepoGetRecord(r.Context(), c, "", saveNSID, did.String(), rkey)
 	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("fetching existing save: %s", err), http.StatusInternalServerError)
 		return
 	}
@@ -650,6 +700,9 @@ func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {
 		"collection": saveNSID,
 		"rkey":       rkey,
 	}, nil); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("deleting record: %s", err), http.StatusInternalServerError)
 		return
 	}
@@ -701,6 +754,9 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		Blob lexutil.LexBlob `json:"blob"`
 	}
 	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
 		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
 		return
 	}

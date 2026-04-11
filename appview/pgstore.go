@@ -809,10 +809,6 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 
 // ── Feed methods ─────────────────────────────────────────────────────────────
 
-const (
-	globalMinSaveCount   = 2
-	globalTimeWindowDays = 30
-)
 
 // GetCollectionEmbeddings returns all visual-identity embeddings for saves in a collection.
 // Used to compute the collection's canonical (medoid) embedding.
@@ -883,36 +879,12 @@ func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID stri
 	return result, rows.Err()
 }
 
-// GetGlobalFeedSaves returns popular recent saves from across the network,
-// ordered by save_count DESC then created_at DESC. It retries with progressively
-// relaxed constraints (save_count threshold, then time window) until results are found.
+// GetGlobalFeedSaves returns saves from across the network, ranked by a
+// time-decayed popularity score: save_count * exp(-0.01 * age_in_days).
+// No minimum save_count threshold — all images with a visual identity appear,
+// with popular recent images ranked highest.
 func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, limit, offset int) ([]SaveRow, error) {
-	window := fmt.Sprintf("AND s.created_at >= NOW() - INTERVAL '%d days'", globalTimeWindowDays)
-	type attempt struct {
-		minCount   int
-		timeClause string
-	}
-	for _, a := range []attempt{
-		{globalMinSaveCount, window},
-		{1, window},
-		{1, ""},
-	} {
-		rows, err := m.queryGlobalFeed(ctx, viewerDID, limit, offset, a.minCount, a.timeClause)
-		if err != nil {
-			return nil, err
-		}
-		if len(rows) > 0 {
-			return rows, nil
-		}
-	}
-	return nil, nil
-}
-
-// queryGlobalFeed is the inner query for GetGlobalFeedSaves.
-// timeClause is an optional SQL fragment (e.g. "AND s.created_at >= NOW() - INTERVAL '30 days'")
-// and is only ever set from hardcoded constants — no SQL injection risk.
-func (m *PgStore) queryGlobalFeed(ctx context.Context, viewerDID string, limit, offset, minSaveCount int, timeClause string) ([]SaveRow, error) {
-	q := fmt.Sprintf(`
+	rows, err := m.pool.Query(ctx, `
 		SELECT
 			s.uri,
 			s.pds_blob_cid,
@@ -935,12 +907,9 @@ func (m *PgStore) queryGlobalFeed(ctx context.Context, viewerDID string, limit, 
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
-		WHERE vi.save_count >= $4
-		  %s
-		ORDER BY vi.save_count DESC, s.created_at DESC NULLS LAST
+		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
 		LIMIT $2 OFFSET $3
-	`, timeClause)
-	rows, err := m.pool.Query(ctx, q, viewerDID, limit, offset, minSaveCount)
+	`, viewerDID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
