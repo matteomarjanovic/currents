@@ -28,10 +28,13 @@
 	$effect(() => {
 		void page.params.query;
 		void personalization.value;
-		untrack(() => {
-			search.reset();
-			search.loadMore();
-		});
+		const timeout = setTimeout(() => {
+			untrack(() => {
+				search.reset();
+				search.loadMore();
+			});
+		}, 300);
+		return () => clearTimeout(timeout);
 	});
 
 	$effect(() => {

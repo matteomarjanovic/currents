@@ -24,10 +24,13 @@
 
 	$effect(() => {
 		void personalization.value;
-		untrack(() => {
-			feed.reset();
-			feed.loadMore();
-		});
+		const timeout = setTimeout(() => {
+			untrack(() => {
+				feed.reset();
+				feed.loadMore();
+			});
+		}, 300);
+		return () => clearTimeout(timeout);
 	});
 
 	$effect(() => {
