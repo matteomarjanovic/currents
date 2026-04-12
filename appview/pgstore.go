@@ -852,6 +852,60 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 	return result, rows.Err()
 }
 
+// GetRelatedSavesByURI returns saves whose visual-identity embedding is closest
+// to the given save's embedding (cosine distance). Excludes the source save's
+// own visual identity so resaves of the same image don't appear as related.
+// Returns an empty slice if the source save is unknown or has no embedding.
+func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDID string, limit, offset int) ([]SaveRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		WITH src AS (
+			SELECT vi.id AS vi_id, vi.embedding
+			FROM save s
+			JOIN visual_identity vi ON vi.id = s.visual_identity_id
+			WHERE s.uri = $1 AND vi.embedding IS NOT NULL
+		)
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(ros.pds_blob_cid, ''),
+			s.created_at,
+			CASE WHEN $3 != '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			s.width,
+			s.height,
+			s.dominant_colors
+		FROM visual_identity vi
+		JOIN save s ON s.uri = vi.canonical_save_uri
+		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
+		WHERE vi.embedding IS NOT NULL
+			AND vi.id != (SELECT vi_id FROM src)
+		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
+		LIMIT $2 OFFSET $4
+	`, uri, limit, viewerDID, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []SaveRow
+	for rows.Next() {
+		var row SaveRow
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 // ── Feed methods ─────────────────────────────────────────────────────────────
 
 

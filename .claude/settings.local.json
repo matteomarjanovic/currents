@@ -3,7 +3,8 @@
     "allow": [
       "mcp__svelte__svelte-autofixer",
       "Bash(ls:*)",
-      "WebFetch(domain:shadcn-svelte.com)"
+      "WebFetch(domain:shadcn-svelte.com)",
+      "WebFetch(domain:wxt.dev)"
     ]
   },
   "enableAllProjectMcpServers": true,

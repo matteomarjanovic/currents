@@ -1,12 +1,17 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Button } from '$lib/components/ui/button';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
+	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import type { SaveView } from '$lib/types';
 
@@ -30,6 +35,39 @@
 	}
 
 	let authorName = $derived(save.author.displayName || save.author.handle);
+
+	const related = useInfiniteScroll(async (cursor) => {
+		const params = new URLSearchParams({ uri: save.uri, limit: '50' });
+		if (cursor) params.set('cursor', cursor);
+		const res = await fetch(
+			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getRelatedSaves?${params}`,
+			{ credentials: 'include' }
+		);
+		const data = await res.json();
+		return { items: data.saves ?? [], cursor: data.cursor };
+	});
+
+	$effect(() => {
+		void save.uri;
+		untrack(() => {
+			related.reset();
+			related.loadMore();
+		});
+	});
+
+	let sentinel: HTMLDivElement | undefined = $state();
+
+	$effect(() => {
+		if (!sentinel) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting) related.loadMore();
+			},
+			{ rootMargin: '400px' }
+		);
+		observer.observe(sentinel);
+		return () => observer.disconnect();
+	});
 </script>
 
 {#snippet info()}
@@ -53,15 +91,18 @@
 	{/if}
 
 	{#if save.originUrl}
-		<a
-			href={save.originUrl}
-			target="_blank"
-			rel="noopener noreferrer"
-			class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-		>
-			<ExternalLink class="size-3.5" />
-			<span class="truncate">Source</span>
-		</a>
+		<div class="inline-flex items-center gap-1 text-sm text-muted-foreground">
+			<span>Source:</span>
+			<a
+				href={save.originUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="inline-flex items-center gap-1 hover:text-foreground"
+			>
+				<span class="truncate">{new URL(save.originUrl).hostname}</span>
+				<ExternalLink class="size-3.5" />
+			</a>
+		</div>
 	{/if}
 
 	{#if save.attribution && (save.attribution.credit || save.attribution.license || save.attribution.url)}
@@ -107,6 +148,10 @@
 			</div>
 		</div>
 		{@render info()}
+		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
+			<p>Scroll down to view related images</p>
+			<ArrowDown class="size-4" />
+		</div>
 	</div>
 	<div class="flex w-2/3 items-center justify-center p-6">
 		<img src={save.imageUrl} alt={save.text ?? ''} class="max-h-full max-w-full object-contain" />
@@ -131,3 +176,13 @@
 		style={save.width && save.height ? `aspect-ratio: ${save.width} / ${save.height}` : undefined}
 	/>
 </div>
+
+{#if related.items.length > 0 || related.loading}
+	<section class="flex flex-col gap-4 p-4 md:p-6">
+		<h2 class="text-lg font-medium">Related</h2>
+		<MasonryGrid items={related.items} loading={related.loading} />
+		{#if related.hasMore}
+			<div bind:this={sentinel} class="h-1"></div>
+		{/if}
+	</section>
+{/if}

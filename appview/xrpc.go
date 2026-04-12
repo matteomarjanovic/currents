@@ -518,6 +518,150 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Saves: views})
 }
 
+func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+
+	uri := r.URL.Query().Get("uri")
+	if uri == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"uri is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
+			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
+				offset = n
+			}
+		}
+	}
+
+	viewerStr := ""
+	if viewerDID != nil {
+		viewerStr = viewerDID.String()
+	}
+
+	saveRows, err := s.Store.GetRelatedSavesByURI(r.Context(), uri, viewerStr, limit, offset)
+	if err != nil {
+		slog.Error("GetRelatedSavesByURI", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	authorCache := map[string]profileView{}
+	for _, row := range saveRows {
+		if _, ok := authorCache[row.AuthorDID]; ok {
+			continue
+		}
+		pv := profileView{DID: row.AuthorDID}
+		if actorRow, err := s.Store.GetActorByDID(r.Context(), row.AuthorDID); err == nil && actorRow != nil {
+			pv.Handle = actorRow.Handle
+			pv.DisplayName = actorRow.DisplayName
+			pv.Avatar = actorRow.Avatar
+		}
+		authorCache[row.AuthorDID] = pv
+	}
+
+	type strongRef struct {
+		URI string `json:"uri"`
+		CID string `json:"cid"`
+	}
+	type viewerSave struct {
+		CollectionURI string `json:"collectionUri"`
+		SaveURI       string `json:"saveUri"`
+	}
+	type saveViewerState struct {
+		Saves []viewerSave `json:"saves"`
+	}
+	type saveView struct {
+		URI         string           `json:"uri"`
+		BlobCID     string           `json:"blobCid"`
+		Author      profileView      `json:"author"`
+		ImageURL    string           `json:"imageUrl"`
+		Text        string           `json:"text,omitempty"`
+		OriginURL   string           `json:"originUrl,omitempty"`
+		Attribution *saveAttribution `json:"attribution,omitempty"`
+		ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
+		CreatedAt   string           `json:"createdAt"`
+		Viewer      *saveViewerState `json:"viewer,omitempty"`
+		Width       int              `json:"width,omitempty"`
+		Height      int              `json:"height,omitempty"`
+		Colors      json.RawMessage  `json:"colors,omitempty"`
+	}
+
+	views := make([]saveView, 0, len(saveRows))
+	for _, row := range saveRows {
+		sv := saveView{
+			URI:       row.URI,
+			BlobCID:   row.BlobCID,
+			Author:    authorCache[row.AuthorDID],
+			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
+			Text:      row.Text,
+			OriginURL: row.OriginURL,
+		}
+		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
+			sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
+		}
+		if row.CreatedAt != nil {
+			sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
+			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
+		}
+		if viewerDID != nil {
+			var saves []viewerSave
+			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
+				json.Unmarshal(row.ViewerSaves, &saves)
+			}
+			if saves == nil {
+				saves = []viewerSave{}
+			}
+			sv.Viewer = &saveViewerState{Saves: saves}
+		}
+		if row.Width != nil {
+			sv.Width = *row.Width
+		}
+		if row.Height != nil {
+			sv.Height = *row.Height
+		}
+		if len(row.DominantColors) > 0 {
+			sv.Colors = row.DominantColors
+		}
+		views = append(views, sv)
+	}
+
+	var nextCursor string
+	if len(saveRows) == limit {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + limit)))
+	}
+
+	type response struct {
+		Cursor string     `json:"cursor,omitempty"`
+		Saves  []saveView `json:"saves"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Saves: views})
+}
+
 func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 	viewerDID, err := s.optionalAuth(r)
 	if err != nil {

@@ -38,6 +38,40 @@
 			goto('/login');
 		}
 	});
+
+	let overlayEl: HTMLDivElement | undefined = $state();
+	const overlayScroll = new Map<string, number>();
+	let prevOverlayUri: string | undefined;
+	let poppingBack = false;
+
+	$effect(() => {
+		const onPop = () => {
+			poppingBack = true;
+		};
+		window.addEventListener('popstate', onPop);
+		return () => window.removeEventListener('popstate', onPop);
+	});
+
+	$effect(() => {
+		const uri = page.state.save?.uri as string | undefined;
+		if (!overlayEl) {
+			prevOverlayUri = uri;
+			poppingBack = false;
+			return;
+		}
+		if (prevOverlayUri && prevOverlayUri !== uri) {
+			if (poppingBack) {
+				overlayScroll.delete(prevOverlayUri);
+			} else {
+				overlayScroll.set(prevOverlayUri, overlayEl.scrollTop);
+			}
+		}
+		if (uri) {
+			overlayEl.scrollTop = overlayScroll.get(uri) ?? 0;
+		}
+		prevOverlayUri = uri;
+		poppingBack = false;
+	});
 </script>
 
 <ModeWatcher />
@@ -54,7 +88,7 @@
 {/if}
 
 {#if page.state.save}
-	<div class="fixed inset-0 z-50 overflow-y-auto bg-background">
+	<div bind:this={overlayEl} class="fixed inset-0 z-50 overflow-y-auto bg-background">
 		<SaveDetail save={page.state.save} />
 	</div>
 {/if}
