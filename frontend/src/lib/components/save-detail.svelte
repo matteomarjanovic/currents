@@ -33,7 +33,7 @@
 </script>
 
 {#snippet info()}
-	<div class="flex items-center gap-3">
+	<!-- <div class="flex items-center gap-3">
 		<Avatar.Root class="size-10">
 			{#if save.author.avatar}
 				<Avatar.Image src={save.author.avatar} alt={authorName} />
@@ -46,7 +46,7 @@
 				<span class="truncate text-xs text-muted-foreground">@{save.author.handle}</span>
 			{/if}
 		</div>
-	</div>
+	</div> -->
 
 	{#if save.text}
 		<p class="text-sm whitespace-pre-wrap">{save.text}</p>
@@ -96,15 +96,17 @@
 {/snippet}
 
 <div class="hidden h-screen md:flex">
-	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto p-6">
-		<Button variant="ghost" size="sm" class="w-fit" onclick={goBack}>
-			<ArrowLeft class="size-4" />
-			Back
-		</Button>
-		{@render info()}
-		<div class="mt-auto">
-			{@render saveControl('popover')}
+	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6">
+		<div class="flex items-center justify-between gap-2">
+			<Button variant="ghost" size="sm" onclick={goBack}>
+				<ArrowLeft class="size-4" />
+				Back
+			</Button>
+			<div class="w-auto min-w-32">
+				{@render saveControl('popover')}
+			</div>
 		</div>
+		{@render info()}
 	</div>
 	<div class="flex w-2/3 items-center justify-center p-6">
 		<img src={save.imageUrl} alt={save.text ?? ''} class="max-h-full max-w-full object-contain" />

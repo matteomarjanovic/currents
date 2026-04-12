@@ -188,11 +188,7 @@
 	<Drawer.Root bind:open>
 		<Drawer.Trigger>
 			{#snippet child({ props })}
-				<Button
-					{...props}
-					variant={anySaved ? 'secondary' : 'default'}
-					class="w-full"
-				>
+				<Button {...props} variant={anySaved ? 'secondary' : 'default'} class="w-full">
 					{anySaved ? 'Saved' : 'Save'}
 				</Button>
 			{/snippet}
