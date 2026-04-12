@@ -37,7 +37,7 @@
 		e.preventDefault();
 		const trimmed = query.trim();
 		if (trimmed) {
-			goto(resolve('/search/[query]', { query: encodeURIComponent(trimmed) }));
+			goto(resolve('/(with-navbar)/search/[query]', { query: encodeURIComponent(trimmed) }));
 		}
 	}
 
@@ -226,7 +226,7 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		{:else}
-			<a href="/login">
+			<a href={resolve('/login')}>
 				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
 			</a>
 		{/if}
