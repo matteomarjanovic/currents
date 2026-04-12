@@ -36,7 +36,7 @@
 	</a>
 	{#if auth.user && collections.loaded}
 		<div
-			class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 {dropdownOpen
+			class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
 				? 'opacity-100'
 				: 'opacity-0 group-hover:opacity-100'}"
 		>
