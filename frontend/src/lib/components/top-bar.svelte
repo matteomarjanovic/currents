@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -32,6 +33,10 @@
 
 	let query = $state('');
 	let searchOpen = $state(false);
+
+	$effect(() => {
+		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
+	});
 
 	function onsubmit(e: Event) {
 		e.preventDefault();
