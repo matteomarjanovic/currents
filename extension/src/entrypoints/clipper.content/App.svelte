@@ -16,7 +16,14 @@
   // New collection creation
   let creatingCollection = $state(false);
   let newCollectionName = $state("");
+  let newCollectionDescription = $state("");
   let collectionError = $state("");
+
+  $effect(() => {
+    if (creatingCollection) {
+      newCollectionDescription = clipper.defaultCollectionDescription ?? "";
+    }
+  });
 
   // Reset form state whenever a new image is shown
   $effect(() => {
@@ -31,9 +38,26 @@
       selectedCollectionUri = clipper.collections[0]?.uri ?? "";
       creatingCollection = false;
       newCollectionName = "";
+      newCollectionDescription = "";
       collectionError = "";
     }
   });
+
+  function confirmBoard() {
+    if (!selectedCollectionUri) return;
+    const col = clipper.collections.find(
+      (c) => c.uri === selectedCollectionUri,
+    );
+    document.dispatchEvent(
+      new CustomEvent("currents-board-confirm", {
+        detail: {
+          collectionUri: selectedCollectionUri,
+          collectionName: col?.name ?? "",
+        },
+      }),
+    );
+    close();
+  }
 
   function close() {
     document.dispatchEvent(new CustomEvent("currents-clipper-close"));
@@ -51,6 +75,7 @@
       const response = await browser.runtime.sendMessage({
         type: "CREATE_COLLECTION",
         name,
+        description: newCollectionDescription.trim(),
       });
       if (response.ok) {
         clipper.collections = [
@@ -61,6 +86,7 @@
           response.uri ?? clipper.collections[0]?.uri ?? "";
         creatingCollection = false;
         newCollectionName = "";
+        newCollectionDescription = "";
       } else if (response.authError) {
         clipper.authState = "unauthenticated";
       } else {
@@ -125,7 +151,16 @@
           </a> to save images.
         </p>
       {:else}
-        <img class="preview" src={clipper.imgUrl} alt="Preview" />
+        {#if clipper.mode === "board"}
+          <p class="board-intro">
+            Pick a collection to import pins from
+            <strong>{clipper.pageTitle || "this board"}</strong>. Scroll the
+            board after confirming so Pinterest loads more pins — we'll save
+            them as they appear.
+          </p>
+        {:else}
+          <img class="preview" src={clipper.imgUrl} alt="Preview" />
+        {/if}
 
         <div class="field-group">
           <span class="section-label">Collection</span>
@@ -139,12 +174,19 @@
                   if (e.key === "Enter") createCollection();
                 }}
               />
+              <textarea
+                class="description"
+                placeholder="Description (optional)"
+                rows="2"
+                bind:value={newCollectionDescription}
+              ></textarea>
               <div class="new-collection-actions">
                 <button
                   class="secondary-btn"
                   onclick={() => {
                     creatingCollection = false;
                     newCollectionName = "";
+                    newCollectionDescription = "";
                     collectionError = "";
                   }}
                 >
@@ -187,13 +229,16 @@
           {/if}
         </div>
 
-        <input
-          type="text"
-          placeholder="Add a note (optional)"
-          bind:value={text}
-          disabled={saveState === "saving" || saveState === "saved"}
-        />
+        {#if clipper.mode !== "board"}
+          <input
+            type="text"
+            placeholder="Add a note (optional)"
+            bind:value={text}
+            disabled={saveState === "saving" || saveState === "saved"}
+          />
+        {/if}
 
+        {#if clipper.mode !== "board"}
         <div class="attribution">
           <span class="section-label">Attribution</span>
           <input
@@ -215,8 +260,16 @@
             disabled={saveState === "saving" || saveState === "saved"}
           />
         </div>
+        {/if}
 
-        {#if saveState === "idle" || saveState === "error"}
+        {#if clipper.mode === "board"}
+          <button
+            onclick={confirmBoard}
+            disabled={!selectedCollectionUri || creatingCollection}
+          >
+            Import pins into collection
+          </button>
+        {:else if saveState === "idle" || saveState === "error"}
           <button
             onclick={save}
             disabled={!selectedCollectionUri || creatingCollection}
@@ -437,5 +490,31 @@
   .auth-prompt a {
     color: #0057ff;
     text-decoration: underline;
+  }
+
+  textarea.description {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    box-sizing: border-box;
+    font-family: inherit;
+    background-color: #fff;
+    color: #111;
+    resize: vertical;
+    min-height: 52px;
+  }
+
+  textarea.description:focus {
+    outline: 2px solid #0057ff;
+    border-color: transparent;
+  }
+
+  .board-intro {
+    font-size: 13px;
+    color: #333;
+    margin: 0 0 4px 0;
+    line-height: 1.5;
   }
 </style>

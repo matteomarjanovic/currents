@@ -13,8 +13,11 @@ export interface SiteHints {
   attributionCredit?: string;
 }
 
+export type ClipperMode = 'single' | 'board';
+
 interface ClipperState {
   visible: boolean;
+  mode: ClipperMode;
   imgUrl: string;
   originUrl: string;
   pageTitle: string;
@@ -22,10 +25,13 @@ interface ClipperState {
   authState: AuthState;
   userHandle: string;
   siteHints: SiteHints;
+  pinCount: number;
+  defaultCollectionDescription: string;
 }
 
 export const clipper: ClipperState = $state({
   visible: false,
+  mode: 'single',
   imgUrl: '',
   originUrl: '',
   pageTitle: '',
@@ -33,6 +39,8 @@ export const clipper: ClipperState = $state({
   authState: 'unauthenticated',
   userHandle: '',
   siteHints: {},
+  pinCount: 0,
+  defaultCollectionDescription: '',
 });
 
 export function showClipper(data: Omit<typeof clipper, 'visible'>) {

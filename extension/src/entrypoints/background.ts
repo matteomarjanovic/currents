@@ -86,11 +86,13 @@ async function fetchCollections(did: string): Promise<Collection[]> {
 
 async function handleCreateCollection(message: {
   name: string;
+  description?: string;
 }): Promise<{ ok: boolean; uri?: string; error?: string }> {
   const auth = await getAuth();
   if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
   const body = new URLSearchParams({ name: message.name });
+  if (message.description) body.set('description', message.description);
 
   try {
     const resp = await appviewFetch(`${CURRENTS_URL}/collection`, {
@@ -221,7 +223,7 @@ export default defineBackground(() => {
     }
   });
 
-  browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SAVE_IMAGE') {
       handleSave(message).then(sendResponse);
       return true;
@@ -229,6 +231,26 @@ export default defineBackground(() => {
     if (message.type === 'CREATE_COLLECTION') {
       handleCreateCollection(message).then(sendResponse);
       return true;
+    }
+    if (message.type === 'OPEN_BOARD_PICKER') {
+      (async () => {
+        const tabId = sender.tab?.id;
+        if (!tabId) return;
+        const auth = await getAuth();
+        const collections: Collection[] = auth ? await fetchCollections(auth.did) : [];
+        await browser.tabs.sendMessage(tabId, {
+          type: 'SHOW_CLIPPER',
+          mode: 'board',
+          pageTitle: message.boardName ?? '',
+          originUrl: message.originUrl ?? '',
+          collections,
+          authState: auth ? 'authenticated' : 'unauthenticated',
+          userHandle: auth?.handle ?? '',
+          pinCount: message.pinCount ?? 0,
+          defaultCollectionDescription: message.defaultCollectionDescription ?? '',
+        });
+      })();
+      return false;
     }
   });
 });

@@ -19,7 +19,7 @@ export default defineContentScript({
     const ui = await createShadowRootUi(ctx, {
       name: 'currents-clipper',
       position: 'overlay',
-      anchor: 'body',
+      anchor: 'html',
       inheritStyles: true,
       onMount(container) {
         return mount(App, { target: container });
@@ -36,6 +36,7 @@ export default defineContentScript({
     host.style.setProperty('left', '0', 'important');
     host.style.setProperty('width', '0', 'important');
     host.style.setProperty('height', '0', 'important');
+    host.style.setProperty('z-index', '2147483647', 'important');
     host.style.setProperty('margin', '0', 'important');
     host.style.setProperty('padding', '0', 'important');
     host.style.setProperty('border', '0', 'important');
@@ -43,13 +44,16 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message) => {
       if (message.type !== 'SHOW_CLIPPER') return;
       showClipper({
-        imgUrl: message.imgUrl,
-        originUrl: message.originUrl,
-        pageTitle: message.pageTitle,
+        mode: message.mode ?? 'single',
+        imgUrl: message.imgUrl ?? '',
+        originUrl: message.originUrl ?? '',
+        pageTitle: message.pageTitle ?? '',
         collections: message.collections,
         authState: message.authState,
         userHandle: message.userHandle,
         siteHints: extractSiteHints(),
+        pinCount: message.pinCount ?? 0,
+        defaultCollectionDescription: message.defaultCollectionDescription ?? '',
       });
     });
 
