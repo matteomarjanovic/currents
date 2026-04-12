@@ -69,6 +69,10 @@
 				type="search"
 				placeholder="Search images..."
 				bind:value={query}
+				autocorrect="off"
+				autocapitalize="off"
+				autocomplete="off"
+				spellcheck={false}
 				class="{landing
 					? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
 					: ''} h-11 rounded-full"
@@ -137,6 +141,10 @@
 					placeholder="Search images..."
 					bind:value={query}
 					autofocus
+					autocorrect="off"
+					autocapitalize="off"
+					autocomplete="off"
+					spellcheck={false}
 					class="{landing
 						? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
 						: ''} h-11 rounded-full"
