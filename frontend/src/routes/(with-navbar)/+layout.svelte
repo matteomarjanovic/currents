@@ -8,6 +8,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
+	import SaveDetail from '$lib/components/save-detail.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
 
@@ -38,6 +39,16 @@
 			goto('/login');
 		}
 	});
+
+	$effect(() => {
+		if (page.state.save) {
+			const prev = document.body.style.overflow;
+			document.body.style.overflow = 'hidden';
+			return () => {
+				document.body.style.overflow = prev;
+			};
+		}
+	});
 </script>
 
 <ModeWatcher />
@@ -54,6 +65,12 @@
 			{@render children()}
 		</main>
 	{/if}
+{/if}
+
+{#if page.state.save}
+	<div class="fixed inset-0 z-50 overflow-y-auto bg-background">
+		<SaveDetail save={page.state.save} />
+	</div>
 {/if}
 
 <LoginDialog />

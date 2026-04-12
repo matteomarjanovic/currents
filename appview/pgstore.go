@@ -474,6 +474,51 @@ type SaveRow struct {
 	DominantColors     json.RawMessage // nil when visual identity not yet resolved
 }
 
+func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerDID string) ([]SaveRow, error) {
+	query := `
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(ros.pds_blob_cid, ''),
+			s.created_at,
+			CASE WHEN $2 != '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $2 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			s.width,
+			s.height,
+			s.dominant_colors
+		FROM save s
+		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
+		WHERE s.uri = ANY($1)
+	`
+	rows, err := m.pool.Query(ctx, query, saveURIs, viewerDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []SaveRow
+	for rows.Next() {
+		var row SaveRow
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID string, limit int, cursor string) ([]SaveRow, string, error) {
 	var args []any
 	args = append(args, collectionURI)

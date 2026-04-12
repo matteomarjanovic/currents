@@ -190,6 +190,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.getCollections",
 		srv.AuthValidator.Middleware(srv.XRPCGetCollections, true))
 	http.HandleFunc("GET /xrpc/is.currents.feed.getActorCollections", srv.XRPCGetActorCollections)
+	http.HandleFunc("GET /xrpc/is.currents.feed.getCollectionSaves", srv.XRPCGetCollectionSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getSaves", srv.XRPCGetSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchSaves", srv.XRPCSearchSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
