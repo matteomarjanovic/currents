@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__svelte__svelte-autofixer",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:shadcn-svelte.com)"
     ]
   },
   "enableAllProjectMcpServers": true,
