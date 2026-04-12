@@ -20,6 +20,7 @@ export default defineContentScript({
       name: 'currents-clipper',
       position: 'overlay',
       anchor: 'body',
+      inheritStyles: true,
       onMount(container) {
         return mount(App, { target: container });
       },
@@ -29,6 +30,15 @@ export default defineContentScript({
     });
 
     ui.mount();
+    const host = ui.shadowHost as HTMLElement;
+    host.style.setProperty('position', 'fixed', 'important');
+    host.style.setProperty('top', '0', 'important');
+    host.style.setProperty('left', '0', 'important');
+    host.style.setProperty('width', '0', 'important');
+    host.style.setProperty('height', '0', 'important');
+    host.style.setProperty('margin', '0', 'important');
+    host.style.setProperty('padding', '0', 'important');
+    host.style.setProperty('border', '0', 'important');
 
     browser.runtime.onMessage.addListener((message) => {
       if (message.type !== 'SHOW_CLIPPER') return;
