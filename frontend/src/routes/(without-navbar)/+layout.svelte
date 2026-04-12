@@ -39,38 +39,73 @@
 		}
 	});
 
+	$effect(() => {
+		if (page.state.save) {
+			const y = window.scrollY;
+			const body = document.body;
+			const prev = {
+				position: body.style.position,
+				top: body.style.top,
+				left: body.style.left,
+				right: body.style.right,
+				width: body.style.width,
+				overflow: body.style.overflow
+			};
+			body.style.position = 'fixed';
+			body.style.top = `-${y}px`;
+			body.style.left = '0';
+			body.style.right = '0';
+			body.style.width = '100%';
+			body.style.overflow = 'hidden';
+			return () => {
+				body.style.position = prev.position;
+				body.style.top = prev.top;
+				body.style.left = prev.left;
+				body.style.right = prev.right;
+				body.style.width = prev.width;
+				body.style.overflow = prev.overflow;
+				window.scrollTo(0, y);
+			};
+		}
+	});
+
 	let overlayEl: HTMLDivElement | undefined = $state();
 	const overlayScroll = new Map<string, number>();
-	let prevOverlayUri: string | undefined;
-	let poppingBack = false;
+	let trackedUri: string | undefined;
+	let restoring = false;
 
 	$effect(() => {
-		const onPop = () => {
-			poppingBack = true;
+		if (!overlayEl) return;
+		const el = overlayEl;
+		const onScroll = () => {
+			if (!restoring && trackedUri) overlayScroll.set(trackedUri, el.scrollTop);
 		};
-		window.addEventListener('popstate', onPop);
-		return () => window.removeEventListener('popstate', onPop);
+		el.addEventListener('scroll', onScroll, { passive: true });
+		return () => el.removeEventListener('scroll', onScroll);
 	});
 
 	$effect(() => {
 		const uri = page.state.save?.uri as string | undefined;
-		if (!overlayEl) {
-			prevOverlayUri = uri;
-			poppingBack = false;
-			return;
-		}
-		if (prevOverlayUri && prevOverlayUri !== uri) {
-			if (poppingBack) {
-				overlayScroll.delete(prevOverlayUri);
-			} else {
-				overlayScroll.set(prevOverlayUri, overlayEl.scrollTop);
+		trackedUri = uri;
+		if (!overlayEl || !uri) return;
+		const el = overlayEl;
+		const target = overlayScroll.get(uri) ?? 0;
+		restoring = true;
+		el.scrollTop = target;
+		const start = performance.now();
+		const tick = () => {
+			if (!el.isConnected || trackedUri !== uri) {
+				restoring = false;
+				return;
 			}
-		}
-		if (uri) {
-			overlayEl.scrollTop = overlayScroll.get(uri) ?? 0;
-		}
-		prevOverlayUri = uri;
-		poppingBack = false;
+			if (el.scrollTop < target - 1) el.scrollTop = target;
+			if (el.scrollTop < target - 1 && performance.now() - start < 3000) {
+				requestAnimationFrame(tick);
+			} else {
+				restoring = false;
+			}
+		};
+		requestAnimationFrame(tick);
 	});
 </script>
 
