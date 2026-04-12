@@ -18,7 +18,7 @@ export default defineContentScript({
   async main(ctx) {
     const ui = await createShadowRootUi(ctx, {
       name: 'currents-clipper',
-      position: 'inline',
+      position: 'overlay',
       anchor: 'body',
       onMount(container) {
         return mount(App, { target: container });
