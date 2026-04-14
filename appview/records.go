@@ -16,6 +16,7 @@ import (
 	comatproto "github.com/bluesky-social/indigo/api/agnostic"
 	_ "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/atproto/atclient"
+	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"golang.org/x/image/draw"
@@ -142,6 +143,53 @@ func resolveStrongRef(ctx context.Context, c *atclient.APIClient, atURI string) 
 		cid = *out.Cid
 	}
 	return map[string]any{"uri": atURI, "cid": cid}, nil
+}
+
+// resolveStrongRefPublic resolves an AT-URI to a strong ref via an
+// unauthenticated getRecord call to the record author's PDS. Use when the
+// record being referenced is not owned by the session user.
+func resolveStrongRefPublic(ctx context.Context, store *PgStore, dir identity.Directory, atURI string) (map[string]any, error) {
+	parsed, err := syntax.ParseATURI(atURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid AT-URI: %w", err)
+	}
+	authorDID := parsed.Authority().String()
+
+	pdsEndpoint, err := store.GetUserPDSEndpoint(ctx, authorDID)
+	if err != nil || pdsEndpoint == "" {
+		ident, err := dir.LookupDID(ctx, syntax.DID(authorDID))
+		if err != nil {
+			return nil, fmt.Errorf("resolving DID %s: %w", authorDID, err)
+		}
+		pdsEndpoint = ident.PDSEndpoint()
+		if pdsEndpoint == "" {
+			return nil, fmt.Errorf("no PDS endpoint for DID %s", authorDID)
+		}
+	}
+
+	url := fmt.Sprintf("%s/xrpc/com.atproto.repo.getRecord?repo=%s&collection=%s&rkey=%s",
+		pdsEndpoint, authorDID, parsed.Collection().String(), parsed.RecordKey().String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := blobHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getRecord: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("getRecord returned %d: %s", resp.StatusCode, string(body))
+	}
+	var out struct {
+		URI string `json:"uri"`
+		CID string `json:"cid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding getRecord: %w", err)
+	}
+	return map[string]any{"uri": atURI, "cid": out.CID}, nil
 }
 
 // --- Collections ---
@@ -770,7 +818,7 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
 		return
 	}
-	resaveRef, err := resolveStrongRef(r.Context(), c, body.SaveURI)
+	resaveRef, err := resolveStrongRefPublic(r.Context(), s.Store, s.Dir, body.SaveURI)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("resolving save: %s", err), http.StatusBadRequest)
 		return
