@@ -1,0 +1,2 @@
+0 2 1 * *  python /app/train_umap.py
+0 3 * * *  python /app/run_clustering.py

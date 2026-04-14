@@ -762,13 +762,18 @@ func (m *PgStore) FindNearestVI(ctx context.Context, embedding []float32, thresh
 
 // CreateVI inserts a new visual_identity row and returns its UUID.
 // canonical_save_uri is set separately via SetVICanonicalSave after the save is upserted.
-func (m *PgStore) CreateVI(ctx context.Context, blobDID, blobCID string, embedding []float32) (string, error) {
+// umapEmbedding may be nil when the inference server has no UMAP model loaded.
+func (m *PgStore) CreateVI(ctx context.Context, blobDID, blobCID string, embedding []float32, umapEmbedding []float32) (string, error) {
 	var id string
+	var umapVec interface{}
+	if len(umapEmbedding) > 0 {
+		umapVec = pgvector.NewVector(umapEmbedding)
+	}
 	err := m.pool.QueryRow(ctx, `
-		INSERT INTO visual_identity (canonical_blob_did, canonical_blob_cid, embedding)
-		VALUES ($1, $2, $3)
+		INSERT INTO visual_identity (canonical_blob_did, canonical_blob_cid, embedding, umap_embedding)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id
-	`, blobDID, blobCID, pgvector.NewVector(embedding)).Scan(&id)
+	`, blobDID, blobCID, pgvector.NewVector(embedding), umapVec).Scan(&id)
 	return id, err
 }
 

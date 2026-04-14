@@ -5,3 +5,6 @@ torchvision
 transformers
 Pillow
 python-multipart
+umap-learn
+joblib
+numpy

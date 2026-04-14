@@ -1,0 +1,7 @@
+psycopg2-binary
+pgvector
+umap-learn
+hdbscan
+numpy
+scikit-learn
+joblib
