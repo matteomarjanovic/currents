@@ -21,7 +21,7 @@
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
-	import LogoMerged from '$lib/assets/logo_merged.svelte';
+	import Logo from '$lib/assets/logo.svelte';
 
 	let {
 		user,
@@ -64,7 +64,7 @@
 		<a
 			transition:fade={{ duration: 250, easing: cubicOut }}
 			href={resolve('/')}
-			class="h-5 text-lg font-semibold text-foreground"><LogoMerged /></a
+			class="h-5 text-lg font-semibold text-foreground"><Logo /></a
 		>
 	{/if}
 
