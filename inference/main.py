@@ -66,6 +66,8 @@ def _embed_image(image: Image.Image) -> tuple[list[float], list[float] | None]:
     ).to(DEVICE)
     with torch.no_grad():
         features = model.get_image_features(**inputs)
+    if hasattr(features, "pooler_output"):
+        features = features.pooler_output
     embedding = features.cpu().float().numpy()[0]  # shape (768,)
 
     with _umap_lock:
@@ -91,6 +93,8 @@ def _embed_texts(texts: list[str]) -> list[list[float]]:
     ).to(DEVICE)
     with torch.no_grad():
         features = model.get_text_features(**inputs)
+    if hasattr(features, "pooler_output"):
+        features = features.pooler_output
     return features.cpu().float().numpy().tolist()
 
 # ── Text batch worker ─────────────────────────────────────────────────────────

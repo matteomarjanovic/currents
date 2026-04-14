@@ -129,8 +129,6 @@ def _write_clusters(vi_ids, X, labels, unique_labels):
     today = date.today()
     conn  = get_conn()
     try:
-        conn.autocommit = False
-
         # Build cluster data before touching the DB.
         # cluster_data: list of (medoid_vi_id, size, list_of_vi_ids)
         cluster_data = []

@@ -4,7 +4,9 @@
       "mcp__svelte__svelte-autofixer",
       "Bash(ls:*)",
       "WebFetch(domain:shadcn-svelte.com)",
-      "WebFetch(domain:wxt.dev)"
+      "WebFetch(domain:wxt.dev)",
+      "Bash(docker compose logs:*)",
+      "Bash(wait)"
     ]
   },
   "enableAllProjectMcpServers": true,
