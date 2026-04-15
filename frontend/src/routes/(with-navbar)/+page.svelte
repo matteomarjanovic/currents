@@ -1,12 +1,6 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { auth } from '$lib/stores/auth.svelte';
 	import LandingPage from '$lib/components/landing-page.svelte';
-
-	$effect(() => {
-		if (auth.checked && auth.user) goto('/explore');
-	});
 
 	onMount(() => {
 		const wasDark = document.documentElement.classList.contains('dark');
