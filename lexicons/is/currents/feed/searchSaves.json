@@ -30,6 +30,11 @@
           },
           "cursor": {
             "type": "string"
+          },
+          "excludeSaved": {
+            "type": "boolean",
+            "description": "If true and the request is authenticated, exclude saves the viewer has already saved (matched by blob CID). Ignored for unauthenticated requests.",
+            "default": false
           }
         }
       },

@@ -813,9 +813,19 @@ func (m *PgStore) MaybePromoteCanonical(ctx context.Context, viID, blobDID, blob
 
 // SearchSavesByEmbedding returns saves whose visual identity is nearest to the given embedding,
 // ordered by cosine distance. Offset-based pagination; pass offset=0 for the first page.
-func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float32, viewerDID string, limit, offset int) ([]SaveRow, error) {
+func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
 	vec := pgvector.NewVector(embedding)
-	rows, err := m.pool.Query(ctx, `
+	applyExclude := excludeViewerSaves && viewerDID != ""
+	excludeClause := ""
+	fetchLimit := limit
+	if applyExclude {
+		excludeClause = `AND NOT EXISTS (
+			SELECT 1 FROM save v
+			WHERE v.author_did = $3 AND v.pds_blob_cid = s.pds_blob_cid
+		)`
+		fetchLimit = limit * 2
+	}
+	query := `
 		SELECT
 			s.uri,
 			s.pds_blob_cid,
@@ -838,10 +848,11 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
-		WHERE vi.embedding IS NOT NULL
+		WHERE vi.embedding IS NOT NULL ` + excludeClause + `
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
-	`, vec, limit, viewerDID, offset)
+	`
+	rows, err := m.pool.Query(ctx, query, vec, fetchLimit, viewerDID, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -854,7 +865,13 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 		}
 		result = append(result, row)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if applyExclude && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
 }
 
 // GetRelatedSavesByURI returns saves whose visual-identity embedding is closest
@@ -987,8 +1004,15 @@ func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID stri
 // time-decayed popularity score: save_count * exp(-0.01 * age_in_days).
 // No minimum save_count threshold — all images with a visual identity appear,
 // with popular recent images ranked highest.
-func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, limit, offset int) ([]SaveRow, error) {
-	rows, err := m.pool.Query(ctx, `
+func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
+	excludeClause := ""
+	if excludeViewerSaves && viewerDID != "" {
+		excludeClause = `WHERE NOT EXISTS (
+			SELECT 1 FROM save v
+			WHERE v.author_did = $1 AND v.pds_blob_cid = s.pds_blob_cid
+		)`
+	}
+	query := `
 		SELECT
 			s.uri,
 			s.pds_blob_cid,
@@ -1011,9 +1035,11 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, limi
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
+		` + excludeClause + `
 		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
 		LIMIT $2 OFFSET $3
-	`, viewerDID, limit, offset)
+	`
+	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
