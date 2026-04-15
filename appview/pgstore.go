@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,16 +110,16 @@ func (s *PgStore) migrate(_ context.Context) error {
 }
 
 type UserRecord struct {
-	DID          string
-	Handle       string
-	DisplayName  string
-	Description  string
-	Pronouns     string
-	Website      string
-	Avatar       string
-	Banner       string
-	CreatedAt    time.Time
-	PDSEndpoint  string
+	DID         string
+	Handle      string
+	DisplayName string
+	Description string
+	Pronouns    string
+	Website     string
+	Avatar      string
+	Banner      string
+	CreatedAt   time.Time
+	PDSEndpoint string
 }
 
 func (m *PgStore) CreateUser(ctx context.Context, u UserRecord) error {
@@ -466,7 +467,7 @@ type SaveRow struct {
 	AttributionLicense string
 	AttributionCredit  string
 	ResaveOfURI        string
-	ResaveOfCID        string          // pds_blob_cid of the referenced save; empty if not in DB
+	ResaveOfCID        string // pds_blob_cid of the referenced save; empty if not in DB
 	CreatedAt          *time.Time
 	ViewerSaves        json.RawMessage // null when unauthenticated; [{collectionUri,saveUri},...] when authenticated
 	Width              *int
@@ -825,6 +826,7 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 		)`
 		fetchLimit = limit * 2
 	}
+	efSearch := searchSavesEFSearch(offset, fetchLimit)
 	query := `
 		SELECT
 			s.uri,
@@ -852,7 +854,17 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
 	`
-	rows, err := m.pool.Query(ctx, query, vec, fetchLimit, viewerDID, offset)
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.ef_search', $1, true)`, strconv.Itoa(efSearch)); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.Query(ctx, query, vec, fetchLimit, viewerDID, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -868,10 +880,22 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	rows.Close()
 	if applyExclude && len(result) > limit {
 		result = result[:limit]
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+func searchSavesEFSearch(offset, fetchLimit int) int {
+	depth := offset + fetchLimit
+	if depth < 100 {
+		return 100
+	}
+	return depth
 }
 
 // GetRelatedSavesByURI returns saves whose visual-identity embedding is closest
@@ -930,7 +954,6 @@ func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDI
 
 // ── Feed methods ─────────────────────────────────────────────────────────────
 
-
 // GetCollectionEmbeddings returns all visual-identity embeddings for saves in a collection.
 // Used to compute the collection's canonical (medoid) embedding.
 func (m *PgStore) GetCollectionEmbeddings(ctx context.Context, collectionURI string) ([][]float32, error) {
@@ -974,20 +997,28 @@ type CollectionImportance struct {
 // filtered to those that have a precomputed canonical embedding.
 func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID string, topN int) ([]CollectionImportance, error) {
 	rows, err := m.pool.Query(ctx, `
-		SELECT c.uri, c.canonical_embedding
-		FROM save s
-		JOIN collection c ON c.uri = s.collection_uri
-		WHERE s.author_did = $1
-		  AND s.created_at IS NOT NULL
-		  AND c.canonical_embedding IS NOT NULL
-		GROUP BY c.uri, c.canonical_embedding
-		ORDER BY SUM(EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
+		WITH ranked AS (
+			SELECT
+				c.uri,
+				c.canonical_embedding,
+				SUM(EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) AS score
+			FROM save s
+			JOIN collection c ON c.uri = s.collection_uri
+			WHERE s.author_did = $1
+			  AND s.created_at IS NOT NULL
+			  AND c.canonical_embedding IS NOT NULL
+			GROUP BY c.uri, c.canonical_embedding
+		)
+		SELECT uri, canonical_embedding
+		FROM ranked
+		ORDER BY score DESC, uri ASC
 		LIMIT $2
 	`, viewerDID, topN)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var result []CollectionImportance
 	for rows.Next() {
 		var uri string
@@ -998,6 +1029,46 @@ func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID stri
 		result = append(result, CollectionImportance{URI: uri, Embedding: vec.Slice()})
 	}
 	return result, rows.Err()
+}
+
+func (m *PgStore) GetCollectionsByURIs(ctx context.Context, uris []string) ([]CollectionImportance, error) {
+	if len(uris) == 0 {
+		return nil, nil
+	}
+
+	rows, err := m.pool.Query(ctx, `
+		SELECT uri, canonical_embedding
+		FROM collection
+		WHERE uri = ANY($1)
+		  AND canonical_embedding IS NOT NULL
+	`, uris)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byURI := make(map[string][]float32, len(uris))
+	for rows.Next() {
+		var uri string
+		var vec pgvector.Vector
+		if err := rows.Scan(&uri, &vec); err != nil {
+			return nil, err
+		}
+		byURI[uri] = vec.Slice()
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]CollectionImportance, 0, len(uris))
+	for _, uri := range uris {
+		embedding, ok := byURI[uri]
+		if !ok {
+			continue
+		}
+		result = append(result, CollectionImportance{URI: uri, Embedding: embedding})
+	}
+	return result, nil
 }
 
 // GetGlobalFeedSaves returns saves from across the network, ranked by a

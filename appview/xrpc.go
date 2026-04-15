@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -314,29 +313,29 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
-		URI         string           `json:"uri"`
-		BlobCID     string           `json:"blobCid"`
-		Author      profileView      `json:"author"`
-		ImageURL    string           `json:"imageUrl"`
-		Text        string           `json:"text,omitempty"`
-		OriginURL   string           `json:"originUrl,omitempty"`
-		Attribution *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt   string           `json:"createdAt"`
-		Viewer      *saveViewerState `json:"viewer,omitempty"`
-		Width       int              `json:"width,omitempty"`
-		Height      int              `json:"height,omitempty"`
+		URI           string           `json:"uri"`
+		BlobCID       string           `json:"blobCid"`
+		Author        profileView      `json:"author"`
+		ImageURL      string           `json:"imageUrl"`
+		Text          string           `json:"text,omitempty"`
+		OriginURL     string           `json:"originUrl,omitempty"`
+		Attribution   *saveAttribution `json:"attribution,omitempty"`
+		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
+		CreatedAt     string           `json:"createdAt"`
+		Viewer        *saveViewerState `json:"viewer,omitempty"`
+		Width         int              `json:"width,omitempty"`
+		Height        int              `json:"height,omitempty"`
 		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
 		sv := saveView{
-			URI:      row.URI,
-			BlobCID:  row.BlobCID,
-			Author:   author,
-			ImageURL: s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
-			Text:     row.Text,
+			URI:       row.URI,
+			BlobCID:   row.BlobCID,
+			Author:    author,
+			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
+			Text:      row.Text,
 			OriginURL: row.OriginURL,
 		}
 		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
@@ -461,18 +460,18 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
-		URI         string           `json:"uri"`
-		BlobCID     string           `json:"blobCid"`
-		Author      profileView      `json:"author"`
-		ImageURL    string           `json:"imageUrl"`
-		Text        string           `json:"text,omitempty"`
-		OriginURL   string           `json:"originUrl,omitempty"`
-		Attribution *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt   string           `json:"createdAt"`
-		Viewer      *saveViewerState `json:"viewer,omitempty"`
-		Width       int              `json:"width,omitempty"`
-		Height      int              `json:"height,omitempty"`
+		URI           string           `json:"uri"`
+		BlobCID       string           `json:"blobCid"`
+		Author        profileView      `json:"author"`
+		ImageURL      string           `json:"imageUrl"`
+		Text          string           `json:"text,omitempty"`
+		OriginURL     string           `json:"originUrl,omitempty"`
+		Attribution   *saveAttribution `json:"attribution,omitempty"`
+		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
+		CreatedAt     string           `json:"createdAt"`
+		Viewer        *saveViewerState `json:"viewer,omitempty"`
+		Width         int              `json:"width,omitempty"`
+		Height        int              `json:"height,omitempty"`
 		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
@@ -603,18 +602,18 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
-		URI         string           `json:"uri"`
-		BlobCID     string           `json:"blobCid"`
-		Author      profileView      `json:"author"`
-		ImageURL    string           `json:"imageUrl"`
-		Text        string           `json:"text,omitempty"`
-		OriginURL   string           `json:"originUrl,omitempty"`
-		Attribution *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt   string           `json:"createdAt"`
-		Viewer      *saveViewerState `json:"viewer,omitempty"`
-		Width       int              `json:"width,omitempty"`
-		Height      int              `json:"height,omitempty"`
+		URI           string           `json:"uri"`
+		BlobCID       string           `json:"blobCid"`
+		Author        profileView      `json:"author"`
+		ImageURL      string           `json:"imageUrl"`
+		Text          string           `json:"text,omitempty"`
+		OriginURL     string           `json:"originUrl,omitempty"`
+		Attribution   *saveAttribution `json:"attribution,omitempty"`
+		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
+		CreatedAt     string           `json:"createdAt"`
+		Viewer        *saveViewerState `json:"viewer,omitempty"`
+		Width         int              `json:"width,omitempty"`
+		Height        int              `json:"height,omitempty"`
 		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
@@ -686,12 +685,10 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	offset := 0
+	cursorState := feedCursor{Version: 1}
 	if c := r.URL.Query().Get("cursor"); c != "" {
-		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
-			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
-				offset = n
-			}
+		if decoded, err := decodeFeedCursor(c); err == nil {
+			cursorState = decoded
 		}
 	}
 
@@ -706,123 +703,159 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 	if viewerDID != nil {
 		viewerStr = viewerDID.String()
 	} else {
-		alpha = 0 // unauthenticated always gets the global feed
+		alpha = 0
 	}
 
 	excludeSaved := r.URL.Query().Get("excludeSaved") == "true" && viewerDID != nil
 
 	var saveRows []SaveRow
-	hasMore := false
+	nextCursor := ""
 
 	if alpha > 0 {
-		cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, 5)
-		if err != nil {
-			slog.Error("GetCollectionsByImportance", "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+		strictPersonalized := alpha >= 1.0
+		fetchLimit := feedPoolFetchLimit(limit)
+
+		offsets := make(map[string]int, len(cursorState.Collections))
+		for _, col := range cursorState.Collections {
+			offsets[col.URI] = col.Offset
 		}
 
-		type pool struct {
-			weight float64
-			items  []SaveRow
+		personalizedPools := make([]*feedCandidatePool, 0, feedPersonalizedPoolCount)
+		appendPersonalizedPool := func(col CollectionImportance, offset int) error {
+			candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), col.Embedding, viewerStr, excludeSaved, fetchLimit+1, offset)
+			if err != nil {
+				return err
+			}
+			more := len(candidates) > fetchLimit
+			if more {
+				candidates = candidates[:fetchLimit]
+			}
+			if len(candidates) == 0 {
+				return nil
+			}
+			personalizedPools = append(personalizedPools, &feedCandidatePool{
+				URI:    col.URI,
+				Offset: offset,
+				Items:  candidates,
+				More:   more,
+			})
+			return nil
 		}
-		var pools []pool
 
-		globalWeight := 1.0 - alpha
-		if len(cols) == 0 {
-			globalWeight = 1.0
-		}
-
-		if len(cols) > 0 {
-			colWeight := alpha / float64(len(cols))
+		if len(cursorState.Collections) > 0 {
+			uris := make([]string, 0, len(cursorState.Collections))
+			for _, col := range cursorState.Collections {
+				uris = append(uris, col.URI)
+			}
+			cols, err := s.Store.GetCollectionsByURIs(r.Context(), uris)
+			if err != nil {
+				slog.Error("GetCollectionsByURIs", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
 			for _, col := range cols {
-				candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), col.Embedding, viewerStr, excludeSaved, limit, offset)
-				if err != nil {
+				if err := appendPersonalizedPool(col, offsets[col.URI]); err != nil {
 					slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
 					continue
 				}
-				if len(candidates) == limit {
-					hasMore = true
-				}
-				pools = append(pools, pool{weight: colWeight, items: candidates})
 			}
 		}
 
-		// Always fetch global — used as reserve tail when collection pools dry up,
-		// even if globalWeight == 0 (alpha == 1).
-		global, err := s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, limit, offset)
-		if err != nil {
-			slog.Error("GetGlobalFeedSaves", "err", err)
-		} else {
-			if len(global) == limit {
-				hasMore = true
+		if len(cursorState.Collections) == 0 {
+			cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedPersonalizedPoolCount)
+			if err != nil {
+				slog.Error("GetCollectionsByImportance", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
 			}
-			pools = append(pools, pool{weight: globalWeight, items: global})
-		}
-
-		seen := map[string]bool{}
-		for len(saveRows) < limit {
-			totalW := 0.0
-			for _, p := range pools {
-				if len(p.items) > 0 {
-					totalW += p.weight
-				}
-			}
-			if totalW == 0 {
-				break
-			}
-			pick := rand.Float64() * totalW
-			acc := 0.0
-			idx := -1
-			for i, p := range pools {
-				if len(p.items) == 0 {
+			for _, col := range cols {
+				if err := appendPersonalizedPool(col, 0); err != nil {
+					slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
 					continue
 				}
-				acc += p.weight
-				if pick <= acc {
-					idx = i
-					break
-				}
-			}
-			if idx < 0 {
-				break
-			}
-			c := pools[idx].items[0]
-			pools[idx].items = pools[idx].items[1:]
-			if !seen[c.URI] {
-				saveRows = append(saveRows, c)
-				seen[c.URI] = true
 			}
 		}
 
-		// Tail fill: if the weighted draw couldn't fill `limit` (e.g. alpha=1
-		// drained all collection pools), drain remaining pool items regardless
-		// of weight so the feed keeps flowing.
-		for i := range pools {
-			for _, c := range pools[i].items {
-				if len(saveRows) >= limit {
-					break
-				}
-				if !seen[c.URI] {
-					saveRows = append(saveRows, c)
-					seen[c.URI] = true
-				}
+		if len(personalizedPools) > 0 {
+			colWeight := alpha / float64(len(personalizedPools))
+			for _, pool := range personalizedPools {
+				pool.Weight = colWeight
 			}
-			if len(saveRows) >= limit {
-				break
+		}
+
+		pools := make([]*feedCandidatePool, 0, len(personalizedPools)+1)
+		pools = append(pools, personalizedPools...)
+
+		globalWeight := 1.0 - alpha
+		useGlobal := globalWeight > 0
+		if len(personalizedPools) == 0 && !strictPersonalized {
+			globalWeight = 1.0
+			useGlobal = true
+		}
+
+		if useGlobal {
+			global, err := s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, fetchLimit+1, cursorState.GlobalOffset)
+			if err != nil {
+				slog.Error("GetGlobalFeedSaves", "err", err)
+			} else {
+				more := len(global) > fetchLimit
+				if more {
+					global = global[:fetchLimit]
+				}
+				pools = append(pools, &feedCandidatePool{
+					Weight: globalWeight,
+					Offset: cursorState.GlobalOffset,
+					Items:  global,
+					More:   more,
+				})
+			}
+		}
+
+		saveRows = buildFeedPage(nil, pools, limit)
+
+		nextState := feedCursor{Version: 1}
+		for _, pool := range pools {
+			if !pool.hasMoreAfterPage() {
+				continue
+			}
+			if pool.URI == "" {
+				nextState.GlobalOffset = pool.nextOffset()
+				continue
+			}
+			nextState.Collections = append(nextState.Collections, feedCursorCollection{URI: pool.URI, Offset: pool.nextOffset()})
+		}
+		if len(nextState.Collections) > 0 || nextState.GlobalOffset > 0 {
+			nextCursor, err = encodeFeedCursor(nextState)
+			if err != nil {
+				slog.Error("encodeFeedCursor", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
 			}
 		}
 	} else {
-		saveRows, err = s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, limit, offset)
+		fetchLimit := limit + 1
+		pool := &feedCandidatePool{Weight: 1, Offset: cursorState.GlobalOffset}
+		pool.Items, err = s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, fetchLimit, cursorState.GlobalOffset)
 		if err != nil {
 			slog.Error("GetGlobalFeedSaves", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		hasMore = len(saveRows) == limit
+		if len(pool.Items) > limit {
+			pool.More = true
+			pool.Items = pool.Items[:limit]
+		}
+		saveRows = buildFeedPage(nil, []*feedCandidatePool{pool}, limit)
+		if pool.hasMoreAfterPage() {
+			nextCursor, err = encodeFeedCursor(feedCursor{Version: 1, GlobalOffset: pool.nextOffset()})
+			if err != nil {
+				slog.Error("encodeFeedCursor", "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 
-	// Hydrate author profiles (deduplicated by DID)
 	type profileView struct {
 		DID         string `json:"did"`
 		Handle      string `json:"handle"`
@@ -855,18 +888,18 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
-		URI         string           `json:"uri"`
-		BlobCID     string           `json:"blobCid"`
-		Author      profileView      `json:"author"`
-		ImageURL    string           `json:"imageUrl"`
-		Text        string           `json:"text,omitempty"`
-		OriginURL   string           `json:"originUrl,omitempty"`
-		Attribution *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt   string           `json:"createdAt"`
-		Viewer      *saveViewerState `json:"viewer,omitempty"`
-		Width       int              `json:"width,omitempty"`
-		Height      int              `json:"height,omitempty"`
+		URI           string           `json:"uri"`
+		BlobCID       string           `json:"blobCid"`
+		Author        profileView      `json:"author"`
+		ImageURL      string           `json:"imageUrl"`
+		Text          string           `json:"text,omitempty"`
+		OriginURL     string           `json:"originUrl,omitempty"`
+		Attribution   *saveAttribution `json:"attribution,omitempty"`
+		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
+		CreatedAt     string           `json:"createdAt"`
+		Viewer        *saveViewerState `json:"viewer,omitempty"`
+		Width         int              `json:"width,omitempty"`
+		Height        int              `json:"height,omitempty"`
 		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
@@ -907,11 +940,6 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
-	}
-
-	var nextCursor string
-	if hasMore {
-		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + limit)))
 	}
 
 	type response struct {
@@ -1048,18 +1076,18 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		Saves []viewerSave `json:"saves"`
 	}
 	type saveView struct {
-		URI         string           `json:"uri"`
-		BlobCID     string           `json:"blobCid"`
-		Author      profileView      `json:"author"`
-		ImageURL    string           `json:"imageUrl"`
-		Text        string           `json:"text,omitempty"`
-		OriginURL   string           `json:"originUrl,omitempty"`
-		Attribution *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt   string           `json:"createdAt"`
-		Viewer      *saveViewerState `json:"viewer,omitempty"`
-		Width       int              `json:"width,omitempty"`
-		Height      int              `json:"height,omitempty"`
+		URI           string           `json:"uri"`
+		BlobCID       string           `json:"blobCid"`
+		Author        profileView      `json:"author"`
+		ImageURL      string           `json:"imageUrl"`
+		Text          string           `json:"text,omitempty"`
+		OriginURL     string           `json:"originUrl,omitempty"`
+		Attribution   *saveAttribution `json:"attribution,omitempty"`
+		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
+		CreatedAt     string           `json:"createdAt"`
+		Viewer        *saveViewerState `json:"viewer,omitempty"`
+		Width         int              `json:"width,omitempty"`
+		Height        int              `json:"height,omitempty"`
 		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
