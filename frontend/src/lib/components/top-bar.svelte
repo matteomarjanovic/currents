@@ -187,6 +187,10 @@
 						<div class="font-normal text-muted-foreground">@{user.handle}</div>
 					</DropdownMenu.Label>
 					<DropdownMenu.Separator />
+					<DropdownMenu.Item onclick={() => goto(`/profile/${user.handle}`)}>
+						<UserIcon class="size-4" />
+						Profile
+					</DropdownMenu.Item>
 					<DropdownMenu.Item
 						onclick={() => {
 							window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;

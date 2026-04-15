@@ -1,7 +1,24 @@
 export interface CollectionView {
 	uri: string;
+	cid?: string;
 	name: string;
+	description?: string;
 	saveCount?: number;
+	previewImages?: string[];
+	createdAt?: string;
+	viewer?: { starred?: boolean };
+}
+
+export interface ActorProfileView {
+	did: string;
+	handle: string;
+	displayName?: string;
+	description?: string;
+	pronouns?: string;
+	website?: string;
+	avatar?: string;
+	banner?: string;
+	createdAt?: string;
 }
 
 export interface SaveView {

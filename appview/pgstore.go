@@ -139,15 +139,20 @@ type ActorRow struct {
 	DID         string
 	Handle      string
 	DisplayName string
+	Description string
+	Pronouns    string
+	Website     string
 	Avatar      string
+	Banner      string
+	CreatedAt   *time.Time
 }
 
 func (m *PgStore) GetActorByDID(ctx context.Context, did string) (*ActorRow, error) {
 	var row ActorRow
 	err := m.pool.QueryRow(ctx,
-		`SELECT did, COALESCE(handle, ''), COALESCE(display_name, ''), COALESCE(avatar, '') FROM "user" WHERE did = $1`,
+		`SELECT did, COALESCE(handle, ''), COALESCE(display_name, ''), COALESCE(description, ''), COALESCE(pronouns, ''), COALESCE(website, ''), COALESCE(avatar, ''), COALESCE(banner, ''), created_at FROM "user" WHERE did = $1`,
 		did,
-	).Scan(&row.DID, &row.Handle, &row.DisplayName, &row.Avatar)
+	).Scan(&row.DID, &row.Handle, &row.DisplayName, &row.Description, &row.Pronouns, &row.Website, &row.Avatar, &row.Banner, &row.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

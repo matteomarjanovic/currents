@@ -185,12 +185,71 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 	}
 
 	type response struct {
-		Actor       profileView      `json:"actor"`
 		Cursor      string           `json:"cursor,omitempty"`
 		Collections []collectionView `json:"collections"`
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response{Actor: actor, Cursor: nextCursor, Collections: views})
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Collections: views})
+}
+
+func (s *Server) XRPCGetActorProfile(w http.ResponseWriter, r *http.Request) {
+	actorParam := r.URL.Query().Get("actor")
+	if actorParam == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"actor is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var actorDID syntax.DID
+	var resolvedHandle string
+	if parsed, err := syntax.ParseDID(actorParam); err == nil {
+		actorDID = parsed
+	} else if handle, err := syntax.ParseHandle(actorParam); err == nil {
+		ident, err := s.Dir.LookupHandle(r.Context(), handle)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "NotFound", "message": "actor not found"})
+			return
+		}
+		actorDID = ident.DID
+		resolvedHandle = ident.Handle.String()
+	} else {
+		http.Error(w, `{"error":"InvalidRequest","message":"invalid actor"}`, http.StatusBadRequest)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Description string `json:"description,omitempty"`
+		Pronouns    string `json:"pronouns,omitempty"`
+		Website     string `json:"website,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+		Banner      string `json:"banner,omitempty"`
+		CreatedAt   string `json:"createdAt,omitempty"`
+	}
+
+	view := profileView{DID: actorDID.String(), Handle: resolvedHandle}
+	if row, err := s.Store.GetActorByDID(r.Context(), actorDID.String()); err == nil && row != nil {
+		view.Handle = row.Handle
+		view.DisplayName = row.DisplayName
+		view.Description = row.Description
+		view.Pronouns = row.Pronouns
+		view.Website = row.Website
+		view.Avatar = row.Avatar
+		view.Banner = row.Banner
+		if row.CreatedAt != nil {
+			view.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+	} else if view.Handle == "" {
+		if ident, err := s.Dir.LookupDID(r.Context(), actorDID); err == nil {
+			view.Handle = ident.Handle.String()
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(view)
 }
 
 func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) {

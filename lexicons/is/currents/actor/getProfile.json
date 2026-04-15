@@ -1,0 +1,38 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.actor.getProfile",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get detailed profile view of an actor.",
+      "parameters": {
+        "type": "params",
+        "required": ["actor"],
+        "properties": {
+          "actor": {
+            "type": "string",
+            "description": "Handle or DID of the actor."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["did", "handle"],
+          "properties": {
+            "did": { "type": "string", "format": "did" },
+            "handle": { "type": "string", "format": "handle" },
+            "displayName": { "type": "string" },
+            "description": { "type": "string" },
+            "pronouns": { "type": "string" },
+            "website": { "type": "string", "format": "uri" },
+            "avatar": { "type": "string", "format": "uri" },
+            "banner": { "type": "string", "format": "uri" },
+            "createdAt": { "type": "string", "format": "datetime" }
+          }
+        }
+      }
+    }
+  }
+}

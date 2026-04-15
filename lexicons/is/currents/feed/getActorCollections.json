@@ -29,13 +29,8 @@
         "encoding": "application/json",
         "schema": {
           "type": "object",
-          "required": ["actor", "collections"],
+          "required": ["collections"],
           "properties": {
-            "actor": {
-              "type": "ref",
-              "ref": "is.currents.actor.defs#profileView",
-              "description": "Hydrated profile of the actor whose collections are returned."
-            },
             "cursor": {
               "type": "string"
             },
