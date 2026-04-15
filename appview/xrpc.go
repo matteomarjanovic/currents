@@ -14,6 +14,19 @@ import (
 	"github.com/bluesky-social/indigo/atproto/syntax"
 )
 
+func firstHex(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var colors []struct {
+		Hex string `json:"hex"`
+	}
+	if json.Unmarshal(raw, &colors) != nil || len(colors) == 0 {
+		return ""
+	}
+	return colors[0].Hex
+}
+
 type saveAttribution struct {
 	URL     string `json:"url,omitempty"`
 	License string `json:"license,omitempty"`
@@ -313,7 +326,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -351,9 +364,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -462,7 +473,7 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -500,9 +511,7 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -606,7 +615,7 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -644,9 +653,7 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -860,7 +867,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -898,9 +905,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -1055,7 +1060,7 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	byURI := map[string]saveView{}
@@ -1093,9 +1098,7 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		byURI[row.URI] = sv
 	}
 

@@ -158,7 +158,7 @@
 			src={save.imageUrl}
 			alt={save.text ?? ''}
 			class="max-h-full max-w-full object-contain"
-			style={save.colors?.[0]?.hex ? `background-color: ${save.colors[0].hex}` : undefined}
+			style={save.dominantColor ? `background-color: ${save.dominantColor}` : undefined}
 		/>
 	</div>
 </div>
@@ -178,7 +178,7 @@
 		src={save.imageUrl}
 		alt={save.text ?? ''}
 		class="w-full rounded-lg"
-		style={`${save.width && save.height ? `aspect-ratio: ${save.width} / ${save.height};` : ''}${save.colors?.[0]?.hex ? ` background-color: ${save.colors[0].hex};` : ''}`}
+		style={`${save.width && save.height ? `aspect-ratio: ${save.width} / ${save.height};` : ''}${save.dominantColor ? ` background-color: ${save.dominantColor};` : ''}`}
 	/>
 </div>
 

@@ -22,5 +22,5 @@ export interface SaveView {
 	viewer?: { saves?: { collectionUri: string; saveUri: string }[] };
 	width?: number;
 	height?: number;
-	colors?: { hex: string; fraction: number }[];
+	dominantColor?: string;
 }
