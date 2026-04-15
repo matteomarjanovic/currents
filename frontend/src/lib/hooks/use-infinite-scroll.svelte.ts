@@ -16,7 +16,9 @@ export function useInfiniteScroll(fetchFn: (cursor?: string) => Promise<FetchRes
 		loading = true;
 		try {
 			const result = await fetchFn(cursor);
-			items = [...items, ...result.items];
+			const seen = new Set(items.map((i) => i.uri));
+			const fresh = result.items.filter((i) => !seen.has(i.uri));
+			items = [...items, ...fresh];
 			cursor = result.cursor;
 			hasMore = !!result.cursor;
 		} catch {

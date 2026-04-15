@@ -291,7 +291,7 @@ func handleSaveUpsert(
 	}
 
 	var (
-		embedding      []float32
+		inferResult    ImageEmbedding
 		dominantColors json.RawMessage
 		imgWidth       int
 		imgHeight      int
@@ -299,7 +299,7 @@ func handleSaveUpsert(
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		var err error
-		embedding, err = handler.Inference.EmbedImage(gctx, imageBytes, mimeType)
+		inferResult, err = handler.Inference.EmbedImage(gctx, imageBytes, mimeType)
 		return err
 	})
 	g.Go(func() error {
@@ -318,7 +318,7 @@ func handleSaveUpsert(
 	base.Height = &imgHeight
 	base.DominantColors = dominantColors
 
-	nearestVI, err := handler.Store.FindNearestVI(ctx, embedding, 0.02)
+	nearestVI, err := handler.Store.FindNearestVI(ctx, inferResult.Embedding, 0.02)
 	if err != nil {
 		slog.Warn("nearest VI search failed", "uri", atURI, "err", err)
 		return nil // save already persisted; backfill VI later
@@ -334,7 +334,7 @@ func handleSaveUpsert(
 	}
 
 	// Novel: create a new visual identity. This save IS the initial canonical.
-	newVI, err := handler.Store.CreateVI(ctx, ev.DID, pdsBlobCID, embedding)
+	newVI, err := handler.Store.CreateVI(ctx, ev.DID, pdsBlobCID, inferResult.Embedding, inferResult.UMAPEmbedding)
 	if err != nil {
 		slog.Warn("failed to create visual identity", "uri", atURI, "err", err)
 		return nil // save already persisted; backfill VI later

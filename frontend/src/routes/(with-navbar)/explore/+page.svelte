@@ -8,7 +8,8 @@
 	const feed = useInfiniteScroll(async (cursor) => {
 		const params = new URLSearchParams({
 			personalized: String(personalization.value),
-			limit: '50'
+			limit: '50',
+			excludeSaved: 'true'
 		});
 		if (cursor) params.set('cursor', cursor);
 

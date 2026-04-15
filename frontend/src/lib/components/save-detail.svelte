@@ -154,7 +154,12 @@
 		</div>
 	</div>
 	<div class="flex w-2/3 items-center justify-center p-6">
-		<img src={save.imageUrl} alt={save.text ?? ''} class="max-h-full max-w-full object-contain" />
+		<img
+			src={save.imageUrl}
+			alt={save.text ?? ''}
+			class="max-h-full max-w-full object-contain"
+			style={save.dominantColor ? `background-color: ${save.dominantColor}` : undefined}
+		/>
 	</div>
 </div>
 
@@ -173,7 +178,7 @@
 		src={save.imageUrl}
 		alt={save.text ?? ''}
 		class="w-full rounded-lg"
-		style={save.width && save.height ? `aspect-ratio: ${save.width} / ${save.height}` : undefined}
+		style={`${save.width && save.height ? `aspect-ratio: ${save.width} / ${save.height};` : ''}${save.dominantColor ? ` background-color: ${save.dominantColor};` : ''}`}
 	/>
 </div>
 

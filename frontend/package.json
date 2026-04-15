@@ -48,6 +48,7 @@
 	},
 	"dependencies": {
 		"@fontsource/italiana": "^5.2.8",
+		"@masonry-grid/svelte": "^1.1.1",
 		"mode-watcher": "^1.1.0"
 	}
 }

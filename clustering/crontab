@@ -1,0 +1,2 @@
+0 2 1 * *  /usr/local/bin/python /app/train_umap.py
+0 3 * * *  /usr/local/bin/python /app/run_clustering.py

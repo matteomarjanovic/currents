@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +13,19 @@ import (
 
 	"github.com/bluesky-social/indigo/atproto/syntax"
 )
+
+func firstHex(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var colors []struct {
+		Hex string `json:"hex"`
+	}
+	if json.Unmarshal(raw, &colors) != nil || len(colors) == 0 {
+		return ""
+	}
+	return colors[0].Hex
+}
 
 type saveAttribution struct {
 	URL     string `json:"url,omitempty"`
@@ -313,7 +326,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -351,9 +364,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -409,7 +420,8 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		viewerStr = viewerDID.String()
 	}
 
-	saveRows, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, limit, offset)
+	excludeSaved := r.URL.Query().Get("excludeSaved") == "true" && viewerDID != nil
+	saveRows, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, limit, offset)
 	if err != nil {
 		slog.Error("SearchSavesByEmbedding", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -461,7 +473,7 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -499,9 +511,7 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -605,7 +615,7 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -643,9 +653,7 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
@@ -701,57 +709,117 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		alpha = 0 // unauthenticated always gets the global feed
 	}
 
+	excludeSaved := r.URL.Query().Get("excludeSaved") == "true" && viewerDID != nil
+
 	var saveRows []SaveRow
+	hasMore := false
 
 	if alpha > 0 {
-		cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, 3)
+		cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, 5)
 		if err != nil {
 			slog.Error("GetCollectionsByImportance", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 
-		personalizedLimit := int(math.Round(float64(limit) * alpha))
-		explorationLimit := limit - personalizedLimit
+		type pool struct {
+			weight float64
+			items  []SaveRow
+		}
+		var pools []pool
 
-		seen := map[string]bool{}
+		globalWeight := 1.0 - alpha
+		if len(cols) == 0 {
+			globalWeight = 1.0
+		}
+
 		if len(cols) > 0 {
-			perCol := max(1, personalizedLimit/len(cols))
+			colWeight := alpha / float64(len(cols))
 			for _, col := range cols {
-				candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), col.Embedding, viewerStr, perCol, 0)
+				candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), col.Embedding, viewerStr, excludeSaved, limit, offset)
 				if err != nil {
 					slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
 					continue
 				}
-				for _, c := range candidates {
-					if !seen[c.URI] {
-						saveRows = append(saveRows, c)
-						seen[c.URI] = true
-					}
+				if len(candidates) == limit {
+					hasMore = true
 				}
+				pools = append(pools, pool{weight: colWeight, items: candidates})
 			}
 		}
 
-		if explorationLimit > 0 {
-			global, err := s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, explorationLimit, offset)
-			if err != nil {
-				slog.Error("GetGlobalFeedSaves", "err", err)
-			} else {
-				for _, g := range global {
-					if !seen[g.URI] {
-						saveRows = append(saveRows, g)
-						seen[g.URI] = true
-					}
+		// Always fetch global — used as reserve tail when collection pools dry up,
+		// even if globalWeight == 0 (alpha == 1).
+		global, err := s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, limit, offset)
+		if err != nil {
+			slog.Error("GetGlobalFeedSaves", "err", err)
+		} else {
+			if len(global) == limit {
+				hasMore = true
+			}
+			pools = append(pools, pool{weight: globalWeight, items: global})
+		}
+
+		seen := map[string]bool{}
+		for len(saveRows) < limit {
+			totalW := 0.0
+			for _, p := range pools {
+				if len(p.items) > 0 {
+					totalW += p.weight
 				}
+			}
+			if totalW == 0 {
+				break
+			}
+			pick := rand.Float64() * totalW
+			acc := 0.0
+			idx := -1
+			for i, p := range pools {
+				if len(p.items) == 0 {
+					continue
+				}
+				acc += p.weight
+				if pick <= acc {
+					idx = i
+					break
+				}
+			}
+			if idx < 0 {
+				break
+			}
+			c := pools[idx].items[0]
+			pools[idx].items = pools[idx].items[1:]
+			if !seen[c.URI] {
+				saveRows = append(saveRows, c)
+				seen[c.URI] = true
+			}
+		}
+
+		// Tail fill: if the weighted draw couldn't fill `limit` (e.g. alpha=1
+		// drained all collection pools), drain remaining pool items regardless
+		// of weight so the feed keeps flowing.
+		for i := range pools {
+			for _, c := range pools[i].items {
+				if len(saveRows) >= limit {
+					break
+				}
+				if !seen[c.URI] {
+					saveRows = append(saveRows, c)
+					seen[c.URI] = true
+				}
+			}
+			if len(saveRows) >= limit {
+				break
 			}
 		}
 	} else {
-		saveRows, err = s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, limit, offset)
+		saveRows, err = s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, limit, offset)
 		if err != nil {
 			slog.Error("GetGlobalFeedSaves", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		hasMore = len(saveRows) == limit
 	}
 
 	// Hydrate author profiles (deduplicated by DID)
@@ -799,7 +867,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	views := make([]saveView, 0, len(saveRows))
@@ -837,14 +905,12 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		views = append(views, sv)
 	}
 
 	var nextCursor string
-	if len(saveRows) == limit {
+	if hasMore {
 		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + limit)))
 	}
 
@@ -994,7 +1060,7 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		Viewer      *saveViewerState `json:"viewer,omitempty"`
 		Width       int              `json:"width,omitempty"`
 		Height      int              `json:"height,omitempty"`
-		Colors      json.RawMessage  `json:"colors,omitempty"`
+		DominantColor string           `json:"dominantColor,omitempty"`
 	}
 
 	byURI := map[string]saveView{}
@@ -1032,9 +1098,7 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		if row.Height != nil {
 			sv.Height = *row.Height
 		}
-		if len(row.DominantColors) > 0 {
-			sv.Colors = row.DominantColors
-		}
+		sv.DominantColor = firstHex(row.DominantColors)
 		byURI[row.URI] = sv
 	}
 

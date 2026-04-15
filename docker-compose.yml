@@ -50,5 +50,19 @@ services:
     ports:
       - "2480:2480"
 
+  clustering:
+    build:
+      context: ./clustering
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./models:/models
+    environment:
+      DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      MODELS_DIR: /models
+      INFERENCE_URL: http://host.docker.internal:8000
+
 volumes:
   pgdata:

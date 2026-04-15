@@ -24,7 +24,10 @@
 	}
 </script>
 
-<div class="group relative overflow-hidden rounded-lg">
+<div
+	class="group relative overflow-hidden rounded-lg"
+	style={item.dominantColor ? `background-color: ${item.dominantColor}` : undefined}
+>
 	<a {href} class="block" onclick={handleClick}>
 		<img
 			src={item.imageUrl}

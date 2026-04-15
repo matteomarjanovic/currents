@@ -39,7 +39,14 @@ func NewInferenceClient(baseURL string) *InferenceClient {
 	}
 }
 
-func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mimeType string) ([]float32, error) {
+// ImageEmbedding holds the result of an /embed/image call.
+// UMAPEmbedding is nil when the inference server has no UMAP model loaded.
+type ImageEmbedding struct {
+	Embedding     []float32
+	UMAPEmbedding []float32
+}
+
+func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mimeType string) (ImageEmbedding, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	if mimeType == "" {
@@ -50,37 +57,38 @@ func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mim
 	h.Set("Content-Type", mimeType)
 	fw, err := mw.CreatePart(h)
 	if err != nil {
-		return nil, err
+		return ImageEmbedding{}, err
 	}
 	if _, err := fw.Write(imageBytes); err != nil {
-		return nil, err
+		return ImageEmbedding{}, err
 	}
 	mw.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embed/image", &buf)
 	if err != nil {
-		return nil, err
+		return ImageEmbedding{}, err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return ImageEmbedding{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
+		return ImageEmbedding{}, fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
 	}
 
 	var result struct {
-		Embedding []float32 `json:"embedding"`
+		Embedding     []float32 `json:"embedding"`
+		UMAPEmbedding []float32 `json:"umap_embedding"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding inference response: %w", err)
+		return ImageEmbedding{}, fmt.Errorf("decoding inference response: %w", err)
 	}
-	return result.Embedding, nil
+	return ImageEmbedding{Embedding: result.Embedding, UMAPEmbedding: result.UMAPEmbedding}, nil
 }
 
 func (c *InferenceClient) EmbedText(ctx context.Context, text string) ([]float32, error) {

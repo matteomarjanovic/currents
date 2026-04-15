@@ -1,2 +1,4 @@
 .env
 .env.local
+models/
+__pycache__/

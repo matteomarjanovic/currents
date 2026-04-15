@@ -30,7 +30,10 @@
 		auth.user = user;
 		checked = true;
 		auth.checked = true;
-		if (user) loadCollections(user.did);
+		if (user) {
+			loadCollections(user.did);
+			if (page.url.pathname === '/') goto('/explore');
+		}
 
 		const isLoginPage = page.url.pathname.startsWith('/login');
 		const isRootPage = page.url.pathname === '/';
@@ -38,6 +41,10 @@
 		if (!user && !isLoginPage && !isRootPage && !isExplorePage) {
 			goto('/login');
 		}
+	});
+
+	$effect(() => {
+		if (auth.checked && auth.user && page.url.pathname === '/') goto('/explore');
 	});
 
 	$effect(() => {
@@ -117,9 +124,9 @@
 	<!-- loading -->
 {:else}
 	<TopBar {user} landing={page.url.pathname === '/'} />
-	{#if page.url.pathname === '/'}
+	{#if page.url.pathname === '/' && !auth.user}
 		{@render children()}
-	{:else}
+	{:else if page.url.pathname !== '/'}
 		<main class="p-4">
 			{@render children()}
 		</main>
