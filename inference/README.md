@@ -13,13 +13,24 @@ Requires Python 3.10+.
 | `POST` | `/embed/image` | Embed an image (`multipart/form-data`, field `file`)                |
 | `POST` | `/embed/text`  | Embed a query string (`{"text": "..."}`)                            |
 | `POST` | `/reload-umap` | Re-read the UMAP model from disk (204 No Content)                   |
-| `GET`  | `/health`      | Returns `{status, device, model, umap}`                             |
+| `GET`  | `/health`      | Returns `{status, device, model, umap, queues, batches}`            |
 
 `/embed/text` returns `{"embedding": [float × 768]}`.
 
 `/embed/image` returns `{"embedding": [float × 768], "umap_embedding": [float × 50] | null}`. `umap_embedding` is `null` when no UMAP model is loaded.
 
-Text requests are batched automatically (up to 32 per batch, 20 ms collection window) to maximize GPU throughput. Image requests run on a single-threaded executor to avoid memory contention.
+Text requests are batched automatically (up to 32 per batch, 20 ms collection window). Image requests are also batched automatically (up to 8 per batch, 20 ms collection window by default). Both modalities share a single model executor so only one batch runs on MPS at a time.
+
+Both queues are bounded. When the server falls behind it returns HTTP 503 instead of allowing request latency to grow without bound.
+
+Environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TEXT_QUEUE_SIZE` | `256` | Maximum number of queued text requests |
+| `IMAGE_QUEUE_SIZE` | `64` | Maximum number of queued image requests |
+| `IMAGE_MAX_BATCH` | `8` | Maximum images per inference batch |
+| `IMAGE_MAX_WAIT_SECS` | `0.020` | Image batch collection window in seconds |
 
 ## UMAP
 

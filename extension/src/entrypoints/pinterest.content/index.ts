@@ -10,6 +10,7 @@ export default defineContentScript({
     const queuedPinIds = new Set<string>();
     let collectionUri: string | null = null;
     let collectionName = '';
+    let collectionAttributionCredit = '';
     let cancelled = false;
     let successCount = 0;
     let errorCount = 0;
@@ -165,6 +166,7 @@ export default defineContentScript({
     function stopImport() {
       cancelled = true;
       collectionUri = null;
+      collectionAttributionCredit = '';
       pinObserver?.disconnect();
       pinObserver = null;
       bannerEl?.remove();
@@ -196,7 +198,7 @@ export default defineContentScript({
             originUrl,
             attributionUrl: '',
             attributionLicense: '',
-            attributionCredit: '',
+            attributionCredit: collectionAttributionCredit,
           });
           if (resp?.ok) {
             setOverlay(pin, 'saved');
@@ -258,9 +260,11 @@ export default defineContentScript({
       const detail = (e as CustomEvent).detail as {
         collectionUri: string;
         collectionName: string;
+        attributionCredit: string;
       };
       collectionUri = detail.collectionUri;
       collectionName = detail.collectionName;
+      collectionAttributionCredit = detail.attributionCredit ?? '';
       cancelled = false;
       successCount = 0;
       errorCount = 0;

@@ -20,9 +20,13 @@ CHECKPOINT    = "google/siglip2-base-patch16-naflex"
 DEVICE        = "mps" if torch.backends.mps.is_available() else "cpu"
 DTYPE         = torch.bfloat16
 MAX_PATCHES   = 256
-MIN_BATCH     = 8
-MAX_BATCH     = 32
-MAX_WAIT_SECS = 0.020
+TEXT_MIN_BATCH     = 8
+TEXT_MAX_BATCH     = 32
+TEXT_MAX_WAIT_SECS = 0.020
+TEXT_QUEUE_SIZE    = int(os.environ.get("TEXT_QUEUE_SIZE", "256"))
+IMAGE_MAX_BATCH    = int(os.environ.get("IMAGE_MAX_BATCH", "8"))
+IMAGE_MAX_WAIT_SECS = float(os.environ.get("IMAGE_MAX_WAIT_SECS", "0.020"))
+IMAGE_QUEUE_SIZE    = int(os.environ.get("IMAGE_QUEUE_SIZE", "64"))
 
 MODELS_DIR = os.environ.get("MODELS_DIR", "./models")
 UMAP_PATH  = os.path.join(MODELS_DIR, "umap_model.joblib")
@@ -33,7 +37,9 @@ model     = None
 processor = None
 executor  = ThreadPoolExecutor(max_workers=1)
 
-text_queue: asyncio.Queue = asyncio.Queue()
+text_queue: asyncio.Queue = asyncio.Queue(maxsize=TEXT_QUEUE_SIZE)
+image_queue: asyncio.Queue = asyncio.Queue(maxsize=IMAGE_QUEUE_SIZE)
+worker_tasks: list[asyncio.Task] = []
 
 _umap_model:       object = None
 _umap_model_mtime: float  = None
@@ -58,9 +64,9 @@ def _try_load_umap():
 
 # ── Inference ─────────────────────────────────────────────────────────────────
 
-def _embed_image(image: Image.Image) -> tuple[list[float], list[float] | None]:
+def _embed_images(images: list[Image.Image]) -> list[tuple[list[float], list[float] | None]]:
     inputs = processor(
-        images=[image],
+        images=images,
         max_num_patches=MAX_PATCHES,
         return_tensors="pt",
     ).to(DEVICE)
@@ -68,19 +74,22 @@ def _embed_image(image: Image.Image) -> tuple[list[float], list[float] | None]:
         features = model.get_image_features(**inputs)
     if hasattr(features, "pooler_output"):
         features = features.pooler_output
-    embedding = features.cpu().float().numpy()[0]  # shape (768,)
+    embeddings = features.cpu().float().numpy()
 
     with _umap_lock:
         local_umap = _umap_model
-    umap_embedding = None
+    umap_embeddings = None
     if local_umap is not None:
         try:
-            reduced = local_umap.transform(embedding.reshape(1, -1).astype(np.float32))
-            umap_embedding = reduced[0].tolist()
+            umap_embeddings = local_umap.transform(embeddings.astype(np.float32)).tolist()
         except Exception as e:
             print(f"UMAP transform failed: {e}")
 
-    return embedding.tolist(), umap_embedding
+    results = []
+    for idx, embedding in enumerate(embeddings.tolist()):
+        umap_embedding = None if umap_embeddings is None else umap_embeddings[idx]
+        results.append((embedding, umap_embedding))
+    return results
 
 
 def _embed_texts(texts: list[str]) -> list[list[float]]:
@@ -100,22 +109,22 @@ def _embed_texts(texts: list[str]) -> list[list[float]]:
 # ── Text batch worker ─────────────────────────────────────────────────────────
 
 async def _text_batch_worker():
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     while True:
         first_text, first_future = await text_queue.get()
         batch   = [first_text]
         futures = [first_future]
 
-        deadline = loop.time() + MAX_WAIT_SECS
+        deadline = loop.time() + TEXT_MAX_WAIT_SECS
         try:
-            while len(batch) < MAX_BATCH:
+            while len(batch) < TEXT_MAX_BATCH:
                 timeout = deadline - loop.time()
                 if timeout <= 0:
                     break
                 text, fut = await asyncio.wait_for(text_queue.get(), timeout=timeout)
                 batch.append(text)
                 futures.append(fut)
-                if len(batch) >= MIN_BATCH:
+                if len(batch) >= TEXT_MIN_BATCH:
                     break
         except asyncio.TimeoutError:
             pass
@@ -123,7 +132,38 @@ async def _text_batch_worker():
         try:
             results = await loop.run_in_executor(executor, _embed_texts, batch)
             for fut, result in zip(futures, results):
-                fut.set_result(result)
+                if not fut.done():
+                    fut.set_result(result)
+        except Exception as exc:
+            for fut in futures:
+                if not fut.done():
+                    fut.set_exception(exc)
+
+
+async def _image_batch_worker():
+    loop = asyncio.get_running_loop()
+    while True:
+        first_image, first_future = await image_queue.get()
+        batch = [first_image]
+        futures = [first_future]
+
+        deadline = loop.time() + IMAGE_MAX_WAIT_SECS
+        try:
+            while len(batch) < IMAGE_MAX_BATCH:
+                timeout = deadline - loop.time()
+                if timeout <= 0:
+                    break
+                image, fut = await asyncio.wait_for(image_queue.get(), timeout=timeout)
+                batch.append(image)
+                futures.append(fut)
+        except asyncio.TimeoutError:
+            pass
+
+        try:
+            results = await loop.run_in_executor(executor, _embed_images, batch)
+            for fut, result in zip(futures, results):
+                if not fut.done():
+                    fut.set_result(result)
         except Exception as exc:
             for fut in futures:
                 if not fut.done():
@@ -146,9 +186,19 @@ async def lifespan(app: FastAPI):
 
     _try_load_umap()
 
-    asyncio.create_task(_text_batch_worker())
+    worker_tasks.clear()
+    worker_tasks.extend([
+        asyncio.create_task(_text_batch_worker()),
+        asyncio.create_task(_image_batch_worker()),
+    ])
 
     yield
+
+    for task in worker_tasks:
+        task.cancel()
+    if worker_tasks:
+        await asyncio.gather(*worker_tasks, return_exceptions=True)
+    worker_tasks.clear()
 
     executor.shutdown(wait=False)
 
@@ -170,7 +220,7 @@ class ImageEmbeddingResponse(BaseModel):
 
 @app.post("/embed/image", response_model=ImageEmbeddingResponse)
 async def embed_image(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     raw = await file.read()
@@ -179,16 +229,25 @@ async def embed_image(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=400, detail="Could not decode image")
 
-    loop = asyncio.get_event_loop()
-    embedding, umap_embedding = await loop.run_in_executor(executor, _embed_image, image)
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    try:
+        image_queue.put_nowait((image, future))
+    except asyncio.QueueFull:
+        raise HTTPException(status_code=503, detail="Image inference queue is full")
+
+    embedding, umap_embedding = await future
     return ImageEmbeddingResponse(embedding=embedding, umap_embedding=umap_embedding)
 
 
 @app.post("/embed/text", response_model=EmbeddingResponse)
 async def embed_text(req: TextRequest):
-    loop   = asyncio.get_event_loop()
+    loop   = asyncio.get_running_loop()
     future = loop.create_future()
-    await text_queue.put((req.text, future))
+    try:
+        text_queue.put_nowait((req.text, future))
+    except asyncio.QueueFull:
+        raise HTTPException(status_code=503, detail="Text inference queue is full")
     embedding = await future
     return EmbeddingResponse(embedding=embedding)
 
@@ -202,4 +261,17 @@ async def reload_umap():
 async def health():
     with _umap_lock:
         umap_loaded = _umap_model is not None
-    return {"status": "ok", "device": DEVICE, "model": CHECKPOINT, "umap": umap_loaded}
+    return {
+        "status": "ok",
+        "device": DEVICE,
+        "model": CHECKPOINT,
+        "umap": umap_loaded,
+        "queues": {
+            "text": {"pending": text_queue.qsize(), "max": TEXT_QUEUE_SIZE},
+            "image": {"pending": image_queue.qsize(), "max": IMAGE_QUEUE_SIZE},
+        },
+        "batches": {
+            "text": {"min": TEXT_MIN_BATCH, "max": TEXT_MAX_BATCH, "wait_ms": int(TEXT_MAX_WAIT_SECS * 1000)},
+            "image": {"max": IMAGE_MAX_BATCH, "wait_ms": int(IMAGE_MAX_WAIT_SECS * 1000)},
+        },
+    }

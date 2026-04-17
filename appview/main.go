@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -27,16 +29,45 @@ func main() {
 		Action: runServer,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:     "session-secret",
-				Usage:    "random string/token used for session cookie security",
-				Required: true,
-				EnvVars:  []string{"SESSION_SECRET"},
+				Name:    "mode",
+				Usage:   "process mode: all or repair",
+				Value:   "all",
+				EnvVars: []string{"APPVIEW_MODE"},
+			},
+			&cli.StringFlag{
+				Name:    "session-secret",
+				Usage:   "random string/token used for session cookie security",
+				EnvVars: []string{"SESSION_SECRET"},
 			},
 			&cli.StringFlag{
 				Name:     "database-url",
 				Usage:    "PostgreSQL connection string",
 				Required: true,
 				EnvVars:  []string{"DATABASE_URL"},
+			},
+			&cli.IntFlag{
+				Name:    "db-min-conns",
+				Usage:   "minimum number of PostgreSQL connections to keep open",
+				Value:   4,
+				EnvVars: []string{"DB_MIN_CONNS"},
+			},
+			&cli.IntFlag{
+				Name:    "db-max-conns",
+				Usage:   "maximum number of PostgreSQL connections in the pool",
+				Value:   12,
+				EnvVars: []string{"DB_MAX_CONNS"},
+			},
+			&cli.DurationFlag{
+				Name:    "db-max-conn-lifetime",
+				Usage:   "maximum lifetime of a PostgreSQL connection",
+				Value:   30 * time.Minute,
+				EnvVars: []string{"DB_MAX_CONN_LIFETIME"},
+			},
+			&cli.DurationFlag{
+				Name:    "db-max-conn-idle-time",
+				Usage:   "maximum idle time of a PostgreSQL connection",
+				Value:   5 * time.Minute,
+				EnvVars: []string{"DB_MAX_CONN_IDLE_TIME"},
 			},
 			&cli.StringFlag{
 				Name:    "hostname",
@@ -84,8 +115,22 @@ func main() {
 }
 
 func runServer(cctx *cli.Context) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	mode := strings.ToLower(cctx.String("mode"))
+	switch mode {
+	case "all", "repair":
+	default:
+		return fmt.Errorf("invalid mode %q", mode)
+	}
+	if mode == "all" && cctx.String("session-secret") == "" {
+		return fmt.Errorf("missing session-secret")
+	}
+
 	scopes := []string{"atproto", "repo:is.currents.actor.profile", "repo:is.currents.feed.collection", "repo:is.currents.feed.save", "blob:image/*"}
 	bind := ":8080"
+	dir := identity.DefaultDirectory()
 
 	var config oauth.ClientConfig
 	hostname := cctx.String("hostname")
@@ -114,16 +159,41 @@ func runServer(cctx *cli.Context) error {
 		slog.Info("configuring confidential OAuth client")
 	}
 
-	store, err := NewPgStore(context.Background(), &PgStoreConfig{
+	store, err := NewPgStore(ctx, &PgStoreConfig{
 		DSN:                       cctx.String("database-url"),
 		SessionExpiryDuration:     time.Hour * 24 * 90,
 		SessionInactivityDuration: time.Hour * 24 * 14,
 		AuthRequestExpiryDuration: time.Minute * 30,
+		MinConns:                  int32(cctx.Int("db-min-conns")),
+		MaxConns:                  int32(cctx.Int("db-max-conns")),
+		MaxConnLifetime:           cctx.Duration("db-max-conn-lifetime"),
+		MaxConnIdleTime:           cctx.Duration("db-max-conn-idle-time"),
 	})
 	if err != nil {
 		return err
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
+	inferenceClient := NewInferenceClient(cctx.String("inference-url"))
+	tapHandler := &TapHandler{
+		Context:   ctx,
+		Store:     store,
+		Dir:       dir,
+		Inference: inferenceClient,
+	}
+
+	if mode == "repair" {
+		report, err := runRepairPass(ctx, tapHandler)
+		if err != nil {
+			return err
+		}
+		slog.Info("repair pass completed",
+			"blob_candidates", report.BlobCandidates,
+			"blob_enriched", report.BlobEnriched,
+			"collection_candidates", report.CollectionCandidates,
+			"collections_recomputed", report.CollectionsRecomputed,
+		)
+		return nil
+	}
 
 	cdnURL := cctx.String("cdn-url")
 	var serviceDID string
@@ -152,17 +222,18 @@ func runServer(cctx *cli.Context) error {
 
 	srv := Server{
 		CookieStore: cookieStore,
-		Dir:         identity.DefaultDirectory(),
+		Dir:         dir,
 		OAuth:       oauthClient,
 		Store:       store,
 		CDNBaseURL:  cdnURL,
 		ServiceDID:  serviceDID,
 		AuthValidator: &auth.ServiceAuthValidator{
 			Audience: serviceDID,
-			Dir:      identity.DefaultDirectory(),
+			Dir:      dir,
 		},
-		Inference:   NewInferenceClient(cctx.String("inference-url")),
+		Inference:   inferenceClient,
 		FrontendURL: cctx.String("frontend-url"),
+		ProcessMode: mode,
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -171,6 +242,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /oauth/callback", srv.OAuthCallback)
 
 	http.HandleFunc("GET /api/me", srv.APIMe)
+	http.HandleFunc("GET /ops", srv.OpsPage)
+	http.HandleFunc("GET /debug/background", srv.BackgroundStatus)
 
 	http.HandleFunc("GET /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
@@ -204,23 +277,42 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)
 	http.HandleFunc("POST /resave", srv.CreateResave)
 
-	tapHandler := &TapHandler{
-		Store:      store,
-		Dir:        srv.Dir,
-		Inference:  NewInferenceClient(cctx.String("inference-url")),
-		CDNBaseURL: cdnURL,
-	}
-	go runTapListener(context.Background(), cctx.String("tap-url"), tapHandler)
+	tapHandler.CDNBaseURL = cdnURL
+	go runTapListener(ctx, cctx.String("tap-url"), tapHandler)
 	slog.Info("TAP listener started", "url", cctx.String("tap-url"))
 
 	var handler http.Handler = http.DefaultServeMux
+	handler = noCacheMiddleware(handler)
 	if srv.FrontendURL != "" {
 		handler = srv.corsMiddleware(handler)
 	}
 
-	slog.Info("starting http server", "bind", bind)
-	if err := http.ListenAndServe(bind, handler); err != nil {
+	httpServer := &http.Server{
+		Addr:              bind,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	slog.Info("starting http server",
+		"mode", mode,
+		"bind", bind,
+		"read_header_timeout", httpServer.ReadHeaderTimeout,
+		"read_timeout", httpServer.ReadTimeout,
+		"write_timeout", httpServer.WriteTimeout,
+		"idle_timeout", httpServer.IdleTimeout,
+	)
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownCtx)
+	}()
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("http shutdown", "err", err)
+		return err
 	}
 	return nil
 }

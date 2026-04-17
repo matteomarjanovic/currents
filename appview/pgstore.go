@@ -31,12 +31,39 @@ type PgStoreConfig struct {
 	SessionExpiryDuration     time.Duration
 	SessionInactivityDuration time.Duration
 	AuthRequestExpiryDuration time.Duration
+	MinConns                  int32
+	MaxConns                  int32
+	MaxConnLifetime           time.Duration
+	MaxConnIdleTime           time.Duration
 }
 
 // Implements the [oauth.ClientAuthStore] interface, backed by PostgreSQL via pgx
 type PgStore struct {
 	pool *pgxpool.Pool
 	cfg  *PgStoreConfig
+}
+
+type BlobSourceCandidate struct {
+	URI       string
+	AuthorDID string
+}
+
+type SaveBackfillMetrics struct {
+	MissingVisualIdentityCount       int64
+	DistinctMissingBlobCIDCount      int64
+	CollectionsMissingEmbeddingCount int64
+	OldestMissingCreatedAt           *time.Time
+}
+
+type BackgroundMetrics struct {
+	Saves SaveBackfillMetrics
+}
+
+type RepairStats struct {
+	BlobCandidates        int64
+	BlobEnriched          int64
+	CollectionCandidates  int64
+	CollectionsRecomputed int64
 }
 
 var _ oauth.ClientAuthStore = &PgStore{}
@@ -57,10 +84,31 @@ func NewPgStore(ctx context.Context, cfg *PgStoreConfig) (*PgStore, error) {
 	if cfg.AuthRequestExpiryDuration == 0 {
 		return nil, fmt.Errorf("missing AuthRequestExpiryDuration")
 	}
+	if cfg.MinConns < 0 {
+		return nil, fmt.Errorf("MinConns must be >= 0")
+	}
+	if cfg.MaxConns < 0 {
+		return nil, fmt.Errorf("MaxConns must be >= 0")
+	}
+	if cfg.MaxConns > 0 && cfg.MinConns > cfg.MaxConns {
+		return nil, fmt.Errorf("MinConns cannot be greater than MaxConns")
+	}
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing db config: %w", err)
+	}
+	if cfg.MinConns > 0 {
+		poolCfg.MinConns = cfg.MinConns
+	}
+	if cfg.MaxConns > 0 {
+		poolCfg.MaxConns = cfg.MaxConns
+	}
+	if cfg.MaxConnLifetime > 0 {
+		poolCfg.MaxConnLifetime = cfg.MaxConnLifetime
+	}
+	if cfg.MaxConnIdleTime > 0 {
+		poolCfg.MaxConnIdleTime = cfg.MaxConnIdleTime
 	}
 	poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		if _, err := conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
@@ -815,6 +863,159 @@ func (m *PgStore) MaybePromoteCanonical(ctx context.Context, viID, blobDID, blob
 		WHERE id = $1
 	`, viID, blobDID, blobCID, saveURI)
 	return err
+}
+
+func (m *PgStore) ListBlobSourceCandidates(ctx context.Context, pdsBlobCID string) ([]BlobSourceCandidate, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (author_did) uri, author_did
+		FROM save
+		WHERE pds_blob_cid = $1
+		ORDER BY author_did, created_at ASC NULLS LAST, uri ASC
+	`, pdsBlobCID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []BlobSourceCandidate
+	for rows.Next() {
+		var candidate BlobSourceCandidate
+		if err := rows.Scan(&candidate.URI, &candidate.AuthorDID); err != nil {
+			return nil, err
+		}
+		result = append(result, candidate)
+	}
+	return result, rows.Err()
+}
+
+func (m *PgStore) ListCollectionsByBlobCID(ctx context.Context, pdsBlobCID string) ([]string, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT collection_uri
+		FROM save
+		WHERE pds_blob_cid = $1
+		ORDER BY collection_uri ASC
+	`, pdsBlobCID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var collections []string
+	for rows.Next() {
+		var collectionURI string
+		if err := rows.Scan(&collectionURI); err != nil {
+			return nil, err
+		}
+		collections = append(collections, collectionURI)
+	}
+	return collections, rows.Err()
+}
+
+func (m *PgStore) ApplyBlobVisualIdentity(ctx context.Context, pdsBlobCID, viID string, qualityScore float32, width, height int, dominantColors json.RawMessage) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE save
+		SET visual_identity_id = $2,
+			quality_score = $3,
+			width = $4,
+			height = $5,
+			dominant_colors = $6
+		WHERE pds_blob_cid = $1
+	`, pdsBlobCID, viID, qualityScore, width, height, []byte(dominantColors))
+	return err
+}
+
+func (m *PgStore) GetBackgroundMetrics(ctx context.Context) (BackgroundMetrics, error) {
+	saveMetrics, err := m.getSaveBackfillMetrics(ctx)
+	if err != nil {
+		return BackgroundMetrics{}, err
+	}
+	return BackgroundMetrics{
+		Saves: saveMetrics,
+	}, nil
+}
+
+func (m *PgStore) ListMissingVisualIdentityBlobCIDs(ctx context.Context) ([]string, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT pds_blob_cid
+		FROM save
+		WHERE visual_identity_id IS NULL
+		GROUP BY pds_blob_cid
+		ORDER BY MIN(created_at) ASC NULLS FIRST, pds_blob_cid ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var blobCIDs []string
+	for rows.Next() {
+		var blobCID string
+		if err := rows.Scan(&blobCID); err != nil {
+			return nil, err
+		}
+		blobCIDs = append(blobCIDs, blobCID)
+	}
+	return blobCIDs, rows.Err()
+}
+
+func (m *PgStore) ListCollectionsMissingEmbedding(ctx context.Context) ([]string, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT c.uri
+		FROM collection c
+		WHERE c.canonical_embedding IS NULL
+		  AND EXISTS (
+			SELECT 1
+			FROM save s
+			JOIN visual_identity vi ON vi.id = s.visual_identity_id
+			WHERE s.collection_uri = c.uri
+			  AND vi.embedding IS NOT NULL
+		  )
+		ORDER BY c.uri ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var collectionURIs []string
+	for rows.Next() {
+		var collectionURI string
+		if err := rows.Scan(&collectionURI); err != nil {
+			return nil, err
+		}
+		collectionURIs = append(collectionURIs, collectionURI)
+	}
+	return collectionURIs, rows.Err()
+}
+
+func (m *PgStore) getSaveBackfillMetrics(ctx context.Context) (SaveBackfillMetrics, error) {
+	var metrics SaveBackfillMetrics
+	err := m.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) AS missing_visual_identity_count,
+			COUNT(DISTINCT pds_blob_cid) AS distinct_missing_blob_cid_count,
+			MIN(created_at) AS oldest_missing_created_at,
+			(
+				SELECT COUNT(*)
+				FROM collection c
+				WHERE c.canonical_embedding IS NULL
+				  AND EXISTS (
+					SELECT 1
+					FROM save s
+					JOIN visual_identity vi ON vi.id = s.visual_identity_id
+					WHERE s.collection_uri = c.uri
+					  AND vi.embedding IS NOT NULL
+				  )
+			) AS collections_missing_embedding_count
+		FROM save
+		WHERE visual_identity_id IS NULL
+	`).Scan(
+		&metrics.MissingVisualIdentityCount,
+		&metrics.DistinctMissingBlobCIDCount,
+		&metrics.OldestMissingCreatedAt,
+		&metrics.CollectionsMissingEmbeddingCount,
+	)
+	return metrics, err
 }
 
 // SearchSavesByEmbedding returns saves whose visual identity is nearest to the given embedding,

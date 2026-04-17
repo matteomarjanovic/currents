@@ -15,6 +15,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	defaultBlobEnrichmentConcurrency = 2
+	defaultCollectionEmbeddingDelay  = 30 * time.Second
+)
+
 type TapEvent struct {
 	ID       int64             `json:"id"`
 	Type     string            `json:"type"`
@@ -83,13 +88,17 @@ type saveRecord struct {
 
 // TapHandler holds the dependencies for the TAP event listener.
 type TapHandler struct {
-	Store      *PgStore
-	Dir        identity.Directory
-	Inference  *InferenceClient
-	CDNBaseURL string
+	Context                     context.Context
+	Store                       *PgStore
+	Dir                         identity.Directory
+	Inference                   *InferenceClient
+	CDNBaseURL                  string
+	CollectionEmbeddingDebounce time.Duration
 
-	debounceMu  sync.Mutex
-	debounceMap map[string]*time.Timer // keyed by collection_uri
+	asyncMu          sync.Mutex
+	collectionTimers map[string]*time.Timer
+	inflightBlobCIDs map[string]struct{}
+	blobTokens       chan struct{}
 }
 
 func runTapListener(ctx context.Context, tapURL string, handler *TapHandler) {
@@ -238,17 +247,17 @@ func handleSaveUpsert(
 	createdAt *time.Time,
 ) error {
 	base := UpsertSaveParams{
-		URI:           atURI,
-		AuthorDID:     ev.DID,
-		CollectionURI: s.Collection.URI,
-		PdsBlobCID:    pdsBlobCID,
+		URI:                atURI,
+		AuthorDID:          ev.DID,
+		CollectionURI:      s.Collection.URI,
+		PdsBlobCID:         pdsBlobCID,
 		Text:               s.Text,
 		OriginURL:          s.OriginURL,
 		AttributionURL:     s.Attribution.URL,
 		AttributionLicense: s.Attribution.License,
 		AttributionCredit:  s.Attribution.Credit,
 		ResaveOfURI:        s.ResaveOf.URI,
-		CreatedAt:     createdAt,
+		CreatedAt:          createdAt,
 	}
 
 	// Persist the save immediately so it's visible even if VI enrichment
@@ -283,11 +292,102 @@ func handleSaveUpsert(
 		return handler.Store.UpsertSave(ctx, base)
 	}
 
-	// Case 3: Novel image — fetch blob, analyze, resolve or create visual identity.
-	imageBytes, mimeType, err := fetchBlobFromPDS(ctx, handler.Store, handler.Dir, ev.DID, pdsBlobCID)
+	// Case 3: Novel image — enrich asynchronously and return immediately.
+	handler.enqueueBlobEnrichment(pdsBlobCID)
+	return nil
+}
+
+func (h *TapHandler) backgroundContext() context.Context {
+	if h.Context != nil {
+		return h.Context
+	}
+	return context.Background()
+}
+
+func (h *TapHandler) enqueueBlobEnrichment(blobCID string) {
+	ctx := h.backgroundContext()
+
+	h.asyncMu.Lock()
+	if h.inflightBlobCIDs == nil {
+		h.inflightBlobCIDs = make(map[string]struct{})
+	}
+	if _, exists := h.inflightBlobCIDs[blobCID]; exists {
+		h.asyncMu.Unlock()
+		return
+	}
+	if h.blobTokens == nil {
+		h.blobTokens = make(chan struct{}, defaultBlobEnrichmentConcurrency)
+	}
+	h.inflightBlobCIDs[blobCID] = struct{}{}
+	tokens := h.blobTokens
+	h.asyncMu.Unlock()
+
+	go func() {
+		defer h.finishBlobEnrichment(blobCID)
+
+		select {
+		case tokens <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+		defer func() { <-tokens }()
+
+		if err := processBlobEnrichment(ctx, h, blobCID); err != nil && ctx.Err() == nil {
+			slog.Warn("async blob enrichment failed", "blob_cid", blobCID, "err", err)
+		}
+	}()
+}
+
+func (h *TapHandler) finishBlobEnrichment(blobCID string) {
+	h.asyncMu.Lock()
+	delete(h.inflightBlobCIDs, blobCID)
+	h.asyncMu.Unlock()
+}
+
+func (h *TapHandler) scheduleEmbeddingUpdate(collectionURI string) {
+	if collectionURI == "" {
+		return
+	}
+	delay := h.CollectionEmbeddingDebounce
+	if delay <= 0 {
+		delay = defaultCollectionEmbeddingDelay
+	}
+	ctx := h.backgroundContext()
+
+	h.asyncMu.Lock()
+	if h.collectionTimers == nil {
+		h.collectionTimers = make(map[string]*time.Timer)
+	}
+	if timer, ok := h.collectionTimers[collectionURI]; ok {
+		timer.Reset(delay)
+		h.asyncMu.Unlock()
+		return
+	}
+	h.collectionTimers[collectionURI] = time.AfterFunc(delay, func() {
+		h.asyncMu.Lock()
+		delete(h.collectionTimers, collectionURI)
+		h.asyncMu.Unlock()
+
+		if err := recomputeCollectionEmbedding(ctx, h.Store, collectionURI); err != nil && ctx.Err() == nil {
+			slog.Warn("collection embedding update failed", "collection_uri", collectionURI, "err", err)
+		}
+	})
+	h.asyncMu.Unlock()
+}
+
+func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID string) error {
+	candidates, err := handler.Store.ListBlobSourceCandidates(ctx, blobCID)
 	if err != nil {
-		slog.Warn("failed to fetch blob for visual identity", "uri", atURI, "err", err)
-		return nil // save already persisted; backfill VI later
+		return err
+	}
+	if len(candidates) == 0 {
+		slog.Info("blob enrichment skipped; no saves remain", "blob_cid", blobCID)
+		return nil
+	}
+
+	source, imageBytes, mimeType, err := fetchBlobFromCandidates(ctx, handler.Store, handler.Dir, candidates, blobCID)
+	if err != nil {
+		return err
 	}
 
 	var (
@@ -308,84 +408,70 @@ func handleSaveUpsert(
 		return err
 	})
 	if err := g.Wait(); err != nil {
-		slog.Warn("image analysis failed for visual identity", "uri", atURI, "err", err)
-		return nil // save already persisted; backfill VI later
+		return err
 	}
 
-	qs32 := float32(qualityScore(imgWidth, imgHeight))
-	base.QualityScore = &qs32
-	base.Width = &imgWidth
-	base.Height = &imgHeight
-	base.DominantColors = dominantColors
-
+	quality := float32(qualityScore(imgWidth, imgHeight))
 	nearestVI, err := handler.Store.FindNearestVI(ctx, inferResult.Embedding, 0.02)
 	if err != nil {
-		slog.Warn("nearest VI search failed", "uri", atURI, "err", err)
-		return nil // save already persisted; backfill VI later
+		return err
 	}
 
 	if nearestVI != nil {
-		// Near-duplicate: link to existing VI, maybe promote canonical.
-		if err := handler.Store.MaybePromoteCanonical(ctx, *nearestVI, ev.DID, pdsBlobCID, atURI, qs32); err != nil {
-			slog.Warn("canonical promotion failed", "vi", *nearestVI, "err", err)
+		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, *nearestVI, quality, imgWidth, imgHeight, dominantColors); err != nil {
+			return err
 		}
-		base.VisualIdentityID = nearestVI
-		return handler.Store.UpsertSave(ctx, base)
+		if err := handler.Store.MaybePromoteCanonical(ctx, *nearestVI, source.AuthorDID, blobCID, source.URI, quality); err != nil {
+			return err
+		}
+	} else {
+		newVI, err := handler.Store.CreateVI(ctx, source.AuthorDID, blobCID, inferResult.Embedding, inferResult.UMAPEmbedding)
+		if err != nil {
+			return err
+		}
+		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, newVI, quality, imgWidth, imgHeight, dominantColors); err != nil {
+			return err
+		}
+		if err := handler.Store.SetVICanonicalSave(ctx, newVI, source.URI); err != nil {
+			return err
+		}
 	}
 
-	// Novel: create a new visual identity. This save IS the initial canonical.
-	newVI, err := handler.Store.CreateVI(ctx, ev.DID, pdsBlobCID, inferResult.Embedding, inferResult.UMAPEmbedding)
+	collections, err := handler.Store.ListCollectionsByBlobCID(ctx, blobCID)
 	if err != nil {
-		slog.Warn("failed to create visual identity", "uri", atURI, "err", err)
-		return nil // save already persisted; backfill VI later
-	}
-	base.VisualIdentityID = &newVI
-	if err := handler.Store.UpsertSave(ctx, base); err != nil {
 		return err
 	}
-	if err := handler.Store.SetVICanonicalSave(ctx, newVI, atURI); err != nil {
-		slog.Warn("failed to set canonical save on VI", "vi", newVI, "uri", atURI, "err", err)
+	for _, collectionURI := range collections {
+		handler.scheduleEmbeddingUpdate(collectionURI)
 	}
 	return nil
 }
 
-// scheduleEmbeddingUpdate debounces recomputation of a collection's canonical embedding.
-// If a timer is already pending for the collection it is reset; otherwise a new one is created.
-func (h *TapHandler) scheduleEmbeddingUpdate(collectionURI string) {
-	const delay = 30 * time.Second
-	h.debounceMu.Lock()
-	defer h.debounceMu.Unlock()
-	if h.debounceMap == nil {
-		h.debounceMap = make(map[string]*time.Timer)
-	}
-	if t, ok := h.debounceMap[collectionURI]; ok {
-		t.Reset(delay)
-		return
-	}
-	h.debounceMap[collectionURI] = time.AfterFunc(delay, func() {
-		h.debounceMu.Lock()
-		delete(h.debounceMap, collectionURI)
-		h.debounceMu.Unlock()
-		h.recomputeCollectionEmbedding(collectionURI)
-	})
-}
-
-// recomputeCollectionEmbedding loads all VI embeddings for a collection, computes the medoid,
-// and writes it back to collection.canonical_embedding.
-func (h *TapHandler) recomputeCollectionEmbedding(collectionURI string) {
-	ctx := context.Background()
-	embeddings, err := h.Store.GetCollectionEmbeddings(ctx, collectionURI)
+func recomputeCollectionEmbedding(ctx context.Context, store *PgStore, collectionURI string) error {
+	embeddings, err := store.GetCollectionEmbeddings(ctx, collectionURI)
 	if err != nil {
-		slog.Warn("GetCollectionEmbeddings failed", "collection", collectionURI, "err", err)
-		return
+		return err
 	}
 	if len(embeddings) == 0 {
-		return
+		return nil
 	}
 	medoid := computeMedoid(embeddings)
-	if err := h.Store.UpdateCollectionEmbedding(ctx, collectionURI, medoid); err != nil {
-		slog.Warn("UpdateCollectionEmbedding failed", "collection", collectionURI, "err", err)
+	return store.UpdateCollectionEmbedding(ctx, collectionURI, medoid)
+}
+
+func fetchBlobFromCandidates(ctx context.Context, store *PgStore, dir identity.Directory, candidates []BlobSourceCandidate, blobCID string) (BlobSourceCandidate, []byte, string, error) {
+	var lastErr error
+	for _, candidate := range candidates {
+		imageBytes, mimeType, err := fetchBlobFromPDS(ctx, store, dir, candidate.AuthorDID, blobCID)
+		if err == nil {
+			return candidate, imageBytes, mimeType, nil
+		}
+		lastErr = fmt.Errorf("fetching blob from %s: %w", candidate.AuthorDID, err)
 	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no blob source candidates for %s", blobCID)
+	}
+	return BlobSourceCandidate{}, nil, "", lastErr
 }
 
 // computeMedoid returns the embedding with minimum total cosine distance to all others.

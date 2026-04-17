@@ -13,6 +13,9 @@
   let attributionLicense = $state("");
   let attributionCredit = $state("");
 
+  // Board mode attribution
+  let boardAttributionCredit = $state("");
+
   // New collection creation
   let creatingCollection = $state(false);
   let newCollectionName = $state("");
@@ -34,6 +37,7 @@
       attributionUrl = "";
       attributionLicense = "";
       attributionCredit = clipper.siteHints.attributionCredit ?? "";
+      boardAttributionCredit = "";
 
       selectedCollectionUri = clipper.collections[0]?.uri ?? "";
       creatingCollection = false;
@@ -53,6 +57,7 @@
         detail: {
           collectionUri: selectedCollectionUri,
           collectionName: col?.name ?? "",
+          attributionCredit: boardAttributionCredit.trim(),
         },
       }),
     );
@@ -263,6 +268,15 @@
         {/if}
 
         {#if clipper.mode === "board"}
+          <div class="attribution">
+            <span class="section-label">Attribution (optional)</span>
+            <input
+              type="text"
+              placeholder="Credit for all pins (e.g. photographer name)"
+              bind:value={boardAttributionCredit}
+              disabled={creatingCollection}
+            />
+          </div>
           <button
             onclick={confirmBoard}
             disabled={!selectedCollectionUri || creatingCollection}

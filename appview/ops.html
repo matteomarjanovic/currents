@@ -1,0 +1,122 @@
+{{ define "content" }}
+<h2>Ops</h2>
+
+<div class="status-card">
+  <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:end;justify-content:space-between">
+    <div>
+      <strong>Background backlog</strong><br>
+      <small>Live view of unresolved saves and collection embeddings that may need repair.</small>
+    </div>
+    <div style="display:flex;gap:.75rem;align-items:center">
+      <label style="margin:0">
+        Auto refresh
+        <select id="ops-interval" onchange="restartAutoRefresh()">
+          <option value="0">Off</option>
+          <option value="5000" selected>5s</option>
+          <option value="10000">10s</option>
+          <option value="30000">30s</option>
+        </select>
+      </label>
+      <button type="button" onclick="loadOps()">Refresh</button>
+    </div>
+  </div>
+  <div style="margin-top:.75rem;display:flex;gap:1rem;flex-wrap:wrap">
+    <small>Last update: <span id="ops-updated">Never</span></small>
+    <small>Raw JSON: <a href="/debug/background" target="_blank" rel="noreferrer">/debug/background</a></small>
+  </div>
+</div>
+
+<div id="ops-error" style="display:none;color:var(--pico-del-color);margin-bottom:1rem"></div>
+
+<div id="ops-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem">
+  <article style="margin:0;max-width:none">
+    <header><strong>Process</strong></header>
+    <div id="ops-process-mode">-</div>
+    <small>Mode currently running in this process.</small>
+  </article>
+  <article style="margin:0;max-width:none">
+    <header><strong>Backlog</strong></header>
+    <div id="ops-saves"></div>
+  </article>
+</div>
+
+<script>
+let opsTimer = null;
+
+function fmtNumber(value) {
+  if (value === null || value === undefined) return '-';
+  return Number(value).toLocaleString();
+}
+
+function fmtDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '-';
+  const s = Math.max(0, Number(seconds));
+  if (s < 60) return `${s}s`;
+  const minutes = Math.floor(s / 60);
+  const remaining = s % 60;
+  if (minutes < 60) return `${minutes}m ${remaining}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function setHtml(id, html) {
+  document.getElementById(id).innerHTML = html;
+}
+
+async function loadOps() {
+  const errorEl = document.getElementById('ops-error');
+  errorEl.style.display = 'none';
+
+  let data;
+  try {
+    const resp = await fetch('/debug/background', { cache: 'no-store' });
+    data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.error || data.message || resp.statusText);
+    }
+  } catch (err) {
+    errorEl.textContent = String(err);
+    errorEl.style.display = '';
+    return;
+  }
+
+  document.getElementById('ops-updated').textContent = new Date().toLocaleTimeString();
+  document.getElementById('ops-process-mode').textContent = data.processMode || '-';
+
+  const saves = data.saves || {};
+  setHtml('ops-saves', [
+    metricRow('Missing visual identity', fmtNumber(saves.missingVisualIdentityCount)),
+    metricRow('Distinct missing blob CIDs', fmtNumber(saves.distinctMissingBlobCidCount)),
+    metricRow('Collections missing embedding', fmtNumber(saves.collectionsMissingEmbeddingCount)),
+    metricRow('Oldest missing save', saves.oldestMissingCreatedAt || '-'),
+    metricRow('Oldest missing age', fmtDuration(saves.oldestMissingAgeSec)),
+  ].join(''));
+}
+
+function metricRow(label, value) {
+  return `<div style="display:flex;justify-content:space-between;gap:1rem;margin:.25rem 0"><small>${escapeHtml(label)}</small><strong>${escapeHtml(String(value))}</strong></div>`;
+}
+
+function restartAutoRefresh() {
+  if (opsTimer) {
+    clearInterval(opsTimer);
+    opsTimer = null;
+  }
+  const interval = Number(document.getElementById('ops-interval').value);
+  if (interval > 0) {
+    opsTimer = setInterval(loadOps, interval);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+restartAutoRefresh();
+loadOps();
+</script>
+{{ end }}

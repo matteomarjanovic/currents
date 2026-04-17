@@ -14,7 +14,6 @@ import (
 	"github.com/gorilla/sessions"
 )
 
-
 type Server struct {
 	CookieStore   *sessions.CookieStore
 	Dir           identity.Directory
@@ -25,6 +24,7 @@ type Server struct {
 	AuthValidator *auth.ServiceAuthValidator
 	Inference     *InferenceClient
 	FrontendURL   string
+	ProcessMode   string
 }
 
 type TmplData struct {
@@ -60,6 +60,10 @@ var tmplSaves = template.Must(template.Must(template.New("saves.html").Parse(tmp
 var tmplFeedText string
 var tmplFeed = template.Must(template.Must(template.New("feed.html").Parse(tmplBaseText)).Parse(tmplFeedText))
 
+//go:embed "ops.html"
+var tmplOpsText string
+var tmplOps = template.Must(template.Must(template.New("ops.html").Parse(tmplBaseText)).Parse(tmplOpsText))
+
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	allowed := strings.TrimRight(s.FrontendURL, "/")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +79,13 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func noCacheMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
 }
