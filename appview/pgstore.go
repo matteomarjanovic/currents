@@ -473,6 +473,27 @@ func (m *PgStore) DeleteCollection(ctx context.Context, uri string) error {
 	return err
 }
 
+func (m *PgStore) GetSaveRkeysInCollection(ctx context.Context, collectionURI, authorDID string) ([]string, error) {
+	rows, err := m.pool.Query(ctx,
+		`SELECT uri FROM save WHERE collection_uri = $1 AND author_did = $2`,
+		collectionURI, authorDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var rkeys []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			return nil, err
+		}
+		if rk := rkeyFromURI(uri); rk != "" {
+			rkeys = append(rkeys, rk)
+		}
+	}
+	return rkeys, rows.Err()
+}
+
 // GetCollectionByURI returns the collection row for the given URI, or nil if not found.
 // viewerDID may be empty for unauthenticated requests.
 func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerDID string) (*CollectionRow, error) {

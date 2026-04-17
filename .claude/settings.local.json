@@ -6,7 +6,8 @@
       "WebFetch(domain:shadcn-svelte.com)",
       "WebFetch(domain:wxt.dev)",
       "Bash(docker compose logs:*)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")"
     ]
   },
   "enableAllProjectMcpServers": true,

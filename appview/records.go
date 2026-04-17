@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/agnostic"
 	_ "github.com/bluesky-social/indigo/api/bsky"
@@ -327,23 +328,43 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 
 	rkey := r.PathValue("id")
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-
-	name := strings.TrimSpace(r.PostFormValue("name"))
-	description := strings.TrimSpace(r.PostFormValue("description"))
-
+	name := strings.TrimSpace(body.Name)
+	description := strings.TrimSpace(body.Description)
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
 
+	existing, err := comatproto.RepoGetRecord(r.Context(), c, "", collectionNSID, did.String(), rkey)
+	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		http.Error(w, fmt.Sprintf("fetching record: %s", err), http.StatusInternalServerError)
+		return
+	}
+	createdAt := syntax.DatetimeNow().String()
+	if existing.Value != nil {
+		var cur map[string]any
+		if err := json.Unmarshal(*existing.Value, &cur); err == nil {
+			if ca, ok := cur["createdAt"].(string); ok && ca != "" {
+				createdAt = ca
+			}
+		}
+	}
+
 	record := map[string]any{
 		"$type":     collectionNSID,
 		"name":      name,
-		"createdAt": syntax.DatetimeNow().String(),
+		"createdAt": createdAt,
 	}
 	if description != "" {
 		record["description"] = description
@@ -364,7 +385,8 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("updated collection", "uri", out.Uri)
-	http.Redirect(w, r, "/collection", http.StatusFound)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"uri": out.Uri, "cid": out.Cid})
 }
 
 func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
@@ -373,8 +395,16 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
+	_, sessionID, _ := s.currentSessionDID(r)
 
 	rkey := r.PathValue("id")
+	collectionURI := "at://" + did.String() + "/" + collectionNSID + "/" + rkey
+
+	saveRkeys, err := s.Store.GetSaveRkeysInCollection(r.Context(), collectionURI, did.String())
+	if err != nil {
+		slog.Error("listing saves for cascade", "err", err, "collection", collectionURI)
+		// proceed without cascade rather than blocking the user
+	}
 
 	if err := c.Post(r.Context(), "com.atproto.repo.deleteRecord", map[string]any{
 		"repo":       did.String(),
@@ -388,8 +418,32 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("deleted collection", "rkey", rkey)
+	slog.Info("deleted collection", "rkey", rkey, "cascadeSaves", len(saveRkeys))
 	w.WriteHeader(http.StatusNoContent)
+
+	if len(saveRkeys) > 0 {
+		go s.cascadeDeleteSaves(*did, sessionID, saveRkeys)
+	}
+}
+
+func (s *Server) cascadeDeleteSaves(did syntax.DID, sessionID string, rkeys []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	oauthSess, err := s.OAuth.ResumeSession(ctx, did, sessionID)
+	if err != nil {
+		slog.Error("cascade: resume session", "did", did.String(), "err", err)
+		return
+	}
+	cli := oauthSess.APIClient()
+	for _, rk := range rkeys {
+		if err := cli.Post(ctx, "com.atproto.repo.deleteRecord", map[string]any{
+			"repo":       did.String(),
+			"collection": saveNSID,
+			"rkey":       rk,
+		}, nil); err != nil {
+			slog.Error("cascade delete save", "rkey", rk, "err", err)
+		}
+	}
 }
 
 // --- Saves ---

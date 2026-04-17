@@ -1,6 +1,12 @@
 export interface CollectionView {
 	uri: string;
 	cid?: string;
+	author?: {
+		did: string;
+		handle: string;
+		displayName?: string;
+		avatar?: string;
+	};
 	name: string;
 	description?: string;
 	saveCount?: number;
