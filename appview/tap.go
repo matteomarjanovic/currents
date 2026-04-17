@@ -252,14 +252,8 @@ func handleSaveUpsert(
 		CreatedAt:          createdAt,
 	}
 
-	// Persist the save immediately so it's visible even if VI enrichment
-	// fails or hangs (blob fetch, inference, etc.). The upsert below will
-	// enrich the row once visual identity is resolved.
-	if err := handler.Store.UpsertSave(ctx, base); err != nil {
-		return err
-	}
 	if contentNSID != saveContentImageNSID || pdsBlobCID == "" {
-		return nil
+		return handler.Store.UpsertSave(ctx, base)
 	}
 
 	// Case 1: Resave of a known save — reuse its visual identity and quality score.
@@ -287,7 +281,10 @@ func handleSaveUpsert(
 		return handler.Store.UpsertSave(ctx, base)
 	}
 
-	// Case 3: Novel image — enrich asynchronously and return immediately.
+	// Case 3: Novel image — persist immediately, then enrich asynchronously.
+	if err := handler.Store.UpsertSave(ctx, base); err != nil {
+		return err
+	}
 	handler.enqueueBlobEnrichment(pdsBlobCID)
 	return nil
 }
@@ -332,7 +329,6 @@ func (h *TapHandler) enqueueBlobEnrichment(blobCID string) {
 		}
 	}()
 }
-
 func (h *TapHandler) finishBlobEnrichment(blobCID string) {
 	h.asyncMu.Lock()
 	delete(h.inflightBlobCIDs, blobCID)
