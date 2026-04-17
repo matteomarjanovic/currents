@@ -8,16 +8,16 @@
       "record": {
         "type": "object",
         "required": [
-          "image",
+          "content",
           "createdAt"
         ],
         "properties": {
-          "image": {
-            "type": "blob",
-            "accept": [
-              "image/*"
+          "content": {
+            "type": "union",
+            "refs": [
+              "is.currents.content.image"
             ],
-            "maxSize": 20000000
+            "closed": false
           },
           "collection": {
             "type": "ref",

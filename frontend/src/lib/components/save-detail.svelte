@@ -13,7 +13,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import type { SaveView } from '$lib/types';
+	import { getImageContent, type SaveView } from '$lib/types';
 
 	interface Props {
 		save: SaveView;
@@ -21,6 +21,7 @@
 	}
 
 	let { save, onClose }: Props = $props();
+	let image = $derived(getImageContent(save));
 
 	function goBack() {
 		if (onClose) {
@@ -154,12 +155,20 @@
 		</div>
 	</div>
 	<div class="flex w-2/3 items-center justify-center p-6">
-		<img
-			src={save.imageUrl}
-			alt={save.text ?? ''}
-			class="max-h-full max-w-full object-contain"
-			style={save.dominantColor ? `background-color: ${save.dominantColor}` : undefined}
-		/>
+		{#if image}
+			<img
+				src={image.imageUrl}
+				alt={save.text ?? ''}
+				class="max-h-full max-w-full object-contain"
+				style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+			/>
+		{:else}
+			<div
+				class="flex h-full w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+			>
+				Unsupported content
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -174,12 +183,21 @@
 		</div>
 	</div>
 	{@render info()}
-	<img
-		src={save.imageUrl}
-		alt={save.text ?? ''}
-		class="w-full rounded-lg"
-		style={`${save.width && save.height ? `aspect-ratio: ${save.width} / ${save.height};` : ''}${save.dominantColor ? ` background-color: ${save.dominantColor};` : ''}`}
-	/>
+	{#if image}
+		<img
+			src={image.imageUrl}
+			alt={save.text ?? ''}
+			class="w-full rounded-lg"
+			style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
+		/>
+	{:else}
+		<div
+			class="flex items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+			style="aspect-ratio: 3 / 4;"
+		>
+			Unsupported content
+		</div>
+	{/if}
 </div>
 
 {#if related.items.length > 0 || related.loading}

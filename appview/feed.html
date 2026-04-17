@@ -3,13 +3,14 @@
 
 <div class="status-card">
   <h3>Try getFeed</h3>
-  <p><small>Calls <code>GET /xrpc/is.currents.feed.getFeed</code>. Auth is optional — session cookie is sent automatically. Personalization only applies when logged in.</small></p>
+  <p><small>Calls <code>GET /xrpc/is.currents.feed.getFeed</code>. Auth is optional — session cookie is sent
+      automatically. Personalization only applies when logged in.</small></p>
   <form id="feed-form" onsubmit="fetchFeed(event)">
     <div class="grid">
       <label>
         Personalization
         <input type="range" id="feed-personalized" name="personalized" min="0" max="1" step="0.1" value="0"
-               oninput="document.getElementById('feed-personalized-val').textContent = this.value">
+          oninput="document.getElementById('feed-personalized-val').textContent = this.value">
         <small>Value: <span id="feed-personalized-val">0</span> — 0 = global, 1 = fully personalized</small>
       </label>
       <label>
@@ -31,65 +32,67 @@
 <div id="feed-error" style="display:none;color:var(--pico-del-color)"></div>
 
 <script>
-let feedCursor = '';
+  let feedCursor = '';
 
-async function fetchFeed(e) {
-  if (e) e.preventDefault();
-  feedCursor = '';
-  document.getElementById('feed-grid').innerHTML = '';
-  document.getElementById('feed-result').style.display = 'none';
-  document.getElementById('feed-error').style.display = 'none';
-  await loadFeedPage();
-}
+  async function fetchFeed(e) {
+    if (e) e.preventDefault();
+    feedCursor = '';
+    document.getElementById('feed-grid').innerHTML = '';
+    document.getElementById('feed-result').style.display = 'none';
+    document.getElementById('feed-error').style.display = 'none';
+    await loadFeedPage();
+  }
 
-async function feedMore() {
-  await loadFeedPage();
-}
+  async function feedMore() {
+    await loadFeedPage();
+  }
 
-async function loadFeedPage() {
-  const personalized = document.getElementById('feed-personalized').value;
-  const limit = document.getElementById('feed-limit').value;
-  const params = new URLSearchParams({ personalized, limit });
-  if (feedCursor) params.set('cursor', feedCursor);
+  async function loadFeedPage() {
+    const personalized = document.getElementById('feed-personalized').value;
+    const limit = document.getElementById('feed-limit').value;
+    const params = new URLSearchParams({ personalized, limit });
+    if (feedCursor) params.set('cursor', feedCursor);
 
-  let data;
-  try {
-    const resp = await fetch('/xrpc/is.currents.feed.getFeed?' + params);
-    data = await resp.json();
-    if (!resp.ok) {
-      document.getElementById('feed-error').textContent = data.message || data.error || resp.statusText;
+    let data;
+    try {
+      const resp = await fetch('/xrpc/is.currents.feed.getFeed?' + params);
+      data = await resp.json();
+      if (!resp.ok) {
+        document.getElementById('feed-error').textContent = data.message || data.error || resp.statusText;
+        document.getElementById('feed-error').style.display = '';
+        return;
+      }
+    } catch (err) {
+      document.getElementById('feed-error').textContent = String(err);
       document.getElementById('feed-error').style.display = '';
       return;
     }
-  } catch (err) {
-    document.getElementById('feed-error').textContent = String(err);
-    document.getElementById('feed-error').style.display = '';
-    return;
-  }
 
-  document.getElementById('feed-result').style.display = '';
+    document.getElementById('feed-result').style.display = '';
 
-  const grid = document.getElementById('feed-grid');
-  for (const sv of (data.feed || [])) {
-    const resaved = sv.viewer?.saves?.length ? ' <span title="Resaved">↩</span>' : '';
-    const card = document.createElement('article');
-    card.style.margin = '0';
-    card.innerHTML = `
-      <img src="${escHtml(sv.imageUrl)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--pico-border-radius)" loading="lazy">
+    const grid = document.getElementById('feed-grid');
+    for (const sv of (data.feed || [])) {
+      const image = sv.content && sv.content.imageUrl ? sv.content : null;
+      if (!image) continue;
+      const resaved = sv.viewer?.saves?.length ? ' <span title="Resaved">↩</span>' : '';
+      const card = document.createElement('article');
+      card.style.margin = '0';
+      card.innerHTML = `
+      <img src="${escHtml(image.imageUrl)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--pico-border-radius)" loading="lazy">
       <div style="padding:.5rem 0">
         ${sv.text ? `<small>${escHtml(sv.text)}</small><br>` : ''}
         <small style="color:var(--pico-muted-color)">${escHtml(sv.author.displayName || sv.author.handle || sv.author.did)}</small>
         ${resaved}
       </div>`;
-    grid.appendChild(card);
+      grid.appendChild(card);
+    }
+
+    feedCursor = data.cursor || '';
+    document.getElementById('feed-more').style.display = feedCursor ? '' : 'none';
   }
 
-  feedCursor = data.cursor || '';
-  document.getElementById('feed-more').style.display = feedCursor ? '' : 'none';
-}
-
-function escHtml(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
 </script>
 {{ end }}

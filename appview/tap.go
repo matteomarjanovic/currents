@@ -63,29 +63,6 @@ type profileRecord struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-type saveRecord struct {
-	Collection struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	} `json:"collection"`
-	Image struct {
-		Ref      map[string]string `json:"ref"`
-		MimeType string            `json:"mimeType"`
-	} `json:"image"`
-	OriginURL   string `json:"originUrl"`
-	Attribution struct {
-		URL     string `json:"url"`
-		License string `json:"license"`
-		Credit  string `json:"credit"`
-	} `json:"attribution"`
-	Text     string `json:"text"`
-	ResaveOf struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	} `json:"resaveOf"`
-	CreatedAt string `json:"createdAt"`
-}
-
 // TapHandler holds the dependencies for the TAP event listener.
 type TapHandler struct {
 	Context                     context.Context
@@ -188,15 +165,28 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		if err := json.Unmarshal(ev.Record, &s); err != nil {
 			return fmt.Errorf("unmarshal save record: %w", err)
 		}
-		pdsBlobCID := s.Image.Ref["$link"]
-		if pdsBlobCID == "" {
-			return fmt.Errorf("save record missing image blob CID")
-		}
-		createdAt := parseTimestamp(s.CreatedAt)
-		if err := handleSaveUpsert(ctx, handler, ev, s, atURI, pdsBlobCID, createdAt); err != nil {
+		contentNSID, err := saveContentNSID(s.Content, s.Image)
+		if err != nil {
 			return err
 		}
-		handler.scheduleEmbeddingUpdate(s.Collection.URI)
+		pdsBlobCID := ""
+		if contentNSID == saveContentImageNSID {
+			content, err := decodeSaveImageContent(s.Content, s.Image)
+			if err != nil {
+				return err
+			}
+			pdsBlobCID = content.Image.Ref["$link"]
+			if pdsBlobCID == "" {
+				return fmt.Errorf("save record missing image blob CID")
+			}
+		}
+		createdAt := parseTimestamp(s.CreatedAt)
+		if err := handleSaveUpsert(ctx, handler, ev, s, atURI, contentNSID, pdsBlobCID, createdAt); err != nil {
+			return err
+		}
+		if contentNSID == saveContentImageNSID {
+			handler.scheduleEmbeddingUpdate(s.Collection.URI)
+		}
 		return nil
 
 	case "is.currents.actor.profile":
@@ -243,7 +233,7 @@ func handleSaveUpsert(
 	handler *TapHandler,
 	ev *TapRecordEvent,
 	s saveRecord,
-	atURI, pdsBlobCID string,
+	atURI, contentNSID, pdsBlobCID string,
 	createdAt *time.Time,
 ) error {
 	base := UpsertSaveParams{
@@ -251,12 +241,14 @@ func handleSaveUpsert(
 		AuthorDID:          ev.DID,
 		CollectionURI:      s.Collection.URI,
 		PdsBlobCID:         pdsBlobCID,
+		ContentNSID:        contentNSID,
 		Text:               s.Text,
 		OriginURL:          s.OriginURL,
 		AttributionURL:     s.Attribution.URL,
 		AttributionLicense: s.Attribution.License,
 		AttributionCredit:  s.Attribution.Credit,
 		ResaveOfURI:        s.ResaveOf.URI,
+		ResaveOfCID:        s.ResaveOf.CID,
 		CreatedAt:          createdAt,
 	}
 
@@ -265,6 +257,9 @@ func handleSaveUpsert(
 	// enrich the row once visual identity is resolved.
 	if err := handler.Store.UpsertSave(ctx, base); err != nil {
 		return err
+	}
+	if contentNSID != saveContentImageNSID || pdsBlobCID == "" {
+		return nil
 	}
 
 	// Case 1: Resave of a known save — reuse its visual identity and quality score.

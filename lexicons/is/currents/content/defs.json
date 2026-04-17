@@ -1,0 +1,37 @@
+{
+    "lexicon": 1,
+    "id": "is.currents.content.defs",
+    "defs": {
+        "imageView": {
+            "type": "object",
+            "required": [
+                "blobCid",
+                "imageUrl"
+            ],
+            "properties": {
+                "blobCid": {
+                    "type": "string",
+                    "format": "cid",
+                    "description": "CID of the saved image blob."
+                },
+                "imageUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "CDN URL of the image, resolved server-side from the blob reference."
+                },
+                "width": {
+                    "type": "integer",
+                    "description": "Width of the image in pixels. Absent if unknown."
+                },
+                "height": {
+                    "type": "integer",
+                    "description": "Height of the image in pixels. Absent if unknown."
+                },
+                "dominantColor": {
+                    "type": "string",
+                    "description": "Hex color code of the most dominant color, for placeholder rendering. Absent if unknown."
+                }
+            }
+        }
+    }
+}

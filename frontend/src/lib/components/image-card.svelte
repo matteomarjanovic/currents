@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { pushState } from '$app/navigation';
-	import type { SaveView } from '$lib/types';
+	import { getImageContent, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -15,6 +15,7 @@
 
 	let dropdownOpen = $state(false);
 	let href = $derived(`/save/${encodeURIComponent(item.uri)}`);
+	let image = $derived(getImageContent(item));
 
 	function handleClick(e: MouseEvent) {
 		// Let the browser handle modified clicks (open in new tab, etc.)
@@ -26,16 +27,27 @@
 
 <div
 	class="group relative overflow-hidden rounded-lg"
-	style={item.dominantColor ? `background-color: ${item.dominantColor}` : undefined}
+	style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 >
 	<a {href} class="block" onclick={handleClick}>
-		<img
-			src={item.imageUrl}
-			alt={item.text ?? ''}
-			loading="lazy"
-			class="w-full"
-			style={item.width && item.height ? `aspect-ratio: ${item.width} / ${item.height}` : undefined}
-		/>
+		{#if image}
+			<img
+				src={image.imageUrl}
+				alt={item.text ?? ''}
+				loading="lazy"
+				class="w-full"
+				style={image.width && image.height
+					? `aspect-ratio: ${image.width} / ${image.height}`
+					: undefined}
+			/>
+		{:else}
+			<div
+				class="flex items-center justify-center bg-muted text-sm text-muted-foreground"
+				style="aspect-ratio: 3 / 4;"
+			>
+				Unsupported content
+			</div>
+		{/if}
 	</a>
 	{#if auth.user && collections.loaded}
 		<div

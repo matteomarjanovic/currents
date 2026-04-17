@@ -27,23 +27,43 @@ export interface ActorProfileView {
 	createdAt?: string;
 }
 
+export interface ImageContentView {
+	$type: 'is.currents.content.defs#imageView';
+	blobCid: string;
+	imageUrl: string;
+	width?: number;
+	height?: number;
+	dominantColor?: string;
+}
+
+export type SaveContentView =
+	| ImageContentView
+	| {
+		$type: string;
+		[key: string]: unknown;
+	};
+
 export interface SaveView {
 	uri: string;
-	blobCid: string;
 	author: {
 		did: string;
 		handle: string;
 		displayName?: string;
 		avatar?: string;
 	};
-	imageUrl: string;
+	content: SaveContentView;
 	text?: string;
 	originUrl?: string;
 	attribution?: { url?: string; license?: string; credit?: string };
 	resaveOf?: { uri: string; cid: string };
 	createdAt: string;
 	viewer?: { saves?: { collectionUri: string; saveUri: string }[] };
-	width?: number;
-	height?: number;
-	dominantColor?: string;
+}
+
+export function isImageContentView(content: SaveContentView): content is ImageContentView {
+	return content.$type === 'is.currents.content.defs#imageView';
+}
+
+export function getImageContent(save: Pick<SaveView, 'content'>): ImageContentView | null {
+	return isImageContentView(save.content) ? save.content : null;
 }

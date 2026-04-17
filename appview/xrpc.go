@@ -297,13 +297,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Hydrate collection author
-	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-	}
+	// Hydrate collection author.
 	collATURI, _ := syntax.ParseATURI(collectionParam)
 	author := profileView{DID: collATURI.Authority().String()}
 	if row, err := s.Store.GetActorByDID(r.Context(), author.DID); err == nil && row != nil {
@@ -360,70 +354,9 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	type strongRef struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	}
-	type viewerSave struct {
-		CollectionURI string `json:"collectionUri"`
-		SaveURI       string `json:"saveUri"`
-	}
-	type saveViewerState struct {
-		Saves []viewerSave `json:"saves"`
-	}
-	type saveView struct {
-		URI           string           `json:"uri"`
-		BlobCID       string           `json:"blobCid"`
-		Author        profileView      `json:"author"`
-		ImageURL      string           `json:"imageUrl"`
-		Text          string           `json:"text,omitempty"`
-		OriginURL     string           `json:"originUrl,omitempty"`
-		Attribution   *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt     string           `json:"createdAt"`
-		Viewer        *saveViewerState `json:"viewer,omitempty"`
-		Width         int              `json:"width,omitempty"`
-		Height        int              `json:"height,omitempty"`
-		DominantColor string           `json:"dominantColor,omitempty"`
-	}
-
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
-		sv := saveView{
-			URI:       row.URI,
-			BlobCID:   row.BlobCID,
-			Author:    author,
-			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
-			Text:      row.Text,
-			OriginURL: row.OriginURL,
-		}
-		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
-			sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
-		}
-		if row.CreatedAt != nil {
-			sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
-		}
-		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
-			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
-		}
-		if viewerDID != nil {
-			var saves []viewerSave
-			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
-				json.Unmarshal(row.ViewerSaves, &saves)
-			}
-			if saves == nil {
-				saves = []viewerSave{}
-			}
-			sv.Viewer = &saveViewerState{Saves: saves}
-		}
-		if row.Width != nil {
-			sv.Width = *row.Width
-		}
-		if row.Height != nil {
-			sv.Height = *row.Height
-		}
-		sv.DominantColor = firstHex(row.DominantColors)
-		views = append(views, sv)
+		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
 	}
 
 	type response struct {
@@ -486,13 +419,7 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hydrate author profiles (deduplicated)
-	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-	}
+	// Hydrate author profiles (deduplicated).
 	authorCache := map[string]profileView{}
 	for _, row := range saveRows {
 		if _, ok := authorCache[row.AuthorDID]; ok {
@@ -507,70 +434,9 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 		authorCache[row.AuthorDID] = pv
 	}
 
-	type strongRef struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	}
-	type viewerSave struct {
-		CollectionURI string `json:"collectionUri"`
-		SaveURI       string `json:"saveUri"`
-	}
-	type saveViewerState struct {
-		Saves []viewerSave `json:"saves"`
-	}
-	type saveView struct {
-		URI           string           `json:"uri"`
-		BlobCID       string           `json:"blobCid"`
-		Author        profileView      `json:"author"`
-		ImageURL      string           `json:"imageUrl"`
-		Text          string           `json:"text,omitempty"`
-		OriginURL     string           `json:"originUrl,omitempty"`
-		Attribution   *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt     string           `json:"createdAt"`
-		Viewer        *saveViewerState `json:"viewer,omitempty"`
-		Width         int              `json:"width,omitempty"`
-		Height        int              `json:"height,omitempty"`
-		DominantColor string           `json:"dominantColor,omitempty"`
-	}
-
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
-		sv := saveView{
-			URI:       row.URI,
-			BlobCID:   row.BlobCID,
-			Author:    authorCache[row.AuthorDID],
-			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
-			Text:      row.Text,
-			OriginURL: row.OriginURL,
-		}
-		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
-			sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
-		}
-		if row.CreatedAt != nil {
-			sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
-		}
-		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
-			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
-		}
-		if viewerDID != nil {
-			var saves []viewerSave
-			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
-				json.Unmarshal(row.ViewerSaves, &saves)
-			}
-			if saves == nil {
-				saves = []viewerSave{}
-			}
-			sv.Viewer = &saveViewerState{Saves: saves}
-		}
-		if row.Width != nil {
-			sv.Width = *row.Width
-		}
-		if row.Height != nil {
-			sv.Height = *row.Height
-		}
-		sv.DominantColor = firstHex(row.DominantColors)
-		views = append(views, sv)
+		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
 
 	var nextCursor string
@@ -629,12 +495,6 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-	}
 	authorCache := map[string]profileView{}
 	for _, row := range saveRows {
 		if _, ok := authorCache[row.AuthorDID]; ok {
@@ -649,70 +509,9 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		authorCache[row.AuthorDID] = pv
 	}
 
-	type strongRef struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	}
-	type viewerSave struct {
-		CollectionURI string `json:"collectionUri"`
-		SaveURI       string `json:"saveUri"`
-	}
-	type saveViewerState struct {
-		Saves []viewerSave `json:"saves"`
-	}
-	type saveView struct {
-		URI           string           `json:"uri"`
-		BlobCID       string           `json:"blobCid"`
-		Author        profileView      `json:"author"`
-		ImageURL      string           `json:"imageUrl"`
-		Text          string           `json:"text,omitempty"`
-		OriginURL     string           `json:"originUrl,omitempty"`
-		Attribution   *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt     string           `json:"createdAt"`
-		Viewer        *saveViewerState `json:"viewer,omitempty"`
-		Width         int              `json:"width,omitempty"`
-		Height        int              `json:"height,omitempty"`
-		DominantColor string           `json:"dominantColor,omitempty"`
-	}
-
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
-		sv := saveView{
-			URI:       row.URI,
-			BlobCID:   row.BlobCID,
-			Author:    authorCache[row.AuthorDID],
-			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
-			Text:      row.Text,
-			OriginURL: row.OriginURL,
-		}
-		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
-			sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
-		}
-		if row.CreatedAt != nil {
-			sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
-		}
-		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
-			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
-		}
-		if viewerDID != nil {
-			var saves []viewerSave
-			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
-				json.Unmarshal(row.ViewerSaves, &saves)
-			}
-			if saves == nil {
-				saves = []viewerSave{}
-			}
-			sv.Viewer = &saveViewerState{Saves: saves}
-		}
-		if row.Width != nil {
-			sv.Width = *row.Width
-		}
-		if row.Height != nil {
-			sv.Height = *row.Height
-		}
-		sv.DominantColor = firstHex(row.DominantColors)
-		views = append(views, sv)
+		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
 
 	var nextCursor string
@@ -915,12 +714,6 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-	}
 	authorCache := map[string]profileView{}
 	for _, row := range saveRows {
 		if _, ok := authorCache[row.AuthorDID]; ok {
@@ -935,70 +728,9 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		authorCache[row.AuthorDID] = pv
 	}
 
-	type strongRef struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	}
-	type viewerSave struct {
-		CollectionURI string `json:"collectionUri"`
-		SaveURI       string `json:"saveUri"`
-	}
-	type saveViewerState struct {
-		Saves []viewerSave `json:"saves"`
-	}
-	type saveView struct {
-		URI           string           `json:"uri"`
-		BlobCID       string           `json:"blobCid"`
-		Author        profileView      `json:"author"`
-		ImageURL      string           `json:"imageUrl"`
-		Text          string           `json:"text,omitempty"`
-		OriginURL     string           `json:"originUrl,omitempty"`
-		Attribution   *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt     string           `json:"createdAt"`
-		Viewer        *saveViewerState `json:"viewer,omitempty"`
-		Width         int              `json:"width,omitempty"`
-		Height        int              `json:"height,omitempty"`
-		DominantColor string           `json:"dominantColor,omitempty"`
-	}
-
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
-		sv := saveView{
-			URI:       row.URI,
-			BlobCID:   row.BlobCID,
-			Author:    authorCache[row.AuthorDID],
-			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
-			Text:      row.Text,
-			OriginURL: row.OriginURL,
-		}
-		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
-			sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
-		}
-		if row.CreatedAt != nil {
-			sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
-		}
-		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
-			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
-		}
-		if viewerDID != nil {
-			var saves []viewerSave
-			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
-				json.Unmarshal(row.ViewerSaves, &saves)
-			}
-			if saves == nil {
-				saves = []viewerSave{}
-			}
-			sv.Viewer = &saveViewerState{Saves: saves}
-		}
-		if row.Width != nil {
-			sv.Width = *row.Width
-		}
-		if row.Height != nil {
-			sv.Height = *row.Height
-		}
-		sv.DominantColor = firstHex(row.DominantColors)
-		views = append(views, sv)
+		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
 
 	type response struct {
@@ -1103,12 +835,6 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-	}
 	authorCache := map[string]profileView{}
 	for _, row := range saveRows {
 		if _, ok := authorCache[row.AuthorDID]; ok {
@@ -1123,70 +849,9 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		authorCache[row.AuthorDID] = pv
 	}
 
-	type strongRef struct {
-		URI string `json:"uri"`
-		CID string `json:"cid"`
-	}
-	type viewerSave struct {
-		CollectionURI string `json:"collectionUri"`
-		SaveURI       string `json:"saveUri"`
-	}
-	type saveViewerState struct {
-		Saves []viewerSave `json:"saves"`
-	}
-	type saveView struct {
-		URI           string           `json:"uri"`
-		BlobCID       string           `json:"blobCid"`
-		Author        profileView      `json:"author"`
-		ImageURL      string           `json:"imageUrl"`
-		Text          string           `json:"text,omitempty"`
-		OriginURL     string           `json:"originUrl,omitempty"`
-		Attribution   *saveAttribution `json:"attribution,omitempty"`
-		ResaveOf      *strongRef       `json:"resaveOf,omitempty"`
-		CreatedAt     string           `json:"createdAt"`
-		Viewer        *saveViewerState `json:"viewer,omitempty"`
-		Width         int              `json:"width,omitempty"`
-		Height        int              `json:"height,omitempty"`
-		DominantColor string           `json:"dominantColor,omitempty"`
-	}
-
 	byURI := map[string]saveView{}
 	for _, row := range saveRows {
-		sv := saveView{
-			URI:       row.URI,
-			BlobCID:   row.BlobCID,
-			Author:    authorCache[row.AuthorDID],
-			ImageURL:  s.CDNBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
-			Text:      row.Text,
-			OriginURL: row.OriginURL,
-		}
-		if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
-			sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
-		}
-		if row.CreatedAt != nil {
-			sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
-		}
-		if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
-			sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
-		}
-		if viewerDID != nil {
-			var saves []viewerSave
-			if len(row.ViewerSaves) > 0 && string(row.ViewerSaves) != "null" {
-				json.Unmarshal(row.ViewerSaves, &saves)
-			}
-			if saves == nil {
-				saves = []viewerSave{}
-			}
-			sv.Viewer = &saveViewerState{Saves: saves}
-		}
-		if row.Width != nil {
-			sv.Width = *row.Width
-		}
-		if row.Height != nil {
-			sv.Height = *row.Height
-		}
-		sv.DominantColor = firstHex(row.DominantColors)
-		byURI[row.URI] = sv
+		byURI[row.URI] = buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL)
 	}
 
 	views := make([]saveView, 0, len(saveRows))

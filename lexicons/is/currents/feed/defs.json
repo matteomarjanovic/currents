@@ -4,7 +4,13 @@
   "defs": {
     "collectionView": {
       "type": "object",
-      "required": ["uri", "cid", "author", "name", "createdAt"],
+      "required": [
+        "uri",
+        "cid",
+        "author",
+        "name",
+        "createdAt"
+      ],
       "properties": {
         "uri": {
           "type": "string",
@@ -58,25 +64,28 @@
     },
     "saveView": {
       "type": "object",
-      "required": ["uri", "blobCid", "author", "imageUrl", "createdAt"],
+      "required": [
+        "uri",
+        "author",
+        "content",
+        "createdAt"
+      ],
       "properties": {
         "uri": {
           "type": "string",
           "format": "at-uri"
         },
-        "blobCid": {
-          "type": "string",
-          "format": "cid",
-          "description": "CID of the saved image blob."
-        },
         "author": {
           "type": "ref",
           "ref": "is.currents.actor.defs#profileView"
         },
-        "imageUrl": {
-          "type": "string",
-          "format": "uri",
-          "description": "CDN URL of the image, resolved server-side from the blob reference."
+        "content": {
+          "type": "union",
+          "refs": [
+            "is.currents.content.defs#imageView"
+          ],
+          "closed": false,
+          "description": "Content payload for this save."
         },
         "text": {
           "type": "string"
@@ -112,18 +121,6 @@
           "type": "ref",
           "ref": "#saveViewerState",
           "description": "Viewer-specific state. Only present when the request is authenticated."
-        },
-        "width": {
-          "type": "integer",
-          "description": "Width of the image in pixels. Absent if unknown."
-        },
-        "height": {
-          "type": "integer",
-          "description": "Height of the image in pixels. Absent if unknown."
-        },
-        "dominantColor": {
-          "type": "string",
-          "description": "Hex color code of the most dominant color, for placeholder rendering. Absent if unknown."
         }
       }
     },
@@ -136,10 +133,19 @@
           "description": "The viewer's own saves of this item, one per collection they have saved it in.",
           "items": {
             "type": "object",
-            "required": ["collectionUri", "saveUri"],
+            "required": [
+              "collectionUri",
+              "saveUri"
+            ],
             "properties": {
-              "collectionUri": { "type": "string", "format": "at-uri" },
-              "saveUri": { "type": "string", "format": "at-uri" }
+              "collectionUri": {
+                "type": "string",
+                "format": "at-uri"
+              },
+              "saveUri": {
+                "type": "string",
+                "format": "at-uri"
+              }
             }
           }
         }

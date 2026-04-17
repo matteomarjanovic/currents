@@ -1,0 +1,21 @@
+{
+    "lexicon": 1,
+    "id": "is.currents.content.image",
+    "defs": {
+        "main": {
+            "type": "object",
+            "required": [
+                "image"
+            ],
+            "properties": {
+                "image": {
+                    "type": "blob",
+                    "accept": [
+                        "image/*"
+                    ],
+                    "maxSize": 20000000
+                }
+            }
+        }
+    }
+}

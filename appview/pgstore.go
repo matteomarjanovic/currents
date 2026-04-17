@@ -350,6 +350,8 @@ func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limi
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
 				WHERE s2.collection_uri = c.uri
+				  AND s2.content_nsid = 'is.currents.content.image'
+				  AND s2.pds_blob_cid <> ''
 				ORDER BY s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs
@@ -424,6 +426,8 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
 				WHERE s2.collection_uri = c.uri
+				  AND s2.content_nsid = 'is.currents.content.image'
+				  AND s2.pds_blob_cid <> ''
 				ORDER BY s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
@@ -509,6 +513,8 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
 				WHERE s2.collection_uri = c.uri
+				  AND s2.content_nsid = 'is.currents.content.image'
+				  AND s2.pds_blob_cid <> ''
 				ORDER BY s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
@@ -535,13 +541,14 @@ type SaveRow struct {
 	URI                string
 	BlobCID            string
 	AuthorDID          string
+	ContentNSID        string
 	Text               string
 	OriginURL          string
 	AttributionURL     string
 	AttributionLicense string
 	AttributionCredit  string
 	ResaveOfURI        string
-	ResaveOfCID        string // pds_blob_cid of the referenced save; empty if not in DB
+	ResaveOfCID        string // record CID of the referenced save; empty until backfilled
 	CreatedAt          *time.Time
 	ViewerSaves        json.RawMessage // null when unauthenticated; [{collectionUri,saveUri},...] when authenticated
 	Width              *int
@@ -555,15 +562,16 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 			s.uri,
 			s.pds_blob_cid,
 			s.author_did,
+			COALESCE(s.content_nsid, 'is.currents.content.image'),
 			COALESCE(s.text, ''),
 			COALESCE(s.origin_url, ''),
 			COALESCE(s.attribution_url, ''),
 			COALESCE(s.attribution_license, ''),
 			COALESCE(s.attribution_credit, ''),
 			COALESCE(s.resave_of_uri, ''),
-			COALESCE(ros.pds_blob_cid, ''),
+			COALESCE(s.resave_of_cid, ''),
 			s.created_at,
-			CASE WHEN $2 != '' THEN (
+			CASE WHEN $2 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $2 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
@@ -571,7 +579,6 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 			s.height,
 			s.dominant_colors
 		FROM save s
-		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
 		WHERE s.uri = ANY($1)
 	`
 	rows, err := m.pool.Query(ctx, query, saveURIs, viewerDID)
@@ -583,7 +590,7 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -620,15 +627,16 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 			s.uri,
 			s.pds_blob_cid,
 			s.author_did,
+			COALESCE(s.content_nsid, 'is.currents.content.image'),
 			COALESCE(s.text, ''),
 			COALESCE(s.origin_url, ''),
 			COALESCE(s.attribution_url, ''),
 			COALESCE(s.attribution_license, ''),
 			COALESCE(s.attribution_credit, ''),
 			COALESCE(s.resave_of_uri, ''),
-			COALESCE(ros.pds_blob_cid, ''),
+			COALESCE(s.resave_of_cid, ''),
 			s.created_at,
-			CASE WHEN $3 != '' THEN (
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
@@ -636,7 +644,6 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 			s.height,
 			s.dominant_colors
 		FROM save s
-		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
 		WHERE s.collection_uri = $1
 		  %s
 		ORDER BY s.created_at DESC NULLS LAST, s.uri ASC
@@ -652,7 +659,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -678,12 +685,14 @@ type UpsertSaveParams struct {
 	AuthorDID          string
 	CollectionURI      string
 	PdsBlobCID         string
+	ContentNSID        string
 	Text               string
 	OriginURL          string
 	AttributionURL     string
 	AttributionLicense string
 	AttributionCredit  string
 	ResaveOfURI        string
+	ResaveOfCID        string
 	CreatedAt          *time.Time
 	VisualIdentityID   *string
 	QualityScore       *float32
@@ -694,23 +703,25 @@ type UpsertSaveParams struct {
 
 func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 	_, err := m.pool.Exec(ctx, `
-		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, created_at, visual_identity_id, quality_score, width, height, dominant_colors)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (uri) DO UPDATE
 			SET collection_uri      = EXCLUDED.collection_uri,
 			    pds_blob_cid        = EXCLUDED.pds_blob_cid,
+			    content_nsid       = EXCLUDED.content_nsid,
 			    text                = EXCLUDED.text,
 			    origin_url          = EXCLUDED.origin_url,
 			    attribution_url     = EXCLUDED.attribution_url,
 			    attribution_license = EXCLUDED.attribution_license,
 			    attribution_credit  = EXCLUDED.attribution_credit,
 			    resave_of_uri       = EXCLUDED.resave_of_uri,
+			    resave_of_cid       = EXCLUDED.resave_of_cid,
 			    visual_identity_id  = EXCLUDED.visual_identity_id,
 			    quality_score       = EXCLUDED.quality_score,
 			    width               = EXCLUDED.width,
 			    height              = EXCLUDED.height,
 			    dominant_colors     = EXCLUDED.dominant_colors
-	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors))
+	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors))
 	return err
 }
 
@@ -1059,15 +1070,16 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 			s.uri,
 			s.pds_blob_cid,
 			s.author_did,
+			COALESCE(s.content_nsid, 'is.currents.content.image'),
 			COALESCE(s.text, ''),
 			COALESCE(s.origin_url, ''),
 			COALESCE(s.attribution_url, ''),
 			COALESCE(s.attribution_license, ''),
 			COALESCE(s.attribution_credit, ''),
 			COALESCE(s.resave_of_uri, ''),
-			COALESCE(ros.pds_blob_cid, ''),
+			COALESCE(s.resave_of_cid, ''),
 			s.created_at,
-			CASE WHEN $3 != '' THEN (
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
@@ -1076,7 +1088,6 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
 		WHERE vi.embedding IS NOT NULL ` + excludeClause + `
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
@@ -1099,7 +1110,7 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -1141,15 +1152,16 @@ func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDI
 			s.uri,
 			s.pds_blob_cid,
 			s.author_did,
+			COALESCE(s.content_nsid, 'is.currents.content.image'),
 			COALESCE(s.text, ''),
 			COALESCE(s.origin_url, ''),
 			COALESCE(s.attribution_url, ''),
 			COALESCE(s.attribution_license, ''),
 			COALESCE(s.attribution_credit, ''),
 			COALESCE(s.resave_of_uri, ''),
-			COALESCE(ros.pds_blob_cid, ''),
+			COALESCE(s.resave_of_cid, ''),
 			s.created_at,
-			CASE WHEN $3 != '' THEN (
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
@@ -1158,7 +1170,6 @@ func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDI
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
 		WHERE vi.embedding IS NOT NULL
 			AND vi.id != (SELECT vi_id FROM src)
 		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
@@ -1171,7 +1182,7 @@ func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDI
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -1315,15 +1326,16 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			s.uri,
 			s.pds_blob_cid,
 			s.author_did,
+			COALESCE(s.content_nsid, 'is.currents.content.image'),
 			COALESCE(s.text, ''),
 			COALESCE(s.origin_url, ''),
 			COALESCE(s.attribution_url, ''),
 			COALESCE(s.attribution_license, ''),
 			COALESCE(s.attribution_credit, ''),
 			COALESCE(s.resave_of_uri, ''),
-			COALESCE(ros.pds_blob_cid, ''),
+			COALESCE(s.resave_of_cid, ''),
 			s.created_at,
-			CASE WHEN $1 != '' THEN (
+			CASE WHEN $1 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $1 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
@@ -1332,7 +1344,6 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		LEFT JOIN save ros ON ros.uri = s.resave_of_uri
 		` + excludeClause + `
 		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
 		LIMIT $2 OFFSET $3
@@ -1345,7 +1356,7 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

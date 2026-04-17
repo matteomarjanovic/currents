@@ -473,8 +473,8 @@ func (s *Server) ListSaves(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var val struct {
-			OriginURL string `json:"originUrl"`
-			Text      string `json:"text"`
+			OriginURL  string `json:"originUrl"`
+			Text       string `json:"text"`
 			Collection struct {
 				URI string `json:"uri"`
 			} `json:"collection"`
@@ -598,7 +598,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collectionStrongRef,
-		"image":      blobAny,
+		"content":    buildImageContentRecord(blobAny),
 		"createdAt":  syntax.DatetimeNow().String(),
 	}
 	if url != "" {
@@ -633,6 +633,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		Collection: saveNSID,
 		Repo:       did.String(),
 		Record:     record,
+		Validate:   boolPtr(false),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("creating record: %s", err), http.StatusInternalServerError)
@@ -697,7 +698,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch existing record to preserve image blob and fields not in the form
+	// Fetch existing record to preserve content and fields not in the form.
 	existing, err := comatproto.RepoGetRecord(r.Context(), c, "", saveNSID, did.String(), rkey)
 	if err != nil {
 		if s.handleSessionError(err, w, r) {
@@ -707,6 +708,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var existingVal struct {
+		Content     json.RawMessage `json:"content"`
 		Image       json.RawMessage `json:"image"`
 		CreatedAt   string          `json:"createdAt"`
 		OriginURL   string          `json:"originUrl"`
@@ -717,9 +719,10 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
 	}
-	var imageAny any
-	if existingVal.Image != nil {
-		json.Unmarshal(existingVal.Image, &imageAny)
+	contentAny, err := buildSaveContent(existingVal.Content, existingVal.Image)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("parsing existing save content: %s", err), http.StatusInternalServerError)
+		return
 	}
 
 	// Resolve collection strongRef
@@ -732,7 +735,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collectionStrongRef,
-		"image":      imageAny,
+		"content":    contentAny,
 		"createdAt":  existingVal.CreatedAt,
 	}
 
@@ -778,6 +781,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		Repo:       did.String(),
 		Rkey:       rkey,
 		Record:     record,
+		Validate:   boolPtr(false),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("updating record: %s", err), http.StatusInternalServerError)
@@ -881,7 +885,7 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collectionStrongRef,
-		"image":      blobAny,
+		"content":    buildImageContentRecord(blobAny),
 		"resaveOf":   resaveRef,
 		"createdAt":  syntax.DatetimeNow().String(),
 	}
@@ -890,6 +894,7 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		Collection: saveNSID,
 		Repo:       did.String(),
 		Record:     record,
+		Validate:   boolPtr(false),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("creating record: %s", err), http.StatusInternalServerError)
