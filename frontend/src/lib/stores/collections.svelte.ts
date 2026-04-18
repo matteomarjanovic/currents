@@ -27,3 +27,7 @@ export function setLastUsedCollection(uri: string) {
 	collections.lastUsedUri = uri;
 	localStorage.setItem('lastUsedCollectionUri', uri);
 }
+
+export function addCollection(collection: CollectionView) {
+	collections.items = [collection, ...collections.items];
+}

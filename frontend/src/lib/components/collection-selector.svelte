@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import type { SaveView } from '$lib/types';
+	import type { CollectionView, SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { collections, setLastUsedCollection } from '$lib/stores/collections.svelte';
+	import { addCollection, collections, setLastUsedCollection } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Toggle } from '$lib/components/ui/toggle';
@@ -11,6 +11,8 @@
 	import * as Drawer from '$lib/components/ui/drawer';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Plus from '@lucide/svelte/icons/plus';
+	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 
 	interface Props {
 		item: SaveView;
@@ -24,11 +26,13 @@
 		untrack(() => (item.viewer?.saves ? [...item.viewer.saves] : []))
 	);
 
-	let selectedCollectionUri = $state(
-		untrack(() => localSaves[0]?.collectionUri ?? collections.lastUsedUri)
+	let userSelectedUri = $state<string | null>(null);
+	let selectedCollectionUri = $derived(
+		userSelectedUri ?? localSaves[0]?.collectionUri ?? collections.lastUsedUri
 	);
 
 	let open = $state(false);
+	let createOpen = $state(false);
 	$effect(() => {
 		onOpenChange?.(open);
 	});
@@ -111,13 +115,14 @@
 	}
 
 	function toggleCollection(uri: string) {
-		selectedCollectionUri = uri;
+		userSelectedUri = uri;
 		const existing = isSavedIn(uri);
 		if (existing) {
 			unsave(existing, uri);
 		} else {
 			save(uri);
 		}
+		if (variant === 'popover') open = false;
 	}
 
 	function handleButtonClick() {
@@ -129,9 +134,26 @@
 			save(selectedCollectionUri);
 		}
 	}
+
+	function handleCreated(collection: CollectionView) {
+		addCollection(collection);
+		userSelectedUri = collection.uri;
+		setLastUsedCollection(collection.uri);
+		save(collection.uri);
+	}
 </script>
 
 {#snippet collectionList()}
+	<button
+		class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
+		onclick={() => {
+			open = false;
+			createOpen = true;
+		}}
+	>
+		<Plus class="size-4 shrink-0" />
+		<span class="truncate">Create new collection</span>
+	</button>
 	{#each sortedCollections as col (col.uri)}
 		<button
 			class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
@@ -168,7 +190,7 @@
 			</Popover.Trigger>
 			<Popover.Content
 				align="start"
-				class="max-h-[40vh] gap-0 overflow-y-auto bg-popover/70 p-1.5 backdrop-blur-2xl backdrop-saturate-150"
+				class="scrollbar-hide max-h-[40vh] gap-0 overflow-y-auto bg-popover/70 p-1.5 backdrop-blur-2xl backdrop-saturate-150"
 			>
 				{@render collectionList()}
 			</Popover.Content>
@@ -211,3 +233,5 @@
 		</Drawer.Content>
 	</Drawer.Root>
 {/if}
+
+<CollectionCreateDialog bind:open={createOpen} onCreated={handleCreated} />
