@@ -104,10 +104,11 @@
 			side="top"
 			align="end"
 			sideOffset={8}
-			class="w-56 gap-2 bg-popover/70 px-4 py-3 backdrop-blur-2xl backdrop-saturate-150"
+			class="w-56 items-center gap-2 bg-popover/70 px-4 py-3 backdrop-blur-2xl backdrop-saturate-150"
 		>
+			<span class="text-xs text-muted-foreground">Personalization level</span>
 			<div
-				class="flex justify-between text-xs font-medium whitespace-nowrap text-popover-foreground"
+				class="flex w-full justify-between text-sm font-normal whitespace-nowrap text-popover-foreground"
 			>
 				<span>Personal</span>
 				<span>New worlds</span>

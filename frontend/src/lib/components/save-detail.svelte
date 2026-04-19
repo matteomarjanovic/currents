@@ -21,7 +21,41 @@
 	}
 
 	let { save, onClose }: Props = $props();
-	let image = $derived(getImageContent(save));
+	let hydratedSave = $state<SaveView | null>(null);
+	let currentSave = $derived(hydratedSave ?? save);
+	let image = $derived(getImageContent(currentSave));
+
+	$effect(() => {
+		void save.uri;
+		hydratedSave = null;
+	});
+
+	$effect(() => {
+		const uri = save.uri;
+		if (!auth.checked || !auth.user || save.viewer?.saves !== undefined) return;
+
+		let cancelled = false;
+		void (async () => {
+			try {
+				const params = new URLSearchParams({ uris: uri });
+				const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`, {
+					credentials: 'include'
+				});
+				if (!res.ok) return;
+				const data = (await res.json()) as { saves?: SaveView[] };
+				const fetchedSave = data.saves?.[0];
+				if (!cancelled && fetchedSave?.uri === uri) {
+					hydratedSave = fetchedSave;
+				}
+			} catch (error) {
+				console.error('hydrate save failed', error);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	function goBack() {
 		if (onClose) {
@@ -35,10 +69,10 @@
 		}
 	}
 
-	let authorName = $derived(save.author.displayName || save.author.handle);
+	let authorName = $derived(currentSave.author.displayName || currentSave.author.handle);
 
 	const related = useInfiniteScroll(async (cursor) => {
-		const params = new URLSearchParams({ uri: save.uri, limit: '50' });
+		const params = new URLSearchParams({ uri: currentSave.uri, limit: '50' });
 		if (cursor) params.set('cursor', cursor);
 		const res = await fetch(
 			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getRelatedSaves?${params}`,
@@ -49,7 +83,7 @@
 	});
 
 	$effect(() => {
-		void save.uri;
+		void currentSave.uri;
 		untrack(() => {
 			related.reset();
 			related.loadMore();
@@ -87,36 +121,36 @@
 		</div>
 	</div> -->
 
-	{#if save.text}
-		<p class="text-sm whitespace-pre-wrap">{save.text}</p>
+	{#if currentSave.text}
+		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
 
-	{#if save.originUrl}
+	{#if currentSave.originUrl}
 		<div class="inline-flex items-center gap-1 text-sm text-muted-foreground">
 			<span>Source:</span>
 			<a
-				href={save.originUrl}
+				href={currentSave.originUrl}
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center gap-1 hover:text-foreground"
 			>
-				<span class="truncate">{new URL(save.originUrl).hostname}</span>
+				<span class="truncate">{new URL(currentSave.originUrl).hostname}</span>
 				<ExternalLink class="size-3.5" />
 			</a>
 		</div>
 	{/if}
 
-	{#if save.attribution && (save.attribution.credit || save.attribution.license || save.attribution.url)}
+	{#if currentSave.attribution && (currentSave.attribution.credit || currentSave.attribution.license || currentSave.attribution.url)}
 		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			{#if save.attribution.credit}
-				<span>Credit: {save.attribution.credit}</span>
+			{#if currentSave.attribution.credit}
+				<span>Credit: {currentSave.attribution.credit}</span>
 			{/if}
-			{#if save.attribution.license}
-				<span>License: {save.attribution.license}</span>
+			{#if currentSave.attribution.license}
+				<span>License: {currentSave.attribution.license}</span>
 			{/if}
-			{#if save.attribution.url}
+			{#if currentSave.attribution.url}
 				<a
-					href={save.attribution.url}
+					href={currentSave.attribution.url}
 					target="_blank"
 					rel="noopener noreferrer"
 					class="inline-flex items-center gap-1 hover:text-foreground"
@@ -131,7 +165,7 @@
 
 {#snippet saveControl(variant: 'popover' | 'drawer')}
 	{#if auth.user && collections.loaded}
-		<CollectionSelector item={save} {variant} />
+		<CollectionSelector item={currentSave} {variant} />
 	{:else if auth.checked}
 		<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
 	{/if}
@@ -158,7 +192,7 @@
 		{#if image}
 			<img
 				src={image.imageUrl}
-				alt={save.text ?? ''}
+				alt={currentSave.text ?? ''}
 				class="max-h-full max-w-full object-contain"
 				style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 			/>
@@ -186,7 +220,7 @@
 	{#if image}
 		<img
 			src={image.imageUrl}
-			alt={save.text ?? ''}
+			alt={currentSave.text ?? ''}
 			class="w-full rounded-lg"
 			style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
 		/>

@@ -3,7 +3,7 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import type { CollectionView, SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { addCollection, collections, setLastUsedCollection } from '$lib/stores/collections.svelte';
+	import { collections, setLastUsedCollection } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Toggle } from '$lib/components/ui/toggle';
@@ -25,11 +25,21 @@
 	let localSaves = $state<{ collectionUri: string; saveUri: string }[]>(
 		untrack(() => (item.viewer?.saves ? [...item.viewer.saves] : []))
 	);
+	let syncedItemUri = $state<string | null>(null);
 
 	let userSelectedUri = $state<string | null>(null);
 	let selectedCollectionUri = $derived(
 		userSelectedUri ?? localSaves[0]?.collectionUri ?? collections.lastUsedUri
 	);
+
+	$effect(() => {
+		const nextItemUri = item.uri;
+		localSaves = item.viewer?.saves ? [...item.viewer.saves] : [];
+		if (syncedItemUri !== nextItemUri) {
+			userSelectedUri = null;
+		}
+		syncedItemUri = nextItemUri;
+	});
 
 	let open = $state(false);
 	let createOpen = $state(false);
@@ -136,7 +146,7 @@
 	}
 
 	function handleCreated(collection: CollectionView) {
-		addCollection(collection);
+		collections.items = [collection, ...collections.items];
 		userSelectedUri = collection.uri;
 		setLastUsedCollection(collection.uri);
 		save(collection.uri);
