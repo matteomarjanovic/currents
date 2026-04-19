@@ -14,10 +14,9 @@
 		});
 		if (cursor) params.set('cursor', cursor);
 
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.searchSaves?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.searchSaves?${params}`, {
+			credentials: 'include'
+		});
 		const data = await res.json();
 		return { items: data.saves, cursor: data.cursor };
 	});
