@@ -111,9 +111,6 @@
 	</section> -->
 	<!-- Footer -->
 	<footer class="px-8 py-6 text-center text-sm text-muted-foreground">
-		&copy; {new Date().getFullYear()} Currents. Built by
-		<a href="https://matteomarjanovic.com" class="underline hover:text-foreground"
-			>Matteo Marjanovic</a
-		>.
+		&copy; {new Date().getFullYear()} Currents.
 	</footer>
 </div>

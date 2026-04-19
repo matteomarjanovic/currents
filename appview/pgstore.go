@@ -55,6 +55,11 @@ type SaveBackfillMetrics struct {
 	OldestMissingCreatedAt           *time.Time
 }
 
+type annSavePage struct {
+	Rows    []SaveRow
+	HasMore bool
+}
+
 type BackgroundMetrics struct {
 	Saves SaveBackfillMetrics
 }
@@ -1050,21 +1055,104 @@ func (m *PgStore) getSaveBackfillMetrics(ctx context.Context) (SaveBackfillMetri
 	return metrics, err
 }
 
+func searchSavesQueryLimit(limit int, excludeViewerSaves bool) int {
+	queryLimit := limit + 1
+	if excludeViewerSaves {
+		queryLimit = max(queryLimit, limit*2)
+	}
+	return queryLimit
+}
+
+func searchSavesMaxScanTuples(offset, fetchLimit int) int {
+	return max(20000, (offset+fetchLimit)*20)
+}
+
+func trimANNPage(rows []SaveRow, limit int) annSavePage {
+	if len(rows) > limit {
+		return annSavePage{Rows: rows[:limit], HasMore: true}
+	}
+	return annSavePage{Rows: rows}
+}
+
+func scanSaveRows(rows pgx.Rows) ([]SaveRow, error) {
+	defer rows.Close()
+
+	var result []SaveRow
+	for rows.Next() {
+		var row SaveRow
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (m *PgStore) setANNQueryOptions(ctx context.Context, tx pgx.Tx, offset, fetchLimit int) error {
+	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.ef_search', $1, true)`, strconv.Itoa(searchSavesEFSearch(offset, fetchLimit))); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.iterative_scan', 'strict_order', true)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.max_scan_tuples', $1, true)`, strconv.Itoa(searchSavesMaxScanTuples(offset, fetchLimit))); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *PgStore) queryANNSavePage(ctx context.Context, query string, args []any, limit, fetchLimit, offset int) (annSavePage, error) {
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return annSavePage{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := m.setANNQueryOptions(ctx, tx, offset, fetchLimit); err != nil {
+		return annSavePage{}, err
+	}
+
+	rows, err := tx.Query(ctx, query, args...)
+	if err != nil {
+		return annSavePage{}, err
+	}
+	result, err := scanSaveRows(rows)
+	if err != nil {
+		return annSavePage{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return annSavePage{}, err
+	}
+	return trimANNPage(result, limit), nil
+}
+
 // SearchSavesByEmbedding returns saves whose visual identity is nearest to the given embedding,
 // ordered by cosine distance. Offset-based pagination; pass offset=0 for the first page.
 func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
+	page, err := m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, limit, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return page.Rows, nil
+}
+
+func (m *PgStore) SearchSavesPageByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) (annSavePage, error) {
+	return m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, limit, searchSavesQueryLimit(limit, excludeViewerSaves), offset)
+}
+
+func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, fetchLimit, offset int) (annSavePage, error) {
 	vec := pgvector.NewVector(embedding)
 	applyExclude := excludeViewerSaves && viewerDID != ""
 	excludeClause := ""
-	fetchLimit := limit
 	if applyExclude {
 		excludeClause = `AND NOT EXISTS (
 			SELECT 1 FROM save v
 			WHERE v.author_did = $3 AND v.pds_blob_cid = s.pds_blob_cid
 		)`
-		fetchLimit = limit * 2
 	}
-	efSearch := searchSavesEFSearch(offset, fetchLimit)
 	query := `
 		SELECT
 			s.uri,
@@ -1092,40 +1180,7 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
 	`
-	tx, err := m.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.ef_search', $1, true)`, strconv.Itoa(efSearch)); err != nil {
-		return nil, err
-	}
-
-	rows, err := tx.Query(ctx, query, vec, fetchLimit, viewerDID, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var result []SaveRow
-	for rows.Next() {
-		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
-			return nil, err
-		}
-		result = append(result, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	rows.Close()
-	if applyExclude && len(result) > limit {
-		result = result[:limit]
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return m.queryANNSavePage(ctx, query, []any{vec, fetchLimit, viewerDID, offset}, limit, fetchLimit, offset)
 }
 
 func searchSavesEFSearch(offset, fetchLimit int) int {
@@ -1141,7 +1196,19 @@ func searchSavesEFSearch(offset, fetchLimit int) int {
 // own visual identity so resaves of the same image don't appear as related.
 // Returns an empty slice if the source save is unknown or has no embedding.
 func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDID string, limit, offset int) ([]SaveRow, error) {
-	rows, err := m.pool.Query(ctx, `
+	page, err := m.getRelatedSavesPageByURI(ctx, uri, viewerDID, limit, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return page.Rows, nil
+}
+
+func (m *PgStore) GetRelatedSavesPageByURI(ctx context.Context, uri string, viewerDID string, limit, offset int) (annSavePage, error) {
+	return m.getRelatedSavesPageByURI(ctx, uri, viewerDID, limit, limit+1, offset)
+}
+
+func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, viewerDID string, limit, fetchLimit, offset int) (annSavePage, error) {
+	query := `
 		WITH src AS (
 			SELECT vi.id AS vi_id, vi.embedding
 			FROM save s
@@ -1174,20 +1241,8 @@ func (m *PgStore) GetRelatedSavesByURI(ctx context.Context, uri string, viewerDI
 			AND vi.id != (SELECT vi_id FROM src)
 		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
 		LIMIT $2 OFFSET $4
-	`, uri, limit, viewerDID, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var result []SaveRow
-	for rows.Next() {
-		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
-			return nil, err
-		}
-		result = append(result, row)
-	}
-	return result, rows.Err()
+	`
+	return m.queryANNSavePage(ctx, query, []any{uri, fetchLimit, viewerDID, offset}, limit, fetchLimit, offset)
 }
 
 // ── Feed methods ─────────────────────────────────────────────────────────────

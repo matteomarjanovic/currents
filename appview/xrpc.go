@@ -412,12 +412,13 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	}
 
 	excludeSaved := r.URL.Query().Get("excludeSaved") == "true" && viewerDID != nil
-	saveRows, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, limit, offset)
+	page, err := s.Store.SearchSavesPageByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, limit, offset)
 	if err != nil {
 		slog.Error("SearchSavesByEmbedding", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	saveRows := page.Rows
 
 	// Hydrate author profiles (deduplicated).
 	authorCache := map[string]profileView{}
@@ -440,8 +441,8 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nextCursor string
-	if len(saveRows) == limit {
-		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + limit)))
+	if page.HasMore {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(saveRows))))
 	}
 
 	type response struct {
@@ -488,12 +489,13 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 		viewerStr = viewerDID.String()
 	}
 
-	saveRows, err := s.Store.GetRelatedSavesByURI(r.Context(), uri, viewerStr, limit, offset)
+	page, err := s.Store.GetRelatedSavesPageByURI(r.Context(), uri, viewerStr, limit, offset)
 	if err != nil {
 		slog.Error("GetRelatedSavesByURI", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	saveRows := page.Rows
 
 	authorCache := map[string]profileView{}
 	for _, row := range saveRows {
@@ -515,8 +517,8 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nextCursor string
-	if len(saveRows) == limit {
-		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + limit)))
+	if page.HasMore {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(saveRows))))
 	}
 
 	type response struct {
