@@ -15,6 +15,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"strconv"
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/identity"
@@ -42,35 +43,48 @@ func NewInferenceClient(baseURL string) *InferenceClient {
 // ImageEmbedding holds the result of an /embed/image call.
 // UMAPEmbedding is nil when the inference server has no UMAP model loaded.
 type ImageEmbedding struct {
-	Embedding     []float32
-	UMAPEmbedding []float32
+	Embedding      []float32       `json:"embedding"`
+	UMAPEmbedding  []float32       `json:"umap_embedding"`
+	Width          int             `json:"width"`
+	Height         int             `json:"height"`
+	DominantColors json.RawMessage `json:"dominant_colors"`
 }
 
-func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mimeType string) (ImageEmbedding, error) {
+func (c *InferenceClient) doImageRequest(ctx context.Context, path string, imageBytes []byte, mimeType string, fields map[string]string) (*http.Response, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	if mimeType == "" {
 		mimeType = http.DetectContentType(imageBytes)
+	}
+	for key, value := range fields {
+		if err := mw.WriteField(key, value); err != nil {
+			return nil, err
+		}
 	}
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Disposition", `form-data; name="file"; filename="image"`)
 	h.Set("Content-Type", mimeType)
 	fw, err := mw.CreatePart(h)
 	if err != nil {
-		return ImageEmbedding{}, err
+		return nil, err
 	}
 	if _, err := fw.Write(imageBytes); err != nil {
-		return ImageEmbedding{}, err
+		return nil, err
 	}
-	mw.Close()
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embed/image", &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, &buf)
 	if err != nil {
-		return ImageEmbedding{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	return c.client.Do(req)
+}
 
-	resp, err := c.client.Do(req)
+func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mimeType string) (ImageEmbedding, error) {
+	resp, err := c.doImageRequest(ctx, "/embed/image", imageBytes, mimeType, nil)
 	if err != nil {
 		return ImageEmbedding{}, err
 	}
@@ -81,14 +95,36 @@ func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mim
 		return ImageEmbedding{}, fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
 	}
 
-	var result struct {
-		Embedding     []float32 `json:"embedding"`
-		UMAPEmbedding []float32 `json:"umap_embedding"`
-	}
+	var result ImageEmbedding
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return ImageEmbedding{}, fmt.Errorf("decoding inference response: %w", err)
 	}
-	return ImageEmbedding{Embedding: result.Embedding, UMAPEmbedding: result.UMAPEmbedding}, nil
+	return result, nil
+}
+
+func (c *InferenceClient) PrepareImage(ctx context.Context, imageBytes []byte, mimeType string, maxBytes int) ([]byte, string, error) {
+	resp, err := c.doImageRequest(ctx, "/prepare/image", imageBytes, mimeType, map[string]string{
+		"max_bytes": strconv.Itoa(maxBytes),
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
+	}
+
+	prepared, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading prepared image response: %w", err)
+	}
+	mimeType = resp.Header.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = http.DetectContentType(prepared)
+	}
+	return prepared, mimeType, nil
 }
 
 func (c *InferenceClient) EmbedText(ctx context.Context, text string) ([]float32, error) {

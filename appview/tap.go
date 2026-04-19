@@ -12,7 +12,6 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/gorilla/websocket"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -381,35 +380,19 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 		return err
 	}
 
-	var (
-		inferResult    ImageEmbedding
-		dominantColors json.RawMessage
-		imgWidth       int
-		imgHeight      int
-	)
-	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		var err error
-		inferResult, err = handler.Inference.EmbedImage(gctx, imageBytes, mimeType)
-		return err
-	})
-	g.Go(func() error {
-		var err error
-		dominantColors, imgWidth, imgHeight, err = analyzeImageLocally(imageBytes)
-		return err
-	})
-	if err := g.Wait(); err != nil {
+	inferResult, err := handler.Inference.EmbedImage(ctx, imageBytes, mimeType)
+	if err != nil {
 		return err
 	}
 
-	quality := float32(qualityScore(imgWidth, imgHeight))
+	quality := float32(qualityScore(inferResult.Width, inferResult.Height))
 	nearestVI, err := handler.Store.FindNearestVI(ctx, inferResult.Embedding, 0.02)
 	if err != nil {
 		return err
 	}
 
 	if nearestVI != nil {
-		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, *nearestVI, quality, imgWidth, imgHeight, dominantColors); err != nil {
+		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, *nearestVI, quality, inferResult.Width, inferResult.Height, inferResult.DominantColors); err != nil {
 			return err
 		}
 		if err := handler.Store.MaybePromoteCanonical(ctx, *nearestVI, source.AuthorDID, blobCID, source.URI, quality); err != nil {
@@ -420,7 +403,7 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 		if err != nil {
 			return err
 		}
-		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, newVI, quality, imgWidth, imgHeight, dominantColors); err != nil {
+		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, newVI, quality, inferResult.Width, inferResult.Height, inferResult.DominantColors); err != nil {
 			return err
 		}
 		if err := handler.Store.SetVICanonicalSave(ctx, newVI, source.URI); err != nil {

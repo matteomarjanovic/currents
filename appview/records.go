@@ -58,6 +58,24 @@ func resizeToLimit(data []byte) ([]byte, string, error) {
 	return nil, "", fmt.Errorf("could not shrink image below 20 MB")
 }
 
+func prepareImageForUpload(ctx context.Context, inference *InferenceClient, data []byte, contentType string) ([]byte, string, error) {
+	if len(data) <= maxBlobSize {
+		return data, contentType, nil
+	}
+	resized, newCT, err := resizeToLimit(data)
+	if err == nil {
+		return resized, newCT, nil
+	}
+	if inference == nil {
+		return nil, "", err
+	}
+	prepared, preparedCT, prepErr := inference.PrepareImage(ctx, data, contentType, maxBlobSize)
+	if prepErr != nil {
+		return nil, "", fmt.Errorf("resizing image in appview: %w; preparing in inference: %w", err, prepErr)
+	}
+	return prepared, preparedCT, nil
+}
+
 type CollectionData struct {
 	URI         string
 	Rkey        string
@@ -567,12 +585,14 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reading image file", http.StatusInternalServerError)
 		return
 	}
-	if resized, newCT, err := resizeToLimit(imageBytes); err != nil {
-		http.Error(w, "image too large and could not be resized", http.StatusBadRequest)
-		return
-	} else if newCT != "" {
-		imageBytes = resized
-		contentType = newCT
+	if len(imageBytes) > maxBlobSize {
+		prepared, preparedCT, err := prepareImageForUpload(r.Context(), s.Inference, imageBytes, contentType)
+		if err != nil {
+			http.Error(w, "image too large and could not be prepared for upload", http.StatusBadRequest)
+			return
+		}
+		imageBytes = prepared
+		contentType = preparedCT
 	}
 	var uploadOut struct {
 		Blob lexutil.LexBlob `json:"blob"`

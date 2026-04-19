@@ -4,6 +4,7 @@ torch
 torchvision
 transformers
 Pillow
+pillow-heif
 python-multipart
 umap-learn
 joblib

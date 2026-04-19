@@ -102,7 +102,7 @@ When a new save event arrives via TAP, the appview persists the save immediately
 
 1. **Resave shortcut** — if `resaveOf` points to a save already in the DB, reuse its `visual_identity_id` and `quality_score` directly (no blob fetch).
 2. **CID match** — if the blob CID already appears in another save row, reuse that row's `visual_identity_id` and `quality_score` (same CID = same pixels).
-3. **Novel image** — launch in-process async enrichment keyed by blob CID. A bounded goroutine fetches the blob from a candidate author's PDS, calls the inference server, computes image metadata locally, does the nearest-neighbor search against existing visual identities (cosine distance ≤ 0.02 = match), and then links every matching save row for that CID.
+3. **Novel image** — launch in-process async enrichment keyed by blob CID. A bounded goroutine fetches the blob from a candidate author's PDS, calls the inference server for both the embedding and image metadata, does the nearest-neighbor search against existing visual identities (cosine distance ≤ 0.02 = match), and then links every matching save row for that CID.
 
 Collection canonical embeddings are recomputed with an in-memory debounce so bulk imports do not run medoid calculation on every save.
 

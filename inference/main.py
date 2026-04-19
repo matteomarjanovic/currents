@@ -1,6 +1,7 @@
 # main.py
 import asyncio
 import io
+import math
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -9,10 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 import joblib
 import numpy as np
 import torch
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from PIL import Image
+from pillow_heif import register_heif_opener
 from pydantic import BaseModel
 from transformers import AutoModel, AutoProcessor
+
+register_heif_opener(thumbnails=False)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -27,9 +31,16 @@ TEXT_QUEUE_SIZE    = int(os.environ.get("TEXT_QUEUE_SIZE", "256"))
 IMAGE_MAX_BATCH    = int(os.environ.get("IMAGE_MAX_BATCH", "8"))
 IMAGE_MAX_WAIT_SECS = float(os.environ.get("IMAGE_MAX_WAIT_SECS", "0.020"))
 IMAGE_QUEUE_SIZE    = int(os.environ.get("IMAGE_QUEUE_SIZE", "64"))
+PREPARE_MAX_STEPS   = 10
+PREPARE_SCALE       = 0.85
+PREPARE_QUALITY     = 85
+PALETTE_K           = 5
+PALETTE_ITERS       = 10
+PALETTE_THUMB_SIZE  = 64
 
 MODELS_DIR = os.environ.get("MODELS_DIR", "./models")
 UMAP_PATH  = os.path.join(MODELS_DIR, "umap_model.joblib")
+RESAMPLE_NEAREST = getattr(Image, "Resampling", Image).NEAREST
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -105,6 +116,97 @@ def _embed_texts(texts: list[str]) -> list[list[float]]:
     if hasattr(features, "pooler_output"):
         features = features.pooler_output
     return features.cpu().float().numpy().tolist()
+
+
+def _fraction(value: float) -> float:
+    return math.floor(value * 10000 + 0.5) / 10000
+
+
+def _clamp_channel(value: float) -> int:
+    if value < 0:
+        return 0
+    if value > 255:
+        return 255
+    return int(value)
+
+
+def _kmeans(pixels: np.ndarray, k: int, iters: int) -> np.ndarray:
+    step = max(1, len(pixels) // k)
+    rng = np.random.default_rng()
+    centroids = np.empty((k, 3), dtype=np.float64)
+    for idx in range(k):
+        start = min(idx * step, len(pixels) - 1)
+        end = min(start + step, len(pixels))
+        if end <= start:
+            end = min(start + 1, len(pixels))
+        centroids[idx] = pixels[rng.integers(start, end)]
+
+    for _ in range(iters):
+        distances = np.sum((pixels[:, None, :] - centroids[None, :, :]) ** 2, axis=2)
+        assignments = np.argmin(distances, axis=1)
+
+        for idx in range(k):
+            members = pixels[assignments == idx]
+            if len(members) == 0:
+                centroids[idx] = pixels[rng.integers(0, len(pixels))]
+                continue
+            centroids[idx] = members.mean(axis=0)
+
+    return centroids
+
+
+def _dominant_colors(image: Image.Image) -> list[dict[str, float | str]]:
+    thumb = image.resize((PALETTE_THUMB_SIZE, PALETTE_THUMB_SIZE), RESAMPLE_NEAREST)
+    pixels = np.asarray(thumb, dtype=np.float64).reshape(-1, 3)
+    palette = _kmeans(pixels, PALETTE_K, PALETTE_ITERS)
+
+    distances = np.sum((pixels[:, None, :] - palette[None, :, :]) ** 2, axis=2)
+    assignments = np.argmin(distances, axis=1)
+    counts = np.bincount(assignments, minlength=len(palette))
+
+    total = float(len(pixels))
+    colors = []
+    for centroid, count in zip(palette, counts, strict=True):
+        colors.append({
+            "hex": "#{:02x}{:02x}{:02x}".format(
+                _clamp_channel(centroid[0]),
+                _clamp_channel(centroid[1]),
+                _clamp_channel(centroid[2]),
+            ),
+            "fraction": _fraction(float(count) / total),
+        })
+
+    colors.sort(key=lambda color: color["fraction"], reverse=True)
+    return colors
+
+
+def _decode_image(raw: bytes) -> tuple[Image.Image, str]:
+    try:
+        opened = Image.open(io.BytesIO(raw))
+        source_mime = Image.MIME.get(opened.format or "", "application/octet-stream")
+        return opened.convert("RGB"), source_mime
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Could not decode image") from exc
+
+
+def _prepare_image_bytes(image: Image.Image, max_bytes: int) -> bytes:
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
+
+    current = image
+    for _ in range(PREPARE_MAX_STEPS):
+        bounds = current.size
+        width = max(1, int(bounds[0] * PREPARE_SCALE))
+        height = max(1, int(bounds[1] * PREPARE_SCALE))
+        current = current.resize((width, height), Image.BILINEAR)
+
+        out = io.BytesIO()
+        current.save(out, format="JPEG", quality=PREPARE_QUALITY)
+        prepared = out.getvalue()
+        if len(prepared) <= max_bytes:
+            return prepared
+
+    raise ValueError("could not shrink image below target size")
 
 # ── Text batch worker ─────────────────────────────────────────────────────────
 
@@ -214,20 +316,24 @@ class TextRequest(BaseModel):
 class EmbeddingResponse(BaseModel):
     embedding: list[float]
 
+
+class DominantColor(BaseModel):
+    hex: str
+    fraction: float
+
 class ImageEmbeddingResponse(BaseModel):
     embedding: list[float]
     umap_embedding: list[float] | None = None
+    width: int
+    height: int
+    dominant_colors: list[DominantColor]
 
 @app.post("/embed/image", response_model=ImageEmbeddingResponse)
 async def embed_image(file: UploadFile = File(...)):
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
-
     raw = await file.read()
-    try:
-        image = Image.open(io.BytesIO(raw)).convert("RGB")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Could not decode image")
+    image, _ = _decode_image(raw)
+    width, height = image.size
+    dominant_colors = _dominant_colors(image)
 
     loop = asyncio.get_running_loop()
     future = loop.create_future()
@@ -237,7 +343,36 @@ async def embed_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail="Image inference queue is full")
 
     embedding, umap_embedding = await future
-    return ImageEmbeddingResponse(embedding=embedding, umap_embedding=umap_embedding)
+    return ImageEmbeddingResponse(
+        embedding=embedding,
+        umap_embedding=umap_embedding,
+        width=width,
+        height=height,
+        dominant_colors=dominant_colors,
+    )
+
+
+@app.post("/prepare/image")
+async def prepare_image(
+    file: UploadFile = File(...),
+    max_bytes: int = Form(...),
+):
+    if max_bytes <= 0:
+        raise HTTPException(status_code=400, detail="max_bytes must be positive")
+
+    raw = await file.read()
+    image, source_mime = _decode_image(raw)
+    if len(raw) <= max_bytes:
+        media_type = file.content_type or source_mime
+        return Response(content=raw, media_type=media_type)
+
+    loop = asyncio.get_running_loop()
+    try:
+        prepared = await loop.run_in_executor(None, _prepare_image_bytes, image, max_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return Response(content=prepared, media_type="image/jpeg")
 
 
 @app.post("/embed/text", response_model=EmbeddingResponse)

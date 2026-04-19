@@ -10,14 +10,33 @@ Requires Python 3.10+.
 
 | Method | Path           | Description                                                         |
 |--------|----------------|---------------------------------------------------------------------|
-| `POST` | `/embed/image` | Embed an image (`multipart/form-data`, field `file`)                |
+| `POST` | `/embed/image` | Embed an image and return image metadata (`multipart/form-data`)    |
+| `POST` | `/prepare/image` | Decode and resize an oversized image for upload (`multipart/form-data`) |
 | `POST` | `/embed/text`  | Embed a query string (`{"text": "..."}`)                            |
 | `POST` | `/reload-umap` | Re-read the UMAP model from disk (204 No Content)                   |
 | `GET`  | `/health`      | Returns `{status, device, model, umap, queues, batches}`            |
 
 `/embed/text` returns `{"embedding": [float × 768]}`.
 
-`/embed/image` returns `{"embedding": [float × 768], "umap_embedding": [float × 50] | null}`. `umap_embedding` is `null` when no UMAP model is loaded.
+`/embed/image` returns:
+
+```json
+{
+	"embedding": [float x 768],
+	"umap_embedding": [float x 50] | null,
+	"width": 1234,
+	"height": 987,
+	"dominant_colors": [
+		{"hex": "#aabbcc", "fraction": 0.42}
+	]
+}
+```
+
+`umap_embedding` is `null` when no UMAP model is loaded. The dominant-color palette and dimensions are returned from the same decoded image that feeds the embedding model.
+
+`/prepare/image` accepts `multipart/form-data` with fields `file` and `max_bytes`, then returns the original image bytes when they already fit or a JPEG-transcoded payload when the image had to be reduced to satisfy the byte limit.
+
+HEIC and HEIF inputs are supported through `pillow-heif`, in addition to the formats Pillow already decodes natively.
 
 Text requests are batched automatically (up to 32 per batch, 20 ms collection window). Image requests are also batched automatically (up to 8 per batch, 20 ms collection window by default). Both modalities share a single model executor so only one batch runs on MPS at a time.
 
