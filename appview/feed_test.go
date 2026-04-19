@@ -9,7 +9,9 @@ import (
 
 func TestFeedCursorRoundTrip(t *testing.T) {
 	original := feedCursor{
-		Version: 1,
+		Version:     1,
+		Mode:        feedCursorModePositive,
+		Initialized: true,
 		Collections: []feedCursorCollection{
 			{URI: "at://did:plc:alice/is.currents.feed.collection/one", Offset: 17},
 			{URI: "at://did:plc:alice/is.currents.feed.collection/two", Offset: 9},
@@ -32,30 +34,63 @@ func TestFeedCursorRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecodeFeedCursorLegacyOffset(t *testing.T) {
-	legacy := base64.RawURLEncoding.EncodeToString([]byte("50"))
+func TestFeedCursorRoundTripNegative(t *testing.T) {
+	original := feedCursor{
+		Version:     1,
+		Mode:        feedCursorModeNegative,
+		Initialized: true,
+		Seeds: []feedCursorSeed{
+			{VisualIdentityID: "28d1e31d-5142-42fe-9fd2-b433ef4d2e7d", Offset: 5},
+			{VisualIdentityID: "8d1a4c79-7cab-45a2-b7a6-96be55b76f57", Offset: 11},
+		},
+		GlobalOffset: 4,
+	}
 
-	decoded, err := decodeFeedCursor(legacy)
+	encoded, err := encodeFeedCursor(original)
+	if err != nil {
+		t.Fatalf("encodeFeedCursor: %v", err)
+	}
+
+	decoded, err := decodeFeedCursor(encoded)
 	if err != nil {
 		t.Fatalf("decodeFeedCursor: %v", err)
 	}
 
-	if decoded.GlobalOffset != 50 {
-		t.Fatalf("decoded.GlobalOffset = %d, want 50", decoded.GlobalOffset)
-	}
-	if len(decoded.Collections) != 0 {
-		t.Fatalf("decoded.Collections = %v, want empty", decoded.Collections)
+	if !reflect.DeepEqual(decoded, original) {
+		t.Fatalf("decoded cursor mismatch: got %#v want %#v", decoded, original)
 	}
 }
+
+func TestDecodeFeedCursorRejectsLegacyOffset(t *testing.T) {
+	legacy := base64.RawURLEncoding.EncodeToString([]byte("50"))
+
+	if _, err := decodeFeedCursor(legacy); err == nil {
+		t.Fatal("decodeFeedCursor unexpectedly accepted a legacy cursor")
+	}
+}
+
+func TestFeedCursorModeMismatch(t *testing.T) {
+	cursor := feedCursor{
+		Version:     1,
+		Mode:        feedCursorModePositive,
+		Initialized: true,
+		Collections: []feedCursorCollection{{URI: "at://did:plc:alice/is.currents.feed.collection/one", Offset: 2}},
+	}
+
+	if err := cursor.validateForMode(feedCursorModeNegative); err == nil {
+		t.Fatal("validateForMode unexpectedly accepted a mismatched cursor mode")
+	}
+}
+
 func TestBuildFeedPageConsumesDuplicates(t *testing.T) {
 	pools := []*feedCandidatePool{
 		{
-			URI:    "col-1",
+			Key:    "col-1",
 			Items:  []SaveRow{{URI: "a"}, {URI: "b"}},
 			Weight: 0,
 		},
 		{
-			URI:    "col-2",
+			Key:    "col-2",
 			Items:  []SaveRow{{URI: "a"}, {URI: "c"}},
 			Weight: 0,
 		},
@@ -82,17 +117,17 @@ func TestBuildFeedPageConsumesDuplicates(t *testing.T) {
 func TestBuildFeedPageKeepsPerPoolOffsets(t *testing.T) {
 	pools := []*feedCandidatePool{
 		{
-			URI:    "col-1",
+			Key:    "col-1",
 			Items:  []SaveRow{{URI: "a1"}, {URI: "a2"}},
 			Weight: 0,
 		},
 		{
-			URI:    "col-2",
+			Key:    "col-2",
 			Items:  []SaveRow{{URI: "b1"}, {URI: "b2"}},
 			Weight: 0,
 		},
 		{
-			URI:    "col-3",
+			Key:    "col-3",
 			Items:  []SaveRow{{URI: "c1"}, {URI: "c2"}},
 			Weight: 0,
 		},

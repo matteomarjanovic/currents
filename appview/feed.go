@@ -5,14 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"strconv"
 )
 
 const feedPersonalizedPoolCount = 3
 
+type feedCursorMode string
+
+const (
+	feedCursorModeGlobal   feedCursorMode = "global"
+	feedCursorModePositive feedCursorMode = "positive"
+	feedCursorModeNegative feedCursorMode = "negative"
+)
+
 type feedCursor struct {
 	Version      int                    `json:"v"`
+	Mode         feedCursorMode         `json:"m"`
+	Initialized  bool                   `json:"i,omitempty"`
 	Collections  []feedCursorCollection `json:"c,omitempty"`
+	Seeds        []feedCursorSeed       `json:"s,omitempty"`
 	GlobalOffset int                    `json:"g,omitempty"`
 }
 
@@ -21,8 +31,13 @@ type feedCursorCollection struct {
 	Offset int    `json:"o"`
 }
 
+type feedCursorSeed struct {
+	VisualIdentityID string `json:"i"`
+	Offset           int    `json:"o"`
+}
+
 type feedCandidatePool struct {
-	URI      string
+	Key      string
 	Weight   float64
 	Offset   int
 	Items    []SaveRow
@@ -30,9 +45,78 @@ type feedCandidatePool struct {
 	consumed int
 }
 
+func requestedFeedCursorMode(alpha float64) feedCursorMode {
+	switch {
+	case alpha > 0:
+		return feedCursorModePositive
+	case alpha < 0:
+		return feedCursorModeNegative
+	default:
+		return feedCursorModeGlobal
+	}
+}
+
+func (m feedCursorMode) valid() bool {
+	switch m {
+	case feedCursorModeGlobal, feedCursorModePositive, feedCursorModeNegative:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c feedCursor) validate() error {
+	if !c.Mode.valid() {
+		return fmt.Errorf("unsupported feed cursor mode")
+	}
+	if c.Version != 1 {
+		return fmt.Errorf("unsupported feed cursor version")
+	}
+	if c.GlobalOffset < 0 {
+		return fmt.Errorf("invalid global offset")
+	}
+	for _, col := range c.Collections {
+		if col.URI == "" || col.Offset < 0 {
+			return fmt.Errorf("invalid collection cursor")
+		}
+	}
+	for _, seed := range c.Seeds {
+		if seed.VisualIdentityID == "" || seed.Offset < 0 {
+			return fmt.Errorf("invalid seed cursor")
+		}
+	}
+
+	switch c.Mode {
+	case feedCursorModeGlobal:
+		if c.Initialized || len(c.Collections) > 0 || len(c.Seeds) > 0 {
+			return fmt.Errorf("invalid global cursor")
+		}
+	case feedCursorModePositive:
+		if !c.Initialized || len(c.Seeds) > 0 {
+			return fmt.Errorf("invalid positive cursor")
+		}
+	case feedCursorModeNegative:
+		if !c.Initialized || len(c.Collections) > 0 {
+			return fmt.Errorf("invalid negative cursor")
+		}
+	}
+
+	return nil
+}
+
+func (c feedCursor) validateForMode(mode feedCursorMode) error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	if c.Mode != mode {
+		return fmt.Errorf("cursor mode mismatch")
+	}
+	return nil
+}
+
 func decodeFeedCursor(raw string) (feedCursor, error) {
 	if raw == "" {
-		return feedCursor{Version: 1}, nil
+		return feedCursor{Version: 1, Mode: feedCursorModeGlobal}, nil
 	}
 
 	decoded, err := base64.RawURLEncoding.DecodeString(raw)
@@ -41,35 +125,28 @@ func decodeFeedCursor(raw string) (feedCursor, error) {
 	}
 
 	var cursor feedCursor
-	if err := json.Unmarshal(decoded, &cursor); err == nil {
-		if cursor.Version == 0 {
-			cursor.Version = 1
-		}
-		if cursor.Version != 1 {
-			return feedCursor{}, fmt.Errorf("unsupported feed cursor version")
-		}
-		if cursor.GlobalOffset < 0 {
-			return feedCursor{}, fmt.Errorf("invalid global offset")
-		}
-		for _, col := range cursor.Collections {
-			if col.URI == "" || col.Offset < 0 {
-				return feedCursor{}, fmt.Errorf("invalid collection cursor")
-			}
-		}
-		return cursor, nil
+	if err := json.Unmarshal(decoded, &cursor); err != nil {
+		return feedCursor{}, err
 	}
-
-	offset, err := strconv.Atoi(string(decoded))
-	if err != nil || offset < 0 {
-		return feedCursor{}, fmt.Errorf("invalid legacy feed cursor")
+	if err := cursor.validate(); err != nil {
+		return feedCursor{}, err
 	}
-	return feedCursor{Version: 1, GlobalOffset: offset}, nil
+	return cursor, nil
 }
 
 func encodeFeedCursor(cursor feedCursor) (string, error) {
 	cursor.Version = 1
+	if cursor.Mode == "" {
+		cursor.Mode = feedCursorModeGlobal
+	}
 	if len(cursor.Collections) == 0 {
 		cursor.Collections = nil
+	}
+	if len(cursor.Seeds) == 0 {
+		cursor.Seeds = nil
+	}
+	if err := cursor.validate(); err != nil {
+		return "", err
 	}
 	payload, err := json.Marshal(cursor)
 	if err != nil {

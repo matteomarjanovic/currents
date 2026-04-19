@@ -164,4 +164,4 @@ The `visual_identity` table stores the canonical blob reference (best-quality so
 | `GET` | `/xrpc/is.currents.feed.getActorCollections` | Optional | Any actor's collections; viewer state included when authenticated |
 | `GET` | `/xrpc/is.currents.feed.getSaves` | Optional | Saves within a collection; viewer state (`resaved`) included when authenticated |
 | `GET` | `/xrpc/is.currents.feed.searchSaves` | Optional | Semantic image search via text query (SigLIP2 embedding, requires inference server) |
-| `GET` | `/xrpc/is.currents.feed.getFeed` | Optional | Discovery feed — global (popular+recent) or personalized by viewer's collection interests; `personalized` param 0–1 |
+| `GET` | `/xrpc/is.currents.feed.getFeed` | Optional | Discovery feed — global (popular+recent), personalized, or serendipitous; `personalized` param -1–1 |

@@ -10,9 +10,9 @@
         "properties": {
           "personalized": {
             "type": "number",
-            "minimum": 0,
+            "minimum": -1,
             "maximum": 1,
-            "description": "A value between 0 and 1 controlling the degree of personalization. Only effective for authenticated requests; ignored otherwise.",
+            "description": "A signed value between -1 and 1 controlling feed tuning. Negative values increase serendipity, positive values increase personalization, and 0 gives the global feed. Only effective for authenticated requests; ignored otherwise.",
             "default": 0
           },
           "limit": {

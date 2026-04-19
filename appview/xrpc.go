@@ -543,17 +543,10 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cursorState := feedCursor{Version: 1}
-	if c := r.URL.Query().Get("cursor"); c != "" {
-		if decoded, err := decodeFeedCursor(c); err == nil {
-			cursorState = decoded
-		}
-	}
-
 	alpha := 0.0
 	if p := r.URL.Query().Get("personalized"); p != "" {
 		if f, err := strconv.ParseFloat(p, 64); err == nil {
-			alpha = max(0.0, min(f, 1.0))
+			alpha = max(-1.0, min(f, 1.0))
 		}
 	}
 
@@ -564,23 +557,41 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		alpha = 0
 	}
 
+	requestedMode := requestedFeedCursorMode(alpha)
+	cursorState := feedCursor{Version: 1, Mode: requestedMode}
+	writeInvalidRequest := func(message string) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "InvalidRequest", "message": message})
+	}
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		decoded, err := decodeFeedCursor(c)
+		if err != nil {
+			writeInvalidRequest("invalid cursor")
+			return
+		}
+		if err := decoded.validateForMode(requestedMode); err != nil {
+			writeInvalidRequest("invalid cursor")
+			return
+		}
+		cursorState = decoded
+	}
+
 	excludeSaved := r.URL.Query().Get("excludeSaved") == "true" && viewerDID != nil
 
 	var saveRows []SaveRow
 	nextCursor := ""
+	personalizedWeight := alpha
+	if personalizedWeight < 0 {
+		personalizedWeight = -personalizedWeight
+	}
 
-	if alpha > 0 {
-		strictPersonalized := alpha >= 1.0
+	if requestedMode != feedCursorModeGlobal {
+		strictPersonalized := personalizedWeight >= 1.0
 		fetchLimit := feedPoolFetchLimit(limit)
-
-		offsets := make(map[string]int, len(cursorState.Collections))
-		for _, col := range cursorState.Collections {
-			offsets[col.URI] = col.Offset
-		}
-
 		personalizedPools := make([]*feedCandidatePool, 0, feedPersonalizedPoolCount)
-		appendPersonalizedPool := func(col CollectionImportance, offset int) error {
-			candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), col.Embedding, viewerStr, excludeSaved, fetchLimit+1, offset)
+		appendPersonalizedPool := func(key string, embedding []float32, offset int) error {
+			candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, fetchLimit+1, offset)
 			if err != nil {
 				return err
 			}
@@ -592,7 +603,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 			personalizedPools = append(personalizedPools, &feedCandidatePool{
-				URI:    col.URI,
+				Key:    key,
 				Offset: offset,
 				Items:  candidates,
 				More:   more,
@@ -600,42 +611,109 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		if len(cursorState.Collections) > 0 {
-			uris := make([]string, 0, len(cursorState.Collections))
+		switch requestedMode {
+		case feedCursorModePositive:
+			offsets := make(map[string]int, len(cursorState.Collections))
 			for _, col := range cursorState.Collections {
-				uris = append(uris, col.URI)
+				offsets[col.URI] = col.Offset
 			}
-			cols, err := s.Store.GetCollectionsByURIs(r.Context(), uris)
-			if err != nil {
-				slog.Error("GetCollectionsByURIs", "err", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			for _, col := range cols {
-				if err := appendPersonalizedPool(col, offsets[col.URI]); err != nil {
-					slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
-					continue
+
+			if len(cursorState.Collections) > 0 {
+				uris := make([]string, 0, len(cursorState.Collections))
+				for _, col := range cursorState.Collections {
+					uris = append(uris, col.URI)
+				}
+				cols, err := s.Store.GetCollectionsByURIs(r.Context(), uris)
+				if err != nil {
+					slog.Error("GetCollectionsByURIs", "err", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				for _, col := range cols {
+					if err := appendPersonalizedPool(col.URI, col.Embedding, offsets[col.URI]); err != nil {
+						slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
+						continue
+					}
 				}
 			}
-		}
 
-		if len(cursorState.Collections) == 0 {
-			cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedPersonalizedPoolCount)
-			if err != nil {
-				slog.Error("GetCollectionsByImportance", "err", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
+			if len(cursorState.Collections) == 0 && !cursorState.Initialized {
+				cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedPersonalizedPoolCount)
+				if err != nil {
+					slog.Error("GetCollectionsByImportance", "err", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				for _, col := range cols {
+					if err := appendPersonalizedPool(col.URI, col.Embedding, 0); err != nil {
+						slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
+						continue
+					}
+				}
 			}
-			for _, col := range cols {
-				if err := appendPersonalizedPool(col, 0); err != nil {
-					slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
-					continue
+		case feedCursorModeNegative:
+			offsets := make(map[string]int, len(cursorState.Seeds))
+			for _, seed := range cursorState.Seeds {
+				offsets[seed.VisualIdentityID] = seed.Offset
+			}
+
+			if len(cursorState.Seeds) > 0 {
+				seedIDs := make([]string, 0, len(cursorState.Seeds))
+				for _, seed := range cursorState.Seeds {
+					seedIDs = append(seedIDs, seed.VisualIdentityID)
+				}
+				seeds, err := s.Store.GetVisualIdentityEmbeddingsByIDs(r.Context(), seedIDs)
+				if err != nil {
+					slog.Error("GetVisualIdentityEmbeddingsByIDs", "err", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				for _, seed := range seeds {
+					if err := appendPersonalizedPool(seed.ID, seed.Embedding, offsets[seed.ID]); err != nil {
+						slog.Error("SearchSavesByEmbedding (feed)", "seed", seed.ID, "err", err)
+						continue
+					}
+				}
+			}
+
+			if len(cursorState.Seeds) == 0 && !cursorState.Initialized {
+				cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedPersonalizedPoolCount)
+				if err != nil {
+					slog.Error("GetCollectionsByImportance", "err", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				viewerClusterIDs, err := s.Store.GetViewerClusterIDs(r.Context(), viewerStr)
+				if err != nil {
+					slog.Error("GetViewerClusterIDs", "err", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				selectedClusterIDs := make([]string, 0, feedPersonalizedPoolCount)
+				for _, col := range cols {
+					excludedClusterIDs := make([]string, 0, len(viewerClusterIDs)+len(selectedClusterIDs))
+					excludedClusterIDs = append(excludedClusterIDs, viewerClusterIDs...)
+					excludedClusterIDs = append(excludedClusterIDs, selectedClusterIDs...)
+
+					medoid, err := s.Store.GetNearestClusterMedoid(r.Context(), col.Embedding, excludedClusterIDs)
+					if err != nil {
+						slog.Error("GetNearestClusterMedoid", "collection", col.URI, "err", err)
+						continue
+					}
+					if medoid == nil {
+						continue
+					}
+					if err := appendPersonalizedPool(medoid.VisualIdentityID, medoid.Embedding, 0); err != nil {
+						slog.Error("SearchSavesByEmbedding (feed)", "seed", medoid.VisualIdentityID, "err", err)
+						continue
+					}
+					selectedClusterIDs = append(selectedClusterIDs, medoid.ClusterID)
 				}
 			}
 		}
 
 		if len(personalizedPools) > 0 {
-			colWeight := alpha / float64(len(personalizedPools))
+			colWeight := personalizedWeight / float64(len(personalizedPools))
 			for _, pool := range personalizedPools {
 				pool.Weight = colWeight
 			}
@@ -644,7 +722,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		pools := make([]*feedCandidatePool, 0, len(personalizedPools)+1)
 		pools = append(pools, personalizedPools...)
 
-		globalWeight := 1.0 - alpha
+		globalWeight := 1.0 - personalizedWeight
 		useGlobal := globalWeight > 0
 		if len(personalizedPools) == 0 && !strictPersonalized {
 			globalWeight = 1.0
@@ -671,18 +749,23 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 
 		saveRows = buildFeedPage(nil, pools, limit)
 
-		nextState := feedCursor{Version: 1}
+		nextState := feedCursor{Version: 1, Mode: requestedMode, Initialized: true}
 		for _, pool := range pools {
 			if !pool.hasMoreAfterPage() {
 				continue
 			}
-			if pool.URI == "" {
+			if pool.Key == "" {
 				nextState.GlobalOffset = pool.nextOffset()
 				continue
 			}
-			nextState.Collections = append(nextState.Collections, feedCursorCollection{URI: pool.URI, Offset: pool.nextOffset()})
+			switch requestedMode {
+			case feedCursorModePositive:
+				nextState.Collections = append(nextState.Collections, feedCursorCollection{URI: pool.Key, Offset: pool.nextOffset()})
+			case feedCursorModeNegative:
+				nextState.Seeds = append(nextState.Seeds, feedCursorSeed{VisualIdentityID: pool.Key, Offset: pool.nextOffset()})
+			}
 		}
-		if len(nextState.Collections) > 0 || nextState.GlobalOffset > 0 {
+		if len(nextState.Collections) > 0 || len(nextState.Seeds) > 0 || nextState.GlobalOffset > 0 {
 			nextCursor, err = encodeFeedCursor(nextState)
 			if err != nil {
 				slog.Error("encodeFeedCursor", "err", err)
@@ -705,7 +788,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		saveRows = buildFeedPage(nil, []*feedCandidatePool{pool}, limit)
 		if pool.hasMoreAfterPage() {
-			nextCursor, err = encodeFeedCursor(feedCursor{Version: 1, GlobalOffset: pool.nextOffset()})
+			nextCursor, err = encodeFeedCursor(feedCursor{Version: 1, Mode: feedCursorModeGlobal, GlobalOffset: pool.nextOffset()})
 			if err != nil {
 				slog.Error("encodeFeedCursor", "err", err)
 				http.Error(w, "internal error", http.StatusInternalServerError)

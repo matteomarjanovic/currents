@@ -125,7 +125,7 @@ def _find_medoid(X: np.ndarray) -> int:
 
 
 def _write_clusters(vi_ids, X, labels, unique_labels):
-    """Atomically insert new clusters, update VI assignments, and delete old clusters."""
+    """Atomically replace all cluster rows and assignments with the latest run."""
     today = date.today()
     conn  = get_conn()
     try:
@@ -141,7 +141,17 @@ def _write_clusters(vi_ids, X, labels, unique_labels):
             cluster_data.append((str(medoid_vi_id), int(np.sum(mask)), cluster_vi))
 
         with conn.cursor() as cur:
-            # 1. Insert new cluster rows. medoid FK references existing VI rows — always valid.
+            # 1. Clear all existing assignments so stale clusters can be removed safely.
+            cur.execute("UPDATE visual_identity SET cluster_id = NULL WHERE cluster_id IS NOT NULL")
+            cleared = cur.rowcount
+            log.info("Cleared %d existing cluster assignments", cleared)
+
+            # 2. Delete all previous cluster rows. The transaction keeps this atomic.
+            cur.execute("DELETE FROM cluster")
+            deleted = cur.rowcount
+            log.info("Deleted %d stale cluster rows", deleted)
+
+            # 3. Insert new cluster rows. medoid FK references existing VI rows — always valid.
             cluster_uuid_to_vi_ids = {}
             for medoid_vi_id, size, vi_id_list in cluster_data:
                 cur.execute("""
@@ -152,7 +162,7 @@ def _write_clusters(vi_ids, X, labels, unique_labels):
                 cluster_uuid = str(cur.fetchone()[0])
                 cluster_uuid_to_vi_ids[cluster_uuid] = vi_id_list
 
-            # 2. Update VI cluster_id assignments. New cluster rows exist so FK is valid.
+            # 4. Update VI cluster_id assignments. Noise points remain NULL.
             updates = [
                 (cluster_uuid, str(vi_id))
                 for cluster_uuid, vi_id_list in cluster_uuid_to_vi_ids.items()
@@ -161,11 +171,6 @@ def _write_clusters(vi_ids, X, labels, unique_labels):
             execute_batch(cur, """
                 UPDATE visual_identity SET cluster_id = %s WHERE id = %s
             """, updates, page_size=1000)
-
-            # 3. Delete old cluster rows. No VIs reference them anymore (step 2 replaced all).
-            cur.execute("DELETE FROM cluster WHERE run_date < %s", (today,))
-            deleted = cur.rowcount
-            log.info("Deleted %d stale cluster rows", deleted)
 
         conn.commit()
         log.info(

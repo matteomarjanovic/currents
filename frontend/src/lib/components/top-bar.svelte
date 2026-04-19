@@ -48,6 +48,10 @@
 	}
 
 	const personalizationLabels: Record<number, string> = {
+		[-1]: 'Serendipity Max',
+		[-0.75]: 'Serendipity High',
+		[-0.5]: 'Serendipity',
+		[-0.25]: 'Serendipity Low',
 		0: 'Off',
 		0.25: 'Low',
 		0.5: 'Medium',
@@ -95,8 +99,8 @@
 				<Popover.Content
 					class="flex w-48 flex-col items-center gap-3 rounded-2xl border bg-popover/90 backdrop-blur-sm"
 				>
-					<Slider type="single" bind:value={personalization.value} min={0} max={1} step={0.25} />
-					<span>Personalization: {personalizationLabels[personalization.value]}</span>
+					<Slider type="single" bind:value={personalization.value} min={-1} max={1} step={0.25} />
+					<span>Feed: {personalizationLabels[personalization.value]}</span>
 				</Popover.Content>
 			</Popover.Root>
 		{:else}
@@ -129,8 +133,8 @@
 				<Popover.Content
 					class="flex w-48 flex-col items-center gap-3 rounded-2xl border bg-popover/90 backdrop-blur-sm"
 				>
-					<Slider type="single" bind:value={personalization.value} min={0} max={1} step={0.25} />
-					<span>Personalization: {personalizationLabels[personalization.value]}</span>
+					<Slider type="single" bind:value={personalization.value} min={-1} max={1} step={0.25} />
+					<span>Feed: {personalizationLabels[personalization.value]}</span>
 				</Popover.Content>
 			</Popover.Root>
 		{/if}

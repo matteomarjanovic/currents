@@ -1231,6 +1231,17 @@ type CollectionImportance struct {
 	Embedding []float32
 }
 
+type VisualIdentityEmbedding struct {
+	ID        string
+	Embedding []float32
+}
+
+type ClusterMedoid struct {
+	ClusterID        string
+	VisualIdentityID string
+	Embedding        []float32
+}
+
 // GetCollectionsByImportance returns the viewer's top-N collections ranked by time-decayed save count,
 // filtered to those that have a precomputed canonical embedding.
 func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID string, topN int) ([]CollectionImportance, error) {
@@ -1307,6 +1318,97 @@ func (m *PgStore) GetCollectionsByURIs(ctx context.Context, uris []string) ([]Co
 		result = append(result, CollectionImportance{URI: uri, Embedding: embedding})
 	}
 	return result, nil
+}
+
+func (m *PgStore) GetVisualIdentityEmbeddingsByIDs(ctx context.Context, ids []string) ([]VisualIdentityEmbedding, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	rows, err := m.pool.Query(ctx, `
+		SELECT wanted.id, vi.embedding
+		FROM unnest($1::text[]) WITH ORDINALITY AS wanted(id, ord)
+		JOIN visual_identity vi ON vi.id = wanted.id::uuid
+		WHERE vi.embedding IS NOT NULL
+		ORDER BY wanted.ord
+	`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []VisualIdentityEmbedding
+	for rows.Next() {
+		var id string
+		var vec pgvector.Vector
+		if err := rows.Scan(&id, &vec); err != nil {
+			return nil, err
+		}
+		result = append(result, VisualIdentityEmbedding{ID: id, Embedding: vec.Slice()})
+	}
+	return result, rows.Err()
+}
+
+func (m *PgStore) GetViewerClusterIDs(ctx context.Context, viewerDID string) ([]string, error) {
+	if viewerDID == "" {
+		return nil, nil
+	}
+
+	rows, err := m.pool.Query(ctx, `
+		WITH latest_run AS (
+			SELECT MAX(run_date) AS run_date FROM cluster
+		)
+		SELECT DISTINCT c.id::text
+		FROM latest_run lr
+		JOIN cluster c ON c.run_date = lr.run_date
+		JOIN visual_identity vi ON vi.cluster_id = c.id
+		JOIN save s ON s.visual_identity_id = vi.id
+		WHERE s.author_did = $1
+		ORDER BY c.id::text
+	`, viewerDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []string
+	for rows.Next() {
+		var clusterID string
+		if err := rows.Scan(&clusterID); err != nil {
+			return nil, err
+		}
+		result = append(result, clusterID)
+	}
+	return result, rows.Err()
+}
+
+func (m *PgStore) GetNearestClusterMedoid(ctx context.Context, embedding []float32, excludedClusterIDs []string) (*ClusterMedoid, error) {
+	vec := pgvector.NewVector(embedding)
+
+	var medoid ClusterMedoid
+	var medoidVec pgvector.Vector
+	err := m.pool.QueryRow(ctx, `
+		WITH latest_run AS (
+			SELECT MAX(run_date) AS run_date FROM cluster
+		)
+		SELECT c.id::text, vi.id::text, vi.embedding
+		FROM latest_run lr
+		JOIN cluster c ON c.run_date = lr.run_date
+		JOIN visual_identity vi ON vi.id = c.medoid_visual_identity_id
+		WHERE vi.embedding IS NOT NULL
+		  AND (COALESCE(array_length($2::text[], 1), 0) = 0 OR NOT (c.id::text = ANY($2::text[])))
+		ORDER BY vi.embedding <=> $1, c.id
+		LIMIT 1
+	`, vec, excludedClusterIDs).Scan(&medoid.ClusterID, &medoid.VisualIdentityID, &medoidVec)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	medoid.Embedding = medoidVec.Slice()
+	return &medoid, nil
 }
 
 // GetGlobalFeedSaves returns saves from across the network, ranked by a
