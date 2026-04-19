@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Search saves by text query across all actors. Auth is optional; if provided, viewer-specific state is included. The personalized parameter is only effective for authenticated requests.",
+      "description": "Search saves by text query across all actors. Auth is optional; if provided, viewer-specific state is included.",
       "parameters": {
         "type": "params",
         "required": [
@@ -14,13 +14,6 @@
           "q": {
             "type": "string",
             "description": "Full-text search query."
-          },
-          "personalized": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "A value between 0 and 1 controlling the degree of personalization. Only effective for authenticated requests; ignored otherwise.",
-            "default": 0
           },
           "limit": {
             "type": "integer",

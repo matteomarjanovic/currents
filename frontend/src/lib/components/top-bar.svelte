@@ -33,6 +33,9 @@
 
 	let query = $state('');
 	let searchOpen = $state(false);
+	let isSearchPage = $derived(
+		page.url.pathname === '/search' || page.url.pathname.startsWith('/search/')
+	);
 
 	$effect(() => {
 		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
@@ -89,7 +92,7 @@
 			/>
 		</form>
 
-		{#if user}
+		{#if user && !isSearchPage}
 			<Popover.Root>
 				<Popover.Trigger class="shrink-0 rounded-full data-[slot=popover-trigger]:p-0">
 					<Button variant="ghost" size="icon" class="rounded-full" type="button">
@@ -123,7 +126,7 @@
 		>
 			<SearchIcon class="size-4" />
 		</Button>
-		{#if user}
+		{#if user && !isSearchPage}
 			<Popover.Root>
 				<Popover.Trigger class="shrink-0 rounded-full data-[slot=popover-trigger]:p-0  md:hidden">
 					<Button variant="ghost" size="icon" class="rounded-full" type="button">

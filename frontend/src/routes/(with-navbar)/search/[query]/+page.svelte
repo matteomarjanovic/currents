@@ -2,7 +2,6 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import { personalization } from '$lib/stores/personalization.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 
@@ -10,7 +9,6 @@
 		const q = page.params.query ?? '';
 		const params = new URLSearchParams({
 			q,
-			personalized: String(personalization.value),
 			limit: '50',
 			excludeSaved: 'true'
 		});
@@ -28,7 +26,6 @@
 
 	$effect(() => {
 		void page.params.query;
-		void personalization.value;
 		const timeout = setTimeout(() => {
 			untrack(() => {
 				search.reset();
