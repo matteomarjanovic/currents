@@ -156,18 +156,26 @@
 	</button>
 	{#each sortedCollections as col (col.uri)}
 		<button
-			class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
+			class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
 			onclick={() => toggleCollection(col.uri)}
 		>
-			{#if isSavedIn(col.uri)}
-				<Check class="size-4 shrink-0" />
+			{#if col.previewImages?.[0]}
+				<img
+					src={col.previewImages[0]}
+					alt=""
+					loading="lazy"
+					class="size-9 shrink-0 rounded-md object-cover"
+				/>
 			{:else}
-				<div class="size-4 shrink-0"></div>
+				<div class="size-9 shrink-0 rounded-md bg-muted"></div>
 			{/if}
-			<span class="flex flex-col items-start truncate">
+			<span class="flex flex-1 flex-col items-start truncate">
 				<span class="truncate">{col.name}</span>
 				<span class="text-xs text-muted-foreground">Public</span>
 			</span>
+			{#if isSavedIn(col.uri)}
+				<Check class="size-4 shrink-0" />
+			{/if}
 		</button>
 	{/each}
 {/snippet}

@@ -36,6 +36,7 @@
 
 	$effect(() => {
 		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
+		else if (page.params.query) query = page.params.query;
 	});
 
 	function onsubmit(e: Event) {
