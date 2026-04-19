@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
@@ -7,7 +8,7 @@
 
 	const search = useInfiniteScroll(async (cursor) => {
 		const q = page.params.query ?? '';
-		const params = new URLSearchParams({
+		const params = new SvelteURLSearchParams({
 			q,
 			limit: '50',
 			excludeSaved: 'true'

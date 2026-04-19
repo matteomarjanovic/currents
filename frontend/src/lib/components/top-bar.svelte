@@ -33,9 +33,7 @@
 
 	let query = $state('');
 	let searchOpen = $state(false);
-	let isSearchPage = $derived(
-		page.url.pathname === '/search' || page.url.pathname.startsWith('/search/')
-	);
+	let isSearchPage = $derived(page.url.pathname.includes('/search/'));
 
 	$effect(() => {
 		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
