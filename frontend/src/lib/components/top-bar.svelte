@@ -47,7 +47,7 @@
 <header
 	class="{landing
 		? 'fixed bg-background/0'
-		: 'sticky bg-background/95 backdrop-blur-sm'} top-0 z-10 flex h-15 w-full items-center gap-3 px-4 py-3"
+		: 'sticky bg-background/95 backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-4 py-3"
 >
 	{#if !searchOpen}
 		<a
@@ -57,8 +57,10 @@
 		>
 	{/if}
 
-	<div class="hidden flex-1 items-center justify-center gap-2 md:flex">
-		<form {onsubmit} class="w-full max-w-md">
+	<div
+		class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center md:flex md:max-w-sm lg:max-w-md"
+	>
+		<form {onsubmit} class="w-full md:max-w-sm lg:max-w-md">
 			<Input
 				type="search"
 				placeholder="Search images..."
@@ -75,7 +77,7 @@
 	</div>
 
 	{#if !searchOpen}
-		<div class="flex-1 md:hidden"></div>
+		<div class="flex-1"></div>
 		<Button
 			variant="ghost"
 			size="icon"
@@ -139,7 +141,10 @@
 						<div class="font-normal text-muted-foreground">@{user.handle}</div>
 					</DropdownMenu.Label>
 					<DropdownMenu.Separator />
-					<DropdownMenu.Item onclick={() => goto(`/profile/${user.handle}`)}>
+					<DropdownMenu.Item
+						onclick={() =>
+							goto(resolve('/(with-navbar)/profile/[handle]', { handle: user.handle }))}
+					>
 						<UserIcon class="size-4" />
 						Profile
 					</DropdownMenu.Item>
