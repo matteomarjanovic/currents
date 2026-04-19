@@ -119,9 +119,20 @@
 				max={MAX}
 				step={0.01}
 				dir="rtl"
+				class="personalization-slider"
 				onValueCommit={(v) => commitValue(v as number)}
 				aria-label="Personalization level"
 			/>
 		</Popover.Content>
 	</Popover.Root>
 </div>
+
+<style>
+	:global(.personalization-slider [data-slot='slider-track']) {
+		background-color: var(--primary);
+	}
+
+	:global(.personalization-slider [data-slot='slider-range']) {
+		background-color: var(--muted);
+	}
+</style>
