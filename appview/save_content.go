@@ -70,7 +70,6 @@ type saveRecord struct {
 		CID string `json:"cid"`
 	} `json:"collection"`
 	Content     json.RawMessage `json:"content"`
-	Image       json.RawMessage `json:"image"`
 	OriginURL   string          `json:"originUrl"`
 	Attribution struct {
 		URL     string `json:"url"`
@@ -100,60 +99,42 @@ func buildImageContentRecord(blob any) map[string]any {
 	}
 }
 
-func buildSaveContent(contentRaw, legacyImageRaw json.RawMessage) (any, error) {
-	if len(contentRaw) > 0 && string(contentRaw) != "null" {
-		return rawJSONToAny(contentRaw)
+func buildSaveContent(contentRaw json.RawMessage) (any, error) {
+	if len(contentRaw) == 0 || string(contentRaw) == "null" {
+		return nil, fmt.Errorf("save record missing content")
 	}
-	if len(legacyImageRaw) > 0 && string(legacyImageRaw) != "null" {
-		blob, err := rawJSONToAny(legacyImageRaw)
-		if err != nil {
-			return nil, err
-		}
-		return buildImageContentRecord(blob), nil
-	}
-	return nil, fmt.Errorf("save record missing content")
+	return rawJSONToAny(contentRaw)
 }
 
-func saveContentNSID(contentRaw, legacyImageRaw json.RawMessage) (string, error) {
-	if len(contentRaw) > 0 && string(contentRaw) != "null" {
-		var content struct {
-			Type string `json:"$type"`
-		}
-		if err := json.Unmarshal(contentRaw, &content); err != nil {
-			return "", fmt.Errorf("parsing save content: %w", err)
-		}
-		if content.Type == "" {
-			return "", fmt.Errorf("save content missing $type")
-		}
-		return content.Type, nil
+func saveContentNSID(contentRaw json.RawMessage) (string, error) {
+	if len(contentRaw) == 0 || string(contentRaw) == "null" {
+		return "", fmt.Errorf("save record missing content")
 	}
-	if len(legacyImageRaw) > 0 && string(legacyImageRaw) != "null" {
-		return saveContentImageNSID, nil
+	var content struct {
+		Type string `json:"$type"`
 	}
-	return "", fmt.Errorf("save record missing content")
+	if err := json.Unmarshal(contentRaw, &content); err != nil {
+		return "", fmt.Errorf("parsing save content: %w", err)
+	}
+	if content.Type == "" {
+		return "", fmt.Errorf("save content missing $type")
+	}
+	return content.Type, nil
 }
 
-func decodeSaveImageContent(contentRaw, legacyImageRaw json.RawMessage) (*saveImageContent, error) {
-	contentType, err := saveContentNSID(contentRaw, legacyImageRaw)
+func decodeSaveImageContent(contentRaw json.RawMessage) (*saveImageContent, error) {
+	contentType, err := saveContentNSID(contentRaw)
 	if err != nil {
 		return nil, err
 	}
 	if contentType != saveContentImageNSID {
 		return nil, nil
 	}
-	if len(contentRaw) > 0 && string(contentRaw) != "null" {
-		var content saveImageContent
-		if err := json.Unmarshal(contentRaw, &content); err != nil {
-			return nil, fmt.Errorf("parsing image content: %w", err)
-		}
-		return &content, nil
+	var content saveImageContent
+	if err := json.Unmarshal(contentRaw, &content); err != nil {
+		return nil, fmt.Errorf("parsing image content: %w", err)
 	}
-
-	var legacy saveBlobRef
-	if err := json.Unmarshal(legacyImageRaw, &legacy); err != nil {
-		return nil, fmt.Errorf("parsing legacy image content: %w", err)
-	}
-	return &saveImageContent{Type: saveContentImageNSID, Image: legacy}, nil
+	return &content, nil
 }
 
 func parseViewerSaveState(raw json.RawMessage) *saveViewerState {

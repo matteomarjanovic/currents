@@ -30,7 +30,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "mode",
-				Usage:   "process mode: all, repair, or migrate-save-content",
+				Usage:   "process mode: all or repair",
 				Value:   "all",
 				EnvVars: []string{"APPVIEW_MODE"},
 			},
@@ -107,45 +107,6 @@ func main() {
 				Usage:   "URL of the SvelteKit frontend; OAuth callback redirects here after login",
 				EnvVars: []string{"FRONTEND_URL"},
 			},
-			&cli.StringFlag{
-				Name:    "migration-progress-file",
-				Usage:   "path to the save-content migration progress file",
-				Value:   "save-content-migration-progress.json",
-				EnvVars: []string{"MIGRATION_PROGRESS_FILE"},
-			},
-			&cli.BoolFlag{
-				Name:    "migration-dry-run",
-				Usage:   "log save-content migration changes without PUTting records or writing progress",
-				EnvVars: []string{"MIGRATION_DRY_RUN"},
-			},
-			&cli.StringFlag{
-				Name:    "migration-author",
-				Usage:   "limit the save-content migration to a single author DID",
-				EnvVars: []string{"MIGRATION_AUTHOR"},
-			},
-			&cli.StringFlag{
-				Name:    "migration-uri",
-				Usage:   "limit the save-content migration to a single save URI",
-				EnvVars: []string{"MIGRATION_URI"},
-			},
-			&cli.IntFlag{
-				Name:    "migration-limit",
-				Usage:   "maximum number of saves to migrate",
-				Value:   0,
-				EnvVars: []string{"MIGRATION_LIMIT"},
-			},
-			&cli.Float64Flag{
-				Name:    "migration-global-rate",
-				Usage:   "maximum save PUTs per second across the whole migration",
-				Value:   1,
-				EnvVars: []string{"MIGRATION_GLOBAL_RATE"},
-			},
-			&cli.Float64Flag{
-				Name:    "migration-per-account-rate",
-				Usage:   "maximum save PUTs per second per account during migration",
-				Value:   0.5,
-				EnvVars: []string{"MIGRATION_PER_ACCOUNT_RATE"},
-			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -159,7 +120,7 @@ func runServer(cctx *cli.Context) error {
 
 	mode := strings.ToLower(cctx.String("mode"))
 	switch mode {
-	case "all", "repair", "migrate-save-content":
+	case "all", "repair":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -212,20 +173,6 @@ func runServer(cctx *cli.Context) error {
 		return err
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
-	if mode == "migrate-save-content" {
-		return runSaveContentMigration(ctx, SaveContentMigrationConfig{
-			Store:          store,
-			OAuth:          oauthClient,
-			Dir:            dir,
-			ProgressFile:   cctx.String("migration-progress-file"),
-			DryRun:         cctx.Bool("migration-dry-run"),
-			AuthorDID:      cctx.String("migration-author"),
-			SaveURI:        cctx.String("migration-uri"),
-			Limit:          cctx.Int("migration-limit"),
-			GlobalRate:     cctx.Float64("migration-global-rate"),
-			PerAccountRate: cctx.Float64("migration-per-account-rate"),
-		})
-	}
 
 	inferenceClient := NewInferenceClient(cctx.String("inference-url"))
 	tapHandler := &TapHandler{

@@ -93,7 +93,3 @@ func noCacheMiddleware(next http.Handler) http.Handler {
 func strPtr(raw string) *string {
 	return &raw
 }
-
-func boolPtr(raw bool) *bool {
-	return &raw
-}

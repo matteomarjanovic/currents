@@ -633,7 +633,6 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		Collection: saveNSID,
 		Repo:       did.String(),
 		Record:     record,
-		Validate:   boolPtr(false),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("creating record: %s", err), http.StatusInternalServerError)
@@ -709,7 +708,6 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	}
 	var existingVal struct {
 		Content     json.RawMessage `json:"content"`
-		Image       json.RawMessage `json:"image"`
 		CreatedAt   string          `json:"createdAt"`
 		OriginURL   string          `json:"originUrl"`
 		Text        string          `json:"text"`
@@ -719,7 +717,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
 	}
-	contentAny, err := buildSaveContent(existingVal.Content, existingVal.Image)
+	contentAny, err := buildSaveContent(existingVal.Content)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("parsing existing save content: %s", err), http.StatusInternalServerError)
 		return
@@ -781,7 +779,6 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		Repo:       did.String(),
 		Rkey:       rkey,
 		Record:     record,
-		Validate:   boolPtr(false),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("updating record: %s", err), http.StatusInternalServerError)
@@ -894,7 +891,6 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		Collection: saveNSID,
 		Repo:       did.String(),
 		Record:     record,
-		Validate:   boolPtr(false),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("creating record: %s", err), http.StatusInternalServerError)

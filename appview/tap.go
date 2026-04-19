@@ -165,13 +165,13 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		if err := json.Unmarshal(ev.Record, &s); err != nil {
 			return fmt.Errorf("unmarshal save record: %w", err)
 		}
-		contentNSID, err := saveContentNSID(s.Content, s.Image)
+		contentNSID, err := saveContentNSID(s.Content)
 		if err != nil {
 			return err
 		}
 		pdsBlobCID := ""
 		if contentNSID == saveContentImageNSID {
-			content, err := decodeSaveImageContent(s.Content, s.Image)
+			content, err := decodeSaveImageContent(s.Content)
 			if err != nil {
 				return err
 			}
