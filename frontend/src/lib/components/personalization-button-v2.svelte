@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { Button } from '$lib/components/ui/button';
@@ -41,24 +41,42 @@
 	}
 
 	let activeValue = $state(DEFAULT_VALUE);
+	let committedValue = $state<number | null>(null);
 	let open = $state(false);
 	let previousOpen = false;
 
 	$effect(() => {
+		if (committedValue !== null && selectedValue === committedValue) committedValue = null;
+	});
+
+	$effect(() => {
 		if (open !== previousOpen) {
 			previousOpen = open;
-			activeValue = selectedValue;
+			activeValue = committedValue ?? selectedValue;
 			return;
 		}
 
-		if (!open) activeValue = selectedValue;
+		if (!open) activeValue = committedValue ?? selectedValue;
 	});
 
-	const currentNoiseIntensity = $derived(valueToNoise(open ? activeValue : selectedValue));
+	const currentNoiseIntensity = $derived(
+		valueToNoise(open ? activeValue : (committedValue ?? selectedValue))
+	);
 
-	function commitValue(v: number) {
+	async function commitValue(v: number) {
+		const nextValue = clamp(v);
+		const target = resolve(buildExploreHref(nextValue));
+
+		committedValue = nextValue;
+		activeValue = nextValue;
 		open = false;
-		replaceState(resolve(buildExploreHref(v)), page.state);
+
+		try {
+			await goto(target, { replaceState: true, keepFocus: true, noScroll: true });
+		} catch {
+			committedValue = null;
+			activeValue = selectedValue;
+		}
 	}
 </script>
 
