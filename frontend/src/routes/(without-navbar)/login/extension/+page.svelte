@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import LogoMerged from '$lib/assets/logo_merged.svelte';
+	import LogoMerged from '$lib/assets/logo.svelte';
 	import { page } from '$app/state';
 	import LoginForm from '$lib/components/login-form.svelte';
 

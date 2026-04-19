@@ -3,7 +3,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { loginPrompt } from '$lib/stores/login-prompt.svelte';
-	import LogoMerged from '$lib/assets/logo_merged.svelte';
+	import LogoMerged from '$lib/assets/logo.svelte';
 </script>
 
 <Dialog.Root bind:open={loginPrompt.open}>
