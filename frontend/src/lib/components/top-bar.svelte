@@ -5,15 +5,11 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Slider } from '$lib/components/ui/slider';
-	import * as Popover from '$lib/components/ui/popover';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
-	import { personalization } from '$lib/stores/personalization.svelte';
 	import { setMode, resetMode, userPrefersMode } from 'mode-watcher';
 	import { fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import UserIcon from '@lucide/svelte/icons/user';
 	import Sun from '@lucide/svelte/icons/sun';
@@ -33,7 +29,6 @@
 
 	let query = $state('');
 	let searchOpen = $state(false);
-	let isSearchPage = $derived(page.url.pathname.includes('/search/'));
 
 	$effect(() => {
 		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
@@ -47,18 +42,6 @@
 			goto(resolve('/(with-navbar)/search/[query]', { query: encodeURIComponent(trimmed) }));
 		}
 	}
-
-	const personalizationLabels: Record<number, string> = {
-		[-1]: 'Serendipity Max',
-		[-0.75]: 'Serendipity High',
-		[-0.5]: 'Serendipity',
-		[-0.25]: 'Serendipity Low',
-		0: 'Off',
-		0.25: 'Low',
-		0.5: 'Medium',
-		0.75: 'High',
-		1: 'Max'
-	};
 </script>
 
 <header
@@ -89,28 +72,6 @@
 					: ''} h-11 rounded-full"
 			/>
 		</form>
-
-		{#if user && !isSearchPage}
-			<Popover.Root>
-				<Popover.Trigger class="shrink-0 rounded-full data-[slot=popover-trigger]:p-0">
-					<Button variant="ghost" size="icon" class="rounded-full" type="button">
-						<SlidersHorizontal class="size-4" />
-					</Button>
-				</Popover.Trigger>
-				<Popover.Content
-					class="flex w-48 flex-col items-center gap-3 rounded-2xl border bg-popover/90 backdrop-blur-sm"
-				>
-					<Slider type="single" bind:value={personalization.value} min={-1} max={1} step={0.25} />
-					<span>Feed: {personalizationLabels[personalization.value]}</span>
-				</Popover.Content>
-			</Popover.Root>
-		{:else}
-			<!-- <a href="/login">
-				<Button variant="ghost" size="sm" class="shrink-0 rounded-full" type="button">
-					Login to personalize
-				</Button>
-			</a> -->
-		{/if}
 	</div>
 
 	{#if !searchOpen}
@@ -124,21 +85,6 @@
 		>
 			<SearchIcon class="size-4" />
 		</Button>
-		{#if user && !isSearchPage}
-			<Popover.Root>
-				<Popover.Trigger class="shrink-0 rounded-full data-[slot=popover-trigger]:p-0  md:hidden">
-					<Button variant="ghost" size="icon" class="rounded-full" type="button">
-						<SlidersHorizontal class="size-4" />
-					</Button>
-				</Popover.Trigger>
-				<Popover.Content
-					class="flex w-48 flex-col items-center gap-3 rounded-2xl border bg-popover/90 backdrop-blur-sm"
-				>
-					<Slider type="single" bind:value={personalization.value} min={-1} max={1} step={0.25} />
-					<span>Feed: {personalizationLabels[personalization.value]}</span>
-				</Popover.Content>
-			</Popover.Root>
-		{/if}
 	{/if}
 
 	{#if searchOpen}

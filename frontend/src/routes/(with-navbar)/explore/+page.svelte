@@ -1,22 +1,29 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import { personalization } from '$lib/stores/personalization.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import PersonalizationButton from '$lib/components/personalization-button-v2.svelte';
+
+	const personalizationValue = $derived.by(() => {
+		const raw = page.url.searchParams.get('personalization');
+		if (raw === null) return 0.6;
+		const n = Number(raw);
+		return Number.isFinite(n) ? Math.max(-0.6, Math.min(1, n)) : 0.6;
+	});
 
 	const feed = useInfiniteScroll(async (cursor) => {
 		const params = new URLSearchParams({
-			personalized: String(personalization.value),
+			personalized: String(personalizationValue),
 			limit: '50',
 			excludeSaved: 'true'
 		});
 		if (cursor) params.set('cursor', cursor);
 
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getFeed?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getFeed?${params}`, {
+			credentials: 'include'
+		});
 		const data = await res.json();
 		return { items: data.feed, cursor: data.cursor };
 	});
@@ -24,7 +31,7 @@
 	let sentinel: HTMLDivElement = $state(undefined!);
 
 	$effect(() => {
-		void personalization.value;
+		void personalizationValue;
 		const timeout = setTimeout(() => {
 			untrack(() => {
 				feed.reset();
@@ -51,3 +58,7 @@
 {#if feed.hasMore}
 	<div bind:this={sentinel} class="h-1"></div>
 {/if}
+
+<div class="fixed right-5 bottom-5 z-20">
+	<PersonalizationButton />
+</div>
