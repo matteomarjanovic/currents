@@ -74,7 +74,7 @@ type saveRecord struct {
 	Content   json.RawMessage `json:"content"`
 	OriginURL string          `json:"originUrl"`
 	Text      string          `json:"text"`
-	ResaveOf    struct {
+	ResaveOf  struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"resaveOf"`
