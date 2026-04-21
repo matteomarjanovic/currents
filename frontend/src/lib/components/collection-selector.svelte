@@ -3,7 +3,11 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import type { CollectionView, SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { collections, setLastUsedCollection } from '$lib/stores/collections.svelte';
+	import {
+		collections,
+		setLastUsedCollection,
+		addCollection
+	} from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Toggle } from '$lib/components/ui/toggle';
@@ -15,24 +19,31 @@
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 
 	interface Props {
-		item: SaveView;
+		item?: SaveView;
 		variant?: 'popover' | 'drawer';
 		onOpenChange?: (open: boolean) => void;
+		selectedUri?: string;
+		onSelect?: (uri: string) => void;
 	}
 
-	let { item, variant = 'popover', onOpenChange }: Props = $props();
+	let { item, variant = 'popover', onOpenChange, selectedUri, onSelect }: Props = $props();
+
+	let pickerMode = $derived(!item);
 
 	let localSaves = $state<{ collectionUri: string; saveUri: string }[]>(
-		untrack(() => (item.viewer?.saves ? [...item.viewer.saves] : []))
+		untrack(() => (item?.viewer?.saves ? [...item.viewer.saves] : []))
 	);
 	let syncedItemUri = $state<string | null>(null);
 
 	let userSelectedUri = $state<string | null>(null);
 	let selectedCollectionUri = $derived(
-		userSelectedUri ?? localSaves[0]?.collectionUri ?? collections.lastUsedUri
+		pickerMode
+			? (selectedUri ?? '')
+			: (userSelectedUri ?? localSaves[0]?.collectionUri ?? collections.lastUsedUri)
 	);
 
 	$effect(() => {
+		if (!item) return;
 		const nextItemUri = item.uri;
 		localSaves = item.viewer?.saves ? [...item.viewer.saves] : [];
 		if (syncedItemUri !== nextItemUri) {
@@ -72,6 +83,7 @@
 	let anySaved = $derived(localSaves.length > 0);
 
 	async function save(collectionUri: string) {
+		if (!item) return;
 		localSaves = [...localSaves, { collectionUri, saveUri: OPTIMISTIC_URI }];
 		setLastUsedCollection(collectionUri);
 		try {
@@ -125,6 +137,12 @@
 	}
 
 	function toggleCollection(uri: string) {
+		if (pickerMode) {
+			onSelect?.(uri);
+			setLastUsedCollection(uri);
+			open = false;
+			return;
+		}
 		userSelectedUri = uri;
 		const existing = isSavedIn(uri);
 		if (existing) {
@@ -146,10 +164,14 @@
 	}
 
 	function handleCreated(collection: CollectionView) {
-		collections.items = [collection, ...collections.items];
-		userSelectedUri = collection.uri;
+		addCollection(collection);
 		setLastUsedCollection(collection.uri);
-		save(collection.uri);
+		if (pickerMode) {
+			onSelect?.(collection.uri);
+		} else {
+			userSelectedUri = collection.uri;
+			save(collection.uri);
+		}
 	}
 </script>
 
@@ -214,29 +236,40 @@
 			</Popover.Content>
 		</Popover.Root>
 
-		<Toggle
-			size="sm"
-			pressed={!!isSavedInSelected()}
-			onPressedChange={handleButtonClick}
-			disabled={!selectedCollectionUri}
-			class="border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
-		>
-			{isSavedInSelected() ? 'Saved' : 'Save'}
-		</Toggle>
+		{#if !pickerMode}
+			<Toggle
+				size="sm"
+				pressed={!!isSavedInSelected()}
+				onPressedChange={handleButtonClick}
+				disabled={!selectedCollectionUri}
+				class="border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
+			>
+				{isSavedInSelected() ? 'Saved' : 'Save'}
+			</Toggle>
+		{/if}
 	</div>
 {:else}
 	<Drawer.Root bind:open>
 		<Drawer.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant={anySaved ? 'secondary' : 'default'} class="w-full">
-					{anySaved ? 'Saved' : 'Save'}
-				</Button>
+				{#if pickerMode}
+					<Button {...props} variant="secondary" class="w-full justify-between">
+						<span class="truncate">{selectedName}</span>
+						<ChevronDown class="ml-1 size-3 shrink-0" />
+					</Button>
+				{:else}
+					<Button {...props} variant={anySaved ? 'secondary' : 'default'} class="w-full">
+						{anySaved ? 'Saved' : 'Save'}
+					</Button>
+				{/if}
 			{/snippet}
 		</Drawer.Trigger>
 		<Drawer.Content>
 			<Drawer.Header>
-				<Drawer.Title>Save to collection</Drawer.Title>
-				<Drawer.Description>Pick one or more collections.</Drawer.Description>
+				<Drawer.Title>{pickerMode ? 'Pick a collection' : 'Save to collection'}</Drawer.Title>
+				<Drawer.Description>
+					{pickerMode ? 'Choose a collection for the uploads.' : 'Pick one or more collections.'}
+				</Drawer.Description>
 			</Drawer.Header>
 			<div class="max-h-[60vh] overflow-y-auto p-1.5">
 				{@render collectionList()}

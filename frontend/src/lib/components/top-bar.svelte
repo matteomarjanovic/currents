@@ -17,7 +17,13 @@
 	import Monitor from '@lucide/svelte/icons/monitor';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
+	import Plus from '@lucide/svelte/icons/plus';
+	import FolderPlus from '@lucide/svelte/icons/folder-plus';
+	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Logo from '$lib/assets/logo.svelte';
+	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
+	import { addCollection } from '$lib/stores/collections.svelte';
+	import type { CollectionView } from '$lib/types';
 
 	let {
 		user,
@@ -29,6 +35,12 @@
 
 	let query = $state('');
 	let searchOpen = $state(false);
+	let createCollectionOpen = $state(false);
+
+	function handleCollectionCreated(collection: CollectionView) {
+		addCollection(collection);
+		goto(resolve('/(with-navbar)/collection/[uri]', { uri: encodeURIComponent(collection.uri) }));
+	}
 
 	$effect(() => {
 		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
@@ -123,6 +135,25 @@
 	{#if !searchOpen}
 		{#if user}
 			<DropdownMenu.Root>
+				<DropdownMenu.Trigger class="shrink-0 outline-none">
+					{#snippet child({ props })}
+						<Button {...props} variant="ghost" size="icon" class="rounded-full" type="button">
+							<Plus class="size-5" />
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-48">
+					<DropdownMenu.Item onclick={() => (createCollectionOpen = true)}>
+						<FolderPlus class="size-4" />
+						Create collection
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => goto(resolve('/(with-navbar)/upload'))}>
+						<ImagePlus class="size-4" />
+						Upload images
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+			<DropdownMenu.Root>
 				<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
 					<Avatar.Root size="default">
 						{#if user.avatar}
@@ -198,3 +229,7 @@
 		{/if}
 	{/if}
 </header>
+
+{#if user}
+	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
+{/if}
