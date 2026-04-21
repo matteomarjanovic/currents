@@ -352,6 +352,21 @@ async def embed_image(file: UploadFile = File(...)):
     )
 
 
+def _encode_jpeg(image: Image.Image, quality: int) -> bytes:
+    out = io.BytesIO()
+    image.save(out, format="JPEG", quality=quality)
+    return out.getvalue()
+
+
+@app.post("/transcode/image")
+async def transcode_image(file: UploadFile = File(...)):
+    raw = await file.read()
+    image, _ = _decode_image(raw)
+    loop = asyncio.get_running_loop()
+    transcoded = await loop.run_in_executor(None, _encode_jpeg, image, 90)
+    return Response(content=transcoded, media_type="image/jpeg")
+
+
 @app.post("/prepare/image")
 async def prepare_image(
     file: UploadFile = File(...),

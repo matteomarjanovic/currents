@@ -102,6 +102,29 @@ func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mim
 	return result, nil
 }
 
+func (c *InferenceClient) TranscodeImage(ctx context.Context, imageBytes []byte, mimeType string) ([]byte, string, error) {
+	resp, err := c.doImageRequest(ctx, "/transcode/image", imageBytes, mimeType, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
+	}
+
+	transcoded, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading transcoded image response: %w", err)
+	}
+	outMime := resp.Header.Get("Content-Type")
+	if outMime == "" {
+		outMime = "image/jpeg"
+	}
+	return transcoded, outMime, nil
+}
+
 func (c *InferenceClient) PrepareImage(ctx context.Context, imageBytes []byte, mimeType string, maxBytes int) ([]byte, string, error) {
 	resp, err := c.doImageRequest(ctx, "/prepare/image", imageBytes, mimeType, map[string]string{
 		"max_bytes": strconv.Itoa(maxBytes),
@@ -335,9 +358,27 @@ func (s *Server) ImageProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isHEIC(mimeType) {
+		transcoded, transcodedMime, err := s.Inference.TranscodeImage(r.Context(), data, mimeType)
+		if err != nil {
+			http.Error(w, "could not transcode image", http.StatusBadGateway)
+			return
+		}
+		data = transcoded
+		mimeType = transcodedMime
+	}
+
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Write(data)
+}
+
+func isHEIC(mimeType string) bool {
+	switch mimeType {
+	case "image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence":
+		return true
+	}
+	return false
 }
 
 // ── Quality score ─────────────────────────────────────────────────────────────
