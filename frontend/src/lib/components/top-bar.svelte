@@ -224,7 +224,9 @@
 			</DropdownMenu.Root>
 		{:else}
 			<a href={resolve('/login')}>
-				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
+				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5"
+					>Log in / Register</Button
+				>
 			</a>
 		{/if}
 	{/if}

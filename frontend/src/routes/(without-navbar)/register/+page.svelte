@@ -4,11 +4,7 @@
 	import LogoMerged from '$lib/assets/logo.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import {
-		FieldGroup,
-		Field,
-		FieldDescription
-	} from '$lib/components/ui/field/index.js';
+	import { FieldGroup, Field, FieldDescription } from '$lib/components/ui/field/index.js';
 
 	const loginAction = `${PUBLIC_APPVIEW_URL}/oauth/login`;
 </script>
@@ -75,14 +71,14 @@
 				</Card.Content>
 			</Card.Root>
 			<div class="px-6 text-center text-sm text-muted-foreground">
-				<p class="mb-2 font-medium text-foreground">What is an Atmosphere account?</p>
-				<p>
-					The Atmosphere is the open network built on the AT&nbsp;Protocol. One account lets you
-					log into dozens of apps — Bluesky, Currents, and many more — with your posts, follows,
-					and saves following you everywhere. You own your data and can move between providers
-					whenever you want.
-				</p>
+				<a href="https://atmosphereaccount.com" target="_blank">
+					<Button variant="link" class="w-full">What is an Atmosphere account?</Button>
+				</a>
 			</div>
+			<FieldDescription class="px-6 text-center">
+				By clicking continue, you agree to our <a href="##">Terms of Service</a>
+				and <a href="##">Privacy Policy</a>.
+			</FieldDescription>
 		</div>
 	</div>
 </div>

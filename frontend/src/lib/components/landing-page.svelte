@@ -24,7 +24,7 @@
 		<!-- Text content -->
 		<div class="relative z-9 max-w-xl">
 			<h1
-				class="text-beauty mb-10 font-italiana text-6xl leading-[1.02] tracking-tight text-foreground md:text-7xl lg:mt-16 xl:text-[5.25rem]"
+				class="text-beauty mb-10 font-sans text-6xl leading-[1.02] font-semibold tracking-tight text-foreground md:text-7xl lg:mt-16 xl:text-[5.25rem]"
 				// style="font-size: clamp(3.4rem, 6.5vw, 6.2rem);"
 			>
 				Get carried by the currents.
