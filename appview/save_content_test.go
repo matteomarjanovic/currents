@@ -19,7 +19,7 @@ func TestSaveContentNSIDRequiresType(t *testing.T) {
 }
 
 func TestDecodeSaveImageContent(t *testing.T) {
-	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"}}`)
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"}}`)
 
 	contentAny, err := buildSaveContent(contentRaw)
 	if err != nil {
@@ -50,6 +50,9 @@ func TestDecodeSaveImageContent(t *testing.T) {
 	}
 	if content.Image.Ref["$link"] != "bafkcid" {
 		t.Fatalf("unexpected blob CID: %q", content.Image.Ref["$link"])
+	}
+	if content.Image.Type != "blob" {
+		t.Fatalf("unexpected blob type: %q", content.Image.Type)
 	}
 }
 
@@ -86,7 +89,7 @@ func TestEffectiveSaveAttributionFallsBackToLegacy(t *testing.T) {
 }
 
 func TestBuildSaveContentWithAttributionMigratesLegacy(t *testing.T) {
-	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"}}`)
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"}}`)
 	legacy := &saveAttribution{Credit: "legacy"}
 
 	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, legacy)
@@ -102,6 +105,25 @@ func TestBuildSaveContentWithAttributionMigratesLegacy(t *testing.T) {
 	}
 	if content.Attribution.Credit != "legacy" {
 		t.Fatalf("unexpected migrated attribution: %q", content.Attribution.Credit)
+	}
+	if content.Image.Type != "blob" {
+		t.Fatalf("expected blob type to be preserved, got %q", content.Image.Type)
+	}
+}
+
+func TestBuildSaveContentWithAttributionRepairsMissingBlobType(t *testing.T) {
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
+
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, nil)
+	if err != nil {
+		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
+	}
+	content, ok := contentAny.(*saveImageContent)
+	if !ok {
+		t.Fatalf("expected *saveImageContent, got %T", contentAny)
+	}
+	if content.Image.Type != "blob" {
+		t.Fatalf("expected repaired blob type, got %q", content.Image.Type)
 	}
 }
 

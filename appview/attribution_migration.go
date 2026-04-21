@@ -25,13 +25,19 @@ func rewriteSaveRecordValue(raw json.RawMessage) (map[string]any, bool, error) {
 	if err := json.Unmarshal(raw, &recordMap); err != nil {
 		return nil, false, fmt.Errorf("unmarshal save record map: %w", err)
 	}
-	if _, ok := recordMap["attribution"]; !ok {
-		return nil, false, nil
-	}
+	_, hasLegacyAttribution := recordMap["attribution"]
 
 	var record saveRecord
 	if err := json.Unmarshal(raw, &record); err != nil {
 		return nil, false, fmt.Errorf("unmarshal save record struct: %w", err)
+	}
+	content, err := decodeSaveImageContent(record.Content)
+	if err != nil {
+		return nil, false, fmt.Errorf("decode save image content: %w", err)
+	}
+	needsBlobTypeRepair := content != nil && content.Image.Type == ""
+	if !hasLegacyAttribution && !needsBlobTypeRepair {
+		return nil, false, nil
 	}
 
 	contentAny, err := buildSaveContentWithAttribution(record.Content, nil, record.Attribution)

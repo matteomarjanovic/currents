@@ -54,6 +54,7 @@ type saveView struct {
 }
 
 type saveBlobRef struct {
+	Type     string            `json:"$type,omitempty"`
 	Ref      map[string]string `json:"ref"`
 	MimeType string            `json:"mimeType"`
 	Size     int               `json:"size,omitempty"`
@@ -181,6 +182,9 @@ func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *sa
 	}
 	if content == nil {
 		return buildSaveContent(contentRaw)
+	}
+	if content.Image.Type == "" {
+		content.Image.Type = "blob"
 	}
 	attr := saveAttributionOrNil(attribution)
 	if attr == nil {
