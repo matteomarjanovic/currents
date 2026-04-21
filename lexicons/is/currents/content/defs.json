@@ -49,10 +49,10 @@
                 "dominantColor": {
                     "type": "string",
                     "description": "Hex color code of the most dominant color, for placeholder rendering. Absent if unknown."
-				},
-				"attribution": {
-					"type": "ref",
-					"ref": "#attribution"
+                },
+                "attribution": {
+                    "type": "ref",
+                    "ref": "#attribution"
                 }
             }
         }

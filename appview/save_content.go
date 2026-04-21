@@ -33,12 +33,12 @@ type saveViewerState struct {
 }
 
 type imageView struct {
-	Type          string `json:"$type"`
-	BlobCID       string `json:"blobCid"`
-	ImageURL      string `json:"imageUrl"`
-	Width         int    `json:"width,omitempty"`
-	Height        int    `json:"height,omitempty"`
-	DominantColor string `json:"dominantColor,omitempty"`
+	Type          string           `json:"$type"`
+	BlobCID       string           `json:"blobCid"`
+	ImageURL      string           `json:"imageUrl"`
+	Width         int              `json:"width,omitempty"`
+	Height        int              `json:"height,omitempty"`
+	DominantColor string           `json:"dominantColor,omitempty"`
 	Attribution   *saveAttribution `json:"attribution,omitempty"`
 }
 
@@ -70,11 +70,11 @@ type saveRecord struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"collection"`
-	Content     json.RawMessage   `json:"content"`
-	OriginURL   string            `json:"originUrl"`
-	Attribution *saveAttribution  `json:"attribution,omitempty"`
-	Text        string            `json:"text"`
-	ResaveOf struct {
+	Content     json.RawMessage  `json:"content"`
+	OriginURL   string           `json:"originUrl"`
+	Attribution *saveAttribution `json:"attribution,omitempty"`
+	Text        string           `json:"text"`
+	ResaveOf    struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"resaveOf"`

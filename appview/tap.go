@@ -223,16 +223,16 @@ func handleSaveUpsert(
 	}
 
 	base := UpsertSaveParams{
-		URI:                atURI,
-		AuthorDID:          ev.DID,
-		CollectionURI:      s.Collection.URI,
-		PdsBlobCID:         pdsBlobCID,
-		ContentNSID:        contentNSID,
-		Text:               s.Text,
-		OriginURL:          s.OriginURL,
-		ResaveOfURI:        s.ResaveOf.URI,
-		ResaveOfCID:        s.ResaveOf.CID,
-		CreatedAt:          createdAt,
+		URI:           atURI,
+		AuthorDID:     ev.DID,
+		CollectionURI: s.Collection.URI,
+		PdsBlobCID:    pdsBlobCID,
+		ContentNSID:   contentNSID,
+		Text:          s.Text,
+		OriginURL:     s.OriginURL,
+		ResaveOfURI:   s.ResaveOf.URI,
+		ResaveOfCID:   s.ResaveOf.CID,
+		CreatedAt:     createdAt,
 	}
 	if attr != nil {
 		base.AttributionURL = attr.URL
