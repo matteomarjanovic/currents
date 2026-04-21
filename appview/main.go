@@ -30,7 +30,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "mode",
-				Usage:   "process mode: all, repair, or migrate-attribution",
+				Usage:   "process mode: all or repair",
 				Value:   "all",
 				EnvVars: []string{"APPVIEW_MODE"},
 			},
@@ -120,7 +120,7 @@ func runServer(cctx *cli.Context) error {
 
 	mode := strings.ToLower(cctx.String("mode"))
 	switch mode {
-	case "all", "repair", "migrate-attribution":
+	case "all", "repair":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -173,22 +173,6 @@ func runServer(cctx *cli.Context) error {
 		return err
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
-	if mode == "migrate-attribution" {
-		report, err := runAttributionMigration(ctx, store, oauthClient)
-		if err != nil {
-			return err
-		}
-		slog.Info("attribution migration completed",
-			"candidates", report.CandidateCount,
-			"authors", report.AuthorCount,
-			"rewritten", report.RewrittenCount,
-			"deleted", report.DeletedCount,
-			"skipped_no_session", report.SkippedNoSessionCount,
-			"skipped_no_change", report.SkippedNoChangeCount,
-			"failed", report.FailedCount,
-		)
-		return nil
-	}
 
 	inferenceClient := NewInferenceClient(cctx.String("inference-url"))
 	tapHandler := &TapHandler{

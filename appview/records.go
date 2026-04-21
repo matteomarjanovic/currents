@@ -714,27 +714,18 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var existingVal struct {
-		Content     json.RawMessage `json:"content"`
-		CreatedAt   string          `json:"createdAt"`
-		OriginURL   string          `json:"originUrl"`
-		Text        string          `json:"text"`
-		Attribution json.RawMessage `json:"attribution"`
-		ResaveOf    json.RawMessage `json:"resaveOf"`
+		Content   json.RawMessage `json:"content"`
+		CreatedAt string          `json:"createdAt"`
+		OriginURL string          `json:"originUrl"`
+		Text      string          `json:"text"`
+		ResaveOf  json.RawMessage `json:"resaveOf"`
 	}
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
 	}
-	var legacyAttribution *saveAttribution
-	if len(existingVal.Attribution) > 0 && string(existingVal.Attribution) != "null" {
-		if err := json.Unmarshal(existingVal.Attribution, &legacyAttribution); err != nil {
-			http.Error(w, fmt.Sprintf("parsing existing save attribution: %s", err), http.StatusInternalServerError)
-			return
-		}
-	}
 	contentAny, err := buildSaveContentWithAttribution(
 		existingVal.Content,
 		saveAttributionFromFields(attrURL, attrLicense, attrCredit),
-		legacyAttribution,
 	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("parsing existing save content: %s", err), http.StatusInternalServerError)

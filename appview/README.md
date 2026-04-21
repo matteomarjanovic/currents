@@ -13,7 +13,7 @@ All options can be set via flags or environment variables.
 
 | Env var | Flag | Required | Description |
 |---|---|---|---|
-| `APPVIEW_MODE` | `--mode` | No | Process mode: `all`, `repair`, or `migrate-attribution` (default: `all`) |
+| `APPVIEW_MODE` | `--mode` | No | Process mode: `all` or `repair` (default: `all`) |
 | `SESSION_SECRET` | `--session-secret` | Yes | Random secret for signing session cookies |
 | `DATABASE_URL` | `--database-url` | Yes | PostgreSQL DSN, e.g. `postgres://user:pass@host:5432/db?sslmode=disable` |
 | `DB_MIN_CONNS` | `--db-min-conns` | No | Minimum PostgreSQL connections kept open (default: `4`) |
@@ -28,7 +28,7 @@ All options can be set via flags or environment variables.
 
 The HTTP server also now uses explicit timeouts (`ReadHeaderTimeout=10s`, `ReadTimeout=30s`, `WriteTimeout=60s`, `IdleTimeout=60s`) instead of the Go defaults.
 
-`APPVIEW_MODE=all` runs the HTTP server, TAP listener, and in-process background enrichment in a single process. `APPVIEW_MODE=repair` runs a one-shot backfill pass that processes unresolved saves and missing collection embeddings directly from the database, then exits. `APPVIEW_MODE=migrate-attribution` runs a one-shot save-record rewrite that moves legacy top-level attribution into `content.attribution` for any attributed image saves belonging to users with a live OAuth session in `oauth_sessions`.
+`APPVIEW_MODE=all` runs the HTTP server, TAP listener, and in-process background enrichment in a single process. `APPVIEW_MODE=repair` runs a one-shot backfill pass that processes unresolved saves and missing collection embeddings directly from the database, then exits.
 
 ## Running with Docker Compose (recommended)
 
@@ -124,14 +124,6 @@ Run a one-shot repair/backfill pass with:
 ```bash
 DATABASE_URL=<dsn> APPVIEW_MODE=repair go run .
 ```
-
-Run the one-shot attribution rewrite with:
-
-```bash
-DATABASE_URL=<dsn> APPVIEW_MODE=migrate-attribution go run .
-```
-
-This mode rewrites records on the users' PDSes via the stored OAuth sessions instead of mutating PostgreSQL directly. If a save rewrite fails because the referenced blob is no longer available on that PDS (`BlobNotFound`), the migration deletes that broken save record instead so the running TAP listener can remove it from the local database. In normal use, run it while the regular `APPVIEW_MODE=all` appview is connected to TAP so the updated records reindex back into the local database automatically.
 
 That pass processes distinct unresolved blob CIDs directly from `save`, then recomputes collection embeddings for collections whose `canonical_embedding` is still missing even though resolved save embeddings exist.
 

@@ -56,43 +56,10 @@ func TestDecodeSaveImageContent(t *testing.T) {
 	}
 }
 
-func TestEffectiveSaveAttributionPrefersNestedContent(t *testing.T) {
-	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
-	legacy := &saveAttribution{Credit: "legacy"}
+func TestBuildSaveContentWithAttributionPreservesNestedAttribution(t *testing.T) {
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
 
-	attr, err := effectiveSaveAttribution(contentRaw, legacy)
-	if err != nil {
-		t.Fatalf("effectiveSaveAttribution failed: %v", err)
-	}
-	if attr == nil {
-		t.Fatal("expected attribution")
-	}
-	if attr.Credit != "nested" {
-		t.Fatalf("expected nested attribution, got %q", attr.Credit)
-	}
-}
-
-func TestEffectiveSaveAttributionFallsBackToLegacy(t *testing.T) {
-	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"}}`)
-	legacy := &saveAttribution{License: "CC BY 4.0"}
-
-	attr, err := effectiveSaveAttribution(contentRaw, legacy)
-	if err != nil {
-		t.Fatalf("effectiveSaveAttribution failed: %v", err)
-	}
-	if attr == nil {
-		t.Fatal("expected attribution")
-	}
-	if attr.License != "CC BY 4.0" {
-		t.Fatalf("expected legacy attribution, got %q", attr.License)
-	}
-}
-
-func TestBuildSaveContentWithAttributionMigratesLegacy(t *testing.T) {
-	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"}}`)
-	legacy := &saveAttribution{Credit: "legacy"}
-
-	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, legacy)
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil)
 	if err != nil {
 		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
 	}
@@ -103,8 +70,30 @@ func TestBuildSaveContentWithAttributionMigratesLegacy(t *testing.T) {
 	if content.Attribution == nil {
 		t.Fatal("expected nested attribution")
 	}
-	if content.Attribution.Credit != "legacy" {
-		t.Fatalf("unexpected migrated attribution: %q", content.Attribution.Credit)
+	if content.Attribution.Credit != "nested" {
+		t.Fatalf("unexpected preserved attribution: %q", content.Attribution.Credit)
+	}
+	if content.Image.Type != "blob" {
+		t.Fatalf("expected blob type to be preserved, got %q", content.Image.Type)
+	}
+}
+
+func TestBuildSaveContentWithAttributionOverridesNestedAttribution(t *testing.T) {
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
+
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, &saveAttribution{Credit: "updated"})
+	if err != nil {
+		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
+	}
+	content, ok := contentAny.(*saveImageContent)
+	if !ok {
+		t.Fatalf("expected *saveImageContent, got %T", contentAny)
+	}
+	if content.Attribution == nil {
+		t.Fatal("expected nested attribution")
+	}
+	if content.Attribution.Credit != "updated" {
+		t.Fatalf("unexpected overridden attribution: %q", content.Attribution.Credit)
 	}
 	if content.Image.Type != "blob" {
 		t.Fatalf("expected blob type to be preserved, got %q", content.Image.Type)
@@ -114,7 +103,7 @@ func TestBuildSaveContentWithAttributionMigratesLegacy(t *testing.T) {
 func TestBuildSaveContentWithAttributionRepairsMissingBlobType(t *testing.T) {
 	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
 
-	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, nil)
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil)
 	if err != nil {
 		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
 	}

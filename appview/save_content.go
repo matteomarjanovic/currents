@@ -71,10 +71,9 @@ type saveRecord struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"collection"`
-	Content     json.RawMessage  `json:"content"`
-	OriginURL   string           `json:"originUrl"`
-	Attribution *saveAttribution `json:"attribution,omitempty"`
-	Text        string           `json:"text"`
+	Content   json.RawMessage `json:"content"`
+	OriginURL string          `json:"originUrl"`
+	Text      string          `json:"text"`
 	ResaveOf    struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
@@ -162,20 +161,7 @@ func decodeSaveImageContent(contentRaw json.RawMessage) (*saveImageContent, erro
 	return &content, nil
 }
 
-func effectiveSaveAttribution(contentRaw json.RawMessage, legacy *saveAttribution) (*saveAttribution, error) {
-	content, err := decodeSaveImageContent(contentRaw)
-	if err != nil {
-		return nil, err
-	}
-	if content != nil {
-		if attr := saveAttributionOrNil(content.Attribution); attr != nil {
-			return attr, nil
-		}
-	}
-	return saveAttributionOrNil(legacy), nil
-}
-
-func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *saveAttribution, legacy *saveAttribution) (any, error) {
+func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *saveAttribution) (any, error) {
 	content, err := decodeSaveImageContent(contentRaw)
 	if err != nil {
 		return nil, err
@@ -186,14 +172,10 @@ func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *sa
 	if content.Image.Type == "" {
 		content.Image.Type = "blob"
 	}
-	attr := saveAttributionOrNil(attribution)
-	if attr == nil {
-		attr = saveAttributionOrNil(content.Attribution)
+	content.Attribution = saveAttributionOrNil(content.Attribution)
+	if attr := saveAttributionOrNil(attribution); attr != nil {
+		content.Attribution = attr
 	}
-	if attr == nil {
-		attr = saveAttributionOrNil(legacy)
-	}
-	content.Attribution = attr
 	return content, nil
 }
 
