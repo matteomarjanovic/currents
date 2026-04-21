@@ -32,9 +32,10 @@
 		if (user) loadCollections(user.did);
 
 		const isLoginPage = page.url.pathname.startsWith('/login');
+		const isRegisterPage = page.url.pathname.startsWith('/register');
 		const isRootPage = page.url.pathname === '/';
 		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRootPage && !isExplorePage) {
+		if (!user && !isLoginPage && !isRegisterPage && !isRootPage && !isExplorePage) {
 			goto('/login');
 		}
 	});

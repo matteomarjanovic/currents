@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import {
@@ -102,7 +103,7 @@
 						<Field>
 							<Button type="submit" class="w-full">Login</Button>
 							<FieldDescription class="text-center">
-								Don't have an account? <a href="##">Sign up</a>
+								Don't have an account? <a href={resolve('/register')}>Sign up</a>
 							</FieldDescription>
 						</Field>
 					</FieldGroup>

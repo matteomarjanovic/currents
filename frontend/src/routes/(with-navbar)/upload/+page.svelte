@@ -154,8 +154,8 @@
 <div class="mx-auto w-full max-w-3xl space-y-6 pb-24">
 	<h1 class="text-2xl font-semibold">Upload your images</h1>
 
-	<div class="space-y-2">
-		<div class="text-sm font-medium">Collection</div>
+	<div class="flex justify-between space-y-2">
+		<!-- <div class="text-sm font-medium">Select the collection where to save your images</div> -->
 		<div class="hidden md:block">
 			<CollectionSelector
 				variant="popover"
@@ -170,6 +170,11 @@
 				onSelect={(uri) => (selectedCollectionUri = uri)}
 			/>
 		</div>
+		<div class="flex justify-end">
+			<Button onclick={startUpload} disabled={!canSave}>
+				{uploading ? 'Uploading…' : 'Start upload'}
+			</Button>
+		</div>
 	</div>
 
 	<div class="flex items-center gap-3">
@@ -177,6 +182,9 @@
 			<ImagePlus class="size-4" />
 			Add files
 		</Button>
+		{#if total === 0}
+			<span> ... or drag and drop them in the page </span>
+		{/if}
 		<input
 			bind:this={fileInputEl}
 			type="file"
@@ -229,12 +237,6 @@
 			{/each}
 		</div>
 	{/if}
-
-	<div class="flex justify-end">
-		<Button onclick={startUpload} disabled={!canSave}>
-			{uploading ? 'Uploading…' : 'Save'}
-		</Button>
-	</div>
 </div>
 
 {#if dragActive}

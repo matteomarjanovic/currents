@@ -221,12 +221,12 @@
 		<img
 			src={image.imageUrl}
 			alt={currentSave.text ?? ''}
-			class="w-full rounded-lg"
+			class="w-full"
 			style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
 		/>
 	{:else}
 		<div
-			class="flex items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+			class="flex items-center justify-center bg-muted text-sm text-muted-foreground"
 			style="aspect-ratio: 3 / 4;"
 		>
 			Unsupported content

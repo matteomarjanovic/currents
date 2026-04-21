@@ -73,7 +73,7 @@
 	);
 
 	let selectedName = $derived(
-		collections.items.find((c) => c.uri === selectedCollectionUri)?.name ?? 'Collection'
+		collections.items.find((c) => c.uri === selectedCollectionUri)?.name ?? 'Select collection'
 	);
 
 	function isSavedInSelected() {
