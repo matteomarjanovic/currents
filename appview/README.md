@@ -131,7 +131,7 @@ Run the one-shot attribution rewrite with:
 DATABASE_URL=<dsn> APPVIEW_MODE=migrate-attribution go run .
 ```
 
-This mode rewrites records on the users' PDSes via the stored OAuth sessions instead of mutating PostgreSQL directly. In normal use, run it while the regular `APPVIEW_MODE=all` appview is connected to TAP so the updated records reindex back into the local database automatically.
+This mode rewrites records on the users' PDSes via the stored OAuth sessions instead of mutating PostgreSQL directly. If a save rewrite fails because the referenced blob is no longer available on that PDS (`BlobNotFound`), the migration deletes that broken save record instead so the running TAP listener can remove it from the local database. In normal use, run it while the regular `APPVIEW_MODE=all` appview is connected to TAP so the updated records reindex back into the local database automatically.
 
 That pass processes distinct unresolved blob CIDs directly from `save`, then recomputes collection embeddings for collections whose `canonical_embedding` is still missing even though resolved save embeddings exist.
 

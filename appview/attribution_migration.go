@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	comatprototypes "github.com/bluesky-social/indigo/api/atproto"
 	comatproto "github.com/bluesky-social/indigo/api/agnostic"
 	"github.com/bluesky-social/indigo/atproto/auth/oauth"
 	"github.com/bluesky-social/indigo/atproto/syntax"
@@ -15,9 +17,18 @@ type AttributionMigrationStats struct {
 	CandidateCount        int64
 	AuthorCount           int64
 	RewrittenCount        int64
+	DeletedCount          int64
 	SkippedNoSessionCount int64
 	SkippedNoChangeCount  int64
 	FailedCount           int64
+}
+
+func isBlobNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "BlobNotFound") || strings.Contains(errStr, "Blob not found")
 }
 
 func rewriteSaveRecordValue(raw json.RawMessage) (map[string]any, bool, error) {
@@ -134,6 +145,20 @@ func runAttributionMigration(ctx context.Context, store *PgStore, oauthClient *o
 				Rkey:       rkey,
 				Record:     record,
 			}); err != nil {
+				if isBlobNotFoundError(err) {
+					if _, delErr := comatprototypes.RepoDeleteRecord(ctx, client, &comatprototypes.RepoDeleteRecord_Input{
+						Collection: saveNSID,
+						Repo:       authorDID,
+						Rkey:       rkey,
+					}); delErr != nil {
+						report.FailedCount++
+						slog.Warn("deleting broken save during attribution migration failed", "uri", candidate.URI, "err", delErr)
+						continue
+					}
+					report.DeletedCount++
+					slog.Warn("deleted broken save during attribution migration", "uri", candidate.URI, "did", authorDID)
+					continue
+				}
 				report.FailedCount++
 				slog.Warn("saving rewritten attribution failed", "uri", candidate.URI, "err", err)
 				continue

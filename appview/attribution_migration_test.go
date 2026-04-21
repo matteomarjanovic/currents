@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -58,5 +59,17 @@ func TestRewriteSaveRecordValueRepairsMissingBlobType(t *testing.T) {
 	}
 	if content.Image.Type != "blob" {
 		t.Fatalf("expected repaired blob type, got %q", content.Image.Type)
+	}
+}
+
+func TestIsBlobNotFoundError(t *testing.T) {
+	if !isBlobNotFoundError(errors.New("API request failed (HTTP 400): BlobNotFound: Could not find blob: bafkcid")) {
+		t.Fatal("expected BlobNotFound API error to be recognized")
+	}
+	if !isBlobNotFoundError(errors.New(`{"error":"InvalidRequest","message":"Blob not found"}`)) {
+		t.Fatal("expected blob-not-found response body to be recognized")
+	}
+	if isBlobNotFoundError(errors.New("some other error")) {
+		t.Fatal("unexpected non-blob error match")
 	}
 }

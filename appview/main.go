@@ -182,6 +182,7 @@ func runServer(cctx *cli.Context) error {
 			"candidates", report.CandidateCount,
 			"authors", report.AuthorCount,
 			"rewritten", report.RewrittenCount,
+			"deleted", report.DeletedCount,
 			"skipped_no_session", report.SkippedNoSessionCount,
 			"skipped_no_change", report.SkippedNoChangeCount,
 			"failed", report.FailedCount,
