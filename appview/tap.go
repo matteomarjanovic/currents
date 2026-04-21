@@ -217,6 +217,11 @@ func handleSaveUpsert(
 	atURI, contentNSID, pdsBlobCID string,
 	createdAt *time.Time,
 ) error {
+	attr, err := effectiveSaveAttribution(s.Content, s.Attribution)
+	if err != nil {
+		return err
+	}
+
 	base := UpsertSaveParams{
 		URI:                atURI,
 		AuthorDID:          ev.DID,
@@ -225,12 +230,14 @@ func handleSaveUpsert(
 		ContentNSID:        contentNSID,
 		Text:               s.Text,
 		OriginURL:          s.OriginURL,
-		AttributionURL:     s.Attribution.URL,
-		AttributionLicense: s.Attribution.License,
-		AttributionCredit:  s.Attribution.Credit,
 		ResaveOfURI:        s.ResaveOf.URI,
 		ResaveOfCID:        s.ResaveOf.CID,
 		CreatedAt:          createdAt,
+	}
+	if attr != nil {
+		base.AttributionURL = attr.URL
+		base.AttributionLicense = attr.License
+		base.AttributionCredit = attr.Credit
 	}
 
 	if contentNSID != saveContentImageNSID || pdsBlobCID == "" {

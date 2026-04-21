@@ -39,18 +39,18 @@ type imageView struct {
 	Width         int    `json:"width,omitempty"`
 	Height        int    `json:"height,omitempty"`
 	DominantColor string `json:"dominantColor,omitempty"`
+	Attribution   *saveAttribution `json:"attribution,omitempty"`
 }
 
 type saveView struct {
-	URI         string           `json:"uri"`
-	Author      profileView      `json:"author"`
-	Content     any              `json:"content"`
-	Text        string           `json:"text,omitempty"`
-	OriginURL   string           `json:"originUrl,omitempty"`
-	Attribution *saveAttribution `json:"attribution,omitempty"`
-	ResaveOf    *strongRef       `json:"resaveOf,omitempty"`
-	CreatedAt   string           `json:"createdAt"`
-	Viewer      *saveViewerState `json:"viewer,omitempty"`
+	URI       string           `json:"uri"`
+	Author    profileView      `json:"author"`
+	Content   any              `json:"content"`
+	Text      string           `json:"text,omitempty"`
+	OriginURL string           `json:"originUrl,omitempty"`
+	ResaveOf  *strongRef       `json:"resaveOf,omitempty"`
+	CreatedAt string           `json:"createdAt"`
+	Viewer    *saveViewerState `json:"viewer,omitempty"`
 }
 
 type saveBlobRef struct {
@@ -60,8 +60,9 @@ type saveBlobRef struct {
 }
 
 type saveImageContent struct {
-	Type  string      `json:"$type"`
-	Image saveBlobRef `json:"image"`
+	Type        string           `json:"$type"`
+	Image       saveBlobRef      `json:"image"`
+	Attribution *saveAttribution `json:"attribution,omitempty"`
 }
 
 type saveRecord struct {
@@ -69,14 +70,10 @@ type saveRecord struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"collection"`
-	Content     json.RawMessage `json:"content"`
-	OriginURL   string          `json:"originUrl"`
-	Attribution struct {
-		URL     string `json:"url"`
-		License string `json:"license"`
-		Credit  string `json:"credit"`
-	} `json:"attribution"`
-	Text     string `json:"text"`
+	Content     json.RawMessage   `json:"content"`
+	OriginURL   string            `json:"originUrl"`
+	Attribution *saveAttribution  `json:"attribution,omitempty"`
+	Text        string            `json:"text"`
 	ResaveOf struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
@@ -92,11 +89,38 @@ func rawJSONToAny(raw json.RawMessage) (any, error) {
 	return value, nil
 }
 
+func saveAttributionOrNil(attribution *saveAttribution) *saveAttribution {
+	if attribution == nil {
+		return nil
+	}
+	if attribution.URL == "" && attribution.License == "" && attribution.Credit == "" {
+		return nil
+	}
+	cloned := *attribution
+	return &cloned
+}
+
+func saveAttributionFromFields(url, license, credit string) *saveAttribution {
+	return saveAttributionOrNil(&saveAttribution{
+		URL:     url,
+		License: license,
+		Credit:  credit,
+	})
+}
+
 func buildImageContentRecord(blob any) map[string]any {
-	return map[string]any{
+	return buildImageContentRecordWithAttribution(blob, nil)
+}
+
+func buildImageContentRecordWithAttribution(blob any, attribution *saveAttribution) map[string]any {
+	record := map[string]any{
 		"$type": saveContentImageNSID,
 		"image": blob,
 	}
+	if attr := saveAttributionOrNil(attribution); attr != nil {
+		record["attribution"] = attr
+	}
+	return record
 }
 
 func buildSaveContent(contentRaw json.RawMessage) (any, error) {
@@ -137,6 +161,38 @@ func decodeSaveImageContent(contentRaw json.RawMessage) (*saveImageContent, erro
 	return &content, nil
 }
 
+func effectiveSaveAttribution(contentRaw json.RawMessage, legacy *saveAttribution) (*saveAttribution, error) {
+	content, err := decodeSaveImageContent(contentRaw)
+	if err != nil {
+		return nil, err
+	}
+	if content != nil {
+		if attr := saveAttributionOrNil(content.Attribution); attr != nil {
+			return attr, nil
+		}
+	}
+	return saveAttributionOrNil(legacy), nil
+}
+
+func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *saveAttribution, legacy *saveAttribution) (any, error) {
+	content, err := decodeSaveImageContent(contentRaw)
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return buildSaveContent(contentRaw)
+	}
+	attr := saveAttributionOrNil(attribution)
+	if attr == nil {
+		attr = saveAttributionOrNil(content.Attribution)
+	}
+	if attr == nil {
+		attr = saveAttributionOrNil(legacy)
+	}
+	content.Attribution = attr
+	return content, nil
+}
+
 func parseViewerSaveState(raw json.RawMessage) *saveViewerState {
 	var saves []viewerSave
 	if len(raw) > 0 && string(raw) != "null" {
@@ -156,9 +212,6 @@ func buildSaveView(row SaveRow, author profileView, includeViewer bool, cdnBaseU
 		Text:      row.Text,
 		OriginURL: row.OriginURL,
 	}
-	if row.AttributionURL != "" || row.AttributionLicense != "" || row.AttributionCredit != "" {
-		sv.Attribution = &saveAttribution{URL: row.AttributionURL, License: row.AttributionLicense, Credit: row.AttributionCredit}
-	}
 	if row.CreatedAt != nil {
 		sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
 	}
@@ -176,9 +229,10 @@ func buildSaveContentView(row SaveRow, cdnBaseURL string) any {
 		return map[string]any{"$type": row.ContentNSID}
 	}
 	view := imageView{
-		Type:     saveContentImageViewNSID,
-		BlobCID:  row.BlobCID,
-		ImageURL: cdnBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
+		Type:        saveContentImageViewNSID,
+		BlobCID:     row.BlobCID,
+		ImageURL:    cdnBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
+		Attribution: saveAttributionFromFields(row.AttributionURL, row.AttributionLicense, row.AttributionCredit),
 	}
 	if row.Width != nil {
 		view.Width = *row.Width

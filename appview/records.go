@@ -618,7 +618,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collectionStrongRef,
-		"content":    buildImageContentRecord(blobAny),
+		"content":    buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit)),
 		"createdAt":  syntax.DatetimeNow().String(),
 	}
 	if url != "" {
@@ -626,19 +626,6 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if title != "" {
 		record["text"] = title
-	}
-	if attrURL != "" || attrLicense != "" || attrCredit != "" {
-		attr := map[string]string{}
-		if attrURL != "" {
-			attr["url"] = attrURL
-		}
-		if attrLicense != "" {
-			attr["license"] = attrLicense
-		}
-		if attrCredit != "" {
-			attr["credit"] = attrCredit
-		}
-		record["attribution"] = attr
 	}
 	if resaveOfURI != "" {
 		resaveRef, err := resolveStrongRef(r.Context(), c, resaveOfURI)
@@ -737,7 +724,18 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
 	}
-	contentAny, err := buildSaveContent(existingVal.Content)
+	var legacyAttribution *saveAttribution
+	if len(existingVal.Attribution) > 0 && string(existingVal.Attribution) != "null" {
+		if err := json.Unmarshal(existingVal.Attribution, &legacyAttribution); err != nil {
+			http.Error(w, fmt.Sprintf("parsing existing save attribution: %s", err), http.StatusInternalServerError)
+			return
+		}
+	}
+	contentAny, err := buildSaveContentWithAttribution(
+		existingVal.Content,
+		saveAttributionFromFields(attrURL, attrLicense, attrCredit),
+		legacyAttribution,
+	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("parsing existing save content: %s", err), http.StatusInternalServerError)
 		return
@@ -767,24 +765,6 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		record["text"] = title
 	} else if existingVal.Text != "" {
 		record["text"] = existingVal.Text
-	}
-
-	if attrURL != "" || attrLicense != "" || attrCredit != "" {
-		attr := map[string]string{}
-		if attrURL != "" {
-			attr["url"] = attrURL
-		}
-		if attrLicense != "" {
-			attr["license"] = attrLicense
-		}
-		if attrCredit != "" {
-			attr["credit"] = attrCredit
-		}
-		record["attribution"] = attr
-	} else if existingVal.Attribution != nil {
-		var attrAny any
-		json.Unmarshal(existingVal.Attribution, &attrAny)
-		record["attribution"] = attrAny
 	}
 
 	// Preserve resaveOf — not editable

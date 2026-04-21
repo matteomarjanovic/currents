@@ -94,21 +94,6 @@
           "type": "string",
           "format": "uri"
         },
-        "attribution": {
-          "type": "object",
-          "properties": {
-            "url": {
-              "type": "string",
-              "format": "uri"
-            },
-            "license": {
-              "type": "string"
-            },
-            "credit": {
-              "type": "string"
-            }
-          }
-        },
         "resaveOf": {
           "type": "ref",
           "ref": "com.atproto.repo.strongRef"

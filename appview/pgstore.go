@@ -71,6 +71,11 @@ type RepairStats struct {
 	CollectionsRecomputed int64
 }
 
+type SaveAttributionRewriteCandidate struct {
+	URI       string
+	AuthorDID string
+}
+
 var _ oauth.ClientAuthStore = &PgStore{}
 
 func NewPgStore(ctx context.Context, cfg *PgStoreConfig) (*PgStore, error) {
@@ -262,6 +267,60 @@ func (m *PgStore) DeleteSession(ctx context.Context, did syntax.DID, sessionID s
 		did.String(), sessionID,
 	)
 	return err
+}
+
+func (m *PgStore) GetLatestSessionIDs(ctx context.Context, accountDIDs []string) (map[string]string, error) {
+	if len(accountDIDs) == 0 {
+		return map[string]string{}, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (account_did) account_did, session_id
+		FROM oauth_sessions
+		WHERE account_did = ANY($1)
+		ORDER BY account_did, updated_at DESC
+	`, accountDIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessionIDs := make(map[string]string, len(accountDIDs))
+	for rows.Next() {
+		var accountDID, sessionID string
+		if err := rows.Scan(&accountDID, &sessionID); err != nil {
+			return nil, err
+		}
+		sessionIDs[accountDID] = sessionID
+	}
+	return sessionIDs, rows.Err()
+}
+
+func (m *PgStore) ListSaveAttributionRewriteCandidates(ctx context.Context) ([]SaveAttributionRewriteCandidate, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT uri, author_did
+		FROM save
+		WHERE content_nsid = $1
+		  AND (
+			COALESCE(attribution_url, '') <> '' OR
+			COALESCE(attribution_license, '') <> '' OR
+			COALESCE(attribution_credit, '') <> ''
+		  )
+		ORDER BY author_did, uri
+	`, saveContentImageNSID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var candidates []SaveAttributionRewriteCandidate
+	for rows.Next() {
+		var candidate SaveAttributionRewriteCandidate
+		if err := rows.Scan(&candidate.URI, &candidate.AuthorDID); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, rows.Err()
 }
 
 func (m *PgStore) GetAuthRequestInfo(ctx context.Context, state string) (*oauth.AuthRequestData, error) {

@@ -140,17 +140,17 @@
 		</div>
 	{/if}
 
-	{#if currentSave.attribution && (currentSave.attribution.credit || currentSave.attribution.license || currentSave.attribution.url)}
+	{#if image && image.attribution && (image.attribution.credit || image.attribution.license || image.attribution.url)}
 		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			{#if currentSave.attribution.credit}
-				<span>Credit: {currentSave.attribution.credit}</span>
+			{#if image.attribution.credit}
+				<span>Credit: {image.attribution.credit}</span>
 			{/if}
-			{#if currentSave.attribution.license}
-				<span>License: {currentSave.attribution.license}</span>
+			{#if image.attribution.license}
+				<span>License: {image.attribution.license}</span>
 			{/if}
-			{#if currentSave.attribution.url}
+			{#if image.attribution.url}
 				<a
-					href={currentSave.attribution.url}
+					href={image.attribution.url}
 					target="_blank"
 					rel="noopener noreferrer"
 					class="inline-flex items-center gap-1 hover:text-foreground"

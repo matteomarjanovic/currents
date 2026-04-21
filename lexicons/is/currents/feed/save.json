@@ -28,24 +28,6 @@
             "format": "uri",
             "maxLength": 2000
           },
-          "attribution": {
-            "type": "object",
-            "properties": {
-              "url": {
-                "type": "string",
-                "format": "uri",
-                "maxLength": 2000
-              },
-              "license": {
-                "type": "string",
-                "maxLength": 500
-              },
-              "credit": {
-                "type": "string",
-                "maxLength": 500
-              }
-            }
-          },
           "text": {
             "type": "string",
             "maxLength": 1000

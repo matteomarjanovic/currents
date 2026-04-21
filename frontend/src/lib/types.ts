@@ -27,6 +27,12 @@ export interface ActorProfileView {
 	createdAt?: string;
 }
 
+export interface SaveAttribution {
+	url?: string;
+	license?: string;
+	credit?: string;
+}
+
 export interface ImageContentView {
 	$type: 'is.currents.content.defs#imageView';
 	blobCid: string;
@@ -34,6 +40,7 @@ export interface ImageContentView {
 	width?: number;
 	height?: number;
 	dominantColor?: string;
+	attribution?: SaveAttribution;
 }
 
 export type SaveContentView =
@@ -54,7 +61,6 @@ export interface SaveView {
 	content: SaveContentView;
 	text?: string;
 	originUrl?: string;
-	attribution?: { url?: string; license?: string; credit?: string };
 	resaveOf?: { uri: string; cid: string };
 	createdAt: string;
 	viewer?: { saves?: { collectionUri: string; saveUri: string }[] };
