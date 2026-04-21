@@ -79,43 +79,63 @@
 		if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files);
 	}
 
+	async function uploadOne(item: Staged): Promise<'ok' | 'unauthorized'> {
+		item.status = 'uploading';
+		try {
+			const form = new FormData();
+			form.append('image', item.file, item.file.name);
+			form.append('collection', selectedCollectionUri);
+			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save`, {
+				method: 'POST',
+				body: form,
+				credentials: 'include',
+				headers: { Accept: 'application/json' }
+			});
+			if (!res.ok) {
+				if (res.status === 401) {
+					item.status = 'pending';
+					return 'unauthorized';
+				}
+				item.status = 'error';
+				item.error = (await res.text()).trim() || `HTTP ${res.status}`;
+				return 'ok';
+			}
+			item.status = 'done';
+		} catch (e) {
+			item.status = 'error';
+			item.error = String(e);
+		}
+		return 'ok';
+	}
+
 	async function startUpload() {
 		if (!canSave) return;
 		uploading = true;
 		completed = false;
 		popoverDismissed = false;
-		for (const item of staged) {
-			if (item.status === 'done') continue;
-			item.status = 'uploading';
-			try {
-				const form = new FormData();
-				form.append('image', item.file, item.file.name);
-				form.append('collection', selectedCollectionUri);
-				const res = await fetch(`${PUBLIC_APPVIEW_URL}/save`, {
-					method: 'POST',
-					body: form,
-					credentials: 'include',
-					headers: { Accept: 'application/json' }
-				});
-				if (!res.ok) {
-					if (res.status === 401) {
-						auth.user = null;
-						promptLogin();
-						item.status = 'pending';
-						uploading = false;
-						return;
-					}
-					item.status = 'error';
-					item.error = (await res.text()).trim() || `HTTP ${res.status}`;
-					continue;
-				}
-				item.status = 'done';
-			} catch (e) {
-				item.status = 'error';
-				item.error = String(e);
+
+		const queue = staged.filter((s) => s.status !== 'done');
+		let cursor = 0;
+		let unauthorized = false;
+
+		async function worker() {
+			while (!unauthorized) {
+				const i = cursor++;
+				if (i >= queue.length) return;
+				const result = await uploadOne(queue[i]);
+				if (result === 'unauthorized') unauthorized = true;
 			}
 		}
+
+		const concurrency = Math.min(5, queue.length);
+		await Promise.all(Array.from({ length: concurrency }, worker));
+
 		uploading = false;
+		if (unauthorized) {
+			auth.user = null;
+			promptLogin();
+			return;
+		}
 		completed = true;
 	}
 
