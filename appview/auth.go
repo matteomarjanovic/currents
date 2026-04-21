@@ -227,48 +227,37 @@ func (s *Server) OAuthLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
 
-type blobRef struct {
-	Type     string            `json:"$type"`
-	Ref      map[string]string `json:"ref"`
-	MimeType string            `json:"mimeType"`
-	Size     int               `json:"size"`
-}
-
-type bskyActorProfile struct {
-	DisplayName string   `json:"displayName"`
-	Description string   `json:"description"`
-	Avatar      *blobRef `json:"avatar"`
-	Banner      *blobRef `json:"banner"`
-}
-
 func ensureUserProfile(ctx context.Context, c *atclient.APIClient, store *PgStore, did, handle, pdsEndpoint, cdnBaseURL string) {
 	// Fetch the user's Bluesky profile to copy fields from
-	var getRecordResp struct {
+	var getBskyRecordResp struct {
 		Value json.RawMessage `json:"value"`
 	}
 	err := c.Get(ctx, "com.atproto.repo.getRecord", map[string]any{
 		"repo":       did,
 		"collection": "app.bsky.actor.profile",
 		"rkey":       "self",
-	}, &getRecordResp)
+	}, &getBskyRecordResp)
 	if err != nil {
 		slog.Warn("fetching app.bsky.actor.profile", "did", did, "err", err)
 	}
 	var bskyProfile bskyActorProfile
-	if getRecordResp.Value != nil {
-		if err := json.Unmarshal(getRecordResp.Value, &bskyProfile); err != nil {
+	if getBskyRecordResp.Value != nil {
+		if err := json.Unmarshal(getBskyRecordResp.Value, &bskyProfile); err != nil {
 			slog.Warn("parsing app.bsky.actor.profile", "did", did, "err", err)
 		}
 	}
 
 	// Check if a Currents profile record already exists.
 	// Some PDSes return 404, others return 400 with error name "RecordNotFound".
+	var getCurrentsRecordResp struct {
+		Value json.RawMessage `json:"value"`
+	}
 	profileExists := true
 	err = c.Get(ctx, "com.atproto.repo.getRecord", map[string]any{
 		"repo":       did,
-		"collection": "is.currents.actor.profile",
+		"collection": currentsProfileNSID,
 		"rkey":       "self",
-	}, nil)
+	}, &getCurrentsRecordResp)
 	if err != nil {
 		var apiErr *atclient.APIError
 		if errors.As(err, &apiErr) && (apiErr.StatusCode == 404 || (apiErr.StatusCode == 400 && apiErr.Name == "RecordNotFound")) {
@@ -278,51 +267,69 @@ func ensureUserProfile(ctx context.Context, c *atclient.APIClient, store *PgStor
 		}
 	}
 
+	var currentsProfile currentsProfileRecord
+	currentsProfileLoaded := false
+	if profileExists && getCurrentsRecordResp.Value != nil {
+		if err := json.Unmarshal(getCurrentsRecordResp.Value, &currentsProfile); err != nil {
+			slog.Warn("parsing is.currents.actor.profile", "did", did, "err", err)
+		} else {
+			currentsProfileLoaded = true
+		}
+	}
+
 	if !profileExists {
+		currentsProfile = currentsProfileFromBskyProfile(bskyProfile, syntax.DatetimeNow().String())
 		record := map[string]any{
-			"$type":       "is.currents.actor.profile",
-			"displayName": bskyProfile.DisplayName,
-			"description": bskyProfile.Description,
-			"createdAt":   syntax.DatetimeNow(),
+			"$type":       currentsProfileNSID,
+			"displayName": currentsProfile.DisplayName,
+			"description": currentsProfile.Description,
+			"createdAt":   currentsProfile.CreatedAt,
 		}
-		if bskyProfile.Avatar != nil {
-			record["avatar"] = bskyProfile.Avatar
+		if currentsProfile.Avatar != nil {
+			record["avatar"] = currentsProfile.Avatar
 		}
-		if bskyProfile.Banner != nil {
-			record["banner"] = bskyProfile.Banner
+		if currentsProfile.Banner != nil {
+			record["banner"] = currentsProfile.Banner
 		}
 		if err := c.Post(ctx, "com.atproto.repo.putRecord", map[string]any{
 			"repo":       did,
-			"collection": "is.currents.actor.profile",
+			"collection": currentsProfileNSID,
 			"rkey":       "self",
 			"record":     record,
 		}, nil); err != nil {
 			slog.Error("creating is.currents.actor.profile", "did", did, "err", err)
 		}
+		currentsProfileLoaded = true
 	}
 
-	// Build avatar/banner URLs routed through the CDN/image proxy
-	blobURL := func(blob *blobRef) string {
-		if blob == nil {
-			return ""
-		}
-		cid := blob.Ref["$link"]
-		if cid == "" {
-			return ""
-		}
-		return cdnBaseURL + "/img/" + did + "/" + cid
-	}
-
-	if err := store.CreateUser(ctx, UserRecord{
+	userRecord := UserRecord{
 		DID:         did,
 		Handle:      handle,
-		DisplayName: bskyProfile.DisplayName,
-		Description: bskyProfile.Description,
-		Avatar:      blobURL(bskyProfile.Avatar),
-		Banner:      blobURL(bskyProfile.Banner),
 		CreatedAt:   time.Now(),
 		PDSEndpoint: pdsEndpoint,
-	}); err != nil {
+	}
+	if currentsProfileLoaded {
+		userRecord = userRecordFromCurrentsProfile(did, handle, pdsEndpoint, cdnBaseURL, currentsProfile, time.Now())
+	} else if existing, err := store.GetActorByDID(ctx, did); err == nil && existing != nil {
+		createdAt := time.Now()
+		if existing.CreatedAt != nil {
+			createdAt = *existing.CreatedAt
+		}
+		userRecord = UserRecord{
+			DID:         did,
+			Handle:      handle,
+			DisplayName: existing.DisplayName,
+			Description: existing.Description,
+			Pronouns:    existing.Pronouns,
+			Website:     existing.Website,
+			Avatar:      existing.Avatar,
+			Banner:      existing.Banner,
+			CreatedAt:   createdAt,
+			PDSEndpoint: pdsEndpoint,
+		}
+	}
+
+	if err := store.CreateUser(ctx, userRecord); err != nil {
 		slog.Error("creating user in db", "did", did, "err", err)
 	}
 }

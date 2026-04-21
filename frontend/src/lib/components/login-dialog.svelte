@@ -16,7 +16,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Log in to continue</Dialog.Title>
 			<Dialog.Description>
-				Sign in with your Bluesky account to save images and build collections.
+				Sign in with your Atmosphere account to save images, curate collections and personalize your
+				feed.
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>

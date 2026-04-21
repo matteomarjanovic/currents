@@ -6,6 +6,8 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import { Slider } from '$lib/components/ui/slider';
 	import FlowField from './flow-field.svelte';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { loginPrompt } from '$lib/stores/login-prompt.svelte';
 
 	const MIN = -0.6;
 	const MAX = 1;
@@ -94,6 +96,7 @@
 					size="icon-lg"
 					class="z-20 h-15 w-15 cursor-pointer overflow-hidden rounded-full border-none bg-primary-foreground/80 p-0 backdrop-blur-sm hover:bg-primary-foreground/80 aria-expanded:scale-95 aria-expanded:bg-primary-foreground/80"
 					aria-label="Adjust personalization"
+					onclick={!auth.user ? (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); loginPrompt.open = true; } : undefined}
 				>
 					<FlowField noiseIntensity={currentNoiseIntensity} />
 				</Button>

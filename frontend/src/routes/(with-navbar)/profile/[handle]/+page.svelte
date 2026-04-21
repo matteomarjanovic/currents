@@ -2,7 +2,9 @@
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { auth } from '$lib/stores/auth.svelte';
 	import ProfileHeader from '$lib/components/profile-header.svelte';
+	import ProfileEditDialog from '$lib/components/profile-edit-dialog.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import type { ActorProfileView, CollectionView } from '$lib/types';
 
@@ -10,6 +12,9 @@
 	let collections = $state<CollectionView[]>([]);
 	let loading = $state(true);
 	let notFound = $state(false);
+	let editOpen = $state(false);
+
+	const isOwner = $derived(!!auth.user && !!profile && auth.user.did === profile.did);
 
 	$effect(() => {
 		const handle = page.params.handle ?? '';
@@ -46,6 +51,18 @@
 				loading = false;
 			});
 	});
+
+	function onProfileSaved(updated: ActorProfileView) {
+		profile = updated;
+		if (auth.user && auth.user.did === updated.did) {
+			auth.user = {
+				...auth.user,
+				handle: updated.handle,
+				displayName: updated.displayName,
+				avatar: updated.avatar
+			};
+		}
+	}
 </script>
 
 <div class="mx-auto max-w-5xl">
@@ -59,7 +76,7 @@
 			</div>
 		</div>
 		<div class="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-			{#each Array(4) as _, i (i)}
+			{#each [0, 1, 2, 3] as i (i)}
 				<div>
 					<Skeleton class="aspect-square w-full rounded-lg" />
 					<Skeleton class="mt-2 h-4 w-24" />
@@ -74,7 +91,7 @@
 			</p>
 		</div>
 	{:else}
-		<ProfileHeader {profile} />
+		<ProfileHeader {profile} {isOwner} onEdit={() => (editOpen = true)} />
 
 		<h2 class="mb-4 text-lg font-semibold text-foreground">Collections</h2>
 		{#if collections.length === 0}
@@ -85,6 +102,10 @@
 					<CollectionCard collection={c} />
 				{/each}
 			</div>
+		{/if}
+
+		{#if isOwner}
+			<ProfileEditDialog bind:open={editOpen} {profile} onSaved={onProfileSaved} />
 		{/if}
 	{/if}
 </div>

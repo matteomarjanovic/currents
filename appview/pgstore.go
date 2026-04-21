@@ -182,7 +182,11 @@ func (m *PgStore) CreateUser(ctx context.Context, u UserRecord) error {
 		ON CONFLICT (did) DO UPDATE
 			SET handle       = EXCLUDED.handle,
 			    display_name = EXCLUDED.display_name,
+			    description  = EXCLUDED.description,
+			    pronouns     = EXCLUDED.pronouns,
+			    website      = EXCLUDED.website,
 			    avatar       = EXCLUDED.avatar,
+			    banner       = EXCLUDED.banner,
 			    pds_endpoint = EXCLUDED.pds_endpoint
 	`, u.DID, u.Handle, u.DisplayName, u.Description, u.Pronouns, u.Website, u.Avatar, u.Banner, u.CreatedAt, u.PDSEndpoint)
 	return err

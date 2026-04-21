@@ -243,6 +243,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /oauth/callback", srv.OAuthCallback)
 
 	http.HandleFunc("GET /api/me", srv.APIMe)
+	http.HandleFunc("GET /api/profile/import-bluesky", srv.APIImportBlueskyProfile)
+	http.HandleFunc("PUT /api/profile", srv.UpdateProfile)
 	http.HandleFunc("GET /ops", srv.OpsPage)
 	http.HandleFunc("GET /debug/background", srv.BackgroundStatus)
 

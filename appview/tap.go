@@ -54,14 +54,6 @@ type collectionRecord struct {
 	CreatedAt   string `json:"createdAt"`
 }
 
-type profileRecord struct {
-	DisplayName string `json:"displayName"`
-	Avatar      struct {
-		Ref map[string]string `json:"ref"`
-	} `json:"avatar"`
-	CreatedAt string `json:"createdAt"`
-}
-
 // TapHandler holds the dependencies for the TAP event listener.
 type TapHandler struct {
 	Context                     context.Context
@@ -192,13 +184,9 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		if ev.Action == "delete" {
 			return nil // profile deletion not meaningful; skip
 		}
-		var p profileRecord
+		var p currentsProfileRecord
 		if err := json.Unmarshal(ev.Record, &p); err != nil {
 			return fmt.Errorf("unmarshal profile record: %w", err)
-		}
-		avatarURL := ""
-		if cid := p.Avatar.Ref["$link"]; cid != "" {
-			avatarURL = handler.CDNBaseURL + "/img/" + ev.DID + "/" + cid
 		}
 		ident, err := handler.Dir.LookupDID(ctx, syntax.DID(ev.DID))
 		if err != nil {
@@ -208,20 +196,14 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		if ident != nil {
 			handle = ident.Handle.String()
 		}
-		createdAt := parseTimestamp(p.CreatedAt)
-		var createdAtTime time.Time
-		if createdAt != nil {
-			createdAtTime = *createdAt
-		} else {
-			createdAtTime = time.Now()
-		}
-		return handler.Store.CreateUser(ctx, UserRecord{
-			DID:         ev.DID,
-			Handle:      handle,
-			DisplayName: p.DisplayName,
-			Avatar:      avatarURL,
-			CreatedAt:   createdAtTime,
-		})
+		return handler.Store.CreateUser(ctx, userRecordFromCurrentsProfile(
+			ev.DID,
+			handle,
+			"",
+			handler.CDNBaseURL,
+			p,
+			time.Now(),
+		))
 	}
 
 	return nil
