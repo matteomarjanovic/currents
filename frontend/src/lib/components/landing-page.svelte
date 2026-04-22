@@ -9,6 +9,11 @@
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
 </script>
 
+<svelte:head>
+	<title>Currents</title>
+	<meta name="description" content="A calm visual curation app for the open social web." />
+</svelte:head>
+
 <div class="relative text-foreground">
 	<!-- Hero: full-width, flow fills the background at all viewport sizes -->
 	<section
@@ -68,7 +73,7 @@
 					<Logo />
 				</a>
 				<p class="max-w-md text-sm leading-relaxed text-muted-foreground">
-					A calm, ad-free visual bookmarking app for the open social web.
+					A calm visual curation app for the open social web.
 				</p>
 				<p class="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} Currents.</p>
 			</div>
