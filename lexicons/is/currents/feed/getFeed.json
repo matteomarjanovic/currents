@@ -9,11 +9,9 @@
         "type": "params",
         "properties": {
           "personalized": {
-            "type": "number",
-            "minimum": -1,
-            "maximum": 1,
-            "description": "A signed value between -1 and 1 controlling feed tuning. Negative values increase serendipity, positive values increase personalization, and 0 gives the global feed. Only effective for authenticated requests; ignored otherwise.",
-            "default": 0
+            "type": "string",
+            "description": "A signed decimal string between -1 and 1 controlling feed tuning. Negative values increase serendipity, positive values increase personalization, and 0 gives the global feed. Only effective for authenticated requests; ignored otherwise.",
+            "default": "0"
           },
           "limit": {
             "type": "integer",

@@ -21,6 +21,8 @@
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Logo from '$lib/assets/logo.svelte';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
 	import type { CollectionView } from '$lib/types';
@@ -56,17 +58,27 @@
 	}
 </script>
 
+<Tooltip.Provider>
 <header
 	class="{landing
 		? 'fixed bg-background/0'
 		: 'sticky bg-background/95 backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-4 py-3"
 >
 	{#if !searchOpen}
-		<a
+		<div
 			transition:fade={{ duration: 250, easing: cubicOut }}
-			href={resolve('/')}
-			class="h-5 text-lg font-semibold text-foreground"><Logo /></a
+			class="flex shrink-0 items-center gap-2"
 		>
+			<a href={resolve('/')} class="h-5 text-lg font-semibold text-foreground"><Logo /></a>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Badge variant="outline" class="cursor-default px-1.5 py-0 text-[10px] font-medium">alpha</Badge>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Currents is early-stage software. Expect rough edges and breaking changes.</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+		</div>
 	{/if}
 
 	<div
@@ -231,6 +243,7 @@
 		{/if}
 	{/if}
 </header>
+</Tooltip.Provider>
 
 {#if user}
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
