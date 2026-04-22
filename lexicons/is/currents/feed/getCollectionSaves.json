@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Get saves within a collection, hydrated with CDN image URLs and metadata.",
+      "description": "Get saves within a collection, hydrated with collection details, CDN image URLs, and metadata. Auth is optional; if provided, viewer-specific state is included in the collection and save views.",
       "parameters": {
         "type": "params",
         "required": [
@@ -32,9 +32,14 @@
         "schema": {
           "type": "object",
           "required": [
+            "collection",
             "saves"
           ],
           "properties": {
+            "collection": {
+              "type": "ref",
+              "ref": "is.currents.feed.defs#collectionView"
+            },
             "cursor": {
               "type": "string"
             },

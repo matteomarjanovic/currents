@@ -263,8 +263,6 @@ func runServer(cctx *cli.Context) error {
 
 	http.HandleFunc("GET /img/{did}/{cid}", srv.ImageProxy)
 
-	http.HandleFunc("GET /xrpc/is.currents.feed.getCollections",
-		srv.AuthValidator.Middleware(srv.XRPCGetCollections, true))
 	http.HandleFunc("GET /xrpc/is.currents.feed.getActorCollections", srv.XRPCGetActorCollections)
 	http.HandleFunc("GET /xrpc/is.currents.actor.getProfile", srv.XRPCGetActorProfile)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getCollectionSaves", srv.XRPCGetCollectionSaves)

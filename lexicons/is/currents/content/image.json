@@ -4,12 +4,14 @@
     "defs": {
         "main": {
             "type": "object",
+            "description": "An image content payload for a save.",
             "required": [
                 "image"
             ],
             "properties": {
                 "image": {
                     "type": "blob",
+                    "description": "Image blob referenced by this content item.",
                     "accept": [
                         "image/*"
                     ],
@@ -17,7 +19,8 @@
                 },
                 "attribution": {
                     "type": "ref",
-                    "ref": "is.currents.content.defs#attribution"
+                    "ref": "is.currents.content.defs#attribution",
+                    "description": "Optional provenance metadata for the image."
                 }
             }
         }

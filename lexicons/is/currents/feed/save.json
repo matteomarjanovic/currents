@@ -4,6 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
+      "description": "A saved item in one of the creator's collections.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -17,24 +18,30 @@
             "refs": [
               "is.currents.content.image"
             ],
-            "closed": false
+            "closed": false,
+            "description": "The saved content payload."
           },
           "collection": {
             "type": "ref",
-            "ref": "com.atproto.repo.strongRef"
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Strong reference to the collection record containing this save."
           },
           "originUrl": {
             "type": "string",
             "format": "uri",
-            "maxLength": 2000
+            "maxLength": 2000,
+            "description": "Original source URL for the saved item, if known."
           },
           "text": {
             "type": "string",
-            "maxLength": 1000
+            "description": "Optional user-authored note attached to the save.",
+            "maxGraphemes": 1000,
+            "maxLength": 10000
           },
           "resaveOf": {
             "type": "ref",
-            "ref": "com.atproto.repo.strongRef"
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Strong reference to the original save record when this save is a resave."
           },
           "createdAt": {
             "type": "string",

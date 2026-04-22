@@ -4,14 +4,15 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Get detailed profile view of an actor.",
+      "description": "Get the detailed profile view of an actor by DID or handle.",
       "parameters": {
         "type": "params",
         "required": ["actor"],
         "properties": {
           "actor": {
             "type": "string",
-            "description": "Handle or DID of the actor."
+            "format": "at-identifier",
+            "description": "DID or handle of the actor to fetch."
           }
         }
       },

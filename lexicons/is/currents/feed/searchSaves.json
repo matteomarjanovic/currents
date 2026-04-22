@@ -13,7 +13,8 @@
         "properties": {
           "q": {
             "type": "string",
-            "description": "Full-text search query."
+            "description": "Full-text search query.",
+            "maxLength": 2048
           },
           "limit": {
             "type": "integer",

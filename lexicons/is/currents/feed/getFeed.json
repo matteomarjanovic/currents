@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "is.currents.feed.getExploreFeed",
+  "id": "is.currents.feed.getFeed",
   "defs": {
     "main": {
       "type": "query",

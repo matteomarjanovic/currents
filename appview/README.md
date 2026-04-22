@@ -160,8 +160,10 @@ The `visual_identity` table stores the canonical blob reference (best-quality so
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `GET` | `/.well-known/did.json` | — | Service DID document (`did:web:<hostname>`) |
-| `GET` | `/xrpc/is.currents.feed.getCollections` | Required (Bearer service JWT) | Authenticated user's own collections with preview images |
+| `GET` | `/xrpc/is.currents.actor.getProfile` | Optional | Detailed actor profile by DID or handle |
 | `GET` | `/xrpc/is.currents.feed.getActorCollections` | Optional | Any actor's collections; viewer state included when authenticated |
-| `GET` | `/xrpc/is.currents.feed.getSaves` | Optional | Saves within a collection; viewer state (`resaved`) included when authenticated |
+| `GET` | `/xrpc/is.currents.feed.getCollectionSaves` | Optional | Collection view plus saves within that collection; viewer state included when authenticated |
+| `GET` | `/xrpc/is.currents.feed.getSaves` | Optional | Hydrated save views by AT-URI; viewer state included when authenticated |
 | `GET` | `/xrpc/is.currents.feed.searchSaves` | Optional | Semantic image search via text query (SigLIP2 embedding, requires inference server) |
+| `GET` | `/xrpc/is.currents.feed.getRelatedSaves` | Optional | Visually similar saves for a source save; viewer state included when authenticated |
 | `GET` | `/xrpc/is.currents.feed.getFeed` | Optional | Discovery feed — global (popular+recent), personalized, or serendipitous; `personalized` param -1–1 |

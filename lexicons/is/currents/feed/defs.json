@@ -14,28 +14,35 @@
       "properties": {
         "uri": {
           "type": "string",
-          "format": "at-uri"
+          "format": "at-uri",
+          "description": "AT-URI of the collection record."
         },
         "cid": {
           "type": "string",
-          "format": "cid"
+          "format": "cid",
+          "description": "CID of the collection record."
         },
         "author": {
           "type": "ref",
-          "ref": "is.currents.actor.defs#profileView"
+          "ref": "is.currents.actor.defs#profileView",
+          "description": "Profile view of the account that owns the collection."
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "description": "Collection display name."
         },
         "description": {
-          "type": "string"
+          "type": "string",
+          "description": "Optional description shown with the collection."
         },
         "saveCount": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Number of saves currently in the collection."
         },
         "previewImages": {
           "type": "array",
           "maxLength": 4,
+          "description": "Up to four CDN preview image URLs for items in the collection.",
           "items": {
             "type": "string",
             "format": "uri"
@@ -43,7 +50,8 @@
         },
         "createdAt": {
           "type": "string",
-          "format": "datetime"
+          "format": "datetime",
+          "description": "Creation time of the collection record."
         },
         "viewer": {
           "type": "ref",
@@ -73,11 +81,13 @@
       "properties": {
         "uri": {
           "type": "string",
-          "format": "at-uri"
+          "format": "at-uri",
+          "description": "AT-URI of the save record."
         },
         "author": {
           "type": "ref",
-          "ref": "is.currents.actor.defs#profileView"
+          "ref": "is.currents.actor.defs#profileView",
+          "description": "Profile view of the account that created the save."
         },
         "content": {
           "type": "union",
@@ -88,19 +98,23 @@
           "description": "Content payload for this save."
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "description": "Optional user-authored note attached to the save."
         },
         "originUrl": {
           "type": "string",
-          "format": "uri"
+          "format": "uri",
+          "description": "Original source URL associated with the saved item, if known."
         },
         "resaveOf": {
           "type": "ref",
-          "ref": "com.atproto.repo.strongRef"
+          "ref": "com.atproto.repo.strongRef",
+          "description": "Strong reference to the original save record when this save is a resave."
         },
         "createdAt": {
           "type": "string",
-          "format": "datetime"
+          "format": "datetime",
+          "description": "Creation time of the save record."
         },
         "viewer": {
           "type": "ref",
@@ -125,11 +139,13 @@
             "properties": {
               "collectionUri": {
                 "type": "string",
-                "format": "at-uri"
+                "format": "at-uri",
+                "description": "AT-URI of the viewer collection containing this save."
               },
               "saveUri": {
                 "type": "string",
-                "format": "at-uri"
+                "format": "at-uri",
+                "description": "AT-URI of the viewer's save record."
               }
             }
           }

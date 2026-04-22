@@ -826,63 +826,6 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Feed: views})
 }
 
-func (s *Server) XRPCGetCollections(w http.ResponseWriter, r *http.Request) {
-	did := r.Context().Value("did").(syntax.DID)
-
-	limit := 50
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil {
-			limit = max(1, min(n, 100))
-		}
-	}
-	cursor := r.URL.Query().Get("cursor")
-
-	rows, nextCursor, err := s.Store.GetCollectionsPage(r.Context(), did.String(), limit, cursor)
-	if err != nil {
-		slog.Error("GetCollectionsPage", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	type collectionView struct {
-		URI           string   `json:"uri"`
-		CID           string   `json:"cid"`
-		Name          string   `json:"name"`
-		Description   string   `json:"description,omitempty"`
-		SaveCount     int      `json:"saveCount,omitempty"`
-		PreviewImages []string `json:"previewImages,omitempty"`
-		CreatedAt     string   `json:"createdAt"`
-	}
-
-	views := make([]collectionView, 0, len(rows))
-	for _, row := range rows {
-		cv := collectionView{
-			URI:         row.URI,
-			CID:         row.CID,
-			Name:        row.Name,
-			Description: row.Description,
-			SaveCount:   row.SaveCount,
-		}
-		if row.CreatedAt != nil {
-			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
-		}
-		for _, blob := range row.PreviewBlobs {
-			parts := strings.SplitN(blob, ",", 2)
-			if len(parts) == 2 {
-				cv.PreviewImages = append(cv.PreviewImages, s.CDNBaseURL+"/img/"+parts[0]+"/"+parts[1])
-			}
-		}
-		views = append(views, cv)
-	}
-
-	type response struct {
-		Cursor      string           `json:"cursor,omitempty"`
-		Collections []collectionView `json:"collections"`
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Collections: views})
-}
-
 func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 	viewerDID, err := s.optionalAuth(r)
 	if err != nil {

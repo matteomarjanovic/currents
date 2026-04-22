@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Hydrate a list of saves by their AT-URIs. Missing URIs are omitted from the output.",
+      "description": "Hydrate a list of saves by their AT-URIs. Auth is optional; if provided, viewer-specific state is included in the returned save views. Missing URIs are omitted from the output.",
       "parameters": {
         "type": "params",
         "required": [

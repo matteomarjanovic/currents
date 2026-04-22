@@ -4,6 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
+      "description": "A collection of saved items curated by an account.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -14,11 +15,15 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 100
+            "description": "Human-readable name of the collection.",
+            "maxGraphemes": 100,
+            "maxLength": 1000
           },
           "description": {
             "type": "string",
-            "maxLength": 1000
+            "description": "Optional description shown with the collection.",
+            "maxGraphemes": 1000,
+            "maxLength": 10000
           },
           "createdAt": {
             "type": "string",
