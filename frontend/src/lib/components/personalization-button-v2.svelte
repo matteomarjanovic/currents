@@ -96,7 +96,16 @@
 					size="icon-lg"
 					class="z-20 h-15 w-15 cursor-pointer overflow-hidden rounded-full border-none bg-primary-foreground/80 p-0 backdrop-blur-sm hover:bg-primary-foreground/80 aria-expanded:scale-95 aria-expanded:bg-primary-foreground/80"
 					aria-label="Adjust personalization"
-					onclick={!auth.user ? (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); loginPrompt.open = true; } : undefined}
+					onclick={(e: MouseEvent) => {
+						if (!auth.user) {
+							e.preventDefault();
+							e.stopPropagation();
+							loginPrompt.open = true;
+							return;
+						}
+
+						(props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
+					}}
 				>
 					<FlowField noiseIntensity={currentNoiseIntensity} />
 				</Button>

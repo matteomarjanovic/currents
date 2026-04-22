@@ -93,7 +93,10 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>Create collection</Dialog.Title>
-			<Dialog.Description>Give your new collection a name and optional description.</Dialog.Description>
+			<Dialog.Description
+				>Give your new collection a name and optional description. IMPORTANT: Collections and saves
+				are public for now.</Dialog.Description
+			>
 		</Dialog.Header>
 		<form onsubmit={submit} class="space-y-4">
 			<div class="space-y-2">

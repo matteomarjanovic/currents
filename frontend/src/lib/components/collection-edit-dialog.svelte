@@ -64,7 +64,10 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>Edit collection</Dialog.Title>
-			<Dialog.Description>Update the name and description of your collection.</Dialog.Description>
+			<Dialog.Description
+				>Update the name and description of your collection. IMPORTANT: Collections and saves are
+				public for now.</Dialog.Description
+			>
 		</Dialog.Header>
 		<form onsubmit={submit} class="space-y-4">
 			<div class="space-y-2">

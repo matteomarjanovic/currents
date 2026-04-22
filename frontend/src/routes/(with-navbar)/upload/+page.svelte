@@ -153,6 +153,10 @@
 
 <div class="mx-auto w-full max-w-3xl space-y-6 pb-24">
 	<h1 class="text-2xl font-semibold">Upload your images</h1>
+	<p class="text-sm text-muted-foreground">
+		Select the images you want to upload, choose a collection to save them in, and start the upload.
+	</p>
+	<p class="text-sm text-muted-foreground">IMPORTANT: Collections and saves are public for now.</p>
 
 	<div class="flex justify-between space-y-2">
 		<!-- <div class="text-sm font-medium">Select the collection where to save your images</div> -->
