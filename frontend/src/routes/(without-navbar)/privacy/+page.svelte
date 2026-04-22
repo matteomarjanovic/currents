@@ -64,8 +64,7 @@
 						</li>
 						<li>
 							Authentication data needed to keep you signed in, including a signed
-							<code>currents-session</code> cookie in the browser and server-side OAuth session
-							records.
+							<code>currents-session</code> cookie in the browser and server-side OAuth session records.
 						</li>
 						<li>
 							Search and interaction data you submit to the service, such as text queries for
@@ -101,8 +100,8 @@
 					<h2 class="text-lg font-semibold text-foreground">4. What is public</h2>
 					<p>
 						Currents is designed around public AT Protocol records. If you publish content through
-						Currents, that content and related metadata may be visible in Currents, on your PDS,
-						and through other clients or protocol consumers.
+						Currents, that content and related metadata may be visible in Currents, on your PDS, and
+						through other clients or protocol consumers.
 					</p>
 					<p>
 						Your search queries, session data, and the local browser state described above are not
@@ -146,9 +145,9 @@
 						indexes and caches.
 					</p>
 					<p>
-						Hosted OAuth sessions are kept only as long as needed to keep you signed in. At the
-						time of writing, Currents expires sessions after roughly 90 days and may clear them
-						earlier after extended inactivity.
+						Hosted OAuth sessions are kept only as long as needed to keep you signed in. At the time
+						of writing, Currents expires sessions after roughly 90 days and may clear them earlier
+						after extended inactivity.
 					</p>
 					<p>
 						Browser local storage remains on your device until you clear it or the app overwrites
@@ -159,7 +158,9 @@
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">7. Your choices</h2>
 					<ul class="list-disc space-y-2 pl-5 marker:text-muted-foreground">
-						<li>Review or change your public profile and records through your AT Protocol account.</li>
+						<li>
+							Review or change your public profile and records through your AT Protocol account.
+						</li>
 						<li>Log out to clear the active Currents session cookie from the hosted web app.</li>
 						<li>Clear local browser storage in your browser settings.</li>
 						<li>Avoid posting private, sensitive, or confidential material to Currents.</li>
@@ -174,8 +175,8 @@
 					<h2 class="text-lg font-semibold text-foreground">8. Children's privacy</h2>
 					<p>
 						Currents is not intended for children under 13 or the higher minimum age required by
-						local law. If you believe a child has provided personal information in violation of
-						this policy, contact us using the method below.
+						local law. If you believe a child has provided personal information in violation of this
+						policy, contact us using the method below.
 					</p>
 				</section>
 

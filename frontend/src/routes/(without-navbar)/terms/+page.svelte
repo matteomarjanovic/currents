@@ -29,8 +29,8 @@
 			<Card.Header class="gap-3">
 				<Card.Title class="text-3xl leading-tight">Terms of Service</Card.Title>
 				<Card.Description>
-					Last updated April 22, 2026. These Terms apply to the hosted Currents service,
-					including the web app, browser extension, APIs, appview, and related infrastructure.
+					Last updated April 22, 2026. These Terms apply to the hosted Currents service, including
+					the web app, browser extension, APIs, appview, and related infrastructure.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-8 text-sm leading-6 text-foreground/90 md:text-[15px]">
@@ -42,18 +42,15 @@
 						third-party Personal Data Servers, other AT Protocol clients, or self-hosted forks of
 						the open-source codebase.
 					</p>
-					<p>
-						If you do not agree to these Terms, do not use the hosted Currents service.
-					</p>
+					<p>If you do not agree to these Terms, do not use the hosted Currents service.</p>
 				</section>
 
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">2. Eligibility and accounts</h2>
 					<p>
 						You must be at least 13 years old, or the minimum age required to consent to data
-						processing where you live, to use Currents. If you are under the age of majority in
-						your jurisdiction, you may use Currents only with permission from a parent or legal
-						guardian.
+						processing where you live, to use Currents. If you are under the age of majority in your
+						jurisdiction, you may use Currents only with permission from a parent or legal guardian.
 					</p>
 					<p>
 						Currents uses an Atmosphere or other compatible AT Protocol account for login. You are
@@ -81,8 +78,7 @@
 					<p>
 						You retain ownership of the content you upload or publish. You are solely responsible
 						for making sure you have the rights, permissions, and legal basis needed to post it,
-						including any image, text, link, attribution, or credit information attached to a
-						save.
+						including any image, text, link, attribution, or credit information attached to a save.
 					</p>
 					<p>Do not use Currents to publish or distribute content that:</p>
 					<ul class="list-disc space-y-2 pl-5 marker:text-muted-foreground">
@@ -125,7 +121,9 @@
 				</section>
 
 				<section class="space-y-3">
-					<h2 class="text-lg font-semibold text-foreground">7. Search, recommendations, and ranking</h2>
+					<h2 class="text-lg font-semibold text-foreground">
+						7. Search, recommendations, and ranking
+					</h2>
 					<p>
 						Currents uses machine-learning systems to support semantic search, related-save
 						retrieval, and discovery feeds. That means your public saves may be analyzed to create
@@ -141,21 +139,21 @@
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">8. Third-party services and content</h2>
 					<p>
-						Currents depends on third-party services, including AT Protocol infrastructure,
-						identity providers, PDS operators, and linked websites. We are not responsible for the
+						Currents depends on third-party services, including AT Protocol infrastructure, identity
+						providers, PDS operators, and linked websites. We are not responsible for the
 						availability, policies, or content of those third parties.
 					</p>
-					<p>
-						If you save or visit an external link through Currents, you do so at your own risk.
-					</p>
+					<p>If you save or visit an external link through Currents, you do so at your own risk.</p>
 				</section>
 
 				<section class="space-y-3">
-					<h2 class="text-lg font-semibold text-foreground">9. Suspension, termination, and changes</h2>
+					<h2 class="text-lg font-semibold text-foreground">
+						9. Suspension, termination, and changes
+					</h2>
 					<p>
-						We may suspend, restrict, or terminate access to the hosted service if you violate
-						these Terms, create risk for other users or the network, or if we need to protect the
-						service, comply with the law, or shut down or materially change a feature.
+						We may suspend, restrict, or terminate access to the hosted service if you violate these
+						Terms, create risk for other users or the network, or if we need to protect the service,
+						comply with the law, or shut down or materially change a feature.
 					</p>
 					<p>
 						You can stop using Currents at any time. Because your content may also live on your PDS
@@ -177,8 +175,7 @@
 					</p>
 					<p>
 						To the maximum extent permitted by law, we are not liable for indirect, incidental,
-						special, consequential, or punitive damages arising from your use of the hosted
-						service.
+						special, consequential, or punitive damages arising from your use of the hosted service.
 					</p>
 				</section>
 
