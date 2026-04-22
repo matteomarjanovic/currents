@@ -33,9 +33,10 @@
 
 		const isLoginPage = page.url.pathname.startsWith('/login');
 		const isRegisterPage = page.url.pathname.startsWith('/register');
+		const isLegalPage = page.url.pathname === '/terms' || page.url.pathname === '/privacy';
 		const isRootPage = page.url.pathname === '/';
 		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRegisterPage && !isRootPage && !isExplorePage) {
+		if (!user && !isLoginPage && !isRegisterPage && !isLegalPage && !isRootPage && !isExplorePage) {
 			goto('/login');
 		}
 	});
