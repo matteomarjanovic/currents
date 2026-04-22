@@ -135,7 +135,7 @@
 {/if}
 
 {#if page.state.save}
-	<div bind:this={overlayEl} class="fixed inset-0 z-50 overflow-y-auto bg-background">
+	<div bind:this={overlayEl} class="fixed inset-0 z-50 overflow-y-auto app-muted-wash">
 		<SaveDetail save={page.state.save} />
 	</div>
 {/if}

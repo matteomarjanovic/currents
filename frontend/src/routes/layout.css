@@ -125,6 +125,10 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+		background-image: linear-gradient(
+			color-mix(in oklch, var(--muted) 40%, transparent),
+			color-mix(in oklch, var(--muted) 40%, transparent)
+		);
 	}
 	html {
 		@apply font-sans;
@@ -136,4 +140,12 @@
 	&::-webkit-scrollbar {
 		display: none;
 	}
+}
+
+@utility app-muted-wash {
+	background-color: color-mix(in oklch, var(--background) 82%, var(--muted) 18%);
+	background-image: linear-gradient(
+		color-mix(in oklch, var(--muted) 32%, transparent),
+		color-mix(in oklch, var(--muted) 32%, transparent)
+	);
 }

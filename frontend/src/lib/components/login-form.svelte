@@ -22,10 +22,72 @@
 
 	const id = $props.id();
 	const loginAction = `${PUBLIC_APPVIEW_URL}/oauth/login`;
+
+	type Actor = { did: string; handle: string; displayName?: string; avatar?: string };
+
+	let handle = $state('');
+	let suggestions: Actor[] = $state([]);
+	let showSuggestions = $state(false);
+	let activeIndex = $state(-1);
+	let debounceTimer: ReturnType<typeof setTimeout>;
+
+	async function fetchSuggestions(q: string) {
+		if (q.length < 2) {
+			suggestions = [];
+			showSuggestions = false;
+			return;
+		}
+		try {
+			const res = await fetch(
+				`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActorsTypeahead?q=${encodeURIComponent(q)}&limit=6`
+			);
+			if (res.ok) {
+				const data = await res.json();
+				suggestions = data.actors ?? [];
+				showSuggestions = suggestions.length > 0;
+				activeIndex = -1;
+			}
+		} catch {
+			// silently ignore network errors
+		}
+	}
+
+	function onInput() {
+		clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => fetchSuggestions(handle), 250);
+	}
+
+	function onKeydown(e: KeyboardEvent) {
+		if (!showSuggestions) return;
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			activeIndex = Math.min(activeIndex + 1, suggestions.length - 1);
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			activeIndex = Math.max(activeIndex - 1, -1);
+		} else if (e.key === 'Enter' && activeIndex >= 0) {
+			e.preventDefault();
+			selectSuggestion(suggestions[activeIndex]);
+		} else if (e.key === 'Escape') {
+			showSuggestions = false;
+		}
+	}
+
+	function selectSuggestion(actor: Actor) {
+		handle = actor.handle;
+		showSuggestions = false;
+		activeIndex = -1;
+	}
+
+	function onBlur() {
+		setTimeout(() => {
+			showSuggestions = false;
+		}, 150);
+	}
 </script>
 
 <div class={cn('flex flex-col gap-6', className)} {...restProps}>
-	<Card.Root>
+	<Card.Root class="overflow-visible">
 		<Card.Header class="text-center">
 			<Card.Title class="text-xl">Welcome back to Currents</Card.Title>
 			<Card.Description>Login with your Atmosphere account</Card.Description>
@@ -97,13 +159,50 @@
 					<FieldGroup>
 						<Field>
 							<FieldLabel for="handle-{id}">Your handle</FieldLabel>
-							<Input
-								id="handle-{id}"
-								name="username"
-								type="text"
-								placeholder="handle.bsky.social"
-								required
-							/>
+							<div class="relative">
+								<Input
+									id="handle-{id}"
+									name="username"
+									type="text"
+									placeholder="handle.bsky.social"
+									required
+									autocomplete="off"
+									bind:value={handle}
+									oninput={onInput}
+									onkeydown={onKeydown}
+									onblur={onBlur}
+								/>
+								{#if showSuggestions}
+									<ul
+										class="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
+									>
+										{#each suggestions as actor, i (actor.did)}
+											<li>
+												<button
+													type="button"
+													class={cn(
+														'flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors',
+														i === activeIndex
+															? 'bg-accent text-accent-foreground'
+															: 'hover:bg-accent hover:text-accent-foreground'
+													)}
+													onmousedown={() => selectSuggestion(actor)}
+												>
+													{#if actor.avatar}
+														<img src={actor.avatar} alt="" class="size-5 shrink-0 rounded-full" />
+													{:else}
+														<div class="size-5 shrink-0 rounded-full bg-muted"></div>
+													{/if}
+													<span class="font-medium">@{actor.handle}</span>
+													{#if actor.displayName}
+														<span class="truncate text-muted-foreground">{actor.displayName}</span>
+													{/if}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
 						</Field>
 						<Field>
 							<Button type="submit" class="w-full">Login</Button>

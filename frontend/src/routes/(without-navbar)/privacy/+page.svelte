@@ -12,7 +12,7 @@
 	/>
 </svelte:head>
 
-<div class="min-h-svh bg-muted/40 px-4 py-8 md:px-8">
+<div class="min-h-svh px-4 py-8 md:px-8">
 	<div class="mx-auto flex max-w-3xl flex-col gap-6">
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<a href={resolve('/')} class="flex h-5 items-center gap-2 font-medium">

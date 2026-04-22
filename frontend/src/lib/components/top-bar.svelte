@@ -59,71 +59,38 @@
 </script>
 
 <Tooltip.Provider>
-<header
-	class="{landing
-		? 'fixed bg-background/0'
-		: 'sticky bg-background/95 backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-4 py-3"
->
-	{#if !searchOpen}
-		<div
-			transition:fade={{ duration: 250, easing: cubicOut }}
-			class="flex shrink-0 items-center gap-2"
-		>
-			<a href={resolve('/')} class="h-5 text-lg font-semibold text-foreground"><Logo /></a>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<Badge variant="outline" class="cursor-default px-1.5 py-0 text-[10px] font-medium">alpha</Badge>
-				</Tooltip.Trigger>
-				<Tooltip.Content>
-					<p>Currents is early-stage software. Expect rough edges and breaking changes.</p>
-				</Tooltip.Content>
-			</Tooltip.Root>
-		</div>
-	{/if}
-
-	<div
-		class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center md:flex md:max-w-sm lg:max-w-md"
+	<header
+		class="{landing
+			? 'fixed bg-background/0'
+			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-4 py-3"
 	>
-		<form {onsubmit} class="w-full md:max-w-sm lg:max-w-md">
-			<Input
-				type="search"
-				placeholder="Search images..."
-				bind:value={query}
-				autocorrect="off"
-				autocapitalize="off"
-				autocomplete="off"
-				spellcheck={false}
-				class="{landing
-					? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
-					: ''} h-11 rounded-full"
-			/>
-		</form>
-	</div>
+		{#if !searchOpen}
+			<div
+				transition:fade={{ duration: 250, easing: cubicOut }}
+				class="flex shrink-0 items-center gap-2"
+			>
+				<a href={resolve('/')} class="h-5 text-lg font-semibold text-foreground"><Logo /></a>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<Badge variant="outline" class="cursor-default px-1.5 py-0 text-[10px] font-medium"
+							>alpha</Badge
+						>
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						<p>Currents is early-stage software. Expect rough edges and breaking changes.</p>
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</div>
+		{/if}
 
-	{#if !searchOpen}
-		<div class="flex-1"></div>
-		<Button
-			variant="ghost"
-			size="icon"
-			class="shrink-0 rounded-full md:hidden"
-			type="button"
-			onclick={() => (searchOpen = true)}
-		>
-			<SearchIcon class="size-4" />
-		</Button>
-	{/if}
-
-	{#if searchOpen}
 		<div
-			transition:fade={{ duration: 250, easing: cubicOut }}
-			class="absolute inset-0 flex items-center gap-2 px-4 md:hidden"
+			class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center md:flex md:max-w-sm lg:max-w-md"
 		>
-			<form {onsubmit} class="flex-1">
+			<form {onsubmit} class="w-full md:max-w-sm lg:max-w-md">
 				<Input
 					type="search"
 					placeholder="Search images..."
 					bind:value={query}
-					autofocus
 					autocorrect="off"
 					autocapitalize="off"
 					autocomplete="off"
@@ -133,116 +100,151 @@
 						: ''} h-11 rounded-full"
 				/>
 			</form>
-			<Button
-				variant="outline"
-				size="icon"
-				class="shrink-0 rounded-full"
-				onclick={() => (searchOpen = false)}
-			>
-				<X class="size-4" />
-			</Button>
 		</div>
-	{/if}
 
-	{#if !searchOpen}
-		{#if user}
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger class="shrink-0 outline-none">
-					{#snippet child({ props })}
-						<Button {...props} variant="ghost" size="icon" class="rounded-full" type="button">
-							<Plus class="size-5" />
-						</Button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-48">
-					<DropdownMenu.Item onclick={() => (createCollectionOpen = true)}>
-						<FolderPlus class="size-4" />
-						Create collection
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => goto(resolve('/(with-navbar)/upload'))}>
-						<ImagePlus class="size-4" />
-						Upload images
-					</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
-					<Avatar.Root size="default">
-						{#if user.avatar}
-							<Avatar.Image src={user.avatar} alt={user.displayName ?? user.handle} />
-						{/if}
-						<Avatar.Fallback>
-							<UserIcon class="size-4" />
-						</Avatar.Fallback>
-					</Avatar.Root>
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-48">
-					<DropdownMenu.Label>
-						{#if user.displayName}
-							<div class="text-base text-primary">{user.displayName}</div>
-						{/if}
-						<div class="font-normal text-muted-foreground">@{user.handle}</div>
-					</DropdownMenu.Label>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item
-						onclick={() =>
-							goto(resolve('/(with-navbar)/profile/[handle]', { handle: user.handle }))}
-					>
-						<UserIcon class="size-4" />
-						Profile
-					</DropdownMenu.Item>
-					<DropdownMenu.Item
-						onclick={() => {
-							window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
-						}}
-					>
-						<LogOut class="size-4" />
-						Log out
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					<div class="mx-1.5 my-0.5 flex items-center gap-0.5">
-						<button
-							onclick={() => setMode('light')}
-							title="Light"
-							class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
-							'light'
-								? 'bg-foreground/10 text-foreground'
-								: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
-						>
-							<Sun class="pointer-events-none size-4 shrink-0" />
-						</button>
-						<button
-							onclick={() => setMode('dark')}
-							title="Dark"
-							class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
-							'dark'
-								? 'bg-foreground/10 text-foreground'
-								: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
-						>
-							<Moon class="pointer-events-none size-4 shrink-0" />
-						</button>
-						<button
-							onclick={() => resetMode()}
-							title="System"
-							class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
-							'system'
-								? 'bg-foreground/10 text-foreground'
-								: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
-						>
-							<Monitor class="pointer-events-none size-4 shrink-0" />
-						</button>
-					</div>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		{:else}
-			<a href={resolve('/login')}>
-				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5"
-					>Log in / Register</Button
-				>
-			</a>
+		{#if !searchOpen}
+			<div class="flex-1"></div>
+			<Button
+				variant="ghost"
+				size="icon"
+				class="shrink-0 rounded-full md:hidden"
+				type="button"
+				onclick={() => (searchOpen = true)}
+			>
+				<SearchIcon class="size-4" />
+			</Button>
 		{/if}
-	{/if}
-</header>
+
+		{#if searchOpen}
+			<div
+				transition:fade={{ duration: 250, easing: cubicOut }}
+				class="absolute inset-0 flex items-center gap-2 px-4 md:hidden"
+			>
+				<form {onsubmit} class="flex-1">
+					<Input
+						type="search"
+						placeholder="Search images..."
+						bind:value={query}
+						autofocus
+						autocorrect="off"
+						autocapitalize="off"
+						autocomplete="off"
+						spellcheck={false}
+						class="{landing
+							? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
+							: ''} h-11 rounded-full"
+					/>
+				</form>
+				<Button
+					variant="outline"
+					size="icon"
+					class="shrink-0 rounded-full"
+					onclick={() => (searchOpen = false)}
+				>
+					<X class="size-4" />
+				</Button>
+			</div>
+		{/if}
+
+		{#if !searchOpen}
+			{#if user}
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger class="shrink-0 outline-none">
+						{#snippet child({ props })}
+							<Button {...props} variant="ghost" size="icon" class="rounded-full" type="button">
+								<Plus class="size-5" />
+							</Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-48">
+						<DropdownMenu.Item onclick={() => (createCollectionOpen = true)}>
+							<FolderPlus class="size-4" />
+							Create collection
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => goto(resolve('/(with-navbar)/upload'))}>
+							<ImagePlus class="size-4" />
+							Upload images
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
+						<Avatar.Root size="default">
+							{#if user.avatar}
+								<Avatar.Image src={user.avatar} alt={user.displayName ?? user.handle} />
+							{/if}
+							<Avatar.Fallback>
+								<UserIcon class="size-4" />
+							</Avatar.Fallback>
+						</Avatar.Root>
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-48">
+						<DropdownMenu.Label>
+							{#if user.displayName}
+								<div class="text-base text-primary">{user.displayName}</div>
+							{/if}
+							<div class="font-normal text-muted-foreground">@{user.handle}</div>
+						</DropdownMenu.Label>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item
+							onclick={() =>
+								goto(resolve('/(with-navbar)/profile/[handle]', { handle: user.handle }))}
+						>
+							<UserIcon class="size-4" />
+							Profile
+						</DropdownMenu.Item>
+						<DropdownMenu.Item
+							onclick={() => {
+								window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
+							}}
+						>
+							<LogOut class="size-4" />
+							Log out
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<div class="mx-1.5 my-0.5 flex items-center gap-0.5">
+							<button
+								onclick={() => setMode('light')}
+								title="Light"
+								class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
+								'light'
+									? 'bg-foreground/10 text-foreground'
+									: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+							>
+								<Sun class="pointer-events-none size-4 shrink-0" />
+							</button>
+							<button
+								onclick={() => setMode('dark')}
+								title="Dark"
+								class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
+								'dark'
+									? 'bg-foreground/10 text-foreground'
+									: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+							>
+								<Moon class="pointer-events-none size-4 shrink-0" />
+							</button>
+							<button
+								onclick={() => resetMode()}
+								title="System"
+								class="flex flex-1 cursor-default items-center justify-center rounded-2xl px-3 py-2 text-sm font-medium transition-colors {userPrefersMode.current ===
+								'system'
+									? 'bg-foreground/10 text-foreground'
+									: 'text-foreground/50 hover:bg-foreground/10 hover:text-foreground'}"
+							>
+								<Monitor class="pointer-events-none size-4 shrink-0" />
+							</button>
+						</div>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			{:else}
+				<a href={resolve('/login')}>
+					<Button variant="default" size="lg" class="shrink-0 rounded-full px-5"
+						>Log in / Register</Button
+					>
+				</a>
+			{/if}
+		{/if}
+	</header>
 </Tooltip.Provider>
 
 {#if user}
