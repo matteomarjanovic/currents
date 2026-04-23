@@ -119,7 +119,20 @@
 </script>
 
 <ModeWatcher />
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+	<link rel="icon" href={favicon} />
+	{#if page.url.pathname === '/'}
+		<title>Currents</title>
+		<meta name="description" content="A calm visual curation app for the open social web." />
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content={page.url.href} />
+		<meta property="og:title" content="Currents" />
+		<meta property="og:description" content="A calm visual curation app for the open social web." />
+		<meta name="twitter:card" content="summary" />
+		<meta name="twitter:title" content="Currents" />
+		<meta name="twitter:description" content="A calm visual curation app for the open social web." />
+	{/if}
+</svelte:head>
 
 {#if !checked}
 	<!-- loading -->

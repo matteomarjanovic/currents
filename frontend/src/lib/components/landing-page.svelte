@@ -4,29 +4,10 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
 	import Logo from '$lib/assets/logo.svelte';
-	import { page } from '$app/state';
 
 	const githubUrl = 'https://github.com/matteomarjanovic/currents';
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
-
-	const title = 'Currents';
-	const description = 'A calm visual curation app for the open social web.';
 </script>
-
-<svelte:head>
-	<title>{title}</title>
-	<meta name="description" content={description} />
-
-	<!-- Open Graph -->
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
-	<meta property="og:title" content={title} />
-	<meta property="og:description" content={description} />
-	<!-- Twitter Card -->
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={title} />
-	<meta name="twitter:description" content={description} />
-</svelte:head>
 
 <div class="relative text-foreground">
 	<!-- Hero: full-width, flow fills the background at all viewport sizes -->
