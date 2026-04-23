@@ -1,205 +1,266 @@
 <script lang="ts">
-	let windowWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1024);
+	type CardSpec = {
+		id: string;
+		seed: number;
+		width: number;
+		height: number;
+		x: number;
+		y: number;
+		rotation: number;
+		scale: number;
+		opacity: number;
+		zIndex: number;
+	};
 
-	$effect(() => {
-		function onResize() {
-			windowWidth = window.innerWidth;
+	const cards: CardSpec[] = [
+		{
+			id: 'c1',
+			seed: 118,
+			width: 90,
+			height: 116,
+			x: 58,
+			y: 16,
+			rotation: -6,
+			scale: 0.95,
+			opacity: 0.84,
+			zIndex: 12
+		},
+		{
+			id: 'c2',
+			seed: 133,
+			width: 98,
+			height: 126,
+			x: 69,
+			y: 11,
+			rotation: 5,
+			scale: 0.98,
+			opacity: 0.88,
+			zIndex: 14
+		},
+		{
+			id: 'c3',
+			seed: 147,
+			width: 102,
+			height: 132,
+			x: 80,
+			y: 18,
+			rotation: -5,
+			scale: 1,
+			opacity: 0.91,
+			zIndex: 16
+		},
+		{
+			id: 'c4',
+			seed: 169,
+			width: 94,
+			height: 120,
+			x: 91,
+			y: 13,
+			rotation: 7,
+			scale: 0.96,
+			opacity: 0.86,
+			zIndex: 18
+		},
+		{
+			id: 'c5',
+			seed: 184,
+			width: 106,
+			height: 138,
+			x: 57,
+			y: 36,
+			rotation: 6,
+			scale: 1.02,
+			opacity: 0.9,
+			zIndex: 20
+		},
+		{
+			id: 'c6',
+			seed: 208,
+			width: 92,
+			height: 118,
+			x: 70,
+			y: 33,
+			rotation: -7,
+			scale: 0.95,
+			opacity: 0.84,
+			zIndex: 22
+		},
+		{
+			id: 'c7',
+			seed: 224,
+			width: 108,
+			height: 140,
+			x: 79,
+			y: 40,
+			rotation: 6,
+			scale: 1.01,
+			opacity: 0.92,
+			zIndex: 24
+		},
+		{
+			id: 'c8',
+			seed: 241,
+			width: 96,
+			height: 124,
+			x: 92,
+			y: 35,
+			rotation: -4,
+			scale: 0.97,
+			opacity: 0.87,
+			zIndex: 26
+		},
+		{
+			id: 'c9',
+			seed: 259,
+			width: 100,
+			height: 128,
+			x: 56,
+			y: 58,
+			rotation: -6,
+			scale: 0.98,
+			opacity: 0.88,
+			zIndex: 28
+		},
+		{
+			id: 'c10',
+			seed: 274,
+			width: 92,
+			height: 120,
+			x: 68,
+			y: 56,
+			rotation: 5,
+			scale: 0.94,
+			opacity: 0.83,
+			zIndex: 30
+		},
+		{
+			id: 'c11',
+			seed: 291,
+			width: 104,
+			height: 134,
+			x: 81,
+			y: 61,
+			rotation: -7,
+			scale: 1.01,
+			opacity: 0.9,
+			zIndex: 32
+		},
+		{
+			id: 'c12',
+			seed: 304,
+			width: 94,
+			height: 122,
+			x: 90,
+			y: 57,
+			rotation: 6,
+			scale: 0.96,
+			opacity: 0.85,
+			zIndex: 34
+		},
+		{
+			id: 'c13',
+			seed: 318,
+			width: 98,
+			height: 126,
+			x: 58,
+			y: 80,
+			rotation: 4,
+			scale: 0.96,
+			opacity: 0.84,
+			zIndex: 36
+		},
+		{
+			id: 'c14',
+			seed: 333,
+			width: 108,
+			height: 138,
+			x: 69,
+			y: 77,
+			rotation: -6,
+			scale: 1.02,
+			opacity: 0.91,
+			zIndex: 38
+		},
+		{
+			id: 'c15',
+			seed: 347,
+			width: 94,
+			height: 120,
+			x: 80,
+			y: 84,
+			rotation: 5,
+			scale: 0.95,
+			opacity: 0.86,
+			zIndex: 40
+		},
+		{
+			id: 'c16',
+			seed: 361,
+			width: 100,
+			height: 128,
+			x: 91,
+			y: 79,
+			rotation: -5,
+			scale: 0.99,
+			opacity: 0.88,
+			zIndex: 42
 		}
-		window.addEventListener('resize', onResize);
-		return () => window.removeEventListener('resize', onResize);
-	});
-
-	function getColumnCount(width: number): number {
-		if (width >= 1536) return 7;
-		if (width >= 1280) return 6;
-		if (width >= 1024) return 5;
-		if (width >= 768) return 4;
-		if (width >= 480) return 3;
-		return 2;
-	}
-
-	let columnCount = $derived(getColumnCount(windowWidth));
-
-	// 7 columns, each with a distinct scroll speed and staggered delay.
-	// Seeds are chosen to show varied, high-quality picsum subjects.
-	const allColumns = [
-		{
-			duration: '44s',
-			delay: '-18s',
-			images: [
-				{ seed: 115, h: 380 },
-				{ seed: 126, h: 320 },
-				{ seed: 133, h: 440 },
-				{ seed: 141, h: 360 },
-				{ seed: 155, h: 400 },
-				{ seed: 168, h: 340 },
-				{ seed: 177, h: 380 },
-				{ seed: 189, h: 320 }
-			]
-		},
-		{
-			duration: '38s',
-			delay: '-8s',
-			images: [
-				{ seed: 112, h: 340 },
-				{ seed: 124, h: 420 },
-				{ seed: 136, h: 360 },
-				{ seed: 147, h: 400 },
-				{ seed: 158, h: 320 },
-				{ seed: 165, h: 380 },
-				{ seed: 174, h: 340 },
-				{ seed: 183, h: 420 }
-			]
-		},
-		{
-			duration: '52s',
-			delay: '-30s',
-			images: [
-				{ seed: 110, h: 400 },
-				{ seed: 122, h: 340 },
-				{ seed: 131, h: 380 },
-				{ seed: 144, h: 320 },
-				{ seed: 153, h: 440 },
-				{ seed: 162, h: 360 },
-				{ seed: 173, h: 400 },
-				{ seed: 185, h: 340 }
-			]
-		},
-		{
-			duration: '46s',
-			delay: '-14s',
-			images: [
-				{ seed: 201, h: 360 },
-				{ seed: 214, h: 420 },
-				{ seed: 223, h: 340 },
-				{ seed: 235, h: 400 },
-				{ seed: 247, h: 360 },
-				{ seed: 256, h: 440 },
-				{ seed: 268, h: 320 },
-				{ seed: 279, h: 380 }
-			]
-		},
-		{
-			duration: '35s',
-			delay: '-5s',
-			images: [
-				{ seed: 302, h: 420 },
-				{ seed: 315, h: 360 },
-				{ seed: 328, h: 400 },
-				{ seed: 341, h: 340 },
-				{ seed: 354, h: 460 },
-				{ seed: 367, h: 380 },
-				{ seed: 378, h: 320 },
-				{ seed: 391, h: 400 }
-			]
-		},
-		{
-			duration: '57s',
-			delay: '-25s',
-			images: [
-				{ seed: 403, h: 340 },
-				{ seed: 418, h: 400 },
-				{ seed: 427, h: 360 },
-				{ seed: 439, h: 440 },
-				{ seed: 452, h: 320 },
-				{ seed: 463, h: 380 },
-				{ seed: 476, h: 400 },
-				{ seed: 489, h: 340 }
-			]
-		},
-		{
-			duration: '41s',
-			delay: '-20s',
-			images: [
-				{ seed: 501, h: 400 },
-				{ seed: 514, h: 340 },
-				{ seed: 527, h: 380 },
-				{ seed: 538, h: 420 },
-				{ seed: 549, h: 360 },
-				{ seed: 562, h: 440 },
-				{ seed: 575, h: 320 },
-				{ seed: 588, h: 380 }
-			]
-		}
-	] as const;
-
-	let columns = $derived(allColumns.slice(0, columnCount));
+	];
 </script>
 
-<div class="flow-fade h-full w-full overflow-hidden">
-	<div class="flow-stage">
-		<div class="flex h-full gap-3 px-1.5">
-			{#each columns as col (col.duration)}
-				<div class="min-w-0 flex-1">
-					<div
-						class="track flex flex-col gap-3"
-						style="animation-duration: {col.duration}; animation-delay: {col.delay};"
-					>
-						{#each [0, 1] as copy (copy)}
-							{#each col.images as img (img.seed + '-' + copy)}
-								<img
-									src="https://picsum.photos/seed/{img.seed}/260/{img.h}"
-									width="260"
-									height={img.h}
-									alt=""
-									class="card w-full rounded-2xl"
-									loading="eager"
-									draggable="false"
-								/>
-							{/each}
-						{/each}
-					</div>
-				</div>
-			{/each}
-		</div>
-	</div>
+<div class="flow-root" aria-hidden="true">
+	{#each cards as card (card.id)}
+		<img
+			src="https://picsum.photos/seed/{card.seed}/{card.width * 4}/{card.height * 4}"
+			width={card.width}
+			height={card.height}
+			alt=""
+			class="flow-card"
+			loading="eager"
+			draggable="false"
+			style="--card-x: {card.x}%; --card-y: {card.y}%; --card-width: {card.width}px; --card-height: {card.height}px; --card-scale: {card.scale}; --card-rotation: {card.rotation}deg; --card-opacity: {card.opacity}; --card-z: {card.zIndex};"
+		/>
+	{/each}
 </div>
 
 <style>
-	.flow-fade {
-		perspective: 1800px;
-		perspective-origin: 80% 40%;
-		/* mask-image: linear-gradient(
-			to bottom,
-			black 0%,
-			black 100%,
-			transparent 100%
-		);
-		-webkit-mask-image: linear-gradient(
-			to bottom,
-			black 0%,
-			black 100%,
-			transparent 100%
-		); */
-	}
-
-	.flow-stage {
-		width: 100%;
+	.flow-root {
+		position: relative;
 		height: 100%;
-		transform: rotateX(14deg) rotateY(-16deg) rotateZ(16deg) scale(1.55);
+		width: 100%;
+		overflow: hidden;
+		min-height: 0;
+	}
+
+	.flow-card {
+		position: absolute;
+		left: var(--card-x);
+		top: var(--card-y);
+		z-index: var(--card-z);
+		height: var(--card-height);
+		width: var(--card-width);
+		border-radius: calc(var(--radius) * 2.5);
+		border: 1px solid color-mix(in oklch, var(--border) 78%, transparent);
+		object-fit: cover;
+		opacity: var(--card-opacity);
+		transform: translate(-50%, -50%) scale(var(--card-scale)) rotate(var(--card-rotation));
 		transform-origin: center center;
-		transform-style: preserve-3d;
-	}
-
-	@keyframes flow {
-		from {
-			transform: translateY(0);
-		}
-		to {
-			transform: translateY(-50%);
-		}
-	}
-
-	.track {
-		animation: flow linear infinite;
-		will-change: transform;
-		transform-style: preserve-3d;
-	}
-
-	.card {
 		box-shadow:
-			-14px 22px 32px -14px rgba(20, 20, 30, 0.22),
-			-4px 8px 14px -6px rgba(20, 20, 30, 0.14);
-		backface-visibility: hidden;
+			0 28px 60px -34px color-mix(in oklch, var(--foreground) 22%, transparent),
+			0 12px 18px -16px color-mix(in oklch, var(--foreground) 18%, transparent);
+		filter: saturate(0.92) contrast(1.02) brightness(0.97);
+		user-select: none;
+	}
+
+	@media (max-width: 767px) {
+		.flow-root {
+			min-height: 16rem;
+		}
+
+		.flow-card {
+			box-shadow:
+				0 22px 44px -30px color-mix(in oklch, var(--foreground) 18%, transparent),
+				0 10px 16px -14px color-mix(in oklch, var(--foreground) 16%, transparent);
+		}
 	}
 </style>

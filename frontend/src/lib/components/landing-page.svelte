@@ -1,5 +1,5 @@
 <script lang="ts">
-	import LandingFlowV3 from './landing-flow.svelte';
+	import LandingFlow from './landing-flow.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
@@ -9,50 +9,43 @@
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
 </script>
 
-<div class="relative text-foreground">
-	<!-- Hero: full-width, flow fills the background at all viewport sizes -->
+<div
+	class="relative app-muted-wash text-foreground"
+	style="--landing-top-bar-height: 3.75rem; padding-top: var(--landing-top-bar-height);"
+>
 	<section
-		class="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-8 pt-0 pb-16 text-center"
+		class="overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8"
+		style="height: calc(100dvh - var(--landing-top-bar-height));"
 	>
-		<!-- Responsive masonry flow fills the entire hero -->
-		<div class="absolute inset-0 z-0">
-			<LandingFlowV3 />
-		</div>
-
-		<!-- Vignette: centered radial, strong in the middle for readability -->
 		<div
-			class="pointer-events-none absolute inset-0 z-5"
-			style="background: radial-gradient(ellipse 90% 80% at 50% 48%, color-mix(in oklch, var(--background) 96%, transparent) 0%, color-mix(in oklch, var(--background) 86%, transparent) 30%, color-mix(in oklch, var(--background) 38%, transparent) 62%, transparent 86%);"
-		></div>
-
-		<!-- Text content -->
-		<div class="relative z-9 max-w-xl">
-			<h1
-				class="text-beauty mb-10 font-sans text-6xl leading-[1.02] font-semibold tracking-tight text-foreground md:text-7xl lg:mt-16 xl:text-[5.25rem]"
-			>
-				Get carried by the currents.
-			</h1>
-
-			<p class="text-beauty mb-12 text-lg leading-relaxed text-muted-foreground md:text-xl">
-				Or create your own. Save inspiration from anywhere, curate collections that reflect your
-				taste, and tune your feed to find exactly what you love.
-			</p>
-
-			<div class="flex items-center justify-center gap-4">
-				<a href={resolve('/explore')}>
-					<Button size="lg" class="gap-2 rounded-full px-8 text-base">
-						Explore currents
-						<ArrowRight class="size-4" />
-					</Button>
-				</a>
-				<!-- <a
-					href="https://github.com/mmarjanovic/currents"
-					target="_blank"
-					rel="noopener noreferrer"
-					class="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+			class="mx-auto grid h-full max-w-7xl grid-rows-[auto_minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)] lg:grid-rows-1 lg:items-center lg:gap-8"
+		>
+			<div class="relative z-10 flex flex-col justify-center text-left lg:pr-8 xl:pr-12">
+				<h1
+					class="text-beauty mb-8 max-w-[9ch] font-sans text-6xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
 				>
-					View source
-				</a> -->
+					Get carried by the currents.
+				</h1>
+
+				<p
+					class="text-beauty mb-10 max-w-xl text-lg leading-relaxed text-muted-foreground md:text-xl"
+				>
+					Or create your own. Save inspiration from anywhere, curate collections that reflect your
+					taste, and tune your feed to find exactly what you love.
+				</p>
+
+				<div class="flex items-center gap-4">
+					<a href={resolve('/explore')}>
+						<Button size="lg" class="gap-2 rounded-full px-8 text-base">
+							Explore currents
+							<ArrowRight class="size-4" />
+						</Button>
+					</a>
+				</div>
+			</div>
+
+			<div class="relative min-h-[16rem] sm:min-h-[20rem] md:min-h-[24rem] lg:h-full lg:min-h-0">
+				<LandingFlow />
 			</div>
 		</div>
 	</section>

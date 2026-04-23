@@ -61,7 +61,7 @@
 <Tooltip.Provider>
 	<header
 		class="{landing
-			? 'fixed bg-background/0'
+			? 'fixed app-muted-wash backdrop-blur-sm'
 			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 overflow-hidden px-4 py-3"
 	>
 		{#if !searchOpen}
