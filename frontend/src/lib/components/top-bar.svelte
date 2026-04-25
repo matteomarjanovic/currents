@@ -61,7 +61,7 @@
 <Tooltip.Provider>
 	<header
 		class="{landing
-			? 'fixed app-muted-wash backdrop-blur-sm'
+			? 'fixed bg-transparent'
 			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 overflow-hidden px-4 py-3"
 	>
 		{#if !searchOpen}
@@ -239,7 +239,7 @@
 			{:else}
 				<a href={resolve('/login')}>
 					<Button variant="default" size="lg" class="shrink-0 rounded-full px-5"
-						>Log in / Register</Button
+						>Log in</Button
 					>
 				</a>
 			{/if}

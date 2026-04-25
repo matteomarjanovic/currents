@@ -1,5 +1,4 @@
 <script lang="ts">
-	import LandingFlow from './landing-flow.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
@@ -9,49 +8,58 @@
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
 </script>
 
-<div
-	class="relative app-muted-wash text-foreground"
-	style="--landing-top-bar-height: 3.75rem; padding-top: var(--landing-top-bar-height);"
->
+
+<div class="relative text-foreground" style="--landing-top-bar-height: 3.75rem;">
 	<section
-		class="overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8"
-		style="height: calc(100dvh - var(--landing-top-bar-height));"
+		class="relative isolate overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8 h-screen"
+		style="margin-top: calc(-1 * var(--landing-top-bar-height));"
 	>
-		<div
-			class="mx-auto grid h-full max-w-7xl grid-rows-[auto_minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,34rem)_minmax(0,1fr)] lg:grid-rows-1 lg:items-center lg:gap-8"
+		<video
+			class="absolute inset-0 -z-20 h-full w-full object-cover"
+			autoplay
+			muted
+			loop
+			playsinline
+			aria-hidden="true"
 		>
-			<div class="relative z-10 flex flex-col justify-center text-left lg:pr-8 xl:pr-12">
+			<source src="/video/currents_hero.mp4" type="video/mp4" />
+		</video>
+
+		<div class="absolute inset-0 -z-10 bg-background/55"></div>
+		<div
+			class="absolute inset-0 -z-10"
+			style="background: linear-gradient(180deg, color-mix(in oklch, var(--muted) 50%, transparent) 0%, color-mix(in oklch, var(--background) 72%, transparent) 100%);"
+		></div>
+
+		<div class="mx-auto flex h-full w-full max-w-4xl items-center justify-center">
+			<div class="relative z-10 flex max-w-3xl flex-col items-center justify-center text-center">
 				<h1
-					class="text-beauty mb-8 max-w-[9ch] font-sans text-6xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
+					class="text-beauty mb-8 max-w-[10ch] font-sans text-6xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
 				>
 					Get carried by the currents.
 				</h1>
 
 				<p
-					class="text-beauty mb-10 max-w-xl text-lg leading-relaxed text-muted-foreground md:text-xl"
+					class="text-beauty mb-10 max-w-2xl text-lg leading-relaxed text-foreground/82 md:text-xl"
 				>
 					Or create your own. Save inspiration from anywhere, curate collections that reflect your
 					taste, and tune your feed to find exactly what you love.
 				</p>
 
-				<div class="flex items-center gap-4">
+				<div class="flex items-center justify-center gap-4">
 					<a href={resolve('/explore')}>
-						<Button size="lg" class="gap-2 rounded-full px-8 text-base">
+						<Button size="lg" class="gap-2 rounded-full px-8 text-base shadow-lg shadow-black/20">
 							Explore currents
 							<ArrowRight class="size-4" />
 						</Button>
 					</a>
 				</div>
 			</div>
-
-			<div class="relative min-h-[16rem] sm:min-h-[20rem] md:min-h-[24rem] lg:h-full lg:min-h-0">
-				<LandingFlow />
-			</div>
 		</div>
 	</section>
 
 	<!-- Footer -->
-	<footer class="border-t border-border/60 px-8 py-8">
+	<footer class="relative z-10 border-t border-border/60 app-muted-wash px-8 py-8">
 		<div class="mx-auto flex max-w-5xl flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
 			<div class="space-y-3 text-center sm:text-left">
 				<a
