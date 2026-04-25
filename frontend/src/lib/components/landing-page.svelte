@@ -8,10 +8,9 @@
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
 </script>
 
-
 <div class="relative text-foreground" style="--landing-top-bar-height: 3.75rem;">
 	<section
-		class="relative isolate overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8 h-screen"
+		class="relative isolate h-screen overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8"
 		style="margin-top: calc(-1 * var(--landing-top-bar-height));"
 	>
 		<video
@@ -34,7 +33,7 @@
 		<div class="mx-auto flex h-full w-full max-w-4xl items-center justify-center">
 			<div class="relative z-10 flex max-w-3xl flex-col items-center justify-center text-center">
 				<h1
-					class="text-beauty mb-8 max-w-[10ch] font-sans text-6xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
+					class="text-beauty mb-8 max-w-[10ch] font-sans text-5xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
 				>
 					Get carried by the currents.
 				</h1>
