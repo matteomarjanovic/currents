@@ -13,20 +13,22 @@
   let attributionLicense = $state("");
   let attributionCredit = $state("");
 
-  // Board mode attribution
-  let boardAttributionCredit = $state("");
+  // Auth polling
+  let loginState = $state<"prompt" | "waiting">("prompt");
+  let pollIntervalId: ReturnType<typeof setInterval> | null = null;
+
+  function stopPolling() {
+    if (pollIntervalId !== null) {
+      clearInterval(pollIntervalId);
+      pollIntervalId = null;
+    }
+  }
 
   // New collection creation
   let creatingCollection = $state(false);
   let newCollectionName = $state("");
   let newCollectionDescription = $state("");
   let collectionError = $state("");
-
-  $effect(() => {
-    if (creatingCollection) {
-      newCollectionDescription = clipper.defaultCollectionDescription ?? "";
-    }
-  });
 
   // Reset form state whenever a new image is shown
   $effect(() => {
@@ -37,7 +39,8 @@
       attributionUrl = "";
       attributionLicense = "";
       attributionCredit = clipper.siteHints.attributionCredit ?? "";
-      boardAttributionCredit = "";
+      loginState = "prompt";
+      stopPolling();
 
       selectedCollectionUri = clipper.collections[0]?.uri ?? "";
       creatingCollection = false;
@@ -47,21 +50,23 @@
     }
   });
 
-  function confirmBoard() {
-    if (!selectedCollectionUri) return;
-    const col = clipper.collections.find(
-      (c) => c.uri === selectedCollectionUri,
-    );
-    document.dispatchEvent(
-      new CustomEvent("currents-board-confirm", {
-        detail: {
-          collectionUri: selectedCollectionUri,
-          collectionName: col?.name ?? "",
-          attributionCredit: boardAttributionCredit.trim(),
-        },
-      }),
-    );
-    close();
+  // Clean up polling when dialog closes
+  $effect(() => {
+    if (!clipper.visible) stopPolling();
+  });
+
+  function handleLoginClick() {
+    loginState = "waiting";
+    pollIntervalId = setInterval(async () => {
+      const res = await browser.runtime.sendMessage({ type: "CHECK_AUTH" });
+      if (res.authenticated) {
+        stopPolling();
+        clipper.authState = "authenticated";
+        clipper.userHandle = res.handle;
+        clipper.collections = res.collections;
+        selectedCollectionUri = res.collections[0]?.uri ?? "";
+      }
+    }, 3000);
   }
 
   function close() {
@@ -150,22 +155,25 @@
       <button class="close-btn" onclick={close} aria-label="Close">✕</button>
 
       {#if clipper.authState === "unauthenticated"}
-        <p class="auth-prompt">
-          <a href={LOGIN_PAGE_URL} target="_blank" rel="noreferrer">
-            Log in to Currents
-          </a> to save images.
-        </p>
-      {:else}
-        {#if clipper.mode === "board"}
-          <p class="board-intro">
-            Pick a collection to import pins from
-            <strong>{clipper.pageTitle || "this board"}</strong>. Scroll the
-            board after confirming so Pinterest loads more pins — we'll save
-            them as they appear.
-          </p>
+        {#if loginState === "waiting"}
+          <div class="auth-waiting">
+            <div class="spinner"></div>
+            <p class="auth-prompt">Waiting for authentication…</p>
+          </div>
         {:else}
-          <img class="preview" src={clipper.imgUrl} alt="Preview" />
+          <p class="auth-prompt">
+            <a
+              href={LOGIN_PAGE_URL}
+              target="_blank"
+              rel="noreferrer"
+              onclick={handleLoginClick}
+            >
+              Log in to Currents
+            </a> to save images.
+          </p>
         {/if}
+      {:else}
+        <img class="preview" src={clipper.imgUrl} alt="Preview" />
 
         <div class="field-group">
           <span class="section-label">Collection</span>
@@ -234,16 +242,13 @@
           {/if}
         </div>
 
-        {#if clipper.mode !== "board"}
-          <input
-            type="text"
-            placeholder="Add a note (optional)"
-            bind:value={text}
-            disabled={saveState === "saving" || saveState === "saved"}
-          />
-        {/if}
+        <input
+          type="text"
+          placeholder="Add a note (optional)"
+          bind:value={text}
+          disabled={saveState === "saving" || saveState === "saved"}
+        />
 
-        {#if clipper.mode !== "board"}
         <div class="attribution">
           <span class="section-label">Attribution</span>
           <input
@@ -265,25 +270,8 @@
             disabled={saveState === "saving" || saveState === "saved"}
           />
         </div>
-        {/if}
 
-        {#if clipper.mode === "board"}
-          <div class="attribution">
-            <span class="section-label">Attribution (optional)</span>
-            <input
-              type="text"
-              placeholder="Credit for all pins (e.g. photographer name)"
-              bind:value={boardAttributionCredit}
-              disabled={creatingCollection}
-            />
-          </div>
-          <button
-            onclick={confirmBoard}
-            disabled={!selectedCollectionUri || creatingCollection}
-          >
-            Import pins into collection
-          </button>
-        {:else if saveState === "idle" || saveState === "error"}
+        {#if saveState === "idle" || saveState === "error"}
           <button
             onclick={save}
             disabled={!selectedCollectionUri || creatingCollection}
@@ -506,6 +494,29 @@
     text-decoration: underline;
   }
 
+  .auth-waiting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #ddd;
+    border-top-color: #0057ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   textarea.description {
     width: 100%;
     padding: 8px 12px;
@@ -523,12 +534,5 @@
   textarea.description:focus {
     outline: 2px solid #0057ff;
     border-color: transparent;
-  }
-
-  .board-intro {
-    font-size: 13px;
-    color: #333;
-    margin: 0 0 4px 0;
-    line-height: 1.5;
   }
 </style>

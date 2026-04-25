@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Logo from '../../assets/logo_merged.svelte';
+
   const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://currents.is';
   const LOGIN_PAGE_URL = import.meta.env.VITE_LOGIN_PAGE_URL ?? 'https://currents.is/oauth/login';
 
@@ -16,7 +18,6 @@
   });
 
   async function loadAuth() {
-    // Check session storage cache first
     const result = await browser.storage.session.get('authCache');
     const cache = result.authCache as { did: string; handle: string; fetchedAt: number } | undefined;
     if (cache && Date.now() - cache.fetchedAt < 60_000) {
@@ -41,6 +42,7 @@
 </script>
 
 <main>
+  <div class="logo"><Logo /></div>
   {#if auth.status === 'loading'}
     <p class="muted">Checking login…</p>
   {:else if auth.status === 'authenticated'}
@@ -59,6 +61,11 @@
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 14px;
     line-height: 1.5;
+  }
+
+  .logo {
+    height: 28px;
+    margin-bottom: 12px;
   }
 
   p {

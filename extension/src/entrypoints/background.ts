@@ -232,25 +232,15 @@ export default defineBackground(() => {
       handleCreateCollection(message).then(sendResponse);
       return true;
     }
-    if (message.type === 'OPEN_BOARD_PICKER') {
+    if (message.type === 'CHECK_AUTH') {
       (async () => {
-        const tabId = sender.tab?.id;
-        if (!tabId) return;
-        const auth = await getAuth();
-        const collections: Collection[] = auth ? await fetchCollections(auth.did) : [];
-        await browser.tabs.sendMessage(tabId, {
-          type: 'SHOW_CLIPPER',
-          mode: 'board',
-          pageTitle: message.boardName ?? '',
-          originUrl: message.originUrl ?? '',
-          collections,
-          authState: auth ? 'authenticated' : 'unauthenticated',
-          userHandle: auth?.handle ?? '',
-          pinCount: message.pinCount ?? 0,
-          defaultCollectionDescription: message.defaultCollectionDescription ?? '',
-        });
+        await browser.storage.session.remove('authCache');
+        const auth = await fetchAuth();
+        if (!auth) { sendResponse({ authenticated: false }); return; }
+        const collections = await fetchCollections(auth.did);
+        sendResponse({ authenticated: true, handle: auth.handle, collections });
       })();
-      return false;
+      return true;
     }
   });
 });
