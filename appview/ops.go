@@ -14,11 +14,6 @@ type backgroundMetricsResponse struct {
 	Saves       map[string]any `json:"saves"`
 }
 
-func (s *Server) OpsPage(w http.ResponseWriter, r *http.Request) {
-	did, _, handle := s.currentSessionDID(r)
-	tmplOps.Execute(w, TmplData{DID: did, Handle: handle})
-}
-
 func (s *Server) BackgroundStatus(w http.ResponseWriter, r *http.Request) {
 	metrics, err := s.Store.GetBackgroundMetrics(r.Context())
 	if err != nil {

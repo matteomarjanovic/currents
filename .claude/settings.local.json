@@ -7,7 +7,8 @@
       "WebFetch(domain:wxt.dev)",
       "Bash(docker compose logs:*)",
       "Bash(wait)",
-      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(go build *)"
     ]
   },
   "enableAllProjectMcpServers": true,
