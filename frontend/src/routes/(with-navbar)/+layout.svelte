@@ -141,7 +141,7 @@
 	{#if page.url.pathname === '/' && !auth.user}
 		{@render children()}
 	{:else if page.url.pathname !== '/'}
-		<main class="p-4">
+		<main class="p-2 md:p-4">
 			{@render children()}
 		</main>
 	{/if}
