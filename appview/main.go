@@ -181,6 +181,14 @@ func runServer(cctx *cli.Context) error {
 		Dir:       dir,
 		Inference: inferenceClient,
 	}
+	importWorker := &ImportWorker{
+		Context:   ctx,
+		Store:     store,
+		OAuth:     oauthClient,
+		Dir:       dir,
+		Inference: inferenceClient,
+		drains:    make(map[string]chan struct{}),
+	}
 
 	if mode == "repair" {
 		report, err := runRepairPass(ctx, tapHandler)
@@ -232,9 +240,10 @@ func runServer(cctx *cli.Context) error {
 			Audience: serviceDID,
 			Dir:      dir,
 		},
-		Inference:   inferenceClient,
-		FrontendURL: cctx.String("frontend-url"),
-		ProcessMode: mode,
+		Inference:    inferenceClient,
+		FrontendURL:  cctx.String("frontend-url"),
+		ProcessMode:  mode,
+		ImportWorker: importWorker,
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -271,9 +280,17 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)
 	http.HandleFunc("POST /resave", srv.CreateResave)
 
+	http.HandleFunc("GET /api/import/pinterest/boards", srv.APIPinterestBoards)
+	http.HandleFunc("POST /api/import/pinterest/jobs", srv.APICreatePinterestJob)
+	http.HandleFunc("GET /api/import/active-session", srv.APIGetActiveImportSession)
+	http.HandleFunc("GET /api/import/sessions/{id}", srv.APIGetImportSession)
+
 	tapHandler.CDNBaseURL = cdnURL
 	go runTapListener(ctx, cctx.String("tap-url"), tapHandler)
 	slog.Info("TAP listener started", "url", cctx.String("tap-url"))
+
+	go importWorker.Run()
+	slog.Info("import worker started")
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)

@@ -1534,3 +1534,318 @@ func (m *PgStore) GetUserPDSEndpoint(ctx context.Context, did string) (string, e
 	).Scan(&endpoint)
 	return endpoint, err
 }
+
+// --- Pinterest bulk import ---
+
+type ImportJobRow struct {
+	ID                  string
+	SessionID           string
+	OwnerDID            string
+	OAuthSessionID      string
+	Source              string
+	SourceBoardID       string
+	SourceBoardName     string
+	SourceBoardURL      string
+	TargetCollectionURI string
+	Status              string
+	ListCursor          string
+	Error               string
+}
+
+type ImportItemRow struct {
+	ID                  string
+	JobID               string
+	OwnerDID            string
+	SourcePinID         string
+	ImageURL            string
+	Rkey                string
+	Status              string
+	SaveURI             string
+	Error               string
+	AttemptCount        int
+	TargetCollectionURI string
+}
+
+type SessionJobStatus struct {
+	JobID     string
+	BoardName string
+	Status    string
+	Queued    int
+	Running   int
+	Done      int
+	Failed    int
+}
+
+type InflightUser struct {
+	DID            string
+	OAuthSessionID string
+}
+
+func (m *PgStore) UpsertImportSession(ctx context.Context, id, ownerDID, username string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO import_session (id, owner_did, username) VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username
+	`, id, ownerDID, username)
+	return err
+}
+
+type ActiveImportSession struct {
+	SessionID string
+	Username  string
+	StartedAt time.Time
+}
+
+// GetLatestActiveSession returns the most recently created session for ownerDID
+// that still has at least one non-terminal job. Returns nil if none.
+func (m *PgStore) GetLatestActiveSession(ctx context.Context, ownerDID string) (*ActiveImportSession, error) {
+	var s ActiveImportSession
+	err := m.pool.QueryRow(ctx, `
+		SELECT s.id, s.username, s.created_at
+		FROM import_session s
+		WHERE s.owner_did = $1
+		  AND EXISTS (
+		    SELECT 1 FROM import_job j
+		    WHERE j.session_id = s.id
+		      AND j.status NOT IN ('done', 'failed')
+		  )
+		ORDER BY s.created_at DESC
+		LIMIT 1
+	`, ownerDID).Scan(&s.SessionID, &s.Username, &s.StartedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return &s, err
+}
+
+func (m *PgStore) CreateImportJob(ctx context.Context, p ImportJobRow) (string, error) {
+	var id string
+	err := m.pool.QueryRow(ctx, `
+		INSERT INTO import_job
+			(session_id, owner_did, oauth_session_id, source, source_board_id, source_board_name, source_board_url, target_collection_uri, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'listing')
+		RETURNING id
+	`, p.SessionID, p.OwnerDID, p.OAuthSessionID, p.Source, p.SourceBoardID, p.SourceBoardName, p.SourceBoardURL, p.TargetCollectionURI).Scan(&id)
+	return id, err
+}
+
+// BulkInsertImportItems inserts one row per pin with a freshly generated TID
+// rkey. Conflicts on (job_id, source_pin_id) are silently dropped so the
+// listing stage can be safely re-run after a crash.
+func (m *PgStore) BulkInsertImportItems(ctx context.Context, jobID, ownerDID string, pins []PinterestPin) (int, error) {
+	if len(pins) == 0 {
+		return 0, nil
+	}
+	rows := make([][]any, 0, len(pins))
+	clock := syntax.NewTIDClock(0)
+	for _, p := range pins {
+		rows = append(rows, []any{jobID, ownerDID, p.ID, p.ImageURL, clock.Next().String()})
+	}
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		CREATE TEMP TABLE _import_item_in (
+			job_id UUID, owner_did TEXT, source_pin_id TEXT, image_url TEXT, rkey TEXT
+		) ON COMMIT DROP
+	`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.CopyFrom(ctx,
+		pgx.Identifier{"_import_item_in"},
+		[]string{"job_id", "owner_did", "source_pin_id", "image_url", "rkey"},
+		pgx.CopyFromRows(rows),
+	); err != nil {
+		return 0, err
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO import_item (job_id, owner_did, source_pin_id, image_url, rkey)
+		SELECT job_id, owner_did, source_pin_id, image_url, rkey FROM _import_item_in
+		ON CONFLICT (job_id, source_pin_id) DO NOTHING
+	`)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+func (m *PgStore) UpdateImportJobStatus(ctx context.Context, jobID, status, errMsg string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_job SET status=$2, error=$3, updated_at=now() WHERE id=$1`,
+		jobID, status, errMsg,
+	)
+	return err
+}
+
+func (m *PgStore) UpdateImportJobCursor(ctx context.Context, jobID, cursor string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_job SET list_cursor=$2, updated_at=now() WHERE id=$1`,
+		jobID, cursor,
+	)
+	return err
+}
+
+func (m *PgStore) ListJobsByOwnerStatus(ctx context.Context, ownerDID, status string) ([]ImportJobRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, session_id, owner_did, oauth_session_id, source,
+		       source_board_id, source_board_name, source_board_url, target_collection_uri,
+		       status, list_cursor, error
+		FROM import_job
+		WHERE owner_did = $1 AND status = $2
+		ORDER BY created_at
+	`, ownerDID, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ImportJobRow
+	for rows.Next() {
+		var j ImportJobRow
+		if err := rows.Scan(&j.ID, &j.SessionID, &j.OwnerDID, &j.OAuthSessionID, &j.Source,
+			&j.SourceBoardID, &j.SourceBoardName, &j.SourceBoardURL, &j.TargetCollectionURI,
+			&j.Status, &j.ListCursor, &j.Error); err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// ClaimNextImportItem atomically transitions one queued item for ownerDID to
+// 'running' and returns it joined with the job's target_collection_uri. Returns
+// (nil, nil) when nothing is queued.
+func (m *PgStore) ClaimNextImportItem(ctx context.Context, ownerDID string) (*ImportItemRow, error) {
+	var i ImportItemRow
+	err := m.pool.QueryRow(ctx, `
+		WITH next AS (
+			SELECT id FROM import_item
+			WHERE owner_did = $1 AND status = 'queued'
+			ORDER BY created_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		UPDATE import_item AS i
+		   SET status = 'running',
+		       attempt_count = attempt_count + 1,
+		       updated_at = now()
+		  FROM next, import_job AS j
+		 WHERE i.id = next.id
+		   AND j.id = i.job_id
+		RETURNING i.id, i.job_id, i.owner_did, i.source_pin_id, i.image_url, i.rkey,
+		          i.status, i.save_uri, i.error, i.attempt_count, j.target_collection_uri
+	`, ownerDID).Scan(
+		&i.ID, &i.JobID, &i.OwnerDID, &i.SourcePinID, &i.ImageURL, &i.Rkey,
+		&i.Status, &i.SaveURI, &i.Error, &i.AttemptCount, &i.TargetCollectionURI,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
+}
+
+func (m *PgStore) MarkImportItemDone(ctx context.Context, itemID, saveURI string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='done', save_uri=$2, error='', updated_at=now() WHERE id=$1`,
+		itemID, saveURI,
+	)
+	return err
+}
+
+func (m *PgStore) MarkImportItemFailed(ctx context.Context, itemID, errMsg string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='failed', error=$2, updated_at=now() WHERE id=$1`,
+		itemID, errMsg,
+	)
+	return err
+}
+
+// MaybeFinalizeJob flips a 'running' job to 'done' once no items remain in
+// queued or running state. No-op when items remain, or when the job isn't
+// in the 'running' state.
+func (m *PgStore) MaybeFinalizeJob(ctx context.Context, jobID string) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE import_job
+		   SET status = 'done', updated_at = now()
+		 WHERE id = $1
+		   AND status = 'running'
+		   AND NOT EXISTS (
+		       SELECT 1 FROM import_item
+		        WHERE job_id = $1 AND status IN ('queued','running')
+		   )
+	`, jobID)
+	return err
+}
+
+// ResetRunningItemsForUser flips 'running' items back to 'queued' so a
+// restarted worker can re-claim them. Runs once per user at worker startup.
+func (m *PgStore) ResetRunningItemsForUser(ctx context.Context, ownerDID string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='queued', updated_at=now()
+		   WHERE owner_did=$1 AND status='running'`,
+		ownerDID,
+	)
+	return err
+}
+
+// ListInflightUsers returns DIDs that have a queued/running item OR a job
+// in the 'listing' state, plus the most recent oauth_session_id for each.
+func (m *PgStore) ListInflightUsers(ctx context.Context) ([]InflightUser, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (j.owner_did) j.owner_did, j.oauth_session_id
+		FROM import_job j
+		WHERE j.status = 'listing'
+		   OR EXISTS (
+		       SELECT 1 FROM import_item i
+		        WHERE i.job_id = j.id AND i.status IN ('queued','running')
+		   )
+		ORDER BY j.owner_did, j.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []InflightUser
+	for rows.Next() {
+		var u InflightUser
+		if err := rows.Scan(&u.DID, &u.OAuthSessionID); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (m *PgStore) GetSessionStatus(ctx context.Context, sessionID, ownerDID string) ([]SessionJobStatus, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT j.id, j.source_board_name, j.status,
+		       SUM(CASE WHEN i.status='queued'  THEN 1 ELSE 0 END)::int AS queued,
+		       SUM(CASE WHEN i.status='running' THEN 1 ELSE 0 END)::int AS running,
+		       SUM(CASE WHEN i.status='done'    THEN 1 ELSE 0 END)::int AS done,
+		       SUM(CASE WHEN i.status='failed'  THEN 1 ELSE 0 END)::int AS failed
+		FROM import_job j
+		LEFT JOIN import_item i ON i.job_id = j.id
+		WHERE j.session_id = $1 AND j.owner_did = $2
+		GROUP BY j.id
+		ORDER BY j.created_at
+	`, sessionID, ownerDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SessionJobStatus
+	for rows.Next() {
+		var s SessionJobStatus
+		if err := rows.Scan(&s.JobID, &s.BoardName, &s.Status, &s.Queued, &s.Running, &s.Done, &s.Failed); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}

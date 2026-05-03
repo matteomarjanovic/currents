@@ -22,6 +22,7 @@ type Server struct {
 	Inference     *InferenceClient
 	FrontendURL   string
 	ProcessMode   string
+	ImportWorker  *ImportWorker
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

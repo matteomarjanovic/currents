@@ -12,6 +12,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import UserIcon from '@lucide/svelte/icons/user';
+	import Download from '@lucide/svelte/icons/download';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Monitor from '@lucide/svelte/icons/monitor';
@@ -192,6 +193,10 @@
 						>
 							<UserIcon class="size-4" />
 							Profile
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => goto('/import/pinterest')}>
+							<Download class="size-4" />
+							Import from Pinterest
 						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							onclick={() => {
