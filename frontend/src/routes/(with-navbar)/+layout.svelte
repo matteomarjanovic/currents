@@ -35,11 +35,14 @@
 			if (page.url.pathname === '/') goto('/explore');
 		}
 
-		const isLoginPage = page.url.pathname.startsWith('/login');
-		const isRegisterPage = page.url.pathname.startsWith('/register');
-		const isRootPage = page.url.pathname === '/';
-		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRegisterPage && !isRootPage && !isExplorePage) {
+		const isPublic =
+			page.url.pathname === '/' ||
+			page.url.pathname === '/explore' ||
+			page.url.pathname.startsWith('/login') ||
+			page.url.pathname.startsWith('/register') ||
+			page.url.pathname.startsWith('/profile/') ||
+			page.url.pathname.startsWith('/collection/');
+		if (!user && !isPublic) {
 			goto('/login');
 		}
 	});
