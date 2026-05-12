@@ -187,7 +187,7 @@
 
 	{#if canAttribute}
 		<Button
-			variant="ghost"
+			variant="link"
 			size="sm"
 			class="self-start px-0 text-xs text-muted-foreground hover:text-foreground"
 			onclick={() => (attributionDialogOpen = true)}

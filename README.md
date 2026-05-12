@@ -20,6 +20,26 @@ SESSION_SECRET=<random-string> docker compose up --build
 - AppView: http://localhost:8080
 - Inference: run separately (see `inference/`)
 
+## Dev TAP stack
+
+For local TAP debugging, use the dev compose file. It tracks only the handles in
+`TAP_DEV_HANDLES`, seeds TAP via `/repos/add`, and starts the full local stack,
+including `clustering`.
+
+```bash
+TAP_DEV_HANDLES="matteomarjanovic.com,zeroassembly.site" \
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+Add more tracked repos by appending more comma-separated handles to
+`TAP_DEV_HANDLES`.
+
+To wipe the dev stack completely:
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
 ## Inference server
 
 ```bash

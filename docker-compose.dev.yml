@@ -1,0 +1,84 @@
+services:
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: appview
+      POSTGRES_PASSWORD: appview
+      POSTGRES_DB: appview
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appview -d appview"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  tap:
+    image: ghcr.io/bluesky-social/indigo/tap:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TAP_DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      TAP_COLLECTION_FILTERS: is.currents.*
+      TAP_NO_REPLAY: "true"
+    ports:
+      - "2480:2480"
+
+  tap-seed:
+    image: curlimages/curl:8.12.1
+    restart: on-failure
+    depends_on:
+      tap:
+        condition: service_started
+    environment:
+      TAP_URL: http://tap:2480
+      TAP_DEV_HANDLES: ${TAP_DEV_HANDLES:-matteomarjanovic.com,zeroassembly.site}
+      HANDLE_RESOLVER_URL: ${HANDLE_RESOLVER_URL:-https://public.api.bsky.app}
+    volumes:
+      - ./:/workspace:ro
+    entrypoint: ["sh", "/workspace/seed-tap-handles.sh"]
+
+  appview:
+    build:
+      context: ./appview
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      tap:
+        condition: service_started
+      tap-seed:
+        condition: service_started
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET:-changeme-use-a-strong-random-secret}
+      DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-cst-doing-orchestra-sandy.trycloudflare.com}
+      CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
+      CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
+      FRONTEND_URL: http://192.168.1.9:5173
+      TAP_URL: ws://tap:2480/channel
+      INFERENCE_URL: http://host.docker.internal:8000
+    ports:
+      - "8080:8080"
+
+  clustering:
+    build:
+      context: ./clustering
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./models:/models
+    environment:
+      DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      MODELS_DIR: /models
+      INFERENCE_URL: http://host.docker.internal:8000
+
+volumes:
+  pgdata:

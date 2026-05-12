@@ -117,7 +117,7 @@ func handleTapConn(ctx context.Context, conn *websocket.Conn, handler *TapHandle
 				continue
 			}
 			if err := handleTapRecord(ctx, handler, evt.Record); err != nil {
-				slog.Error("TAP record handler error", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action)
+				slog.Error("TAP record handler error", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action, "did", evt.Record.DID, "rkey", evt.Record.Rkey)
 				continue // don't ack; TAP will redeliver
 			}
 		case "identity":
@@ -138,6 +138,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 
 	switch ev.Collection {
 	case collectionNSID:
+		slog.Info("TAP collection received", "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
 			return handler.Store.DeleteCollection(ctx, atURI)
 		}
@@ -149,6 +150,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		return handler.Store.UpsertCollection(ctx, atURI, ev.CID, ev.DID, col.Name, col.Description, createdAt)
 
 	case saveNSID:
+		slog.Info("TAP save received", "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
 			return handler.Store.DeleteSave(ctx, atURI)
 		}
