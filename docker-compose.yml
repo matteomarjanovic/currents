@@ -28,7 +28,7 @@ services:
     environment:
       SESSION_SECRET: ${SESSION_SECRET:-changeme-use-a-strong-random-secret}
       DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
-      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-robbie-gorgeous-namely-extensive.trycloudflare.com}
+      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-cst-doing-orchestra-sandy.trycloudflare.com}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: http://localhost:5173

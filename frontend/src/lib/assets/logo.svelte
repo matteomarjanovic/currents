@@ -1,4 +1,4 @@
-<svg width="100%" height="100%" viewBox="0 0 2510 388" fill="currentColor"
+<svg class="block h-full w-auto" viewBox="0 0 2510 388" fill="currentColor"
 	><clipPath id="a"
 		><path clip-rule="evenodd" d="m89.265 622.643h2509.471v387.236h-2509.471z" /></clipPath
 	><g transform="translate(-89.26457 -622.643165)"

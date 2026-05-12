@@ -208,59 +208,17 @@
 	];
 </script>
 
-<div class="flow-root" aria-hidden="true">
+<div class="relative h-full w-full overflow-hidden min-h-0 max-md:min-h-64" aria-hidden="true">
 	{#each cards as card (card.id)}
 		<img
 			src="https://picsum.photos/seed/{card.seed}/{card.width * 4}/{card.height * 4}"
 			width={card.width}
 			height={card.height}
 			alt=""
-			class="flow-card"
+			class="absolute object-cover select-none origin-center rounded-[calc(var(--radius)*2.5)] border border-border/78 saturate-[0.92] contrast-[1.02] brightness-[0.97]"
 			loading="eager"
 			draggable="false"
-			style="--card-x: {card.x}%; --card-y: {card.y}%; --card-width: {card.width}px; --card-height: {card.height}px; --card-scale: {card.scale}; --card-rotation: {card.rotation}deg; --card-opacity: {card.opacity}; --card-z: {card.zIndex};"
+			style="left: {card.x}%; top: {card.y}%; z-index: {card.zIndex}; width: {card.width}px; height: {card.height}px; opacity: {card.opacity}; transform: translate(-50%, -50%) scale({card.scale}) rotate({card.rotation}deg); box-shadow: 0 28px 60px -34px color-mix(in oklch, var(--foreground) 22%, transparent), 0 12px 18px -16px color-mix(in oklch, var(--foreground) 18%, transparent);"
 		/>
 	{/each}
 </div>
-
-<style>
-	.flow-root {
-		position: relative;
-		height: 100%;
-		width: 100%;
-		overflow: hidden;
-		min-height: 0;
-	}
-
-	.flow-card {
-		position: absolute;
-		left: var(--card-x);
-		top: var(--card-y);
-		z-index: var(--card-z);
-		height: var(--card-height);
-		width: var(--card-width);
-		border-radius: calc(var(--radius) * 2.5);
-		border: 1px solid color-mix(in oklch, var(--border) 78%, transparent);
-		object-fit: cover;
-		opacity: var(--card-opacity);
-		transform: translate(-50%, -50%) scale(var(--card-scale)) rotate(var(--card-rotation));
-		transform-origin: center center;
-		box-shadow:
-			0 28px 60px -34px color-mix(in oklch, var(--foreground) 22%, transparent),
-			0 12px 18px -16px color-mix(in oklch, var(--foreground) 18%, transparent);
-		filter: saturate(0.92) contrast(1.02) brightness(0.97);
-		user-select: none;
-	}
-
-	@media (max-width: 767px) {
-		.flow-root {
-			min-height: 16rem;
-		}
-
-		.flow-card {
-			box-shadow:
-				0 22px 44px -30px color-mix(in oklch, var(--foreground) 18%, transparent),
-				0 10px 16px -14px color-mix(in oklch, var(--foreground) 16%, transparent);
-		}
-	}
-</style>

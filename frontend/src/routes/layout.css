@@ -149,3 +149,12 @@
 		color-mix(in oklch, var(--muted) 32%, transparent)
 	);
 }
+
+@utility personalization-slider {
+	& [data-slot='slider-track'] {
+		background-color: var(--primary);
+	}
+	& [data-slot='slider-range'] {
+		background-color: var(--muted);
+	}
+}

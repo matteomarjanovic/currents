@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
@@ -6,6 +7,19 @@
 
 	const githubUrl = 'https://github.com/matteomarjanovic/currents';
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
+
+	let video: HTMLVideoElement;
+
+	onMount(() => {
+		video.muted = true;
+		video.play().catch(() => {});
+
+		const onVisibility = () => {
+			if (!document.hidden) video.play().catch(() => {});
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
 </script>
 
 <div class="relative text-foreground" style="--landing-top-bar-height: 3.75rem;">
@@ -14,11 +28,13 @@
 		style="margin-top: calc(-1 * var(--landing-top-bar-height));"
 	>
 		<video
-			class="absolute inset-0 -z-20 h-full w-full object-cover"
+			bind:this={video}
+			class="absolute inset-0 -z-20 h-full w-full object-cover pointer-events-none"
 			autoplay
 			muted
 			loop
 			playsinline
+			disablepictureinpicture
 			aria-hidden="true"
 		>
 			<source src="/video/currents_hero.mp4" type="video/mp4" />
