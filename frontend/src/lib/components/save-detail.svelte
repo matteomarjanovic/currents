@@ -124,6 +124,14 @@
 		observer.observe(sentinel);
 		return () => observer.disconnect();
 	});
+
+	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
+		const base = hydratedSave ?? save;
+		hydratedSave = {
+			...base,
+			viewer: { ...(base.viewer ?? {}), saves }
+		};
+	}
 </script>
 
 {#snippet attributionFields(attr: SaveAttribution)}
@@ -199,7 +207,7 @@
 
 {#snippet saveControl(variant: 'popover' | 'drawer')}
 	{#if auth.user && collections.loaded}
-		<CollectionSelector item={currentSave} {variant} />
+		<CollectionSelector item={currentSave} {variant} onSavesChange={handleSavesChange} />
 	{:else if auth.checked}
 		<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
 	{/if}
@@ -283,15 +291,11 @@
 		bind:open={attributionDialogOpen}
 		save={currentSave}
 		onSaved={(attr) => {
-			if (hydratedSave) {
-				hydratedSave = {
-					...hydratedSave,
-					viewer: { ...(hydratedSave.viewer ?? {}), attribution: attr }
-				};
-			}
-			queueMicrotask(() => {
-				hydratedSave = null;
-			});
+			const base = hydratedSave ?? save;
+			hydratedSave = {
+				...base,
+				viewer: { ...(base.viewer ?? {}), attribution: attr }
+			};
 		}}
 	/>
 {/if}

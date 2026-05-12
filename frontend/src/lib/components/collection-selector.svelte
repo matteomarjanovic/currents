@@ -26,9 +26,17 @@
 		onOpenChange?: (open: boolean) => void;
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
+		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
 	}
 
-	let { item, variant = 'popover', onOpenChange, selectedUri, onSelect }: Props = $props();
+	let {
+		item,
+		variant = 'popover',
+		onOpenChange,
+		selectedUri,
+		onSelect,
+		onSavesChange
+	}: Props = $props();
 
 	let pickerMode = $derived(!item);
 
@@ -87,6 +95,7 @@
 	async function save(collectionUri: string) {
 		if (!item) return;
 		localSaves = [...localSaves, { collectionUri, saveUri: OPTIMISTIC_URI }];
+		onSavesChange?.(localSaves);
 		setLastUsedCollection(collectionUri);
 		try {
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/resave`, {
@@ -108,6 +117,7 @@
 					? { collectionUri, saveUri: data.uri }
 					: s
 			);
+			onSavesChange?.(localSaves);
 			const collectionName =
 				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
 			toast(SaveToast, {
@@ -121,12 +131,14 @@
 			localSaves = localSaves.filter(
 				(s) => !(s.collectionUri === collectionUri && s.saveUri === OPTIMISTIC_URI)
 			);
+			onSavesChange?.(localSaves);
 		}
 	}
 
 	async function unsave(saveUri: string, collectionUri: string) {
 		const prev = localSaves;
 		localSaves = localSaves.filter((s) => s.saveUri !== saveUri);
+		onSavesChange?.(localSaves);
 		try {
 			const rkey = saveUri.split('/').pop()!;
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}`, {
@@ -146,6 +158,7 @@
 		} catch (e) {
 			console.error('unsave failed', e);
 			localSaves = prev;
+			onSavesChange?.(localSaves);
 		}
 	}
 

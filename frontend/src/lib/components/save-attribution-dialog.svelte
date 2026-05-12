@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -23,14 +24,19 @@
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
 
+	let resavePending = $derived(
+		save.viewer?.saves?.some((s) => s.saveUri === 'optimistic') ?? false
+	);
+
 	$effect(() => {
-		if (open) {
+		if (!open) return;
+		untrack(() => {
 			const current = save.viewer?.attribution;
 			credit = current?.credit ?? '';
 			license = current?.license ?? '';
 			url = current?.url ?? '';
 			error = null;
-		}
+		});
 	});
 
 	async function submit(e: Event) {
@@ -135,8 +141,8 @@
 				>
 					Cancel
 				</Button>
-				<Button type="submit" disabled={submitting}>
-					{submitting ? 'Saving…' : 'Save'}
+				<Button type="submit" disabled={submitting || resavePending}>
+					{submitting ? 'Saving…' : resavePending ? 'Waiting for save…' : 'Save'}
 				</Button>
 			</Dialog.Footer>
 		</form>
