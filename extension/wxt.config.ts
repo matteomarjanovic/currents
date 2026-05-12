@@ -12,7 +12,7 @@ export default defineConfig({
     name: 'Save to Currents',
     description: 'Save images to Currents',
     permissions: ['contextMenus', 'activeTab', 'storage', 'cookies'],
-    host_permissions: ['<all_urls>'],
+    host_permissions: ['<all_urls>', 'https://currents.is/*'],
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: {

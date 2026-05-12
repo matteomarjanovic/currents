@@ -78,34 +78,6 @@ func prepareImageForUpload(ctx context.Context, inference *InferenceClient, data
 	return prepared, preparedCT, nil
 }
 
-type CollectionData struct {
-	URI         string
-	Rkey        string
-	Name        string
-	Description string
-	CreatedAt   string
-}
-
-type SaveData struct {
-	URI        string
-	Rkey       string
-	OriginURL  string
-	Title      string
-	Collection string
-	CreatedAt  string
-}
-
-type CollectionsPageData struct {
-	TmplData
-	Collections []CollectionData
-}
-
-type SavesPageData struct {
-	TmplData
-	Saves       []SaveData
-	Collections []CollectionData
-}
-
 // handleSessionError checks if an error from a PDS call is due to a dead OAuth
 // session (e.g. stale refresh token after container restart). If so, it cleans
 // up the session from DB and cookie, returns 401 to the client, and returns true.
@@ -215,55 +187,6 @@ func resolveStrongRefPublic(ctx context.Context, store *PgStore, dir identity.Di
 
 // --- Collections ---
 
-func (s *Server) ListCollections(w http.ResponseWriter, r *http.Request) {
-	c, did, err := s.apiClientFromSession(r)
-	if err != nil {
-		http.Redirect(w, r, "/oauth/login", http.StatusFound)
-		return
-	}
-
-	_, sessionID, handle := s.currentSessionDID(r)
-	_ = sessionID
-
-	out, err := comatproto.RepoListRecords(r.Context(), c, collectionNSID, "", 0, did.String(), false)
-	if err != nil {
-		if s.handleSessionError(err, w, r) {
-			return
-		}
-		slog.Error("listing collections", "err", err)
-		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
-		return
-	}
-
-	var collections []CollectionData
-	for _, rec := range out.Records {
-		if rec.Value == nil {
-			continue
-		}
-		var val struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			CreatedAt   string `json:"createdAt"`
-		}
-		if err := json.Unmarshal(*rec.Value, &val); err != nil {
-			slog.Warn("parsing collection record", "uri", rec.Uri, "err", err)
-			continue
-		}
-		collections = append(collections, CollectionData{
-			URI:         rec.Uri,
-			Rkey:        rkeyFromURI(rec.Uri),
-			Name:        val.Name,
-			Description: val.Description,
-			CreatedAt:   val.CreatedAt,
-		})
-	}
-
-	tmplCollections.Execute(w, CollectionsPageData{
-		TmplData:    TmplData{DID: did, Handle: handle},
-		Collections: collections,
-	})
-}
-
 func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	c, did, err := s.apiClientFromSession(r)
 	if err != nil {
@@ -323,7 +246,6 @@ func (s *Server) GetCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _, handle := s.currentSessionDID(r)
 	rkey := r.PathValue("id")
 
 	out, err := comatproto.RepoGetRecord(r.Context(), c, "", collectionNSID, did.String(), rkey)
@@ -331,7 +253,7 @@ func (s *Server) GetCollection(w http.ResponseWriter, r *http.Request) {
 		if s.handleSessionError(err, w, r) {
 			return
 		}
-		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -468,83 +390,6 @@ func (s *Server) cascadeDeleteSaves(did syntax.DID, sessionID string, rkeys []st
 
 // --- Saves ---
 
-func (s *Server) ListSaves(w http.ResponseWriter, r *http.Request) {
-	c, did, err := s.apiClientFromSession(r)
-	if err != nil {
-		http.Redirect(w, r, "/oauth/login", http.StatusFound)
-		return
-	}
-
-	_, _, handle := s.currentSessionDID(r)
-
-	savesOut, err := comatproto.RepoListRecords(r.Context(), c, saveNSID, "", 0, did.String(), false)
-	if err != nil {
-		if s.handleSessionError(err, w, r) {
-			return
-		}
-		slog.Error("listing saves", "err", err)
-		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
-		return
-	}
-
-	var saves []SaveData
-	for _, rec := range savesOut.Records {
-		if rec.Value == nil {
-			continue
-		}
-		var val struct {
-			OriginURL  string `json:"originUrl"`
-			Text       string `json:"text"`
-			Collection struct {
-				URI string `json:"uri"`
-			} `json:"collection"`
-			CreatedAt string `json:"createdAt"`
-		}
-		if err := json.Unmarshal(*rec.Value, &val); err != nil {
-			slog.Warn("parsing save record", "uri", rec.Uri, "err", err)
-			continue
-		}
-		saves = append(saves, SaveData{
-			URI:        rec.Uri,
-			Rkey:       rkeyFromURI(rec.Uri),
-			OriginURL:  val.OriginURL,
-			Title:      val.Text,
-			Collection: val.Collection.URI,
-			CreatedAt:  val.CreatedAt,
-		})
-	}
-
-	colsOut, err := comatproto.RepoListRecords(r.Context(), c, collectionNSID, "", 0, did.String(), false)
-	if err != nil {
-		slog.Warn("listing collections for saves page", "err", err)
-	}
-	var collections []CollectionData
-	if colsOut != nil {
-		for _, rec := range colsOut.Records {
-			if rec.Value == nil {
-				continue
-			}
-			var val struct {
-				Name string `json:"name"`
-			}
-			if err := json.Unmarshal(*rec.Value, &val); err != nil {
-				continue
-			}
-			collections = append(collections, CollectionData{
-				URI:  rec.Uri,
-				Rkey: rkeyFromURI(rec.Uri),
-				Name: val.Name,
-			})
-		}
-	}
-
-	tmplSaves.Execute(w, SavesPageData{
-		TmplData:    TmplData{DID: did, Handle: handle},
-		Saves:       saves,
-		Collections: collections,
-	})
-}
-
 func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	c, did, err := s.apiClientFromSession(r)
 	if err != nil {
@@ -671,8 +516,7 @@ func (s *Server) GetSave(w http.ResponseWriter, r *http.Request) {
 		if s.handleSessionError(err, w, r) {
 			return
 		}
-		_, _, handle := s.currentSessionDID(r)
-		tmplError.Execute(w, TmplData{DID: did, Handle: handle, Error: err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

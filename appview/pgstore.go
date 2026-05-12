@@ -1575,3 +1575,12 @@ func (m *PgStore) GetUserPDSEndpoint(ctx context.Context, did string) (string, e
 	).Scan(&endpoint)
 	return endpoint, err
 }
+
+// UpdateUserPDSEndpoint updates the cached PDS endpoint for a known user.
+func (m *PgStore) UpdateUserPDSEndpoint(ctx context.Context, did, endpoint string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE "user" SET pds_endpoint = $2 WHERE did = $1`,
+		did, endpoint,
+	)
+	return err
+}

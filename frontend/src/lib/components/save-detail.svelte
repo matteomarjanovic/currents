@@ -240,7 +240,7 @@
 	</div>
 </div>
 
-<div class="flex flex-col gap-4 p-4 md:hidden">
+<div class="flex flex-col gap-4 p-2 md:hidden">
 	<div class="flex items-center justify-between gap-2">
 		<Button variant="ghost" size="sm" onclick={goBack}>
 			<ArrowLeft class="size-4" />
@@ -269,7 +269,7 @@
 </div>
 
 {#if related.items.length > 0 || related.loading}
-	<section class="flex flex-col gap-4 p-4 md:p-6">
+	<section class="flex flex-col gap-4 p-2 md:p-6">
 		<h2 class="text-lg font-medium">Related</h2>
 		<MasonryGrid items={related.items} loading={related.loading} />
 		{#if related.hasMore}

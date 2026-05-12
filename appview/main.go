@@ -245,17 +245,11 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/me", srv.APIMe)
 	http.HandleFunc("GET /api/profile/import-bluesky", srv.APIImportBlueskyProfile)
 	http.HandleFunc("PUT /api/profile", srv.UpdateProfile)
-	http.HandleFunc("GET /ops", srv.OpsPage)
 	http.HandleFunc("GET /debug/background", srv.BackgroundStatus)
 
-	http.HandleFunc("GET /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)
 
-	http.HandleFunc("GET /", srv.Homepage)
-	http.HandleFunc("GET /feed", srv.FeedPage)
-
-	http.HandleFunc("GET /collection", srv.ListCollections)
 	http.HandleFunc("POST /collection", srv.CreateCollection)
 	http.HandleFunc("GET /collection/{id}", srv.GetCollection)
 	http.HandleFunc("PUT /collection/{id}", srv.UpdateCollection)
@@ -271,7 +265,6 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.getRelatedSaves", srv.XRPCGetRelatedSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
 
-	http.HandleFunc("GET /save", srv.ListSaves)
 	http.HandleFunc("POST /save", srv.CreateSave)
 	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)
 	http.HandleFunc("GET /save/{id}", srv.GetSave)

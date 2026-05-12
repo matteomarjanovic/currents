@@ -1,6 +1,6 @@
 {
   "name": "save-to-currents",
-  "description": "Save images to Currents",
+  "description": "Save images to your Currents collections",
   "private": true,
   "version": "1.0.0",
   "type": "module",

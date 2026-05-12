@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
@@ -6,20 +7,34 @@
 
 	const githubUrl = 'https://github.com/matteomarjanovic/currents';
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
-</script>
 
+	let video: HTMLVideoElement;
+
+	onMount(() => {
+		video.muted = true;
+		video.play().catch(() => {});
+
+		const onVisibility = () => {
+			if (!document.hidden) video.play().catch(() => {});
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
+</script>
 
 <div class="relative text-foreground" style="--landing-top-bar-height: 3.75rem;">
 	<section
-		class="relative isolate overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8 h-screen"
+		class="relative isolate h-screen overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8"
 		style="margin-top: calc(-1 * var(--landing-top-bar-height));"
 	>
 		<video
-			class="absolute inset-0 -z-20 h-full w-full object-cover"
+			bind:this={video}
+			class="absolute inset-0 -z-20 h-full w-full object-cover pointer-events-none"
 			autoplay
 			muted
 			loop
 			playsinline
+			disablepictureinpicture
 			aria-hidden="true"
 		>
 			<source src="/video/currents_hero.mp4" type="video/mp4" />
@@ -34,7 +49,7 @@
 		<div class="mx-auto flex h-full w-full max-w-4xl items-center justify-center">
 			<div class="relative z-10 flex max-w-3xl flex-col items-center justify-center text-center">
 				<h1
-					class="text-beauty mb-8 max-w-[10ch] font-sans text-6xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
+					class="text-beauty mb-8 max-w-[10ch] font-sans text-5xl leading-[0.98] font-semibold tracking-tight text-foreground md:text-7xl xl:text-[5.25rem]"
 				>
 					Get carried by the currents.
 				</h1>

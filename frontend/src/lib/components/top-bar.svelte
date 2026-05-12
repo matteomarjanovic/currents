@@ -85,11 +85,11 @@
 	<header
 		class="{landing
 			? 'fixed bg-transparent'
-			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 overflow-hidden px-4 py-3"
+			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-2 py-3 md:px-4"
 	>
 		{#if !searchOpen}
 			<div
-				transition:fade={{ duration: 250, easing: cubicOut }}
+				in:fade={{ duration: 250, easing: cubicOut }}
 				class="flex shrink-0 items-center gap-2"
 			>
 				<a href={resolve('/')} class="h-5 text-lg font-semibold text-foreground"><Logo /></a>
@@ -141,7 +141,7 @@
 		{#if searchOpen}
 			<div
 				transition:fade={{ duration: 250, easing: cubicOut }}
-				class="absolute inset-0 flex items-center gap-2 px-4 md:hidden"
+				class="absolute inset-0 flex items-center gap-2 px-2 md:hidden"
 			>
 				<form {onsubmit} class="flex-1">
 					<Input

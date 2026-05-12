@@ -94,35 +94,8 @@ func (s *Server) JWKS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) Homepage(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	did, sessionID, handle := s.currentSessionDID(r)
-	if did == nil {
-		tmplHome.Execute(w, nil)
-		return
-	}
-
-	_, err := s.OAuth.ResumeSession(ctx, *did, sessionID)
-	if err != nil {
-		tmplHome.Execute(w, nil)
-		return
-	}
-	tmplHome.Execute(w, TmplData{DID: did, Handle: handle})
-}
-
-func (s *Server) FeedPage(w http.ResponseWriter, r *http.Request) {
-	did, _, handle := s.currentSessionDID(r)
-	tmplFeed.Execute(w, TmplData{DID: did, Handle: handle})
-}
-
 func (s *Server) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	if r.Method != "POST" {
-		tmplLogin.Execute(w, nil)
-		return
-	}
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, fmt.Errorf("parsing form data: %w", err).Error(), http.StatusBadRequest)
@@ -143,7 +116,7 @@ func (s *Server) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		oauthErr := fmt.Errorf("OAuth login failed: %w", err).Error()
 		slog.Error(oauthErr)
-		tmplLogin.Execute(w, TmplData{Error: oauthErr})
+		http.Error(w, oauthErr, http.StatusBadRequest)
 		return
 	}
 
@@ -160,7 +133,7 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		callbackErr := fmt.Errorf("failed processing oauth callback: %w", err).Error()
 		slog.Error(callbackErr)
-		tmplError.Execute(w, TmplData{Error: callbackErr})
+		http.Error(w, callbackErr, http.StatusBadRequest)
 		return
 	}
 

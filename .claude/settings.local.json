@@ -9,7 +9,8 @@
       "Bash(wait)",
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
       "WebFetch(domain:capacitorjs.com)",
-      "WebFetch(domain:capawesome.io)"
+      "WebFetch(domain:capawesome.io)",
+      "Bash(go build *)"
     ]
   },
   "enableAllProjectMcpServers": true,

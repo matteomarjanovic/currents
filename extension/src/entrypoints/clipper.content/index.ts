@@ -44,7 +44,6 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message) => {
       if (message.type !== 'SHOW_CLIPPER') return;
       showClipper({
-        mode: message.mode ?? 'single',
         imgUrl: message.imgUrl ?? '',
         originUrl: message.originUrl ?? '',
         pageTitle: message.pageTitle ?? '',
@@ -52,12 +51,9 @@ export default defineContentScript({
         authState: message.authState,
         userHandle: message.userHandle,
         siteHints: extractSiteHints(),
-        pinCount: message.pinCount ?? 0,
-        defaultCollectionDescription: message.defaultCollectionDescription ?? '',
       });
     });
 
-    // App.svelte dispatches this event on document when the user closes the modal
     document.addEventListener('currents-clipper-close', () => hideClipper());
   },
 });
