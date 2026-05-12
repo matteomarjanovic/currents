@@ -20,11 +20,14 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Logo from '$lib/assets/logo.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
+	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
+	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
 
 	let {
@@ -38,10 +41,30 @@
 	let query = $state('');
 	let searchOpen = $state(false);
 	let createCollectionOpen = $state(false);
+	let browserExtensionDialogOpen = $state(false);
 
 	function handleCollectionCreated(collection: CollectionView) {
 		addCollection(collection);
 		goto(resolve('/(with-navbar)/collection/[uri]', { uri: encodeURIComponent(collection.uri) }));
+	}
+
+	function handleBrowserExtension() {
+		const browser = detectBrowser();
+		if (browser === 'firefox') {
+			window.open(
+				'https://addons.mozilla.org/en-US/firefox/addon/save-to-currents/',
+				'_blank',
+				'noopener'
+			);
+		} else if (browser === 'safari') {
+			browserExtensionDialogOpen = true;
+		} else {
+			window.open(
+				'https://chromewebstore.google.com/detail/save-to-currents/kdifjldjjhopgdhppjpknloichglmmdi',
+				'_blank',
+				'noopener'
+			);
+		}
 	}
 
 	$effect(() => {
@@ -193,6 +216,10 @@
 							<UserIcon class="size-4" />
 							Profile
 						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={handleBrowserExtension}>
+							<Puzzle class="size-4" />
+							Browser extension
+						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							onclick={() => {
 								window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
@@ -249,4 +276,5 @@
 
 {#if user}
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
+	<BrowserExtensionDialog bind:open={browserExtensionDialogOpen} />
 {/if}

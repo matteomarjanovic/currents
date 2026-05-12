@@ -9,11 +9,12 @@
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import { getImageContent, type SaveView } from '$lib/types';
+	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
 
 	interface Props {
 		save: SaveView;
@@ -24,6 +25,26 @@
 	let hydratedSave = $state<SaveView | null>(null);
 	let currentSave = $derived(hydratedSave ?? save);
 	let image = $derived(getImageContent(currentSave));
+	let attributionDialogOpen = $state(false);
+
+	let viewerAttr = $derived(currentSave.viewer?.attribution);
+	let originalAttr = $derived(image?.attribution);
+	let canAttribute = $derived(!!auth.user && (currentSave.viewer?.saves?.length ?? 0) > 0);
+	let isOwnSave = $derived(auth.user?.did === currentSave.author.did);
+	let hasViewerAttr = $derived(
+		!!viewerAttr && (!!viewerAttr.credit || !!viewerAttr.license || !!viewerAttr.url)
+	);
+	let hasOriginalAttr = $derived(
+		!!originalAttr && (!!originalAttr.credit || !!originalAttr.license || !!originalAttr.url)
+	);
+	let attrsDiffer = $derived(
+		hasViewerAttr &&
+			hasOriginalAttr &&
+			(viewerAttr!.credit !== originalAttr!.credit ||
+				viewerAttr!.license !== originalAttr!.license ||
+				viewerAttr!.url !== originalAttr!.url)
+	);
+	let showDual = $derived(!isOwnSave && hasOriginalAttr && hasViewerAttr && attrsDiffer);
 
 	$effect(() => {
 		void save.uri;
@@ -105,22 +126,27 @@
 	});
 </script>
 
-{#snippet info()}
-	<!-- <div class="flex items-center gap-3">
-		<Avatar.Root class="size-10">
-			{#if save.author.avatar}
-				<Avatar.Image src={save.author.avatar} alt={authorName} />
-			{/if}
-			<Avatar.Fallback>{(authorName || '?').slice(0, 1).toUpperCase()}</Avatar.Fallback>
-		</Avatar.Root>
-		<div class="flex min-w-0 flex-col">
-			<span class="truncate text-sm font-medium">{authorName}</span>
-			{#if save.author.handle}
-				<span class="truncate text-xs text-muted-foreground">@{save.author.handle}</span>
-			{/if}
-		</div>
-	</div> -->
+{#snippet attributionFields(attr: SaveAttribution)}
+	{#if attr.credit}
+		<span>Credit: {attr.credit}</span>
+	{/if}
+	{#if attr.license}
+		<span>License: {attr.license}</span>
+	{/if}
+	{#if attr.url}
+		<a
+			href={attr.url}
+			target="_blank"
+			rel="noopener noreferrer"
+			class="inline-flex items-center gap-1 hover:text-foreground"
+		>
+			<ExternalLink class="size-3" />
+			<span class="truncate">Attribution link</span>
+		</a>
+	{/if}
+{/snippet}
 
+{#snippet info()}
 	{#if currentSave.text}
 		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
@@ -140,26 +166,34 @@
 		</div>
 	{/if}
 
-	{#if image && image.attribution && (image.attribution.credit || image.attribution.license || image.attribution.url)}
+	{#if showDual}
 		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			{#if image.attribution.credit}
-				<span>Credit: {image.attribution.credit}</span>
-			{/if}
-			{#if image.attribution.license}
-				<span>License: {image.attribution.license}</span>
-			{/if}
-			{#if image.attribution.url}
-				<a
-					href={image.attribution.url}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="inline-flex items-center gap-1 hover:text-foreground"
-				>
-					<ExternalLink class="size-3" />
-					<span class="truncate">Attribution link</span>
-				</a>
-			{/if}
+			<span class="font-medium text-foreground/80">Original attribution</span>
+			{@render attributionFields(originalAttr!)}
 		</div>
+		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+			<span class="font-medium text-foreground/80">Your attribution</span>
+			{@render attributionFields(viewerAttr!)}
+		</div>
+	{:else if hasViewerAttr}
+		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+			{@render attributionFields(viewerAttr!)}
+		</div>
+	{:else if hasOriginalAttr}
+		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+			{@render attributionFields(originalAttr!)}
+		</div>
+	{/if}
+
+	{#if canAttribute}
+		<Button
+			variant="ghost"
+			size="sm"
+			class="self-start px-0 text-xs text-muted-foreground hover:text-foreground"
+			onclick={() => (attributionDialogOpen = true)}
+		>
+			{hasViewerAttr ? 'Edit attribution' : '+ Add attribution'}
+		</Button>
 	{/if}
 {/snippet}
 
@@ -242,4 +276,22 @@
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}
 	</section>
+{/if}
+
+{#if canAttribute}
+	<SaveAttributionDialog
+		bind:open={attributionDialogOpen}
+		save={currentSave}
+		onSaved={(attr) => {
+			if (hydratedSave) {
+				hydratedSave = {
+					...hydratedSave,
+					viewer: { ...(hydratedSave.viewer ?? {}), attribution: attr }
+				};
+			}
+			queueMicrotask(() => {
+				hydratedSave = null;
+			});
+		}}
+	/>
 {/if}

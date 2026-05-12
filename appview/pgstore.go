@@ -560,6 +560,7 @@ type SaveRow struct {
 	ResaveOfCID        string // record CID of the referenced save; empty until backfilled
 	CreatedAt          *time.Time
 	ViewerSaves        json.RawMessage // null when unauthenticated; [{collectionUri,saveUri},...] when authenticated
+	ViewerAttribution  json.RawMessage // null when unauthenticated or viewer has no saves of this blob
 	Width              *int
 	Height             *int
 	DominantColors     json.RawMessage // nil when visual identity not yet resolved
@@ -584,6 +585,20 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $2 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
+			CASE WHEN $2 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $2 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -599,7 +614,7 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -608,6 +623,32 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 		return nil, err
 	}
 	return result, nil
+}
+
+func (m *PgStore) GetSaveRkeysByAuthorAndBlob(ctx context.Context, authorDID, blobCID string) ([]string, error) {
+	rows, err := m.pool.Query(ctx,
+		`SELECT uri FROM save WHERE author_did = $1 AND pds_blob_cid = $2`,
+		authorDID, blobCID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rkeys []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			return nil, err
+		}
+		if i := strings.LastIndex(uri, "/"); i >= 0 && i < len(uri)-1 {
+			rkeys = append(rkeys, uri[i+1:])
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rkeys, nil
 }
 
 func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID string, limit int, cursor string) ([]SaveRow, string, error) {

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import type { CollectionView, SaveView } from '$lib/types';
+	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import {
 		collections,
@@ -17,6 +18,7 @@
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Plus from '@lucide/svelte/icons/plus';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
+	import SaveToast from '$lib/components/save-toast.svelte';
 
 	interface Props {
 		item?: SaveView;
@@ -106,6 +108,14 @@
 					? { collectionUri, saveUri: data.uri }
 					: s
 			);
+			const collectionName =
+				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
+			toast(SaveToast, {
+				componentProps: {
+					imageUrl: getImageContent(item)?.imageUrl,
+					collectionName
+				}
+			});
 		} catch (e) {
 			console.error('save failed', e);
 			localSaves = localSaves.filter(
@@ -130,6 +140,9 @@
 				}
 				throw new Error(`unsave: ${res.status}`);
 			}
+			const collectionName =
+				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
+			toast.success(`Removed from ${collectionName}`);
 		} catch (e) {
 			console.error('unsave failed', e);
 			localSaves = prev;

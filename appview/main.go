@@ -273,6 +273,7 @@ func runServer(cctx *cli.Context) error {
 
 	http.HandleFunc("GET /save", srv.ListSaves)
 	http.HandleFunc("POST /save", srv.CreateSave)
+	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)
 	http.HandleFunc("GET /save/{id}", srv.GetSave)
 	http.HandleFunc("PUT /save/{id}", srv.UpdateSave)
 	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)

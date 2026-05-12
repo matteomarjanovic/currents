@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/agnostic"
@@ -778,6 +780,133 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("updated save", "uri", out.Uri)
 	http.Redirect(w, r, "/save", http.StatusFound)
+}
+
+// UpdateSaveAttribution applies attribution fields to every save record in the
+// viewer's PDS that shares the given blob CID. PutRecord calls fan out in
+// parallel goroutines since N is typically small (a few collections).
+func (s *Server) UpdateSaveAttribution(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	blobCID := strings.TrimSpace(r.PostFormValue("blob_cid"))
+	if blobCID == "" {
+		http.Error(w, "blob_cid is required", http.StatusBadRequest)
+		return
+	}
+	attribution := saveAttributionFromFields(
+		strings.TrimSpace(r.PostFormValue("attribution_url")),
+		strings.TrimSpace(r.PostFormValue("attribution_license")),
+		strings.TrimSpace(r.PostFormValue("attribution_credit")),
+	)
+
+	rkeys, err := s.Store.GetSaveRkeysByAuthorAndBlob(r.Context(), did.String(), blobCID)
+	if err != nil {
+		slog.Error("GetSaveRkeysByAuthorAndBlob", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if len(rkeys) == 0 {
+		http.Error(w, "no saves for this blob", http.StatusNotFound)
+		return
+	}
+
+	var wg sync.WaitGroup
+	var ok atomic.Int64
+	for _, rkey := range rkeys {
+		wg.Add(1)
+		go func(rkey string) {
+			defer wg.Done()
+			if err := s.putAttributionForRkey(r.Context(), c, did, rkey, attribution); err != nil {
+				slog.Warn("attribution update failed", "rkey", rkey, "err", err)
+				return
+			}
+			ok.Add(1)
+		}(rkey)
+	}
+	wg.Wait()
+
+	updated := int(ok.Load())
+	if updated == 0 {
+		http.Error(w, "all PDS updates failed", http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("updated save attribution", "did", did.String(), "blob_cid", blobCID, "updated", updated, "total", len(rkeys))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"updated": updated})
+}
+
+// putAttributionForRkey rebuilds a single save record with the given attribution
+// applied to its image content, preserving all other fields, and writes it back
+// to the viewer's PDS via RepoPutRecord.
+func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClient, did *syntax.DID, rkey string, attribution *saveAttribution) error {
+	existing, err := comatproto.RepoGetRecord(ctx, c, "", saveNSID, did.String(), rkey)
+	if err != nil {
+		return fmt.Errorf("get existing: %w", err)
+	}
+	var existingVal struct {
+		Content    json.RawMessage `json:"content"`
+		Collection json.RawMessage `json:"collection"`
+		CreatedAt  string          `json:"createdAt"`
+		OriginURL  string          `json:"originUrl"`
+		Text       string          `json:"text"`
+		ResaveOf   json.RawMessage `json:"resaveOf"`
+	}
+	if existing.Value != nil {
+		if err := json.Unmarshal(*existing.Value, &existingVal); err != nil {
+			return fmt.Errorf("unmarshal existing: %w", err)
+		}
+	}
+
+	contentAny, err := buildSaveContentWithAttribution(existingVal.Content, attribution)
+	if err != nil {
+		return fmt.Errorf("build content: %w", err)
+	}
+
+	record := map[string]any{
+		"$type":     saveNSID,
+		"content":   contentAny,
+		"createdAt": existingVal.CreatedAt,
+	}
+	if existingVal.Collection != nil {
+		var collectionAny any
+		if err := json.Unmarshal(existingVal.Collection, &collectionAny); err != nil {
+			return fmt.Errorf("unmarshal collection: %w", err)
+		}
+		record["collection"] = collectionAny
+	}
+	if existingVal.OriginURL != "" {
+		record["originUrl"] = existingVal.OriginURL
+	}
+	if existingVal.Text != "" {
+		record["text"] = existingVal.Text
+	}
+	if existingVal.ResaveOf != nil {
+		var resaveAny any
+		if err := json.Unmarshal(existingVal.ResaveOf, &resaveAny); err != nil {
+			return fmt.Errorf("unmarshal resaveOf: %w", err)
+		}
+		record["resaveOf"] = resaveAny
+	}
+
+	if _, err := comatproto.RepoPutRecord(ctx, c, &comatproto.RepoPutRecord_Input{
+		Collection: saveNSID,
+		Repo:       did.String(),
+		Rkey:       rkey,
+		Record:     record,
+	}); err != nil {
+		return fmt.Errorf("put record: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {
