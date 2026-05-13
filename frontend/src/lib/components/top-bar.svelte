@@ -199,7 +199,7 @@
 							</Avatar.Fallback>
 						</Avatar.Root>
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-48">
+					<DropdownMenu.Content align="end" class="w-56">
 						<DropdownMenu.Label>
 							{#if user.displayName}
 								<div class="text-base text-primary">{user.displayName}</div>

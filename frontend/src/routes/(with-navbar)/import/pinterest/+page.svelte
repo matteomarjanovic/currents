@@ -306,7 +306,13 @@
 					spellcheck={false}
 					required
 				/>
-				<p class="text-sm text-muted-foreground">Only public boards are importable.</p>
+				<div class="mt-2 text-sm text-muted-foreground">
+					IMPORTANT:
+					<ul class="ml-4 list-disc">
+						<li>Only public boards are importable</li>
+						<li>The boards on Currents are only public (for now)</li>
+					</ul>
+				</div>
 			</div>
 			{#if error}
 				<p class="text-sm text-destructive">{error}</p>
@@ -360,11 +366,14 @@
 		{/if}
 		<div class="mt-6 flex items-center justify-between">
 			<Button variant="ghost" onclick={() => (stage = 'username')} disabled={loading}>Back</Button>
-			<Button onclick={startImport} disabled={loading || selected.size === 0}>
-				{loading
-					? 'Starting…'
-					: `Import ${selected.size} ${selected.size === 1 ? 'board' : 'boards'}`}
-			</Button>
+			<div class="flex items-center justify-center gap-2">
+				<p class="text-sm text-muted-foreground">The boards in Currents will be public.</p>
+				<Button onclick={startImport} disabled={loading || selected.size === 0}>
+					{loading
+						? 'Starting…'
+						: `Import ${selected.size} ${selected.size === 1 ? 'board' : 'boards'}`}
+				</Button>
+			</div>
 		</div>
 	{:else if stage === 'progress' && session}
 		<Card.Root>
@@ -408,7 +417,7 @@
 		</Card.Root>
 		<div class="mt-6">
 			<Button onclick={startAnother} variant="outline" disabled={!allDone}>
-				{allDone ? 'Start another import' : 'Import in progress…'}
+				{allDone ? 'Start another import' : 'Import in progress, you can leave this page'}
 			</Button>
 		</div>
 	{/if}
