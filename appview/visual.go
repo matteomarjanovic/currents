@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"time"
 
+	"log/slog"
+
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	_ "github.com/gen2brain/avif"
@@ -308,37 +310,54 @@ func clamp(v float64) uint8 {
 // ── Image fetching ────────────────────────────────────────────────────────────
 
 // fetchBlobFromPDS downloads a blob from the author's PDS.
-// It first tries the local user table for the PDS endpoint (fast path),
-// then falls back to resolving the DID document via the identity directory.
+// Tries the cached endpoint first; on failure falls back to DID document
+// resolution to handle PDS migrations where the cached endpoint is stale.
+// On a successful fallback, updates the cached endpoint in the DB.
 func fetchBlobFromPDS(ctx context.Context, store *PgStore, dir identity.Directory, authorDID, blobCID string) ([]byte, string, error) {
-	pdsEndpoint, err := store.GetUserPDSEndpoint(ctx, authorDID)
-	if err != nil || pdsEndpoint == "" {
-		ident, err := dir.LookupDID(ctx, syntax.DID(authorDID))
-		if err != nil {
-			return nil, "", fmt.Errorf("resolving DID %s: %w", authorDID, err)
+	if cached, _ := store.GetUserPDSEndpoint(ctx, authorDID); cached != "" {
+		if data, mime, err := getBlobFromEndpoint(ctx, cached, authorDID, blobCID); err == nil {
+			return data, mime, nil
 		}
-		pdsEndpoint = ident.PDSEndpoint()
-		if pdsEndpoint == "" {
-			return nil, "", fmt.Errorf("no PDS endpoint for DID %s", authorDID)
-		}
+		slog.Warn("cached PDS endpoint failed, falling back to DID resolution", "did", authorDID, "cached", cached)
 	}
 
+	ident, err := dir.LookupDID(ctx, syntax.DID(authorDID))
+	if err != nil {
+		return nil, "", fmt.Errorf("resolving DID %s: %w", authorDID, err)
+	}
+	pdsEndpoint := ident.PDSEndpoint()
+	if pdsEndpoint == "" {
+		return nil, "", fmt.Errorf("no PDS endpoint for DID %s", authorDID)
+	}
+
+	data, mime, err := getBlobFromEndpoint(ctx, pdsEndpoint, authorDID, blobCID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	go func() {
+		if err := store.UpdateUserPDSEndpoint(context.Background(), authorDID, pdsEndpoint); err != nil {
+			slog.Error("failed to update PDS endpoint in DB", "did", authorDID, "endpoint", pdsEndpoint, "err", err)
+		}
+	}()
+
+	return data, mime, nil
+}
+
+func getBlobFromEndpoint(ctx context.Context, pdsEndpoint, authorDID, blobCID string) ([]byte, string, error) {
 	url := fmt.Sprintf("%s/xrpc/com.atproto.sync.getBlob?did=%s&cid=%s", pdsEndpoint, authorDID, blobCID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err
 	}
-
 	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching blob: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("blob fetch returned %d", resp.StatusCode)
 	}
-
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, "", fmt.Errorf("reading blob: %w", err)
@@ -354,6 +373,7 @@ func (s *Server) ImageProxy(w http.ResponseWriter, r *http.Request) {
 
 	data, mimeType, err := fetchBlobFromPDS(r.Context(), s.Store, s.Dir, did, cid)
 	if err != nil {
+		slog.Error("image proxy failed", "did", did, "cid", cid, "err", err)
 		http.Error(w, "could not fetch image", http.StatusBadGateway)
 		return
 	}
@@ -361,6 +381,7 @@ func (s *Server) ImageProxy(w http.ResponseWriter, r *http.Request) {
 	if isHEIC(mimeType) {
 		transcoded, transcodedMime, err := s.Inference.TranscodeImage(r.Context(), data, mimeType)
 		if err != nil {
+			slog.Error("image transcode failed", "did", did, "cid", cid, "err", err)
 			http.Error(w, "could not transcode image", http.StatusBadGateway)
 			return
 		}

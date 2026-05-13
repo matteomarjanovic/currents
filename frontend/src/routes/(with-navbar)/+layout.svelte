@@ -9,6 +9,7 @@
 	import TopBar from '$lib/components/top-bar.svelte';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
 	import SaveDetail from '$lib/components/save-detail.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
 
@@ -35,11 +36,14 @@
 			if (page.url.pathname === '/') goto('/explore');
 		}
 
-		const isLoginPage = page.url.pathname.startsWith('/login');
-		const isRegisterPage = page.url.pathname.startsWith('/register');
-		const isRootPage = page.url.pathname === '/';
-		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRegisterPage && !isRootPage && !isExplorePage) {
+		const isPublic =
+			page.url.pathname === '/' ||
+			page.url.pathname === '/explore' ||
+			page.url.pathname.startsWith('/login') ||
+			page.url.pathname.startsWith('/register') ||
+			page.url.pathname.startsWith('/profile/') ||
+			page.url.pathname.startsWith('/collection/');
+		if (!user && !isPublic) {
 			goto('/login');
 		}
 	});
@@ -154,3 +158,5 @@
 {/if}
 
 <LoginDialog />
+
+<Toaster />

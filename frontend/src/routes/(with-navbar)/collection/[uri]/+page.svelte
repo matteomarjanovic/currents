@@ -114,13 +114,15 @@
 	}
 </script>
 
-<div class="mx-auto max-w-5xl">
-	{#if notFound}
+{#if notFound}
+	<div class="mx-auto max-w-5xl">
 		<div class="py-24 text-center">
 			<h1 class="text-lg font-medium text-foreground">Collection not found</h1>
 			<p class="mt-1 text-sm text-muted-foreground">This collection may have been deleted.</p>
 		</div>
-	{:else if loadError && !collection}
+	</div>
+{:else if loadError && !collection}
+	<div class="mx-auto max-w-5xl">
 		<div class="py-24 text-center">
 			<h1 class="text-lg font-medium text-foreground">Something went wrong</h1>
 			<p class="mt-1 text-sm text-muted-foreground">We couldn't load this collection.</p>
@@ -136,56 +138,58 @@
 				Try again
 			</Button>
 		</div>
-	{:else if !collection}
-		<div class="mb-6 space-y-3 px-1">
-			<Skeleton class="h-8 w-64" />
-			<Skeleton class="h-4 w-32" />
-			<Skeleton class="h-4 w-full max-w-md" />
-		</div>
-		<MasonryGrid items={[]} loading={true} />
-	{:else}
+	</div>
+{:else if !collection}
+	<div class="mx-auto mb-6 max-w-5xl space-y-3 px-1">
+		<Skeleton class="h-8 w-64" />
+		<Skeleton class="h-4 w-32" />
+		<Skeleton class="h-4 w-full max-w-md" />
+	</div>
+	<MasonryGrid items={[]} loading={true} />
+{:else}
+	<div class="mx-auto max-w-5xl">
 		<CollectionHeader
 			{collection}
 			{isOwner}
 			onEdit={onEditClick}
 			onDelete={onDeleteClick}
 		/>
+	</div>
 
-		{#if scroll.items.length === 0 && !scroll.loading && !scroll.hasMore}
-			<div class="py-12 text-center text-sm text-muted-foreground">No saves yet.</div>
-		{:else}
-			<MasonryGrid items={scroll.items} loading={scroll.loading} />
-			{#if scroll.hasMore}
-				<div bind:this={sentinel} class="h-1"></div>
-			{/if}
-		{/if}
-
-		{#if isOwner}
-			<CollectionEditDialog bind:open={editOpen} {collection} {onSaved} />
-
-			<AlertDialog.Root bind:open={deleteOpen}>
-				<AlertDialog.Content>
-					<AlertDialog.Header>
-						<AlertDialog.Title>Delete this collection?</AlertDialog.Title>
-						<AlertDialog.Description>
-							This will also remove
-							{collection.saveCount ?? 0}
-							{collection.saveCount === 1 ? 'save' : 'saves'}
-							from your account. This cannot be undone.
-						</AlertDialog.Description>
-					</AlertDialog.Header>
-					<AlertDialog.Footer>
-						<AlertDialog.Cancel disabled={deleting}>Cancel</AlertDialog.Cancel>
-						<AlertDialog.Action
-							onclick={confirmDelete}
-							disabled={deleting}
-							class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-						>
-							{deleting ? 'Deleting…' : 'Delete'}
-						</AlertDialog.Action>
-					</AlertDialog.Footer>
-				</AlertDialog.Content>
-			</AlertDialog.Root>
+	{#if scroll.items.length === 0 && !scroll.loading && !scroll.hasMore}
+		<div class="py-12 text-center text-sm text-muted-foreground">No saves yet.</div>
+	{:else}
+		<MasonryGrid items={scroll.items} loading={scroll.loading} />
+		{#if scroll.hasMore}
+			<div bind:this={sentinel} class="h-1"></div>
 		{/if}
 	{/if}
-</div>
+
+	{#if isOwner}
+		<CollectionEditDialog bind:open={editOpen} {collection} {onSaved} />
+
+		<AlertDialog.Root bind:open={deleteOpen}>
+			<AlertDialog.Content>
+				<AlertDialog.Header>
+					<AlertDialog.Title>Delete this collection?</AlertDialog.Title>
+					<AlertDialog.Description>
+						This will also remove
+						{collection.saveCount ?? 0}
+						{collection.saveCount === 1 ? 'save' : 'saves'}
+						from your account. This cannot be undone.
+					</AlertDialog.Description>
+				</AlertDialog.Header>
+				<AlertDialog.Footer>
+					<AlertDialog.Cancel disabled={deleting}>Cancel</AlertDialog.Cancel>
+					<AlertDialog.Action
+						onclick={confirmDelete}
+						disabled={deleting}
+						class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+					>
+						{deleting ? 'Deleting…' : 'Delete'}
+					</AlertDialog.Action>
+				</AlertDialog.Footer>
+			</AlertDialog.Content>
+		</AlertDialog.Root>
+	{/if}
+{/if}

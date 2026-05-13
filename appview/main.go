@@ -275,6 +275,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
 
 	http.HandleFunc("POST /save", srv.CreateSave)
+	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)
 	http.HandleFunc("GET /save/{id}", srv.GetSave)
 	http.HandleFunc("PUT /save/{id}", srv.UpdateSave)
 	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)

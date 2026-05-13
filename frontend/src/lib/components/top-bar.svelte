@@ -21,11 +21,14 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Logo from '$lib/assets/logo.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
+	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
+	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
 
 	let {
@@ -39,10 +42,30 @@
 	let query = $state('');
 	let searchOpen = $state(false);
 	let createCollectionOpen = $state(false);
+	let browserExtensionDialogOpen = $state(false);
 
 	function handleCollectionCreated(collection: CollectionView) {
 		addCollection(collection);
 		goto(resolve('/(with-navbar)/collection/[uri]', { uri: encodeURIComponent(collection.uri) }));
+	}
+
+	function handleBrowserExtension() {
+		const browser = detectBrowser();
+		if (browser === 'firefox') {
+			window.open(
+				'https://addons.mozilla.org/en-US/firefox/addon/save-to-currents/',
+				'_blank',
+				'noopener'
+			);
+		} else if (browser === 'safari') {
+			browserExtensionDialogOpen = true;
+		} else {
+			window.open(
+				'https://chromewebstore.google.com/detail/save-to-currents/kdifjldjjhopgdhppjpknloichglmmdi',
+				'_blank',
+				'noopener'
+			);
+		}
 	}
 
 	$effect(() => {
@@ -63,13 +86,10 @@
 	<header
 		class="{landing
 			? 'fixed bg-transparent'
-			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 overflow-hidden px-2 py-3 md:px-4"
+			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-2 py-3 md:px-4"
 	>
 		{#if !searchOpen}
-			<div
-				transition:fade={{ duration: 250, easing: cubicOut }}
-				class="flex shrink-0 items-center gap-2"
-			>
+			<div in:fade={{ duration: 250, easing: cubicOut }} class="flex shrink-0 items-center gap-2">
 				<a href={resolve('/')} class="h-5 text-lg font-semibold text-foreground"><Logo /></a>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
@@ -198,6 +218,10 @@
 							<Download class="size-4" />
 							Import from Pinterest
 						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={handleBrowserExtension}>
+							<Puzzle class="size-4" />
+							Browser extension
+						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							onclick={() => {
 								window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
@@ -243,9 +267,7 @@
 				</DropdownMenu.Root>
 			{:else}
 				<a href={resolve('/login')}>
-					<Button variant="default" size="lg" class="shrink-0 rounded-full px-5"
-						>Log in</Button
-					>
+					<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
 				</a>
 			{/if}
 		{/if}
@@ -254,4 +276,5 @@
 
 {#if user}
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
+	<BrowserExtensionDialog bind:open={browserExtensionDialogOpen} />
 {/if}

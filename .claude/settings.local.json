@@ -10,7 +10,10 @@
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
       "Bash(go build *)",
       "Bash(npx svelte-kit *)",
-      "Bash(npx svelte-check *)"
+      "Bash(npx svelte-check *)",
+      "WebFetch(domain:capacitorjs.com)",
+      "WebFetch(domain:capawesome.io)",
+      "Bash(go build *)"
     ]
   },
   "enableAllProjectMcpServers": true,

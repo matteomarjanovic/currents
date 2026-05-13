@@ -8,6 +8,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
 	import SaveDetail from '$lib/components/save-detail.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
 
@@ -131,3 +132,5 @@
 {/if}
 
 <LoginDialog />
+
+<Toaster />

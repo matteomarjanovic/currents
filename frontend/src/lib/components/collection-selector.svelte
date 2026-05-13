@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import type { CollectionView, SaveView } from '$lib/types';
+	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import {
 		collections,
@@ -17,6 +18,7 @@
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Plus from '@lucide/svelte/icons/plus';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
+	import SaveToast from '$lib/components/save-toast.svelte';
 
 	interface Props {
 		item?: SaveView;
@@ -24,9 +26,17 @@
 		onOpenChange?: (open: boolean) => void;
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
+		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
 	}
 
-	let { item, variant = 'popover', onOpenChange, selectedUri, onSelect }: Props = $props();
+	let {
+		item,
+		variant = 'popover',
+		onOpenChange,
+		selectedUri,
+		onSelect,
+		onSavesChange
+	}: Props = $props();
 
 	let pickerMode = $derived(!item);
 
@@ -85,6 +95,7 @@
 	async function save(collectionUri: string) {
 		if (!item) return;
 		localSaves = [...localSaves, { collectionUri, saveUri: OPTIMISTIC_URI }];
+		onSavesChange?.(localSaves);
 		setLastUsedCollection(collectionUri);
 		try {
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/resave`, {
@@ -106,17 +117,28 @@
 					? { collectionUri, saveUri: data.uri }
 					: s
 			);
+			onSavesChange?.(localSaves);
+			const collectionName =
+				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
+			toast(SaveToast, {
+				componentProps: {
+					imageUrl: getImageContent(item)?.imageUrl,
+					collectionName
+				}
+			});
 		} catch (e) {
 			console.error('save failed', e);
 			localSaves = localSaves.filter(
 				(s) => !(s.collectionUri === collectionUri && s.saveUri === OPTIMISTIC_URI)
 			);
+			onSavesChange?.(localSaves);
 		}
 	}
 
 	async function unsave(saveUri: string, collectionUri: string) {
 		const prev = localSaves;
 		localSaves = localSaves.filter((s) => s.saveUri !== saveUri);
+		onSavesChange?.(localSaves);
 		try {
 			const rkey = saveUri.split('/').pop()!;
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}`, {
@@ -130,9 +152,13 @@
 				}
 				throw new Error(`unsave: ${res.status}`);
 			}
+			const collectionName =
+				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
+			toast.success(`Removed from ${collectionName}`);
 		} catch (e) {
 			console.error('unsave failed', e);
 			localSaves = prev;
+			onSavesChange?.(localSaves);
 		}
 	}
 

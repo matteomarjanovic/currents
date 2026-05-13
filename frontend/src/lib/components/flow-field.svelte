@@ -119,23 +119,6 @@
 	});
 </script>
 
-<div bind:this={container} class="canvas-wrapper">
-	<canvas bind:this={canvas}></canvas>
+<div bind:this={container} class="flex h-full w-full items-center justify-center overflow-hidden">
+	<canvas bind:this={canvas} class="block max-h-full max-w-full"></canvas>
 </div>
-
-<style>
-	.canvas-wrapper {
-		width: 100%;
-		height: 100%;
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		overflow: hidden;
-	}
-
-	canvas {
-		display: block;
-		max-width: 100%;
-		max-height: 100%;
-	}
-</style>

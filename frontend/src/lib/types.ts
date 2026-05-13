@@ -63,7 +63,10 @@ export interface SaveView {
 	originUrl?: string;
 	resaveOf?: { uri: string; cid: string };
 	createdAt: string;
-	viewer?: { saves?: { collectionUri: string; saveUri: string }[] };
+	viewer?: {
+		saves?: { collectionUri: string; saveUri: string }[];
+		attribution?: SaveAttribution;
+	};
 }
 
 export function isImageContentView(content: SaveContentView): content is ImageContentView {

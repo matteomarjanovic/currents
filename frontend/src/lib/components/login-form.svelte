@@ -116,20 +116,13 @@
 						<input type="hidden" name="username" value="https://eurosky.social" />
 						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
-							<svg
-								fill="currentColor"
-								viewBox="77.86 113.9 129.15 129.15"
-								xmlns="http://www.w3.org/2000/svg"
-							>
-								<path
-									d="M148.846 144.562C148.846 159.75 161.158 172.062 176.346 172.062H207.012V185.865H176.346C161.158 185.865 148.846 198.177 148.846 213.365V243.045H136.029V213.365C136.029 198.177 123.717 185.865 108.529 185.865H77.8633V172.062H108.529C123.717 172.062 136.029 159.75 136.029 144.562V113.896H148.846V144.562Z"
-								></path>
-							</svg>
+							<svg viewBox="0 0 1000 1000" class="h-8 w-8 shrink-0" fill="currentColor" aria-hidden="true"><path d="M990.9671,522.1991c-3.0947,0-6.1689,0-9.2229.0001-456.4914.0202-459.525,3.0539-459.5452,459.5452-.0001,3.0539-.0001,6.1282-.0001,9.2228h-44.3979c0-3.0947,0-6.1689-.0001-9.2229-.0202-456.4913-3.0538-459.525-459.5452-459.5452-3.0539-.0001-6.1282-.0001-9.2229-.0001v-44.3981c3.0947,0,6.1689,0,9.2229-.0001,456.4914-.0202,459.525-3.0534,459.5452-459.5452.0001-3.0539.0001-6.1282.0001-9.2229h44.3979c0,3.0947,0,6.1689.0001,9.2228.0202,456.4917,3.0538,459.525,459.5452,459.5452,3.0539.0001,6.1282.0001,9.2229.0001v44.3981Z"></path></svg>
 							Login with Eurosky
 						</Button>
 					</form>
-					<!-- <form method="POST" action={loginAction}>
-						<input type="hidden" name="username" value="https://blacksky.community" />
+					<form method="POST" action={loginAction}>
+						<input type="hidden" name="username" value="https://blacksky.app" />
+						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
 							<svg fill="currentColor" viewBox="-0.5 1 286 243" xmlns="http://www.w3.org/2000/svg">
 								<g>
@@ -149,7 +142,7 @@
 							</svg>
 							Login with Blacksky
 						</Button>
-					</form> -->
+					</form>
 				</Field>
 				<FieldSeparator class="*:data-[slot=field-separator-content]:bg-card">
 					Or use your custom PDS

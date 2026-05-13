@@ -140,12 +140,3 @@
 	</Popover.Root>
 </div>
 
-<style>
-	:global(.personalization-slider [data-slot='slider-track']) {
-		background-color: var(--primary);
-	}
-
-	:global(.personalization-slider [data-slot='slider-range']) {
-		background-color: var(--muted);
-	}
-</style>

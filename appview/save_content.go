@@ -29,7 +29,8 @@ type viewerSave struct {
 }
 
 type saveViewerState struct {
-	Saves []viewerSave `json:"saves"`
+	Saves       []viewerSave     `json:"saves"`
+	Attribution *saveAttribution `json:"attribution,omitempty"`
 }
 
 type imageView struct {
@@ -179,15 +180,22 @@ func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *sa
 	return content, nil
 }
 
-func parseViewerSaveState(raw json.RawMessage) *saveViewerState {
+func parseViewerSaveState(rawSaves, rawAttribution json.RawMessage) *saveViewerState {
 	var saves []viewerSave
-	if len(raw) > 0 && string(raw) != "null" {
-		_ = json.Unmarshal(raw, &saves)
+	if len(rawSaves) > 0 && string(rawSaves) != "null" {
+		_ = json.Unmarshal(rawSaves, &saves)
 	}
 	if saves == nil {
 		saves = []viewerSave{}
 	}
-	return &saveViewerState{Saves: saves}
+	state := &saveViewerState{Saves: saves}
+	if len(rawAttribution) > 0 && string(rawAttribution) != "null" {
+		var attr saveAttribution
+		if err := json.Unmarshal(rawAttribution, &attr); err == nil {
+			state.Attribution = saveAttributionOrNil(&attr)
+		}
+	}
+	return state
 }
 
 func buildSaveView(row SaveRow, author profileView, includeViewer bool, cdnBaseURL string) saveView {
@@ -205,7 +213,7 @@ func buildSaveView(row SaveRow, author profileView, includeViewer bool, cdnBaseU
 		sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}
 	}
 	if includeViewer {
-		sv.Viewer = parseViewerSaveState(row.ViewerSaves)
+		sv.Viewer = parseViewerSaveState(row.ViewerSaves, row.ViewerAttribution)
 	}
 	return sv
 }

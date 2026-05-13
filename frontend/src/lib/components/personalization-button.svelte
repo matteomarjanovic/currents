@@ -190,8 +190,9 @@
 		onmouseleave={handleButtonMouseLeave}
 		onclick={handleButtonClick}
 		ontouchstart={handleTouchStart}
-		class:pressing={isVisible}
-		class="z-20 flex h-15 w-15 cursor-pointer items-center justify-center overflow-hidden rounded-full border-none bg-primary-foreground/80 p-0 backdrop-blur-sm transition-transform duration-100"
+		class="z-20 flex h-15 w-15 cursor-pointer items-center justify-center overflow-hidden rounded-full border-none bg-primary-foreground/80 p-0 backdrop-blur-sm transition-transform duration-100 {isVisible
+			? 'scale-95'
+			: ''}"
 		aria-label="Adjust personalization"
 		aria-expanded={isVisible}
 		aria-haspopup="true"
@@ -200,8 +201,3 @@
 	</button>
 </div>
 
-<style>
-	button.pressing {
-		transform: scale(0.95);
-	}
-</style>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { auth } from '$lib/stores/auth.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -209,6 +210,7 @@
 				return;
 			}
 			onSaved(await res.json());
+			toast.success('Profile updated');
 			open = false;
 		} catch {
 			error = 'Network error. Please try again.';
