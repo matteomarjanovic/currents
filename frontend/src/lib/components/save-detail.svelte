@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -59,9 +59,7 @@
 		void (async () => {
 			try {
 				const params = new URLSearchParams({ uris: uri });
-				const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`, {
-					credentials: 'include'
-				});
+				const res = await apiFetch(`/xrpc/is.currents.feed.getSaves?${params}`);
 				if (!res.ok) return;
 				const data = (await res.json()) as { saves?: SaveView[] };
 				const fetchedSave = data.saves?.[0];

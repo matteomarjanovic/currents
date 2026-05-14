@@ -107,6 +107,17 @@ func main() {
 				Usage:   "URL of the SvelteKit frontend; OAuth callback redirects here after login",
 				EnvVars: []string{"FRONTEND_URL"},
 			},
+			&cli.StringFlag{
+				Name:    "mobile-origins",
+				Usage:   "comma-separated list of additional CORS-allowed origins for native clients (defaults already include capacitor://localhost and https://localhost)",
+				EnvVars: []string{"MOBILE_ORIGINS"},
+			},
+			&cli.StringFlag{
+				Name:    "mobile-redirect-schemes",
+				Usage:   "comma-separated list of allowed return_to URL prefixes for native deep links (e.g. currents://)",
+				Value:   "currents://",
+				EnvVars: []string{"MOBILE_REDIRECT_SCHEMES"},
+			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -232,9 +243,11 @@ func runServer(cctx *cli.Context) error {
 			Audience: serviceDID,
 			Dir:      dir,
 		},
-		Inference:   inferenceClient,
-		FrontendURL: cctx.String("frontend-url"),
-		ProcessMode: mode,
+		Inference:             inferenceClient,
+		FrontendURL:           cctx.String("frontend-url"),
+		ProcessMode:           mode,
+		MobileOrigins:         splitCSV(cctx.String("mobile-origins")),
+		MobileRedirectSchemes: splitCSV(cctx.String("mobile-redirect-schemes")),
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -285,9 +298,7 @@ func runServer(cctx *cli.Context) error {
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)
-	if srv.FrontendURL != "" {
-		handler = srv.corsMiddleware(handler)
-	}
+	handler = srv.corsMiddleware(handler)
 
 	httpServer := &http.Server{
 		Addr:              bind,
@@ -317,4 +328,18 @@ func runServer(cctx *cli.Context) error {
 		return err
 	}
 	return nil
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

@@ -3,7 +3,6 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
@@ -12,6 +11,8 @@
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
+	import { apiFetch } from '$lib/api';
+	import { isNative } from '$lib/platform';
 
 	let { children } = $props();
 
@@ -21,7 +22,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me`, { credentials: 'include' });
+			const res = await apiFetch('/api/me');
 			if (res.ok) {
 				user = await res.json();
 			}
@@ -31,22 +32,16 @@
 		auth.user = user;
 		checked = true;
 		auth.checked = true;
-		if (user) {
-			loadCollections(user.did);
-			if (page.url.pathname === '/') goto('/explore');
-		}
+		if (user) loadCollections(user.did);
 
-		const isLoginPage = page.url.pathname.startsWith('/login');
-		const isRegisterPage = page.url.pathname.startsWith('/register');
-		const isRootPage = page.url.pathname === '/';
-		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRegisterPage && !isRootPage && !isExplorePage) {
-			goto('/login');
+		if (!user) {
+			if (isNative()) {
+				goto('/');
+			} else {
+				const isExplorePage = page.url.pathname === '/explore';
+				if (!isExplorePage) goto('/login');
+			}
 		}
-	});
-
-	$effect(() => {
-		if (auth.checked && auth.user && page.url.pathname === '/') goto('/explore');
 	});
 
 	$effect(() => {
@@ -122,30 +117,15 @@
 <ModeWatcher />
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	{#if page.url.pathname === '/'}
-		<title>Currents</title>
-		<meta name="description" content="A calm visual curation app on the AT Protocol." />
-		<meta property="og:type" content="website" />
-		<meta property="og:url" content={page.url.href} />
-		<meta property="og:title" content="Currents" />
-		<meta property="og:description" content="A calm visual curation app on the AT Protocol." />
-		<meta name="twitter:card" content="summary" />
-		<meta name="twitter:title" content="Currents" />
-		<meta name="twitter:description" content="A calm visual curation app on the AT Protocol." />
-	{/if}
 </svelte:head>
 
 {#if !checked}
 	<!-- loading -->
 {:else}
-	<TopBar {user} landing={page.url.pathname === '/'} />
-	{#if page.url.pathname === '/' && !auth.user}
+	<TopBar {user} />
+	<main class="p-4">
 		{@render children()}
-	{:else if page.url.pathname !== '/'}
-		<main class="p-4">
-			{@render children()}
-		</main>
-	{/if}
+	</main>
 {/if}
 
 {#if page.state.save}

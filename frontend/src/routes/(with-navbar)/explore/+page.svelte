@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import PersonalizationButton from '$lib/components/personalization-button-v2.svelte';
@@ -21,9 +21,7 @@
 		});
 		if (cursor) params.set('cursor', cursor);
 
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getFeed?${params}`, {
-			credentials: 'include'
-		});
+		const res = await apiFetch(`/xrpc/is.currents.feed.getFeed?${params}`);
 		const data = await res.json();
 		return { items: data.feed, cursor: data.cursor };
 	});

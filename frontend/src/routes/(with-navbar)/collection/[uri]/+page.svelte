@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
@@ -33,10 +33,7 @@
 			limit: '50'
 		});
 		if (cursor) params.set('cursor', cursor);
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getCollectionSaves?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getCollectionSaves?${params}`);
 		if (res.status === 404) {
 			notFound = true;
 			return { items: [], cursor: undefined };
@@ -94,9 +91,8 @@
 		if (!rkey) return;
 		deleting = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/collection/${rkey}`, {
-				method: 'DELETE',
-				credentials: 'include'
+			const res = await apiFetch(`/collection/${rkey}`, {
+				method: 'DELETE'
 			});
 			if (!res.ok) {
 				deleting = false;

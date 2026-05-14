@@ -1,14 +1,19 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { onDestroy } from 'svelte';
+	import { apiFetch } from '$lib/api';
+	import { isNative } from '$lib/platform';
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import Camera from '@lucide/svelte/icons/camera';
+	import Images from '@lucide/svelte/icons/images';
 	import X from '@lucide/svelte/icons/x';
 	import Check from '@lucide/svelte/icons/check';
+
+	const native = isNative();
 
 	type StagedStatus = 'pending' | 'uploading' | 'done' | 'error';
 	type Staged = {
@@ -59,6 +64,33 @@
 		input.value = '';
 	}
 
+	async function pickFromNative(source: 'camera' | 'gallery') {
+		const { Camera: NativeCamera, CameraResultType, CameraSource } = await import(
+			'@capacitor/camera'
+		);
+		try {
+			const photo = await NativeCamera.getPhoto({
+				resultType: CameraResultType.Uri,
+				source: source === 'camera' ? CameraSource.Camera : CameraSource.Photos,
+				quality: 90,
+				correctOrientation: true,
+				allowEditing: false
+			});
+			if (!photo.webPath) return;
+			const res = await fetch(photo.webPath);
+			const blob = await res.blob();
+			const ext = (photo.format ?? 'jpeg').toLowerCase();
+			const file = new File([blob], `capture-${Date.now()}.${ext}`, {
+				type: blob.type || `image/${ext}`,
+				lastModified: Date.now()
+			});
+			addFiles([file]);
+		} catch (err) {
+			// User cancelled or plugin error
+			console.warn('native picker', err);
+		}
+	}
+
 	function onDragEnter(e: DragEvent) {
 		if (!e.dataTransfer?.types.includes('Files')) return;
 		dragDepth++;
@@ -85,10 +117,9 @@
 			const form = new FormData();
 			form.append('image', item.file, item.file.name);
 			form.append('collection', selectedCollectionUri);
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save`, {
+			const res = await apiFetch(`/save`, {
 				method: 'POST',
 				body: form,
-				credentials: 'include',
 				headers: { Accept: 'application/json' }
 			});
 			if (!res.ok) {
@@ -181,13 +212,24 @@
 		</div>
 	</div>
 
-	<div class="flex items-center gap-3">
-		<Button variant="secondary" onclick={() => fileInputEl?.click()}>
-			<ImagePlus class="size-4" />
-			Add files
-		</Button>
-		{#if total === 0}
-			<span> ... or drag and drop them in the page </span>
+	<div class="flex flex-wrap items-center gap-3">
+		{#if native}
+			<Button variant="secondary" onclick={() => pickFromNative('camera')}>
+				<Camera class="size-4" />
+				Take photo
+			</Button>
+			<Button variant="secondary" onclick={() => pickFromNative('gallery')}>
+				<Images class="size-4" />
+				Choose from gallery
+			</Button>
+		{:else}
+			<Button variant="secondary" onclick={() => fileInputEl?.click()}>
+				<ImagePlus class="size-4" />
+				Add files
+			</Button>
+			{#if total === 0}
+				<span> ... or drag and drop them in the page </span>
+			{/if}
 		{/if}
 		<input
 			bind:this={fileInputEl}

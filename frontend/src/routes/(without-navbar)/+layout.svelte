@@ -3,7 +3,6 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
@@ -11,6 +10,8 @@
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
+	import { apiFetch } from '$lib/api';
+	import { isNative } from '$lib/platform';
 
 	let { children } = $props();
 
@@ -20,7 +21,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me`, { credentials: 'include' });
+			const res = await apiFetch('/api/me');
 			if (res.ok) {
 				user = await res.json();
 			}
@@ -30,16 +31,23 @@
 		auth.user = user;
 		checked = true;
 		auth.checked = true;
-		if (user) loadCollections(user.did);
+		if (user) {
+			loadCollections(user.did);
+			if (page.url.pathname === '/') goto('/explore');
+		}
 
 		const isLoginPage = page.url.pathname.startsWith('/login');
 		const isRegisterPage = page.url.pathname.startsWith('/register');
 		const isLegalPage = page.url.pathname === '/terms' || page.url.pathname === '/privacy';
 		const isRootPage = page.url.pathname === '/';
-		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRegisterPage && !isLegalPage && !isRootPage && !isExplorePage) {
-			goto('/login');
+		if (!user && !isLoginPage && !isRegisterPage && !isLegalPage && !isRootPage) {
+			if (isNative()) goto('/');
+			else goto('/login');
 		}
+	});
+
+	$effect(() => {
+		if (auth.checked && auth.user && page.url.pathname === '/') goto('/explore');
 	});
 
 	$effect(() => {

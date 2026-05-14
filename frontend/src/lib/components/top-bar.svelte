@@ -3,6 +3,10 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
+	import { clearAuthToken } from '$lib/auth-storage';
+	import { isNative } from '$lib/platform';
+	import { auth } from '$lib/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -64,6 +68,24 @@
 				'_blank',
 				'noopener'
 			);
+		}
+	}
+
+	const native = isNative();
+
+	async function handleLogout() {
+		if (native) {
+			try {
+				await apiFetch('/oauth/logout');
+			} catch {
+				// best effort; even if server call fails we still want to clear local state
+			}
+			await clearAuthToken();
+			auth.user = null;
+			auth.checked = true;
+			goto('/');
+		} else {
+			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
 		}
 	}
 
@@ -216,15 +238,13 @@
 							<UserIcon class="size-4" />
 							Profile
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={handleBrowserExtension}>
-							<Puzzle class="size-4" />
-							Browser extension
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							onclick={() => {
-								window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
-							}}
-						>
+						{#if !native}
+							<DropdownMenu.Item onclick={handleBrowserExtension}>
+								<Puzzle class="size-4" />
+								Browser extension
+							</DropdownMenu.Item>
+						{/if}
+						<DropdownMenu.Item onclick={handleLogout}>
 							<LogOut class="size-4" />
 							Log out
 						</DropdownMenu.Item>

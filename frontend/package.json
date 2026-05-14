@@ -11,7 +11,13 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"build:mobile": "vite build && cap sync",
+		"cap:sync": "cap sync",
+		"cap:open:android": "cap open android",
+		"cap:open:ios": "cap open ios",
+		"dev:android": "vite build && cap sync && cap run android",
+		"dev:ios": "vite build && cap sync && cap run ios"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^2.0.3",
@@ -19,7 +25,7 @@
 		"@fontsource-variable/instrument-sans": "^5.2.8",
 		"@internationalized/date": "^3.12.0",
 		"@lucide/svelte": "^1.14.0",
-		"@sveltejs/adapter-auto": "^7.0.0",
+		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.50.2",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@tailwindcss/typography": "^0.5.19",
@@ -48,6 +54,16 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
+		"@capacitor/android": "^7.0.0",
+		"@capacitor/app": "^7.0.0",
+		"@capacitor/browser": "^7.0.0",
+		"@capacitor/camera": "^7.0.0",
+		"@capacitor/cli": "^7.0.0",
+		"@capacitor/core": "^7.0.0",
+		"@capacitor/ios": "^7.0.0",
+		"@capacitor/splash-screen": "^7.0.0",
+		"@capacitor/status-bar": "^7.0.0",
+		"@capawesome-team/capacitor-secure-preferences": "^7.0.0",
 		"@fontsource/italiana": "^5.2.8",
 		"@masonry-grid/svelte": "^1.1.1",
 		"mode-watcher": "^1.1.0"

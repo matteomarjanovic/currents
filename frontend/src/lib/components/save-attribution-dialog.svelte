@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -43,9 +43,8 @@
 		submitting = true;
 		error = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/attribution`, {
+			const res = await apiFetch(`/save/attribution`, {
 				method: 'PUT',
-				credentials: 'include',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',
 					Accept: 'application/json'

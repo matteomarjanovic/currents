@@ -15,16 +15,18 @@ import (
 )
 
 type Server struct {
-	CookieStore   *sessions.CookieStore
-	Dir           identity.Directory
-	OAuth         *oauth.ClientApp
-	Store         *PgStore
-	CDNBaseURL    string
-	ServiceDID    string // did:web:{hostname}, used for /.well-known/did.json and XRPC service auth
-	AuthValidator *auth.ServiceAuthValidator
-	Inference     *InferenceClient
-	FrontendURL   string
-	ProcessMode   string
+	CookieStore           *sessions.CookieStore
+	Dir                   identity.Directory
+	OAuth                 *oauth.ClientApp
+	Store                 *PgStore
+	CDNBaseURL            string
+	ServiceDID            string // did:web:{hostname}, used for /.well-known/did.json and XRPC service auth
+	AuthValidator         *auth.ServiceAuthValidator
+	Inference             *InferenceClient
+	FrontendURL           string
+	ProcessMode           string
+	MobileOrigins         []string // additional CORS-allowed origins (e.g. capacitor://localhost)
+	MobileRedirectSchemes []string // allowed return_to URL prefixes for native deep links (e.g. currents://)
 }
 
 type TmplData struct {
@@ -65,17 +67,34 @@ var tmplOpsText string
 var tmplOps = template.Must(template.Must(template.New("ops.html").Parse(tmplBaseText)).Parse(tmplOpsText))
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
-	allowed := strings.TrimRight(s.FrontendURL, "/")
+	frontend := strings.TrimRight(s.FrontendURL, "/")
+	// Capacitor WebView origins are fixed: iOS uses capacitor://localhost, Android uses
+	// https://localhost (per the androidScheme: 'https' Capacitor config).
+	defaultMobile := []string{"capacitor://localhost", "https://localhost"}
+	mobile := append(defaultMobile, s.MobileOrigins...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if strings.TrimRight(origin, "/") == allowed {
+		normalized := strings.TrimRight(origin, "/")
+		allowed := false
+		if frontend != "" && normalized == frontend {
+			allowed = true
+		}
+		if !allowed {
+			for _, o := range mobile {
+				if normalized == strings.TrimRight(o, "/") {
+					allowed = true
+					break
+				}
+			}
+		}
+		if allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Vary", "Origin")
 		}
 		if r.Method == "OPTIONS" {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

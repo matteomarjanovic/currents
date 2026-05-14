@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import {
@@ -89,11 +89,10 @@
 		localSaves = [...localSaves, { collectionUri, saveUri: OPTIMISTIC_URI }];
 		setLastUsedCollection(collectionUri);
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/resave`, {
+			const res = await apiFetch(`/resave`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ saveUri: item.uri, collectionUri }),
-				credentials: 'include'
+				body: JSON.stringify({ saveUri: item.uri, collectionUri })
 			});
 			if (!res.ok) {
 				if (res.status === 401) {
@@ -129,9 +128,8 @@
 		localSaves = localSaves.filter((s) => s.saveUri !== saveUri);
 		try {
 			const rkey = saveUri.split('/').pop()!;
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}`, {
-				method: 'DELETE',
-				credentials: 'include'
+			const res = await apiFetch(`/save/${rkey}`, {
+				method: 'DELETE'
 			});
 			if (!res.ok) {
 				if (res.status === 401) {

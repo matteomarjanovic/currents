@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 import type { CollectionView } from '$lib/types';
 
 export const collections = $state({
@@ -10,9 +10,8 @@ export const collections = $state({
 });
 
 export async function loadCollections(did: string) {
-	const res = await fetch(
-		`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&limit=100`,
-		{ credentials: 'include' }
+	const res = await apiFetch(
+		`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&limit=100`
 	);
 	if (!res.ok) return;
 	const data = await res.json();

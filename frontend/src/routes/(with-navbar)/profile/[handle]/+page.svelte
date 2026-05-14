@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { auth } from '$lib/stores/auth.svelte';
 	import ProfileHeader from '$lib/components/profile-header.svelte';
@@ -24,13 +24,9 @@
 		collections = [];
 
 		Promise.all([
-			fetch(
-				`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`,
-				{ credentials: 'include' }
-			),
-			fetch(
-				`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=50`,
-				{ credentials: 'include' }
+			apiFetch(`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`),
+			apiFetch(
+				`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=50`
 			)
 		])
 			.then(async ([pRes, cRes]) => {

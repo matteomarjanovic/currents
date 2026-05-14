@@ -3,11 +3,14 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
 	import Logo from '$lib/assets/logo.svelte';
+	import TopBar from '$lib/components/top-bar.svelte';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	const githubUrl = 'https://github.com/matteomarjanovic/currents';
 	const blueskyUrl = 'https://bsky.app/profile/currents.is';
 </script>
 
+<TopBar user={auth.user} landing={true} />
 
 <div class="relative text-foreground" style="--landing-top-bar-height: 3.75rem;">
 	<section

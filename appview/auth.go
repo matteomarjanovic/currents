@@ -7,16 +7,48 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/atclient"
 	"github.com/bluesky-social/indigo/atproto/syntax"
+	"github.com/gorilla/securecookie"
 )
 
 func (s *Server) currentSessionDID(r *http.Request) (*syntax.DID, string, string) {
+	if did, sid, h := s.sessionDIDFromCookie(r); did != nil {
+		return did, sid, h
+	}
+	return s.sessionDIDFromAuthHeader(r)
+}
+
+func (s *Server) sessionDIDFromCookie(r *http.Request) (*syntax.DID, string, string) {
 	sess, _ := s.CookieStore.Get(r, "currents-session")
-	accountDID, ok := sess.Values["account_did"].(string)
+	return parseSessionValues(sess.Values)
+}
+
+// sessionDIDFromAuthHeader decodes a Bearer token using the same securecookie codecs as the
+// session cookie. Mobile clients use this path; atproto-proxy JWTs are handled separately
+// in optionalAuth (they fail to decode here and fall through).
+func (s *Server) sessionDIDFromAuthHeader(r *http.Request) (*syntax.DID, string, string) {
+	hdr := r.Header.Get("Authorization")
+	if hdr == "" {
+		return nil, "", ""
+	}
+	scheme, token, ok := strings.Cut(hdr, " ")
+	if !ok || scheme != "Bearer" {
+		return nil, "", ""
+	}
+	values := map[interface{}]interface{}{}
+	if err := securecookie.DecodeMulti("currents-session", token, &values, s.CookieStore.Codecs...); err != nil {
+		return nil, "", ""
+	}
+	return parseSessionValues(values)
+}
+
+func parseSessionValues(values map[interface{}]interface{}) (*syntax.DID, string, string) {
+	accountDID, ok := values["account_did"].(string)
 	if !ok || accountDID == "" {
 		return nil, "", ""
 	}
@@ -24,15 +56,24 @@ func (s *Server) currentSessionDID(r *http.Request) (*syntax.DID, string, string
 	if err != nil {
 		return nil, "", ""
 	}
-	sessionID, ok := sess.Values["session_id"].(string)
+	sessionID, ok := values["session_id"].(string)
 	if !ok || sessionID == "" {
 		return nil, "", ""
 	}
-	handle, ok := sess.Values["handle"].(string)
+	handle, ok := values["handle"].(string)
 	if !ok || handle == "" {
 		return nil, "", ""
 	}
 	return &did, sessionID, handle
+}
+
+func (s *Server) encodeSessionToken(accountDID, sessionID, handle string) (string, error) {
+	values := map[interface{}]interface{}{
+		"account_did": accountDID,
+		"session_id":  sessionID,
+		"handle":      handle,
+	}
+	return securecookie.EncodeMulti("currents-session", values, s.CookieStore.Codecs...)
 }
 
 func (s *Server) APIMe(w http.ResponseWriter, r *http.Request) {
@@ -119,19 +160,29 @@ func (s *Server) FeedPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	if r.Method != "POST" {
+	// GET with no username param shows the HTML login form. POST or GET-with-username
+	// kicks off the OAuth flow. Allowing GET-with-username lets mobile clients open the
+	// entire flow inside @capacitor/browser (no cross-context cookie hop).
+	var username, returnTo string
+	switch {
+	case r.Method == "POST":
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, fmt.Errorf("parsing form data: %w", err).Error(), http.StatusBadRequest)
+			return
+		}
+		username = r.PostFormValue("username")
+		returnTo = r.PostFormValue("return_to")
+	case r.Method == "GET" && r.URL.Query().Get("username") != "":
+		username = r.URL.Query().Get("username")
+		returnTo = r.URL.Query().Get("return_to")
+	default:
 		tmplLogin.Execute(w, nil)
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, fmt.Errorf("parsing form data: %w", err).Error(), http.StatusBadRequest)
-		return
-	}
+	username, _ = strings.CutPrefix(username, "@")
 
-	username, _ := strings.CutPrefix(r.PostFormValue("username"), "@")
-
-	if returnTo := r.PostFormValue("return_to"); returnTo != "" {
+	if returnTo != "" {
 		sess, _ := s.CookieStore.Get(r, "currents-session")
 		sess.Values["return_to"] = returnTo
 		sess.Save(r, w)
@@ -197,11 +248,42 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if returnTo, ok := sess.Values["return_to"].(string); ok && returnTo != "" {
 		if s.FrontendURL != "" && strings.HasPrefix(returnTo, s.FrontendURL) {
 			redirectTarget = returnTo
+		} else if s.isMobileReturnTo(returnTo) {
+			token, err := s.encodeSessionToken(sessData.AccountDID.String(), sessData.SessionID, resp.Handle)
+			if err != nil {
+				slog.Error("encoding mobile session token", "err", err)
+				http.Error(w, "could not finalize login", http.StatusInternalServerError)
+				return
+			}
+			redirectTarget = appendTokenParams(returnTo, token, resp.Handle)
 		}
 		delete(sess.Values, "return_to")
 		sess.Save(r, w)
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
+}
+
+func (s *Server) isMobileReturnTo(returnTo string) bool {
+	for _, scheme := range s.MobileRedirectSchemes {
+		if scheme != "" && strings.HasPrefix(returnTo, scheme) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendTokenParams(returnTo, token, handle string) string {
+	u, err := url.Parse(returnTo)
+	if err != nil {
+		return returnTo
+	}
+	q := u.Query()
+	q.Set("token", token)
+	if handle != "" {
+		q.Set("handle", handle)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func (s *Server) OAuthLogout(w http.ResponseWriter, r *http.Request) {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Avatar from '$lib/components/ui/avatar';
@@ -163,9 +163,7 @@
 		importing = true;
 		error = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/profile/import-bluesky`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/profile/import-bluesky`);
 			if (!res.ok) {
 				error = (await res.text()).trim() || `Failed to import (${res.status}).`;
 				return;
@@ -199,10 +197,9 @@
 			if (avatarFiles?.[0]) form.set('avatar', avatarFiles[0], avatarFiles[0].name);
 			if (bannerFiles?.[0]) form.set('banner', bannerFiles[0], bannerFiles[0].name);
 
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/profile`, {
+			const res = await apiFetch(`/api/profile`, {
 				method: 'PUT',
-				body: form,
-				credentials: 'include'
+				body: form
 			});
 			if (!res.ok) {
 				if (res.status === 401) auth.user = null;
