@@ -25,7 +25,7 @@ services:
     environment:
       TAP_DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
       TAP_COLLECTION_FILTERS: is.currents.*
-      TAP_NO_REPLAY: "true"
+      # TAP_NO_REPLAY: "true"
     ports:
       - "2480:2480"
 
@@ -57,10 +57,10 @@ services:
     environment:
       SESSION_SECRET: ${SESSION_SECRET:-changeme-use-a-strong-random-secret}
       DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
-      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-cst-doing-orchestra-sandy.trycloudflare.com}
+      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-strip-giant-stem-slide.trycloudflare.com}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
-      FRONTEND_URL: http://192.168.1.9:5173
+      FRONTEND_URL: http://192.168.1.10:5173
       TAP_URL: ws://tap:2480/channel
       INFERENCE_URL: http://host.docker.internal:8000
     ports:

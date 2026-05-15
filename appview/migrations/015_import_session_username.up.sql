@@ -1,0 +1,1 @@
+ALTER TABLE import_session ADD COLUMN username TEXT NOT NULL DEFAULT '';

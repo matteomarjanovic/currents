@@ -109,10 +109,6 @@ func saveAttributionFromFields(url, license, credit string) *saveAttribution {
 	})
 }
 
-func buildImageContentRecord(blob any) map[string]any {
-	return buildImageContentRecordWithAttribution(blob, nil)
-}
-
 func buildImageContentRecordWithAttribution(blob any, attribution *saveAttribution) map[string]any {
 	record := map[string]any{
 		"$type": saveContentImageNSID,
