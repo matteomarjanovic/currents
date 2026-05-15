@@ -33,7 +33,7 @@ services:
       CDN_URL: https://${DOMAIN}
       TAP_URL: ws://tap:2480/channel
       INFERENCE_URL: ${INFERENCE_URL:-http://host.docker.internal:8000}
-
+      HIDDEN_DIDS: ${HIDDEN_DIDS:-}
   tap:
     image: ghcr.io/bluesky-social/indigo/tap:latest
     restart: unless-stopped

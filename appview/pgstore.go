@@ -35,6 +35,10 @@ type PgStoreConfig struct {
 	MaxConns                  int32
 	MaxConnLifetime           time.Duration
 	MaxConnIdleTime           time.Duration
+
+	// HiddenDIDs are author DIDs whose saves are filtered out of feed/search
+	// results. Temporary stopgap until proper moderation exists.
+	HiddenDIDs []string
 }
 
 // Implements the [oauth.ClientAuthStore] interface, backed by PostgreSQL via pgx
@@ -1221,11 +1225,11 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		WHERE vi.embedding IS NOT NULL ` + excludeClause + `
+		WHERE vi.embedding IS NOT NULL AND s.author_did <> ALL($5) ` + excludeClause + `
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
 	`
-	return m.queryANNSavePage(ctx, query, []any{vec, fetchLimit, viewerDID, offset}, limit, fetchLimit, offset)
+	return m.queryANNSavePage(ctx, query, []any{vec, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset)
 }
 
 func searchSavesEFSearch(offset, fetchLimit int) int {
@@ -1283,11 +1287,12 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE vi.embedding IS NOT NULL
+			AND s.author_did <> ALL($5)
 			AND vi.id != (SELECT vi_id FROM src)
 		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
 		LIMIT $2 OFFSET $4
 	`
-	return m.queryANNSavePage(ctx, query, []any{uri, fetchLimit, viewerDID, offset}, limit, fetchLimit, offset)
+	return m.queryANNSavePage(ctx, query, []any{uri, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset)
 }
 
 // ── Feed methods ─────────────────────────────────────────────────────────────
@@ -1518,7 +1523,7 @@ func (m *PgStore) GetNearestClusterMedoid(ctx context.Context, embedding []float
 func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
 	excludeClause := ""
 	if excludeViewerSaves && viewerDID != "" {
-		excludeClause = `WHERE NOT EXISTS (
+		excludeClause = `AND NOT EXISTS (
 			SELECT 1 FROM save v
 			WHERE v.author_did = $1 AND v.pds_blob_cid = s.pds_blob_cid
 		)`
@@ -1546,11 +1551,11 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		` + excludeClause + `
+		WHERE s.author_did <> ALL($4) ` + excludeClause + `
 		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
 		LIMIT $2 OFFSET $3
 	`
-	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset)
+	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset, m.cfg.HiddenDIDs)
 	if err != nil {
 		return nil, err
 	}
