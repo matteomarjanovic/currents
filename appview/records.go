@@ -798,11 +798,12 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up the original save to get blob info
+	// Look up the original save to get blob info and attribution
 	var authorDID, blobCID string
+	var origAttrURL, origAttrLicense, origAttrCredit string
 	err = s.Store.pool.QueryRow(r.Context(),
-		`SELECT author_did, pds_blob_cid FROM save WHERE uri = $1`, body.SaveURI,
-	).Scan(&authorDID, &blobCID)
+		`SELECT author_did, pds_blob_cid, COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '') FROM save WHERE uri = $1`, body.SaveURI,
+	).Scan(&authorDID, &blobCID, &origAttrURL, &origAttrLicense, &origAttrCredit)
 	if err != nil {
 		http.Error(w, "save not found", http.StatusNotFound)
 		return
@@ -843,10 +844,25 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the viewer already has their own attribution for this blob; viewer's attribution takes priority
+	var viewerAttrURL, viewerAttrLicense, viewerAttrCredit string
+	_ = s.Store.pool.QueryRow(r.Context(),
+		`SELECT COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '')
+		 FROM save WHERE author_did = $1 AND pds_blob_cid = $2
+		   AND (COALESCE(attribution_url, '') <> '' OR COALESCE(attribution_license, '') <> '' OR COALESCE(attribution_credit, '') <> '')
+		 ORDER BY created_at DESC NULLS LAST LIMIT 1`,
+		did.String(), blobCID,
+	).Scan(&viewerAttrURL, &viewerAttrLicense, &viewerAttrCredit)
+
+	resolvedAttribution := saveAttributionFromFields(viewerAttrURL, viewerAttrLicense, viewerAttrCredit)
+	if resolvedAttribution == nil {
+		resolvedAttribution = saveAttributionFromFields(origAttrURL, origAttrLicense, origAttrCredit)
+	}
+
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collectionStrongRef,
-		"content":    buildImageContentRecord(blobAny),
+		"content":    buildImageContentRecordWithAttribution(blobAny, resolvedAttribution),
 		"resaveOf":   resaveRef,
 		"createdAt":  syntax.DatetimeNow().String(),
 	}

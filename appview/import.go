@@ -402,7 +402,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collRef,
-		"content":    buildImageContentRecord(blobAny),
+		"content":    buildImageContentRecordWithAttribution(blobAny, nil),
 		"createdAt":  syntax.DatetimeNow().String(),
 		"originUrl":  fmt.Sprintf("https://www.pinterest.com/pin/%s/", item.SourcePinID),
 	}

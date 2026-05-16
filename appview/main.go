@@ -107,11 +107,28 @@ func main() {
 				Usage:   "URL of the SvelteKit frontend; OAuth callback redirects here after login",
 				EnvVars: []string{"FRONTEND_URL"},
 			},
+			&cli.StringFlag{
+				Name:    "hidden-dids",
+				Usage:   "comma-separated author DIDs to hide from feed/search results",
+				EnvVars: []string{"HIDDEN_DIDS"},
+			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
 	slog.SetDefault(slog.New(h))
 	app.RunAndExitOnError()
+}
+
+// splitCSV splits a comma-separated string into a slice, trimming whitespace
+// and dropping empty entries. Returns nil for an empty input.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func runServer(cctx *cli.Context) error {
@@ -168,6 +185,7 @@ func runServer(cctx *cli.Context) error {
 		MaxConns:                  int32(cctx.Int("db-max-conns")),
 		MaxConnLifetime:           cctx.Duration("db-max-conn-lifetime"),
 		MaxConnIdleTime:           cctx.Duration("db-max-conn-idle-time"),
+		HiddenDIDs:                splitCSV(cctx.String("hidden-dids")),
 	})
 	if err != nil {
 		return err
