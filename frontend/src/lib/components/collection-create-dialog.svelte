@@ -12,9 +12,15 @@
 	interface Props {
 		open: boolean;
 		onCreated: (collection: CollectionView) => void;
+		// When set, creates a section (sub-collection) of this collection URI.
+		parent?: string;
+		// Name of the parent collection, used in the section dialog copy.
+		parentName?: string;
 	}
 
-	let { open = $bindable(), onCreated }: Props = $props();
+	let { open = $bindable(), onCreated, parent, parentName }: Props = $props();
+
+	const isSection = $derived(!!parent);
 
 	let name = $state('');
 	let description = $state('');
@@ -49,7 +55,8 @@
 				},
 				body: new URLSearchParams({
 					name: trimmedName,
-					description: trimmedDescription
+					description: trimmedDescription,
+					...(parent ? { parent } : {})
 				}).toString()
 			});
 			if (!res.ok) {
@@ -68,6 +75,7 @@
 				uri: data.uri,
 				name: trimmedName,
 				description: trimmedDescription || undefined,
+				parentUri: parent || undefined,
 				saveCount: 0,
 				createdAt: new Date().toISOString(),
 				author: user
@@ -92,11 +100,16 @@
 <Dialog.Root bind:open>
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Create collection</Dialog.Title>
-			<Dialog.Description
-				>Give your new collection a name and optional description. IMPORTANT: Collections and saves
-				are public for now.</Dialog.Description
-			>
+			<Dialog.Title>{isSection ? 'Create section' : 'Create collection'}</Dialog.Title>
+			<Dialog.Description>
+				{#if isSection}
+					Add a section{parentName ? ` to "${parentName}"` : ''}. Sections are sub-collections that
+					group saves within a collection. IMPORTANT: Collections and saves are public for now.
+				{:else}
+					Give your new collection a name and optional description. IMPORTANT: Collections and saves
+					are public for now.
+				{/if}
+			</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={submit} class="space-y-4">
 			<div class="space-y-2">
@@ -132,7 +145,7 @@
 					Cancel
 				</Button>
 				<Button type="submit" disabled={submitting}>
-					{submitting ? 'Creating…' : 'Create'}
+					{submitting ? 'Creating…' : isSection ? 'Create section' : 'Create'}
 				</Button>
 			</Dialog.Footer>
 		</form>

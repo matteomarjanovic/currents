@@ -20,6 +20,7 @@ import (
 )
 
 const importItemPaceDelay = 2 * time.Second
+const maxImportAttempts = 3
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,27 @@ func (s *Server) APIPinterestBoards(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"boards": boards})
 }
 
+func (s *Server) APIPinterestSections(w http.ResponseWriter, r *http.Request) {
+	if did, _, _ := s.currentSessionDID(r); did == nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	boardID := strings.TrimSpace(r.URL.Query().Get("boardId"))
+	boardURL := strings.TrimSpace(r.URL.Query().Get("boardUrl"))
+	if boardID == "" || boardURL == "" {
+		http.Error(w, "boardId and boardUrl are required", http.StatusBadRequest)
+		return
+	}
+	sections, err := ListSections(r.Context(), boardID, boardURL)
+	if err != nil {
+		slog.Warn("pinterest sections list failed", "board", boardID, "err", err)
+		http.Error(w, fmt.Sprintf("listing sections: %s", err), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"sections": sections})
+}
+
 func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 	did, sessionID, _ := s.currentSessionDID(r)
 	if did == nil {
@@ -55,6 +77,8 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		PinterestBoardID   string `json:"pinterestBoardId"`
 		PinterestBoardName string `json:"pinterestBoardName"`
 		PinterestBoardURL  string `json:"pinterestBoardUrl"`
+		PinterestSectionID string `json:"pinterestSectionId"`
+		FilterSectionPins  bool   `json:"filterSectionPins"`
 		PinterestUsername  string `json:"pinterestUsername"`
 		CollectionURI      string `json:"collectionUri"`
 	}
@@ -84,6 +108,8 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		SourceBoardID:       body.PinterestBoardID,
 		SourceBoardName:     body.PinterestBoardName,
 		SourceBoardURL:      body.PinterestBoardURL,
+		SourceSectionID:     body.PinterestSectionID,
+		FilterSectionPins:   body.FilterSectionPins,
 		TargetCollectionURI: body.CollectionURI,
 	})
 	if err != nil {
@@ -315,7 +341,7 @@ func (w *ImportWorker) runListingStage(ctx context.Context, job ImportJobRow) {
 		batch = batch[:0]
 	}
 
-	last, err := IteratePins(ctx, job.SourceBoardID, job.SourceBoardURL, job.ListCursor, func(p PinterestPin, nextBookmark string) error {
+	onPin := func(p PinterestPin, nextBookmark string) error {
 		batch = append(batch, p)
 		if len(batch) >= 100 {
 			flush()
@@ -324,7 +350,15 @@ func (w *ImportWorker) runListingStage(ctx context.Context, job ImportJobRow) {
 			}
 		}
 		return nil
-	})
+	}
+
+	var last string
+	var err error
+	if job.SourceSectionID != "" {
+		last, err = IterateSectionPins(ctx, job.SourceSectionID, job.SourceBoardURL, job.ListCursor, onPin)
+	} else {
+		last, err = IteratePins(ctx, job.SourceBoardID, job.SourceBoardURL, job.ListCursor, job.FilterSectionPins, onPin)
+	}
 	flush()
 
 	if err != nil {
@@ -339,6 +373,16 @@ func (w *ImportWorker) runListingStage(ctx context.Context, job ImportJobRow) {
 	slog.Info("listing complete", "job_id", job.ID, "board", job.SourceBoardURL)
 }
 
+func (w *ImportWorker) failOrRequeue(ctx context.Context, item *ImportItemRow, reason string) {
+	if item.AttemptCount < maxImportAttempts {
+		_ = w.Store.RequeueImportItem(ctx, item.ID, reason)
+		slog.Info("import item requeued for retry", "item_id", item.ID, "job_id", item.JobID, "attempt", item.AttemptCount, "reason", reason)
+	} else {
+		_ = w.Store.MarkImportItemFailed(ctx, item.ID, reason)
+		slog.Warn("import item permanently failed", "item_id", item.ID, "job_id", item.JobID, "attempts", item.AttemptCount, "reason", reason)
+	}
+}
+
 func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did, oauthSessionID string) {
 	oauthSess, err := w.OAuth.ResumeSession(ctx, syntax.DID(did), oauthSessionID)
 	if err != nil {
@@ -351,23 +395,23 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.ImageURL, nil)
 	if err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "fetch req: "+err.Error())
+		w.failOrRequeue(ctx, item, "fetch req: "+err.Error())
 		return
 	}
 	req.Header.Set("User-Agent", pinterestUA)
 	resp, err := pinterestHTTP.Do(req)
 	if err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "fetch: "+err.Error())
+		w.failOrRequeue(ctx, item, "fetch: "+err.Error())
 		return
 	}
 	imageBytes, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, fmt.Sprintf("fetch status %d", resp.StatusCode))
+		w.failOrRequeue(ctx, item, fmt.Sprintf("fetch status %d", resp.StatusCode))
 		return
 	}
 	if readErr != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "fetch body: "+readErr.Error())
+		w.failOrRequeue(ctx, item, "fetch body: "+readErr.Error())
 		return
 	}
 	contentType := resp.Header.Get("Content-Type")
@@ -377,7 +421,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 
 	imageBytes, contentType, err = prepareImageForUpload(ctx, w.Inference, imageBytes, contentType)
 	if err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "prepare: "+err.Error())
+		w.failOrRequeue(ctx, item, "prepare: "+err.Error())
 		return
 	}
 
@@ -386,7 +430,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	}
 	if err := c.LexDo(ctx, "POST", contentType, "com.atproto.repo.uploadBlob", nil,
 		bytes.NewReader(imageBytes), &uploadOut); err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "uploadBlob: "+err.Error())
+		w.failOrRequeue(ctx, item, "uploadBlob: "+err.Error())
 		return
 	}
 	blobJSON, _ := json.Marshal(uploadOut.Blob)
@@ -395,16 +439,20 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 
 	collRef, err := resolveStrongRef(ctx, c, item.TargetCollectionURI)
 	if err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "collection: "+err.Error())
+		w.failOrRequeue(ctx, item, "collection: "+err.Error())
 		return
 	}
 
+	originURL := item.SourceURL
+	if originURL == "" {
+		originURL = fmt.Sprintf("https://www.pinterest.com/pin/%s/", item.SourcePinID)
+	}
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collRef,
 		"content":    buildImageContentRecordWithAttribution(blobAny, nil),
 		"createdAt":  syntax.DatetimeNow().String(),
-		"originUrl":  fmt.Sprintf("https://www.pinterest.com/pin/%s/", item.SourcePinID),
+		"originUrl":  originURL,
 	}
 
 	out, err := comatproto.RepoPutRecord(ctx, c, &comatproto.RepoPutRecord_Input{
@@ -414,7 +462,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 		Record:     record,
 	})
 	if err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "putRecord: "+err.Error())
+		w.failOrRequeue(ctx, item, "putRecord: "+err.Error())
 		return
 	}
 	_ = w.Store.MarkImportItemDone(ctx, item.ID, out.Uri)

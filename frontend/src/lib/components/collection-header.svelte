@@ -5,6 +5,7 @@
 	import MoreHorizontal from '@lucide/svelte/icons/more-horizontal';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import type { CollectionView } from '$lib/types';
 
 	interface Props {
@@ -12,9 +13,11 @@
 		isOwner: boolean;
 		onEdit: () => void;
 		onDelete: () => void;
+		// Provided only when a section can be created here (owned, root-level collection).
+		onCreateSection?: () => void;
 	}
 
-	let { collection, isOwner, onEdit, onDelete }: Props = $props();
+	let { collection, isOwner, onEdit, onDelete, onCreateSection }: Props = $props();
 </script>
 
 <section class="mb-6">
@@ -36,7 +39,7 @@
 				</span>
 			{/if}
 			{#if collection.description}
-				<p class="mt-3 whitespace-pre-wrap text-sm text-foreground">{collection.description}</p>
+				<p class="mt-3 text-sm whitespace-pre-wrap text-foreground">{collection.description}</p>
 			{/if}
 		</div>
 
@@ -53,6 +56,12 @@
 						<Pencil class="size-4" />
 						Edit
 					</DropdownMenu.Item>
+					{#if onCreateSection}
+						<DropdownMenu.Item onclick={onCreateSection}>
+							<FolderPlus class="size-4" />
+							Create section
+						</DropdownMenu.Item>
+					{/if}
 					<DropdownMenu.Separator />
 					<DropdownMenu.Item onclick={onDelete} class="text-destructive focus:text-destructive">
 						<Trash2 class="size-4" />

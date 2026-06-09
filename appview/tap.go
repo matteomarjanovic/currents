@@ -51,7 +51,10 @@ type TapAck struct {
 type collectionRecord struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	CreatedAt   string `json:"createdAt"`
+	Parent      *struct {
+		URI string `json:"uri"`
+	} `json:"parent"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // TapHandler holds the dependencies for the TAP event listener.
@@ -60,6 +63,7 @@ type TapHandler struct {
 	Store                       *PgStore
 	Dir                         identity.Directory
 	Inference                   *InferenceClient
+	Labeler                     *LabelerIssuer // optional; nil disables label issuance
 	CDNBaseURL                  string
 	CollectionEmbeddingDebounce time.Duration
 
@@ -147,7 +151,11 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 			return fmt.Errorf("unmarshal collection record: %w", err)
 		}
 		createdAt := parseTimestamp(col.CreatedAt)
-		return handler.Store.UpsertCollection(ctx, atURI, ev.CID, ev.DID, col.Name, col.Description, createdAt)
+		parentURI := ""
+		if col.Parent != nil {
+			parentURI = col.Parent.URI
+		}
+		return handler.Store.UpsertCollection(ctx, atURI, ev.CID, ev.DID, col.Name, col.Description, parentURI, createdAt)
 
 	case saveNSID:
 		slog.Info("TAP save received", "uri", atURI, "action", ev.Action, "did", ev.DID)
@@ -246,7 +254,11 @@ func handleSaveUpsert(
 	}
 
 	if contentNSID != saveContentImageNSID || pdsBlobCID == "" {
-		return handler.Store.UpsertSave(ctx, base)
+		if err := handler.Store.UpsertSave(ctx, base); err != nil {
+			return err
+		}
+		applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
+		return nil
 	}
 
 	// Case 1: Resave of a known save — reuse its visual identity and quality score.
@@ -258,7 +270,11 @@ func handleSaveUpsert(
 			base.Width = w
 			base.Height = h
 			base.DominantColors = colors
-			return handler.Store.UpsertSave(ctx, base)
+			if err := handler.Store.UpsertSave(ctx, base); err != nil {
+				return err
+			}
+			applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
+			return nil
 		}
 		// Original not in DB yet — fall through.
 	}
@@ -271,13 +287,18 @@ func handleSaveUpsert(
 		base.Width = w
 		base.Height = h
 		base.DominantColors = colors
-		return handler.Store.UpsertSave(ctx, base)
+		if err := handler.Store.UpsertSave(ctx, base); err != nil {
+			return err
+		}
+		applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
+		return nil
 	}
 
 	// Case 3: Novel image — persist immediately, then enrich asynchronously.
 	if err := handler.Store.UpsertSave(ctx, base); err != nil {
 		return err
 	}
+	applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
 	handler.enqueueBlobEnrichment(pdsBlobCID)
 	return nil
 }
@@ -377,6 +398,13 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 	inferResult, err := handler.Inference.EmbedImage(ctx, imageBytes, mimeType)
 	if err != nil {
 		return err
+	}
+
+	if inferResult.SafetyScores != nil {
+		if err := processSafetyScores(ctx, handler, source, blobCID, *inferResult.SafetyScores); err != nil {
+			// Safety scoring is independent of embedding/VI work — log and continue.
+			slog.Warn("safety scoring failed", "blob_cid", blobCID, "err", err)
+		}
 	}
 
 	quality := float32(qualityScore(inferResult.Width, inferResult.Height))

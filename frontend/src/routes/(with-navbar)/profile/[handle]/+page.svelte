@@ -16,6 +16,27 @@
 
 	const isOwner = $derived(!!auth.user && !!profile && auth.user.did === profile.did);
 
+	// Show only root collections as cards, most recently saved-into first.
+	const roots = $derived(
+		collections
+			.filter((c) => !c.parentUri)
+			.sort((a, b) => {
+				const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
+				const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
+				if (rb !== ra) return rb - ra;
+				const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
+				const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
+				return cb - ca;
+			})
+	);
+	const sectionCounts = $derived.by(() => {
+		const m = new Map<string, number>();
+		for (const c of collections) {
+			if (c.parentUri) m.set(c.parentUri, (m.get(c.parentUri) ?? 0) + 1);
+		}
+		return m;
+	});
+
 	$effect(() => {
 		const handle = page.params.handle ?? '';
 		loading = true;
@@ -29,7 +50,7 @@
 				{ credentials: 'include' }
 			),
 			fetch(
-				`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=50`,
+				`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=100`,
 				{ credentials: 'include' }
 			)
 		])
@@ -94,12 +115,12 @@
 		<ProfileHeader {profile} {isOwner} onEdit={() => (editOpen = true)} />
 
 		<h2 class="mb-4 text-lg font-semibold text-foreground">Collections</h2>
-		{#if collections.length === 0}
+		{#if roots.length === 0}
 			<div class="py-12 text-center text-sm text-muted-foreground">No collections yet.</div>
 		{:else}
 			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-				{#each collections as c (c.uri)}
-					<CollectionCard collection={c} />
+				{#each roots as c (c.uri)}
+					<CollectionCard collection={c} sectionCount={sectionCounts.get(c.uri) ?? 0} />
 				{/each}
 			</div>
 		{/if}

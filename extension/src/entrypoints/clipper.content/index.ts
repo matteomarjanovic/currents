@@ -2,11 +2,52 @@ import { mount, unmount } from 'svelte';
 import App from './App.svelte';
 import { showClipper, hideClipper, type SiteHints } from '../../lib/clipper-store.svelte';
 
+// externalSourceURL returns raw only when it is an http(s) URL pointing
+// somewhere other than Pinterest itself; otherwise undefined.
+function externalSourceURL(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined;
+  const host = u.hostname.replace(/^www\./, '');
+  if (host === 'pinterest.com' || host === 'pin.it' || host.startsWith('pinterest.')) {
+    return undefined;
+  }
+  return raw;
+}
+
+// pinterestSourceUrl resolves a Pinterest pin's original external source from
+// the closeup page. og:see_also carries it in the head; the visible
+// clickthrough anchor is a second independent signal. Returns undefined when
+// the pin has no external source (caller falls back to the pin URL).
+function pinterestSourceUrl(): string | undefined {
+  if (!/\/pin\/\d+/.test(location.pathname)) return undefined;
+
+  const ogSeeAlso = document.querySelector<HTMLMetaElement>(
+    'meta[property="og:see_also"]',
+  )?.content;
+  const fromMeta = externalSourceURL(ogSeeAlso);
+  if (fromMeta) return fromMeta;
+
+  const clickthrough = document.querySelector<HTMLAnchorElement>(
+    'a[data-test-id="clickthrough-link"]',
+  );
+  return externalSourceURL(clickthrough?.href);
+}
+
 function extractSiteHints(): SiteHints {
   const host = location.hostname.replace(/^www\./, '');
   if (host === 'cosmos.so') {
     const caption = document.querySelector<HTMLElement>('[data-testid="element-ml-caption"]');
     if (caption) return { attributionCredit: caption.textContent?.trim() };
+  }
+  if (host === 'pinterest.com' || host.startsWith('pinterest.')) {
+    const originUrl = pinterestSourceUrl();
+    if (originUrl) return { originUrl };
   }
   return {};
 }
@@ -43,14 +84,15 @@ export default defineContentScript({
 
     browser.runtime.onMessage.addListener((message) => {
       if (message.type !== 'SHOW_CLIPPER') return;
+      const siteHints = extractSiteHints();
       showClipper({
         imgUrl: message.imgUrl ?? '',
-        originUrl: message.originUrl ?? '',
+        originUrl: siteHints.originUrl ?? message.originUrl ?? '',
         pageTitle: message.pageTitle ?? '',
         collections: message.collections,
         authState: message.authState,
         userHandle: message.userHandle,
-        siteHints: extractSiteHints(),
+        siteHints,
       });
     });
 

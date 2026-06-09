@@ -9,9 +9,11 @@ export interface CollectionView {
 	};
 	name: string;
 	description?: string;
+	parentUri?: string;
 	saveCount?: number;
 	previewImages?: string[];
 	createdAt?: string;
+	lastSavedAt?: string;
 	viewer?: { starred?: boolean };
 }
 
@@ -46,9 +48,15 @@ export interface ImageContentView {
 export type SaveContentView =
 	| ImageContentView
 	| {
-		$type: string;
-		[key: string]: unknown;
-	};
+			$type: string;
+			[key: string]: unknown;
+	  };
+
+export interface LabelView {
+	src: string;
+	val: string;
+	cts: string;
+}
 
 export interface SaveView {
 	uri: string;
@@ -66,7 +74,9 @@ export interface SaveView {
 	viewer?: {
 		saves?: { collectionUri: string; saveUri: string }[];
 		attribution?: SaveAttribution;
+		suspected?: boolean;
 	};
+	labels?: LabelView[];
 }
 
 export function isImageContentView(content: SaveContentView): content is ImageContentView {

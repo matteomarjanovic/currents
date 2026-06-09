@@ -3,6 +3,7 @@
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import ImageCard from '$lib/components/image-card.svelte';
+	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 
 	interface Props {
 		items: SaveView[];
@@ -10,6 +11,10 @@
 	}
 
 	let { items, loading }: Props = $props();
+
+	// Drop saves the viewer has set to "hide" before the grid sees them: no
+	// card is rendered, no Frame reserved, and the <img> is never fetched.
+	let visibleItems = $derived(items.filter((i) => !shouldHide(i.labels)));
 
 	let containerWidth = $state<number | undefined>();
 	let viewportHeight = $state<number | undefined>();
@@ -39,7 +44,7 @@
 
 <div bind:clientWidth={containerWidth}>
 	<BalancedMasonryGrid {frameWidth} {gap}>
-	{#each items as item (item.uri)}
+	{#each visibleItems as item (item.uri)}
 		<Frame width={getImageContent(item)?.width ?? 3} height={getImageContent(item)?.height ?? 4}>
 			<ImageCard {item} />
 		</Frame>

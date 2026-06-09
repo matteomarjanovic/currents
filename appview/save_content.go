@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -31,6 +33,7 @@ type viewerSave struct {
 type saveViewerState struct {
 	Saves       []viewerSave     `json:"saves"`
 	Attribution *saveAttribution `json:"attribution,omitempty"`
+	Suspected   bool             `json:"suspected,omitempty"`
 }
 
 type imageView struct {
@@ -52,6 +55,15 @@ type saveView struct {
 	ResaveOf  *strongRef       `json:"resaveOf,omitempty"`
 	CreatedAt string           `json:"createdAt"`
 	Viewer    *saveViewerState `json:"viewer,omitempty"`
+	Labels    []labelView      `json:"labels,omitempty"`
+}
+
+// labelView is the compact projection of a label record surfaced in XRPC save responses.
+// Full label transport (with sig/ver/exp/neg) goes through the labeler's subscribeLabels/queryLabels.
+type labelView struct {
+	Src string `json:"src"`
+	Val string `json:"val"`
+	CTS string `json:"cts"`
 }
 
 type saveBlobRef struct {
@@ -79,7 +91,70 @@ type saveRecord struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"resaveOf"`
-	CreatedAt string `json:"createdAt"`
+	CreatedAt string      `json:"createdAt"`
+	Labels    *selfLabels `json:"labels,omitempty"`
+}
+
+// selfLabels is the atproto com.atproto.label.defs#selfLabels shape that creators
+// embed in their own records to voluntarily warn viewers.
+type selfLabels struct {
+	Values []selfLabelValue `json:"values"`
+}
+
+type selfLabelValue struct {
+	Val string `json:"val"`
+}
+
+// allowedSelfLabelVals is the set of Bluesky-canonical content labels creators
+// may apply to their own saves. Restricting to this set prevents arbitrary
+// label-value injection via the upload form.
+var allowedSelfLabelVals = map[string]struct{}{
+	"porn":          {},
+	"sexual":        {},
+	"nudity":        {},
+	"graphic-media": {},
+}
+
+// parseSelfLabels reads a comma-separated form value into a deduplicated list
+// of allowed label vals. Unknown vals are silently dropped.
+func parseSelfLabels(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		v := strings.TrimSpace(part)
+		if v == "" {
+			continue
+		}
+		if _, ok := allowedSelfLabelVals[v]; !ok {
+			continue
+		}
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
+// buildSelfLabelsRecord wraps a list of label vals into the atproto
+// com.atproto.label.defs#selfLabels record shape. Returns nil for an empty
+// list so the caller can skip adding the field entirely.
+func buildSelfLabelsRecord(vals []string) map[string]any {
+	if len(vals) == 0 {
+		return nil
+	}
+	values := make([]map[string]any, len(vals))
+	for i, v := range vals {
+		values[i] = map[string]any{"val": v}
+	}
+	return map[string]any{
+		"$type":  "com.atproto.label.defs#selfLabels",
+		"values": values,
+	}
 }
 
 func rawJSONToAny(raw json.RawMessage) (any, error) {
@@ -212,6 +287,81 @@ func buildSaveView(row SaveRow, author profileView, includeViewer bool, cdnBaseU
 		sv.Viewer = parseViewerSaveState(row.ViewerSaves, row.ViewerAttribution)
 	}
 	return sv
+}
+
+// hydrateLabels batch-fetches active labels for the given save views and assigns
+// them to each view's Labels field. A no-op when views is empty.
+func hydrateLabels(ctx context.Context, store *PgStore, views []saveView) error {
+	if len(views) == 0 {
+		return nil
+	}
+	uris := make([]string, len(views))
+	for i, v := range views {
+		uris[i] = v.URI
+	}
+	byURI, err := store.GetLabelsByURIs(ctx, uris)
+	if err != nil {
+		return err
+	}
+	for i := range views {
+		rows := byURI[views[i].URI]
+		if len(rows) == 0 {
+			continue
+		}
+		out := make([]labelView, len(rows))
+		for j, r := range rows {
+			out[j] = labelView{Src: r.Src, Val: r.Val, CTS: r.CTS.UTC().Format(time.RFC3339)}
+		}
+		views[i].Labels = out
+	}
+	return nil
+}
+
+// hydrateSuspected batch-fetches blob moderation state and sets viewer.suspected
+// on any save view whose blob has harm_state='suspected'. Skips views that have
+// no viewer state (unauthenticated requests).
+func hydrateSuspected(ctx context.Context, store *PgStore, views []saveView) error {
+	var cids []string
+	for _, v := range views {
+		if v.Viewer == nil {
+			continue
+		}
+		if c := extractBlobCID(v); c != "" {
+			cids = append(cids, c)
+		}
+	}
+	if len(cids) == 0 {
+		return nil
+	}
+	suspected, err := store.GetSuspectedBlobCIDs(ctx, cids)
+	if err != nil {
+		return err
+	}
+	if len(suspected) == 0 {
+		return nil
+	}
+	for i := range views {
+		if views[i].Viewer == nil {
+			continue
+		}
+		if c := extractBlobCID(views[i]); suspected[c] {
+			views[i].Viewer.Suspected = true
+		}
+	}
+	return nil
+}
+
+// extractBlobCID returns the blob CID from a save view's image content, or "".
+func extractBlobCID(v saveView) string {
+	if img, ok := v.Content.(imageView); ok {
+		return img.BlobCID
+	}
+	if m, ok := v.Content.(map[string]any); ok {
+		if c, ok := m["blobCid"].(string); ok {
+			return c
+		}
+	}
+	return ""
 }
 
 func buildSaveContentView(row SaveRow, cdnBaseURL string) any {

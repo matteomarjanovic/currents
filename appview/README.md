@@ -25,6 +25,9 @@ All options can be set via flags or environment variables.
 | `CLIENT_SECRET_KEY_ID` | `--client-secret-key-id` | No | Key ID for `CLIENT_SECRET_KEY` (default: `primary`) |
 | `INFERENCE_URL` | `--inference-url` | No | Base URL of the inference FastAPI server (default: `http://localhost:8000`) |
 | `CDN_URL` | `--cdn-url` | No | Base URL for image CDN used in XRPC responses. Defaults to `http://127.0.0.1:8080` in localhost mode or `https://<hostname>` in production |
+| `HIDDEN_DIDS` | `--hidden-dids` | No | Comma-separated author DIDs to filter from feed/search/related. Emergency lever — moderation-driven takedowns go through the labeler |
+| `LABELER_DID` | `--labeler-did` | No | DID of the moderation labeler, e.g. `did:web:moderation.currents.is`. Required when `LABELER_SIGNING_KEY` is set |
+| `LABELER_SIGNING_KEY` | `--labeler-signing-key` | No | Multibase-encoded secp256k1 private key for signing labels. Unset → labeler disabled (no label issuance; XRPC label endpoints return empty) |
 
 The HTTP server also now uses explicit timeouts (`ReadHeaderTimeout=10s`, `ReadTimeout=30s`, `WriteTimeout=60s`, `IdleTimeout=60s`) instead of the Go defaults.
 
@@ -129,6 +132,28 @@ That pass processes distinct unresolved blob CIDs directly from `save`, then rec
 
 The `visual_identity` table stores the canonical blob reference (best-quality source), the embedding (HNSW-indexed for fast ANN search), a dominant-color palette for placeholder rendering, and a `save_count` maintained by a DB trigger.
 
+## Moderation backfill
+
+Score existing saves through the safety heads and apply labels site-wide:
+
+```bash
+# Preview the first batch — safe to run without the labeler key
+appview backfill-moderation --dry-run
+
+# Process up to N blobs (staged rollout / smoke test)
+appview backfill-moderation --limit 1000
+
+# Full run to exhaustion (resumable; safe to Ctrl+C)
+appview backfill-moderation
+
+# Tune throttle for off-peak vs. busy times
+appview backfill-moderation --batch-size 256 --interval 5s
+```
+
+The job iterates blobs lacking a `blob_moderation_state` row, posts batches of embeddings to the inference server's `/classify/safety/embeddings`, and runs the same threshold ladder as live TAP. It naturally resumes after interruption — already-classified blobs are excluded by the next query.
+
+See **`MODERATION.md`** for the full pipeline.
+
 ## Endpoints
 
 ### Web UI (session cookie auth)
@@ -167,3 +192,26 @@ The `visual_identity` table stores the canonical blob reference (best-quality so
 | `GET` | `/xrpc/is.currents.feed.searchSaves` | Optional | Semantic image search via text query (SigLIP2 embedding, requires inference server) |
 | `GET` | `/xrpc/is.currents.feed.getRelatedSaves` | Optional | Visually similar saves for a source save; viewer state included when authenticated |
 | `GET` | `/xrpc/is.currents.feed.getFeed` | Optional | Discovery feed — global (popular+recent), personalized, or serendipitous; `personalized` param -1–1 |
+
+### Atproto labeler (when `LABELER_*` env vars are set)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/.well-known/did.json` | — | Returns the labeler DID document when the `Host` header matches the labeler subdomain (otherwise serves the appview DID) |
+| `GET` | `/xrpc/com.atproto.label.queryLabels` | — | Returns active labels matching `uriPatterns[]` + optional `sources[]`; cursor + limit pagination |
+| `GET` | `/xrpc/com.atproto.label.subscribeLabels` | — | WebSocket: streams the label backlog from `cursor` then live updates. Atproto frame format (CBOR header + body) |
+| `POST` | `/xrpc/com.atproto.moderation.createReport` | Required | Accepts `com.atproto.repo.strongRef` subjects only (record-level reports). Creates a `report` row and a `review_item` |
+
+### Moderation admin (gated by `moderator` table)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/me/role` | Optional | Returns `{role: "admin"|"reviewer"|null}` for the session DID |
+| `GET` | `/api/admin/queue` | Moderator | Pending review items (`?category=`, `?priority=high`, `?limit=`, `?offset=`) |
+| `GET` | `/api/admin/queue/{id}` | Moderator | Detail: scores, blob state, sibling saves, active labels, audit events |
+| `POST` | `/api/admin/queue/{id}/confirm` | Moderator | Body `{val}`: issue canonical label on every URI sharing the blob; negate suspected |
+| `POST` | `/api/admin/queue/{id}/takedown` | Moderator | Body `{notes?}`: set `harm_state='blocked'`; issue `!hide` on every URI sharing the blob |
+| `POST` | `/api/admin/queue/{id}/dismiss` | Moderator | Negate suspected labels; mark item dismissed |
+| `POST` | `/api/admin/labels/negate` | Moderator | Body `{uri, val, blobCid?, notes?}`: issue a negation row (for e.g. removing a false-positive AI-generated label) |
+
+See **`MODERATION.md`** for the architecture, label vocabulary, and code locations; **`MODERATION_DEPLOYMENT.md`** for keypair generation, DNS setup, and publishing the `app.bsky.labeler.service` record.

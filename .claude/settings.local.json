@@ -14,7 +14,8 @@
       "WebFetch(domain:capacitorjs.com)",
       "WebFetch(domain:capawesome.io)",
       "Bash(go build *)",
-      "WebFetch(domain:atproto.com)"
+      "WebFetch(domain:atproto.com)",
+      "Bash(go test *)"
     ]
   },
   "enableAllProjectMcpServers": true,

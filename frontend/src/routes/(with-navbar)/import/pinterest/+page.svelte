@@ -21,6 +21,12 @@
 		url: string;
 	}
 
+	interface Section {
+		id: string;
+		title: string;
+		url: string;
+	}
+
 	type JobPhase = 'listing' | 'running' | 'done' | 'failed';
 
 	interface JobStatus {
@@ -154,6 +160,50 @@
 		selected.clear();
 	}
 
+	class Unauthorized extends Error {}
+
+	async function createCollection(name: string, description: string, parent?: string): Promise<string> {
+		const res = await fetch(`${PUBLIC_APPVIEW_URL}/collection`, {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+			body: new URLSearchParams({ name, description, ...(parent ? { parent } : {}) }).toString()
+		});
+		if (!res.ok) {
+			if (res.status === 401) throw new Unauthorized();
+			throw new Error(`creating collection ${name} (${res.status})`);
+		}
+		const { uri } = (await res.json()) as { uri: string };
+		return uri;
+	}
+
+	async function queueJob(payload: Record<string, unknown>) {
+		const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/pinterest/jobs`, {
+			method: 'POST',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+			body: JSON.stringify(payload)
+		});
+		if (!res.ok) {
+			if (res.status === 401) throw new Unauthorized();
+			throw new Error(`queueing job (${res.status})`);
+		}
+	}
+
+	async function fetchSections(board: Board): Promise<Section[]> {
+		const res = await fetch(
+			`${PUBLIC_APPVIEW_URL}/api/import/pinterest/sections?boardId=${encodeURIComponent(board.id)}&boardUrl=${encodeURIComponent(board.url)}`,
+			{ credentials: 'include' }
+		);
+		if (!res.ok) {
+			if (res.status === 401) throw new Unauthorized();
+			// Sections are best-effort; fall back to a flat board import.
+			return [];
+		}
+		const data = (await res.json()) as { sections: Section[] | null };
+		return data.sections ?? [];
+	}
+
 	async function startImport() {
 		const did = auth.user?.did;
 		if (!did) {
@@ -165,57 +215,57 @@
 		error = null;
 		try {
 			const sessionId = crypto.randomUUID?.() ?? generateUUID();
+			const uname = username.trim();
 			const picked = boards.filter((b) => selected.has(b.id));
 			for (const board of picked) {
-				const collRes = await fetch(`${PUBLIC_APPVIEW_URL}/collection`, {
-					method: 'POST',
-					credentials: 'include',
-					headers: {
-						'Content-Type': 'application/x-www-form-urlencoded',
-						Accept: 'application/json'
-					},
-					body: new URLSearchParams({ name: board.name, description: '' }).toString()
-				});
-				if (!collRes.ok) {
-					if (collRes.status === 401) {
-						auth.user = null;
-						promptLogin();
-						return;
-					}
-					throw new Error(`creating collection ${board.name} (${collRes.status})`);
-				}
-				const { uri: collectionUri } = (await collRes.json()) as { uri: string };
-				const jobRes = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/pinterest/jobs`, {
-					method: 'POST',
-					credentials: 'include',
-					headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-					body: JSON.stringify({
+				const boardLink = `https://www.pinterest.com${board.url}`;
+				const rootUri = await createCollection(
+					board.name,
+					`Imported from Pinterest board "${board.name}" by @${uname} (${boardLink})`
+				);
+				const sections = await fetchSections(board);
+				for (const section of sections) {
+					const sectionLink = `https://www.pinterest.com${section.url}`;
+					const subUri = await createCollection(
+						section.title,
+						`Imported from Pinterest section "${section.title}" in board "${board.name}" by @${uname} (${sectionLink})`,
+						rootUri
+					);
+					await queueJob({
 						importSessionId: sessionId,
 						pinterestBoardId: board.id,
-						pinterestBoardName: board.name,
-						pinterestBoardUrl: board.url,
-						pinterestUsername: username.trim(),
-						collectionUri
-					})
-				});
-				if (!jobRes.ok) {
-					if (jobRes.status === 401) {
-						auth.user = null;
-						promptLogin();
-						return;
-					}
-					throw new Error(`queueing ${board.name} (${jobRes.status})`);
+						pinterestBoardName: `${board.name} › ${section.title}`,
+						pinterestBoardUrl: section.url,
+						pinterestSectionId: section.id,
+						pinterestUsername: uname,
+						collectionUri: subUri
+					});
 				}
+				await queueJob({
+					importSessionId: sessionId,
+					pinterestBoardId: board.id,
+					pinterestBoardName: board.name,
+					pinterestBoardUrl: board.url,
+					filterSectionPins: sections.length > 0,
+					pinterestUsername: uname,
+					collectionUri: rootUri
+				});
+
 			}
 			session = {
 				sessionId,
-				username: username.trim(),
+				username: uname,
 				startedAt: new Date().toISOString()
 			};
 			status = null;
 			stage = 'progress';
 			void refresh();
 		} catch (e) {
+			if (e instanceof Unauthorized) {
+				auth.user = null;
+				promptLogin();
+				return;
+			}
 			error = e instanceof Error ? e.message : 'Failed to start import.';
 		} finally {
 			loading = false;

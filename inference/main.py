@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import joblib
 import numpy as np
+import onnxruntime as ort
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from PIL import Image
@@ -42,6 +43,16 @@ MODELS_DIR = os.environ.get("MODELS_DIR", "./models")
 UMAP_PATH  = os.path.join(MODELS_DIR, "umap_model.joblib")
 RESAMPLE_NEAREST = getattr(Image, "Resampling", Image).NEAREST
 
+# Moderation heads — optional ONNX classifiers loaded at startup. Each runs on
+# the L2-normalized 768-d SigLIP2 pooler output and returns a single logit.
+# Missing or unset paths leave the head None; downstream emits 0.0 for that axis.
+SAFETY_HEAD_ENV = {
+    "nsfw":         "NSFW_HEAD_ONNX",
+    "violence":     "VIOLENCE_HEAD_ONNX",
+    "ai_generated": "AIGEN_HEAD_ONNX",
+}
+EMBEDDING_DIM = 768
+
 # ── State ─────────────────────────────────────────────────────────────────────
 
 model     = None
@@ -55,6 +66,8 @@ worker_tasks: list[asyncio.Task] = []
 _umap_model:       object = None
 _umap_model_mtime: float  = None
 _umap_lock = threading.Lock()
+
+_safety_heads: dict[str, ort.InferenceSession | None] = {axis: None for axis in SAFETY_HEAD_ENV}
 
 # ── UMAP loading ──────────────────────────────────────────────────────────────
 
@@ -73,9 +86,56 @@ def _try_load_umap():
     except Exception as e:
         print(f"Failed to load UMAP model: {e}")
 
+# ── Safety heads ──────────────────────────────────────────────────────────────
+
+def _load_safety_heads():
+    """Load each ONNX head. Path resolution order:
+    1. Explicit env var (e.g. NSFW_HEAD_ONNX)
+    2. $MODELS_DIR/{axis}_head.onnx   (convention-based auto-detect)
+    Missing or unset paths leave that axis disabled (emits 0.0 downstream)."""
+    for axis, env_var in SAFETY_HEAD_ENV.items():
+        path = os.environ.get(env_var) or os.path.join(MODELS_DIR, f"{axis}_head.onnx")
+        if not os.path.exists(path):
+            continue
+        try:
+            _safety_heads[axis] = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+            print(f"{axis} head loaded from {path}")
+        except Exception as exc:
+            print(f"failed to load {axis} head from {path}: {exc}")
+
+
+def _any_safety_head_loaded() -> bool:
+    return any(sess is not None for sess in _safety_heads.values())
+
+
+def _l2_normalize(x: np.ndarray) -> np.ndarray:
+    """Row-wise L2 normalization. Treats zero-norm rows as identity to avoid NaN."""
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    return x / norms
+
+
+def _classify_safety(embeddings_norm: np.ndarray) -> list[dict[str, float]]:
+    """Run all loaded heads on a batch of L2-normalized 768-d embeddings.
+    Returns one dict per row; unloaded axes contribute 0.0 so downstream
+    threshold logic treats them as 'no signal'."""
+    n = embeddings_norm.shape[0]
+    head_probs: dict[str, np.ndarray] = {}
+    for axis, sess in _safety_heads.items():
+        if sess is None:
+            continue
+        logits = sess.run(None, {"embedding": embeddings_norm})[0]
+        # sigmoid in float64 to avoid overflow at extreme logits
+        head_probs[axis] = (1.0 / (1.0 + np.exp(-logits.astype(np.float64)))).ravel()
+    return [
+        {axis: float(head_probs[axis][i]) if axis in head_probs else 0.0 for axis in SAFETY_HEAD_ENV}
+        for i in range(n)
+    ]
+
+
 # ── Inference ─────────────────────────────────────────────────────────────────
 
-def _embed_images(images: list[Image.Image]) -> list[tuple[list[float], list[float] | None]]:
+def _embed_images(images: list[Image.Image]) -> list[dict]:
     inputs = processor(
         images=images,
         max_num_patches=MAX_PATCHES,
@@ -96,10 +156,26 @@ def _embed_images(images: list[Image.Image]) -> list[tuple[list[float], list[flo
         except Exception as e:
             print(f"UMAP transform failed: {e}")
 
+    # Safety heads are tiny MLPs (CPU); cost is negligible per batch but only
+    # run when at least one head is loaded. Heads expect L2-normalized inputs
+    # (per training in moderation/*.ipynb); the response embedding itself
+    # remains un-normalized to preserve pgvector compatibility with rows
+    # written before classification existed.
+    safety_scores = None
+    if _any_safety_head_loaded():
+        embeddings_norm = _l2_normalize(embeddings.astype(np.float32))
+        try:
+            safety_scores = _classify_safety(embeddings_norm)
+        except Exception as e:
+            print(f"safety classification failed: {e}")
+
     results = []
     for idx, embedding in enumerate(embeddings.tolist()):
-        umap_embedding = None if umap_embeddings is None else umap_embeddings[idx]
-        results.append((embedding, umap_embedding))
+        results.append({
+            "embedding": embedding,
+            "umap_embedding": None if umap_embeddings is None else umap_embeddings[idx],
+            "safety_scores": None if safety_scores is None else safety_scores[idx],
+        })
     return results
 
 
@@ -287,6 +363,7 @@ async def lifespan(app: FastAPI):
     print("Model ready.")
 
     _try_load_umap()
+    _load_safety_heads()
 
     worker_tasks.clear()
     worker_tasks.extend([
@@ -321,12 +398,18 @@ class DominantColor(BaseModel):
     hex: str
     fraction: float
 
+class SafetyScores(BaseModel):
+    nsfw: float
+    violence: float
+    ai_generated: float
+
 class ImageEmbeddingResponse(BaseModel):
     embedding: list[float]
     umap_embedding: list[float] | None = None
     width: int
     height: int
     dominant_colors: list[DominantColor]
+    safety_scores: SafetyScores | None = None
 
 @app.post("/embed/image", response_model=ImageEmbeddingResponse)
 async def embed_image(file: UploadFile = File(...)):
@@ -342,13 +425,15 @@ async def embed_image(file: UploadFile = File(...)):
     except asyncio.QueueFull:
         raise HTTPException(status_code=503, detail="Image inference queue is full")
 
-    embedding, umap_embedding = await future
+    result = await future
+    scores = result["safety_scores"]
     return ImageEmbeddingResponse(
-        embedding=embedding,
-        umap_embedding=umap_embedding,
+        embedding=result["embedding"],
+        umap_embedding=result["umap_embedding"],
         width=width,
         height=height,
         dominant_colors=dominant_colors,
+        safety_scores=SafetyScores(**scores) if scores is not None else None,
     )
 
 
@@ -407,6 +492,36 @@ async def reload_umap():
     _try_load_umap()
 
 
+class ClassifyEmbeddingsRequest(BaseModel):
+    embeddings: list[list[float]]
+
+
+class ClassifyEmbeddingsResponse(BaseModel):
+    results: list[SafetyScores]
+
+
+@app.post("/classify/safety/embeddings", response_model=ClassifyEmbeddingsResponse)
+async def classify_safety_embeddings(req: ClassifyEmbeddingsRequest):
+    """Backfill endpoint: score already-computed embeddings without running the
+    SigLIP2 backbone again. Pass raw (un-normalized) 768-d vectors as stored in
+    visual_identity.embedding — the server normalizes before running heads."""
+    if not _any_safety_head_loaded():
+        raise HTTPException(status_code=503, detail="no safety heads loaded")
+    if not req.embeddings:
+        return ClassifyEmbeddingsResponse(results=[])
+
+    arr = np.asarray(req.embeddings, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[1] != EMBEDDING_DIM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"embeddings must be a 2D array with {EMBEDDING_DIM} columns",
+        )
+    normalized = _l2_normalize(arr)
+    loop = asyncio.get_running_loop()
+    scores = await loop.run_in_executor(None, _classify_safety, normalized)
+    return ClassifyEmbeddingsResponse(results=[SafetyScores(**s) for s in scores])
+
+
 @app.get("/health")
 async def health():
     with _umap_lock:
@@ -416,6 +531,7 @@ async def health():
         "device": DEVICE,
         "model": CHECKPOINT,
         "umap": umap_loaded,
+        "safety_heads": {axis: (sess is not None) for axis, sess in _safety_heads.items()},
         "queues": {
             "text": {"pending": text_queue.qsize(), "max": TEXT_QUEUE_SIZE},
             "image": {"pending": image_queue.qsize(), "max": IMAGE_QUEUE_SIZE},

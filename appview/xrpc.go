@@ -33,6 +33,12 @@ type saveAttribution struct {
 }
 
 func (s *Server) WellKnownDID(w http.ResponseWriter, r *http.Request) {
+	// Two DIDs share this binary's TCP port — appview and labeler — distinguished
+	// by Host header (the reverse proxy preserves Host so we can route here).
+	if s.LabelerHost != "" && requestHost(r) == s.LabelerHost {
+		s.LabelerWellKnownDID(w, r)
+		return
+	}
 	doc := map[string]any{
 		"@context": []string{"https://www.w3.org/ns/did/v1"},
 		"id":       s.ServiceDID,
@@ -46,6 +52,21 @@ func (s *Server) WellKnownDID(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/did+ld+json")
 	json.NewEncoder(w).Encode(doc)
+}
+
+// requestHost returns the request's host without the port portion, lowercased
+// so comparisons against s.LabelerHost are stable across "Host: x" vs "Host: x:443".
+func requestHost(r *http.Request) string {
+	h := r.Host
+	if i := strings.IndexByte(h, ':'); i >= 0 {
+		// Strip the port only if it's a default 80/443 — otherwise (dev environments,
+		// did:web with explicit port) the port is meaningful and must stay.
+		port := h[i+1:]
+		if port == "80" || port == "443" {
+			h = h[:i]
+		}
+	}
+	return strings.ToLower(h)
 }
 
 // optionalAuth returns the viewer DID if the request is authenticated, nil if
@@ -112,13 +133,14 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	cursor := r.URL.Query().Get("cursor")
+	parent := r.URL.Query().Get("parent")
 
 	viewerStr := ""
 	if viewerDID != nil {
 		viewerStr = viewerDID.String()
 	}
 
-	rows, nextCursor, err := s.Store.GetActorCollectionsPage(r.Context(), actorDID.String(), viewerStr, limit, cursor)
+	rows, nextCursor, err := s.Store.GetActorCollectionsPage(r.Context(), actorDID.String(), viewerStr, parent, limit, cursor)
 	if err != nil {
 		slog.Error("GetActorCollectionsPage", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -153,9 +175,11 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		Author        profileView            `json:"author"`
 		Name          string                 `json:"name"`
 		Description   string                 `json:"description,omitempty"`
+		ParentURI     string                 `json:"parentUri,omitempty"`
 		SaveCount     int                    `json:"saveCount,omitempty"`
 		PreviewImages []string               `json:"previewImages,omitempty"`
 		CreatedAt     string                 `json:"createdAt"`
+		LastSavedAt   string                 `json:"lastSavedAt,omitempty"`
 		Viewer        *collectionViewerState `json:"viewer,omitempty"`
 	}
 
@@ -167,10 +191,14 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 			Author:      actor,
 			Name:        row.Name,
 			Description: row.Description,
+			ParentURI:   row.ParentURI,
 			SaveCount:   row.SaveCount,
 		}
 		if row.CreatedAt != nil {
 			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		if row.LastSavedAt != nil {
+			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
 		for _, blob := range row.PreviewBlobs {
 			parts := strings.SplitN(blob, ",", 2)
@@ -321,6 +349,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		Author        profileView            `json:"author"`
 		Name          string                 `json:"name"`
 		Description   string                 `json:"description,omitempty"`
+		ParentURI     string                 `json:"parentUri,omitempty"`
 		SaveCount     int                    `json:"saveCount,omitempty"`
 		PreviewImages []string               `json:"previewImages,omitempty"`
 		CreatedAt     string                 `json:"createdAt"`
@@ -332,6 +361,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		Author:      author,
 		Name:        collRow.Name,
 		Description: collRow.Description,
+		ParentURI:   collRow.ParentURI,
 		SaveCount:   collRow.SaveCount,
 	}
 	if collRow.CreatedAt != nil {
@@ -357,6 +387,12 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
+	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "getCollectionSaves", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "getCollectionSaves", "err", err)
 	}
 
 	type response struct {
@@ -439,6 +475,12 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "searchSaves", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "searchSaves", "err", err)
+	}
 
 	var nextCursor string
 	if page.HasMore {
@@ -514,6 +556,12 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
+	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "getRelatedSaves", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "getRelatedSaves", "err", err)
 	}
 
 	var nextCursor string
@@ -817,6 +865,12 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "getFeed", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "getFeed", "err", err)
+	}
 
 	type response struct {
 		Cursor string     `json:"cursor,omitempty"`
@@ -887,6 +941,12 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 		if sv, ok := byURI[u]; ok {
 			views = append(views, sv)
 		}
+	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "getSaves", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "getSaves", "err", err)
 	}
 
 	type response struct {

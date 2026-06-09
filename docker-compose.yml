@@ -45,6 +45,7 @@ services:
         condition: service_healthy
     environment:
       TAP_DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      TAP_RELAY_URL: https://bsky.network
       TAP_SIGNAL_COLLECTION: is.currents.actor.profile
       TAP_COLLECTION_FILTERS: is.currents.*
     ports:

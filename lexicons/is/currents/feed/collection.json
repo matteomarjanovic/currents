@@ -25,6 +25,11 @@
             "maxGraphemes": 1000,
             "maxLength": 10000
           },
+          "parent": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Strong reference to the parent collection. Present only on sub-collections; absent on root collections."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime"

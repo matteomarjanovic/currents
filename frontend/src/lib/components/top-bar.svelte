@@ -22,12 +22,17 @@
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import Settings from '@lucide/svelte/icons/settings';
+	import Bell from '@lucide/svelte/icons/bell';
 	import Logo from '$lib/assets/logo.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
+	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
+	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
+	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
 
@@ -43,10 +48,23 @@
 	let searchOpen = $state(false);
 	let createCollectionOpen = $state(false);
 	let browserExtensionDialogOpen = $state(false);
+	let notificationsOpen = $state(false);
+
+	// Only items the user hasn't acted on yet count toward the unread indicator —
+	// disputes are waiting on a moderator, not on the author.
+	let pendingCount = $derived(notifications.items.filter((i) => !i.disputed).length);
+
+	// Fetch the pending-attestation list once when the user is known. The store
+	// caches across navigations; opening the dialog refreshes it again.
+	onMount(() => {
+		if (user) void refreshNotifications();
+	});
 
 	function handleCollectionCreated(collection: CollectionView) {
 		addCollection(collection);
-		goto(resolve('/(with-navbar)/collection/[uri]', { uri: encodeURIComponent(collection.uri) }));
+		const rkey = collection.uri.split('/').pop() ?? '';
+		const handle = collection.author?.handle ?? user?.handle ?? '';
+		goto(`/profile/${handle}/collection/${rkey}`);
 	}
 
 	function handleBrowserExtension() {
@@ -189,7 +207,7 @@
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 				<DropdownMenu.Root>
-					<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
+					<DropdownMenu.Trigger class="relative shrink-0 rounded-full outline-none">
 						<Avatar.Root size="default">
 							{#if user.avatar}
 								<Avatar.Image src={user.avatar} alt={user.displayName ?? user.handle} />
@@ -198,6 +216,12 @@
 								<UserIcon class="size-4" />
 							</Avatar.Fallback>
 						</Avatar.Root>
+						{#if pendingCount > 0}
+							<span
+								class="absolute -top-0.5 -right-0.5 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+								aria-label="{pendingCount} pending"
+							></span>
+						{/if}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="w-56">
 						<DropdownMenu.Label>
@@ -221,6 +245,19 @@
 						<DropdownMenu.Item onclick={handleBrowserExtension}>
 							<Puzzle class="size-4" />
 							Browser extension
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => (notificationsOpen = true)}>
+							<Bell class="size-4" />
+							<span>Notifications</span>
+							{#if pendingCount > 0}
+								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">
+									{pendingCount}
+								</Badge>
+							{/if}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => goto('/settings')}>
+							<Settings class="size-4" />
+							Settings
 						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							onclick={() => {
@@ -277,4 +314,5 @@
 {#if user}
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
 	<BrowserExtensionDialog bind:open={browserExtensionDialogOpen} />
+	<NotificationsDialog bind:open={notificationsOpen} />
 {/if}
