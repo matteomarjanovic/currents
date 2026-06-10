@@ -1,0 +1,1 @@
+ALTER TABLE import_item ADD COLUMN source_url TEXT NOT NULL DEFAULT '';

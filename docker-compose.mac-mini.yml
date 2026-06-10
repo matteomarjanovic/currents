@@ -34,6 +34,8 @@ services:
       TAP_URL: ws://tap:2480/channel
       INFERENCE_URL: ${INFERENCE_URL:-http://host.docker.internal:8000}
       HIDDEN_DIDS: ${HIDDEN_DIDS:-}
+      LABELER_DID: ${LABELER_DID:-}
+      LABELER_SIGNING_KEY: ${LABELER_SIGNING_KEY:-}
   tap:
     image: ghcr.io/bluesky-social/indigo/tap:latest
     restart: unless-stopped
@@ -42,6 +44,7 @@ services:
         condition: service_healthy
     environment:
       TAP_DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
+      TAP_RELAY_URL: https://bsky.network
       TAP_SIGNAL_COLLECTION: is.currents.actor.profile
       TAP_COLLECTION_FILTERS: is.currents.*
 

@@ -22,6 +22,9 @@ type Server struct {
 	Inference     *InferenceClient
 	FrontendURL   string
 	ProcessMode   string
+	ImportWorker  *ImportWorker
+	Labeler       *LabelerIssuer
+	LabelerHost   string // host portion of the labeler DID (e.g. "moderation.currents.is"); empty when labeler disabled
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

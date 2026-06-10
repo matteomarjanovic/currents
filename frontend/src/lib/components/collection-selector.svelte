@@ -16,7 +16,10 @@
 	import * as Drawer from '$lib/components/ui/drawer';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Plus from '@lucide/svelte/icons/plus';
+	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import SaveToast from '$lib/components/save-toast.svelte';
 
@@ -49,7 +52,8 @@
 	let selectedCollectionUri = $derived(
 		pickerMode
 			? (selectedUri ?? '')
-			: (userSelectedUri ?? localSaves[0]?.collectionUri ?? collections.lastUsedUri)
+			: (userSelectedUri ??
+					toTopLevel(localSaves[0]?.collectionUri ?? collections.lastUsedUri ?? ''))
 	);
 
 	$effect(() => {
@@ -64,8 +68,15 @@
 
 	let open = $state(false);
 	let createOpen = $state(false);
+	let createParent = $state<CollectionView | null>(null);
+	// When set, the list shows this collection's sections instead of the roots.
+	let drillParent = $state<CollectionView | null>(null);
 	$effect(() => {
 		onOpenChange?.(open);
+	});
+	// Always start back at the top level when the picker reopens.
+	$effect(() => {
+		if (!open) drillParent = null;
 	});
 
 	const OPTIMISTIC_URI = 'optimistic';
@@ -74,13 +85,53 @@
 		return localSaves.find((s) => s.collectionUri === uri)?.saveUri ?? null;
 	}
 
-	let sortedCollections = $derived(
-		[...collections.items].sort((a, b) => {
-			const aSaved = isSavedIn(a.uri) ? 0 : 1;
-			const bSaved = isSavedIn(b.uri) ? 0 : 1;
-			return aSaved - bSaved;
-		})
+	// Resolve a collection URI to its top-level parent (sub-collections → parent).
+	function toTopLevel(uri: string): string {
+		const c = collections.items.find((x) => x.uri === uri);
+		return c?.parentUri ? c.parentUri : uri;
+	}
+
+	// Most recently saved-into first; ties broken by newest collection.
+	function byRecentSave(a: CollectionView, b: CollectionView): number {
+		const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
+		const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
+		if (rb !== ra) return rb - ra;
+		const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
+		const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
+		return cb - ca;
+	}
+
+	let childrenByParent = $derived.by(() => {
+		const m = new Map<string, CollectionView[]>();
+		for (const c of collections.items) {
+			if (c.parentUri) {
+				const arr = m.get(c.parentUri) ?? [];
+				arr.push(c);
+				m.set(c.parentUri, arr);
+			}
+		}
+		return m;
+	});
+	let rootCollections = $derived(collections.items.filter((c) => !c.parentUri).sort(byRecentSave));
+	let drillSections = $derived(
+		drillParent ? [...(childrenByParent.get(drillParent.uri) ?? [])].sort(byRecentSave) : []
 	);
+
+	function sectionCount(uri: string): number {
+		return childrenByParent.get(uri)?.length ?? 0;
+	}
+
+	// A root is "saved" if the item is in it directly or in any of its sections.
+	function isSavedInTree(root: CollectionView): boolean {
+		if (isSavedIn(root.uri)) return true;
+		return (childrenByParent.get(root.uri) ?? []).some((c) => !!isSavedIn(c.uri));
+	}
+
+	function openCreate(parent: CollectionView | null) {
+		createParent = parent;
+		open = false;
+		createOpen = true;
+	}
 
 	let selectedName = $derived(
 		collections.items.find((c) => c.uri === selectedCollectionUri)?.name ?? 'Select collection'
@@ -201,41 +252,97 @@
 	}
 </script>
 
-{#snippet collectionList()}
+{#snippet preview(col: CollectionView)}
+	{#if col.previewImages?.[0]}
+		<img
+			src={col.previewImages[0]}
+			alt=""
+			loading="lazy"
+			class="size-9 shrink-0 rounded-md object-cover"
+		/>
+	{:else}
+		<div class="size-9 shrink-0 rounded-md bg-muted"></div>
+	{/if}
+{/snippet}
+
+<!-- A leaf row: clicking it saves (or selects) the collection. -->
+{#snippet saveRow(col: CollectionView, subtitle: string, bold: boolean)}
 	<button
-		class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
-		onclick={() => {
-			open = false;
-			createOpen = true;
-		}}
+		class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
+		onclick={() => toggleCollection(col.uri)}
 	>
-		<Plus class="size-4 shrink-0" />
-		<span class="truncate">Create new collection</span>
+		{@render preview(col)}
+		<span class="flex flex-1 flex-col items-start truncate">
+			<span class="truncate {bold ? 'font-medium' : ''}">{col.name}</span>
+			<span class="text-xs text-muted-foreground">{subtitle}</span>
+		</span>
+		{#if isSavedIn(col.uri)}
+			<Check class="size-4 shrink-0" />
+		{/if}
 	</button>
-	{#each sortedCollections as col (col.uri)}
-		<button
-			class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
-			onclick={() => toggleCollection(col.uri)}
-		>
-			{#if col.previewImages?.[0]}
-				<img
-					src={col.previewImages[0]}
-					alt=""
-					loading="lazy"
-					class="size-9 shrink-0 rounded-md object-cover"
-				/>
-			{:else}
-				<div class="size-9 shrink-0 rounded-md bg-muted"></div>
-			{/if}
-			<span class="flex flex-1 flex-col items-start truncate">
-				<span class="truncate">{col.name}</span>
-				<span class="text-xs text-muted-foreground">Public</span>
+{/snippet}
+
+<!-- A collection with sections: clicking it drills into its sections. -->
+{#snippet navRow(root: CollectionView)}
+	{@const n = sectionCount(root.uri)}
+	<button
+		class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
+		onclick={() => (drillParent = root)}
+	>
+		{@render preview(root)}
+		<span class="flex flex-1 flex-col items-start truncate">
+			<span class="truncate">{root.name}</span>
+			<span class="text-xs text-muted-foreground">
+				Public • {n}
+				{n === 1 ? 'section' : 'sections'}
 			</span>
-			{#if isSavedIn(col.uri)}
-				<Check class="size-4 shrink-0" />
-			{/if}
+		</span>
+		{#if isSavedInTree(root)}
+			<Check class="size-4 shrink-0 text-muted-foreground" />
+		{/if}
+		<ChevronRight class="size-4 shrink-0 text-muted-foreground" />
+	</button>
+{/snippet}
+
+{#snippet collectionList()}
+	{#if drillParent}
+		{@const dp = drillParent}
+		<button
+			class="flex w-full items-center gap-1.5 rounded-2xl px-2 py-1.5 text-sm font-medium hover:bg-foreground/10"
+			onclick={() => (drillParent = null)}
+		>
+			<ChevronLeft class="size-4 shrink-0" />
+			<span class="truncate">All collections</span>
 		</button>
-	{/each}
+		{@render saveRow(dp, 'Whole collection', true)}
+		<!-- Sections -->
+		<span class="block px-2 pt-3 text-xs text-muted-foreground">Sections</span>
+		<button
+			class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
+			onclick={() => openCreate(dp)}
+		>
+			<FolderPlus class="size-4 shrink-0" />
+			<span class="truncate">Create section</span>
+		</button>
+		{#each drillSections as sec (sec.uri)}
+			{@render saveRow(sec, 'Public', false)}
+		{/each}
+	{:else}
+		<button
+			class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
+			onclick={() => openCreate(null)}
+		>
+			<Plus class="size-4 shrink-0" />
+			<span class="truncate">Create new collection</span>
+		</button>
+		{#each rootCollections as root (root.uri)}
+			{#if sectionCount(root.uri) > 0}
+				{@render navRow(root)}
+			{:else}
+				{@render saveRow(root, 'Public', false)}
+			{/if}
+		{/each}
+	{/if}
 {/snippet}
 
 {#if variant === 'popover'}
@@ -292,9 +399,23 @@
 		</Drawer.Trigger>
 		<Drawer.Content>
 			<Drawer.Header>
-				<Drawer.Title>{pickerMode ? 'Pick a collection' : 'Save to collection'}</Drawer.Title>
+				<Drawer.Title>
+					{#if drillParent}
+						{drillParent.name}
+					{:else if pickerMode}
+						Pick a collection
+					{:else}
+						Save to collection
+					{/if}
+				</Drawer.Title>
 				<Drawer.Description>
-					{pickerMode ? 'Choose a collection for the uploads.' : 'Pick one or more collections.'}
+					{#if drillParent}
+						Choose a section, or save to the whole collection.
+					{:else if pickerMode}
+						Choose a collection for the uploads.
+					{:else}
+						Pick one or more collections.
+					{/if}
 				</Drawer.Description>
 			</Drawer.Header>
 			<div class="max-h-[60vh] overflow-y-auto p-1.5">
@@ -311,4 +432,9 @@
 	</Drawer.Root>
 {/if}
 
-<CollectionCreateDialog bind:open={createOpen} onCreated={handleCreated} />
+<CollectionCreateDialog
+	bind:open={createOpen}
+	parent={createParent?.uri}
+	parentName={createParent?.name}
+	onCreated={handleCreated}
+/>

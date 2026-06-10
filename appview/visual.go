@@ -44,12 +44,16 @@ func NewInferenceClient(baseURL string) *InferenceClient {
 
 // ImageEmbedding holds the result of an /embed/image call.
 // UMAPEmbedding is nil when the inference server has no UMAP model loaded.
+// SafetyScores is nil when the inference server has no moderation heads loaded;
+// the appview treats safety scoring as optional so the backend can deploy ahead
+// of the heads being trained.
 type ImageEmbedding struct {
 	Embedding      []float32       `json:"embedding"`
 	UMAPEmbedding  []float32       `json:"umap_embedding"`
 	Width          int             `json:"width"`
 	Height         int             `json:"height"`
 	DominantColors json.RawMessage `json:"dominant_colors"`
+	SafetyScores   *SafetyScores   `json:"safety_scores,omitempty"`
 }
 
 func (c *InferenceClient) doImageRequest(ctx context.Context, path string, imageBytes []byte, mimeType string, fields map[string]string) (*http.Response, error) {
@@ -150,6 +154,43 @@ func (c *InferenceClient) PrepareImage(ctx context.Context, imageBytes []byte, m
 		mimeType = http.DetectContentType(prepared)
 	}
 	return prepared, mimeType, nil
+}
+
+// ClassifySafetyEmbeddings posts a batch of pre-computed 768-d embeddings to
+// the inference server's CPU-only backfill endpoint and returns one SafetyScores
+// per row in input order. The server L2-normalizes server-side, so callers can
+// pass raw vectors straight out of visual_identity.embedding.
+//
+// Returns an error if no safety heads are loaded server-side (503).
+func (c *InferenceClient) ClassifySafetyEmbeddings(ctx context.Context, embeddings [][]float32) ([]SafetyScores, error) {
+	if len(embeddings) == 0 {
+		return nil, nil
+	}
+	body, err := json.Marshal(map[string]any{"embeddings": embeddings})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/classify/safety/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
+	}
+	var out struct {
+		Results []SafetyScores `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding inference response: %w", err)
+	}
+	return out.Results, nil
 }
 
 func (c *InferenceClient) EmbedText(ctx context.Context, text string) ([]float32, error) {

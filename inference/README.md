@@ -10,11 +10,12 @@ Requires Python 3.10+.
 
 | Method | Path           | Description                                                         |
 |--------|----------------|---------------------------------------------------------------------|
-| `POST` | `/embed/image` | Embed an image and return image metadata (`multipart/form-data`)    |
+| `POST` | `/embed/image` | Embed an image and return image metadata + (optional) safety scores (`multipart/form-data`)    |
 | `POST` | `/prepare/image` | Decode and resize an oversized image for upload (`multipart/form-data`) |
 | `POST` | `/embed/text`  | Embed a query string (`{"text": "..."}`)                            |
+| `POST` | `/classify/safety/embeddings` | Score a batch of pre-computed 768-d embeddings through the loaded safety heads (CPU-only, no GPU contention) |
 | `POST` | `/reload-umap` | Re-read the UMAP model from disk (204 No Content)                   |
-| `GET`  | `/health`      | Returns `{status, device, model, umap, queues, batches}`            |
+| `GET`  | `/health`      | Returns `{status, device, model, umap, safety_heads, queues, batches}` |
 
 `/embed/text` returns `{"embedding": [float × 768]}`.
 
@@ -28,11 +29,12 @@ Requires Python 3.10+.
 	"height": 987,
 	"dominant_colors": [
 		{"hex": "#aabbcc", "fraction": 0.42}
-	]
+	],
+	"safety_scores": {"nsfw": 0.02, "violence": 0.01, "ai_generated": 0.93} | null
 }
 ```
 
-`umap_embedding` is `null` when no UMAP model is loaded. The dominant-color palette and dimensions are returned from the same decoded image that feeds the embedding model.
+`umap_embedding` is `null` when no UMAP model is loaded. The dominant-color palette and dimensions are returned from the same decoded image that feeds the embedding model. `safety_scores` is `null` when none of the three head env vars are set; when at least one is set, the field is present and unloaded axes contribute `0.0` so partial deployments (e.g. shipping the NSFW head first) degrade gracefully on the consumer side.
 
 `/prepare/image` accepts `multipart/form-data` with fields `file` and `max_bytes`, then returns the original image bytes when they already fit or a JPEG-transcoded payload when the image had to be reduced to satisfy the byte limit.
 
@@ -50,6 +52,17 @@ Environment variables:
 | `IMAGE_QUEUE_SIZE` | `64` | Maximum number of queued image requests |
 | `IMAGE_MAX_BATCH` | `8` | Maximum images per inference batch |
 | `IMAGE_MAX_WAIT_SECS` | `0.020` | Image batch collection window in seconds |
+| `NSFW_HEAD_ONNX` | unset | Path to the trained NSFW classifier ONNX file. Loaded on startup; unset = head disabled |
+| `VIOLENCE_HEAD_ONNX` | unset | Path to the trained violence classifier ONNX file |
+| `AIGEN_HEAD_ONNX` | unset | Path to the trained AI-generated classifier ONNX file |
+
+## Safety heads
+
+When any of `NSFW_HEAD_ONNX` / `VIOLENCE_HEAD_ONNX` / `AIGEN_HEAD_ONNX` is set, the server loads the corresponding ONNX file at startup and runs it on every `/embed/image` request inside the same SigLIP2 forward pass — no extra GPU work, ~microseconds per image. The heads expect L2-normalized 768-d embeddings (the server normalizes internally); each is a tiny MLP returning a single logit, which the server sigmoids before returning. The training notebooks under `moderation/` produce the expected ONNX shape (`input_names=["embedding"]`, `output_names=["logits"]`).
+
+`/classify/safety/embeddings` is the CPU-only backfill counterpart: pass a `{"embeddings": [[float, ...], ...]}` body and get back `{"results": [{"nsfw": ..., "violence": ..., "ai_generated": ...}, ...]}`. Used by `appview backfill-moderation` to score historical saves without re-running the backbone.
+
+The Currents appview consumes `safety_scores` in `appview/tap.go` to drive auto-flagging and label issuance. See the repo-root **`MODERATION.md`** for the full pipeline.
 
 ## UMAP
 

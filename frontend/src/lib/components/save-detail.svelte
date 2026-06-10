@@ -8,12 +8,17 @@
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
+	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
+	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import EyeOff from '@lucide/svelte/icons/eye-off';
+	import Flag from '@lucide/svelte/icons/flag';
 	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
 
 	interface Props {
@@ -25,7 +30,9 @@
 	let hydratedSave = $state<SaveView | null>(null);
 	let currentSave = $derived(hydratedSave ?? save);
 	let image = $derived(getImageContent(currentSave));
+	let hiddenByPrefs = $derived(shouldHide(currentSave.labels));
 	let attributionDialogOpen = $state(false);
+	let reportDialogOpen = $state(false);
 
 	let viewerAttr = $derived(currentSave.viewer?.attribution);
 	let originalAttr = $derived(image?.attribution);
@@ -203,6 +210,18 @@
 			{hasViewerAttr ? 'Edit attribution' : '+ Add attribution'}
 		</Button>
 	{/if}
+
+	{#if auth.user && !isOwnSave}
+		<Button
+			variant="link"
+			size="sm"
+			class="self-start gap-1 px-0 text-xs text-muted-foreground hover:text-foreground"
+			onclick={() => (reportDialogOpen = true)}
+		>
+			<Flag class="size-3" />
+			Report
+		</Button>
+	{/if}
 {/snippet}
 
 {#snippet saveControl(variant: 'popover' | 'drawer')}
@@ -211,6 +230,22 @@
 	{:else if auth.checked}
 		<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
 	{/if}
+{/snippet}
+
+{#snippet hiddenState()}
+	<div
+		class="flex flex-col items-center justify-center gap-3 rounded-lg bg-muted p-8 text-center text-sm text-muted-foreground"
+	>
+		<EyeOff class="size-6" />
+		<p class="font-medium text-foreground">Hidden by your settings</p>
+		<p class="max-w-sm text-xs">
+			This image carries a label you've chosen not to see. Adjust your moderation preferences to
+			change what's shown.
+		</p>
+		<a href="/settings" class="text-xs font-medium text-foreground underline-offset-2 hover:underline">
+			Open settings
+		</a>
+	</div>
 {/snippet}
 
 <div class="hidden h-screen md:flex">
@@ -231,13 +266,20 @@
 		</div>
 	</div>
 	<div class="flex w-2/3 items-center justify-center p-6">
-		{#if image}
-			<img
-				src={image.imageUrl}
-				alt={currentSave.text ?? ''}
-				class="max-h-full max-w-full object-contain"
-				style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
-			/>
+		{#if hiddenByPrefs}
+			{@render hiddenState()}
+		{:else if image}
+			<LabeledMedia
+				labels={currentSave.labels}
+				class="flex h-full w-full items-center justify-center"
+			>
+				<img
+					src={image.imageUrl}
+					alt={currentSave.text ?? ''}
+					class="max-h-full max-w-full object-contain"
+					style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+				/>
+			</LabeledMedia>
 		{:else}
 			<div
 				class="flex h-full w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
@@ -259,13 +301,17 @@
 		</div>
 	</div>
 	{@render info()}
-	{#if image}
-		<img
-			src={image.imageUrl}
-			alt={currentSave.text ?? ''}
-			class="w-full"
-			style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
-		/>
+	{#if hiddenByPrefs}
+		{@render hiddenState()}
+	{:else if image}
+		<LabeledMedia labels={currentSave.labels}>
+			<img
+				src={image.imageUrl}
+				alt={currentSave.text ?? ''}
+				class="w-full"
+				style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
+			/>
+		</LabeledMedia>
 	{:else}
 		<div
 			class="flex items-center justify-center bg-muted text-sm text-muted-foreground"
@@ -298,4 +344,8 @@
 			};
 		}}
 	/>
+{/if}
+
+{#if auth.user && !isOwnSave}
+	<ReportDialog bind:open={reportDialogOpen} save={currentSave} />
 {/if}

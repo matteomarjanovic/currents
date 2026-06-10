@@ -21,12 +21,27 @@
 
 	let staged = $state<Staged[]>([]);
 	let selectedCollectionUri = $state<string>('');
+	let selectedSelfLabels = $state<Set<string>>(new Set());
 	let uploading = $state(false);
 	let completed = $state(false);
 	let popoverDismissed = $state(false);
 	let dragActive = $state(false);
 	let dragDepth = 0;
 	let fileInputEl: HTMLInputElement | undefined = $state();
+
+	const SELF_LABEL_OPTIONS: { val: string; label: string }[] = [
+		{ val: 'porn', label: 'Porn' },
+		{ val: 'sexual', label: 'Sexual' },
+		{ val: 'nudity', label: 'Nudity' },
+		{ val: 'graphic-media', label: 'Graphic' }
+	];
+
+	function toggleSelfLabel(val: string) {
+		const next = new Set(selectedSelfLabels);
+		if (next.has(val)) next.delete(val);
+		else next.add(val);
+		selectedSelfLabels = next;
+	}
 
 	let total = $derived(staged.length);
 	let doneCount = $derived(staged.filter((s) => s.status === 'done').length);
@@ -85,6 +100,9 @@
 			const form = new FormData();
 			form.append('image', item.file, item.file.name);
 			form.append('collection', selectedCollectionUri);
+			if (selectedSelfLabels.size > 0) {
+				form.append('labels', Array.from(selectedSelfLabels).join(','));
+			}
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save`, {
 				method: 'POST',
 				body: form,
@@ -179,6 +197,23 @@
 				{uploading ? 'Uploading…' : 'Start upload'}
 			</Button>
 		</div>
+	</div>
+
+	<div class="flex flex-wrap items-center gap-2 text-xs">
+		<span class="text-muted-foreground">Content warnings (apply to all images in this batch):</span>
+		{#each SELF_LABEL_OPTIONS as opt (opt.val)}
+			{@const active = selectedSelfLabels.has(opt.val)}
+			<button
+				type="button"
+				onclick={() => toggleSelfLabel(opt.val)}
+				disabled={uploading}
+				class="rounded-full border px-2.5 py-1 transition-colors {active
+					? 'border-foreground bg-foreground text-background'
+					: 'border-border text-muted-foreground hover:bg-muted'}"
+			>
+				{opt.label}
+			</button>
+		{/each}
 	</div>
 
 	<div class="flex items-center gap-3">
@@ -291,7 +326,7 @@
 					<Button
 						variant="default"
 						class="w-full"
-						href={`/collection/${encodeURIComponent(selectedCollectionUri)}`}
+						href={`/profile/${auth.user?.handle}/collection/${selectedCollectionUri.split('/').pop()}`}
 					>
 						Go to collection
 					</Button>

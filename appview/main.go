@@ -27,6 +27,35 @@ func main() {
 		Name:   "appview",
 		Usage:  "AT Protocol appview server",
 		Action: runServer,
+		Commands: []*cli.Command{
+			{
+				Name:   "backfill-moderation",
+				Usage:  "score existing saves' embeddings and apply moderation labels (one-shot, resumable)",
+				Action: runBackfillModeration,
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "batch-size",
+						Usage: "blobs per inference batch",
+						Value: 512,
+					},
+					&cli.DurationFlag{
+						Name:  "interval",
+						Usage: "pause between batches so live TAP enrichment isn't starved",
+						Value: 1 * time.Second,
+					},
+					&cli.IntFlag{
+						Name:  "limit",
+						Usage: "stop after processing this many blobs (0 = no limit, run to exhaustion)",
+						Value: 0,
+					},
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "log decisions for the first batch and exit without writing",
+						Value: false,
+					},
+				},
+			},
+		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "mode",
@@ -112,6 +141,16 @@ func main() {
 				Usage:   "comma-separated author DIDs to hide from feed/search results",
 				EnvVars: []string{"HIDDEN_DIDS"},
 			},
+			&cli.StringFlag{
+				Name:    "labeler-did",
+				Usage:   "DID of the moderation labeler, e.g. did:web:moderation.currents.is",
+				EnvVars: []string{"LABELER_DID"},
+			},
+			&cli.StringFlag{
+				Name:    "labeler-signing-key",
+				Usage:   "multibase-encoded secp256k1 private key for signing labels; if empty, the labeler is disabled",
+				EnvVars: []string{"LABELER_SIGNING_KEY"},
+			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -193,11 +232,34 @@ func runServer(cctx *cli.Context) error {
 	oauthClient := oauth.NewClientApp(&config, store)
 
 	inferenceClient := NewInferenceClient(cctx.String("inference-url"))
+
+	labelerSigner, err := NewLabelerSigner(cctx.String("labeler-did"), cctx.String("labeler-signing-key"))
+	if err != nil {
+		return fmt.Errorf("labeler signer: %w", err)
+	}
+	labelerIssuer := NewLabelerIssuer(labelerSigner, store)
+	var labelerHost string
+	if labelerIssuer != nil {
+		labelerHost = labelerDIDHost(labelerSigner.DID)
+		slog.Info("labeler enabled", "did", labelerSigner.DID, "host", labelerHost, "publicKey", labelerSigner.PublicKeyMB)
+	} else {
+		slog.Warn("labeler disabled (no LABELER_SIGNING_KEY); label issuance will be skipped")
+	}
+
 	tapHandler := &TapHandler{
 		Context:   ctx,
 		Store:     store,
 		Dir:       dir,
 		Inference: inferenceClient,
+		Labeler:   labelerIssuer,
+	}
+	importWorker := &ImportWorker{
+		Context:   ctx,
+		Store:     store,
+		OAuth:     oauthClient,
+		Dir:       dir,
+		Inference: inferenceClient,
+		drains:    make(map[string]chan struct{}),
 	}
 
 	if mode == "repair" {
@@ -250,9 +312,12 @@ func runServer(cctx *cli.Context) error {
 			Audience: serviceDID,
 			Dir:      dir,
 		},
-		Inference:   inferenceClient,
-		FrontendURL: cctx.String("frontend-url"),
-		ProcessMode: mode,
+		Inference:    inferenceClient,
+		FrontendURL:  cctx.String("frontend-url"),
+		ProcessMode:  mode,
+		ImportWorker: importWorker,
+		Labeler:      labelerIssuer,
+		LabelerHost:  labelerHost,
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -261,9 +326,23 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /oauth/callback", srv.OAuthCallback)
 
 	http.HandleFunc("GET /api/me", srv.APIMe)
+	http.HandleFunc("GET /api/me/role", srv.APIMeRole)
 	http.HandleFunc("GET /api/profile/import-bluesky", srv.APIImportBlueskyProfile)
 	http.HandleFunc("PUT /api/profile", srv.UpdateProfile)
 	http.HandleFunc("GET /debug/background", srv.BackgroundStatus)
+
+	http.HandleFunc("GET /api/admin/queue", srv.requireModerator(srv.APIAdminQueue))
+	http.HandleFunc("GET /api/admin/queue/{id}", srv.requireModerator(srv.APIAdminQueueDetail))
+	http.HandleFunc("POST /api/admin/queue/{id}/apply-label", srv.requireModerator(srv.APIAdminQueueApplyLabel))
+	http.HandleFunc("POST /api/admin/queue/{id}/takedown", srv.requireModerator(srv.APIAdminQueueTakedown))
+	http.HandleFunc("POST /api/admin/queue/{id}/dismiss", srv.requireModerator(srv.APIAdminQueueDismiss))
+	http.HandleFunc("POST /api/admin/labels/negate", srv.requireModerator(srv.APIAdminNegateLabel))
+	http.HandleFunc("GET /api/admin/me/events", srv.requireModerator(srv.APIAdminMyEvents))
+
+	http.HandleFunc("GET /api/me/attestations", srv.APIMeListAttestations)
+	http.HandleFunc("POST /api/me/attestations/{id}/confirm", srv.APIMeAttestationConfirm)
+	http.HandleFunc("POST /api/me/attestations/{id}/ignore", srv.APIMeAttestationIgnore)
+	http.HandleFunc("POST /api/me/attestations/{id}/dispute", srv.APIMeAttestationDispute)
 
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)
@@ -274,6 +353,10 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("DELETE /collection/{id}", srv.DeleteCollection)
 
 	http.HandleFunc("GET /img/{did}/{cid}", srv.ImageProxy)
+
+	http.HandleFunc("GET /xrpc/com.atproto.label.queryLabels", srv.XRPCQueryLabels)
+	http.HandleFunc("GET /xrpc/com.atproto.label.subscribeLabels", srv.XRPCSubscribeLabels)
+	http.HandleFunc("POST /xrpc/com.atproto.moderation.createReport", srv.XRPCCreateReport)
 
 	http.HandleFunc("GET /xrpc/is.currents.feed.getActorCollections", srv.XRPCGetActorCollections)
 	http.HandleFunc("GET /xrpc/is.currents.actor.getProfile", srv.XRPCGetActorProfile)
@@ -290,9 +373,22 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)
 	http.HandleFunc("POST /resave", srv.CreateResave)
 
+	http.HandleFunc("GET /api/import/pinterest/boards", srv.APIPinterestBoards)
+	http.HandleFunc("GET /api/import/pinterest/sections", srv.APIPinterestSections)
+	http.HandleFunc("POST /api/import/pinterest/jobs", srv.APICreatePinterestJob)
+	http.HandleFunc("GET /api/import/active-session", srv.APIGetActiveImportSession)
+	http.HandleFunc("GET /api/import/sessions/{id}", srv.APIGetImportSession)
+	http.HandleFunc("GET /api/features/seen", srv.APIGetSeenFeatures)
+	http.HandleFunc("POST /api/features/seen/{key}", srv.APIMarkFeatureSeen)
+	http.HandleFunc("GET /api/moderation/prefs", srv.APIGetModerationPrefs)
+	http.HandleFunc("PUT /api/moderation/prefs", srv.APIPutModerationPrefs)
+
 	tapHandler.CDNBaseURL = cdnURL
 	go runTapListener(ctx, cctx.String("tap-url"), tapHandler)
 	slog.Info("TAP listener started", "url", cctx.String("tap-url"))
+
+	go importWorker.Run()
+	slog.Info("import worker started")
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)

@@ -8,9 +8,14 @@
       "Bash(docker compose logs:*)",
       "Bash(wait)",
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(go build *)",
+      "Bash(npx svelte-kit *)",
+      "Bash(npx svelte-check *)",
       "WebFetch(domain:capacitorjs.com)",
       "WebFetch(domain:capawesome.io)",
-      "Bash(go build *)"
+      "Bash(go build *)",
+      "WebFetch(domain:atproto.com)",
+      "Bash(go test *)"
     ]
   },
   "enableAllProjectMcpServers": true,

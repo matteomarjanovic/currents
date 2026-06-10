@@ -310,13 +310,17 @@ func (m *PgStore) DeleteAuthRequestInfo(ctx context.Context, state string) error
 	return err
 }
 
-func (m *PgStore) UpsertCollection(ctx context.Context, uri, cid, authorDID, name, description string, createdAt *time.Time) error {
+func (m *PgStore) UpsertCollection(ctx context.Context, uri, cid, authorDID, name, description, parentURI string, createdAt *time.Time) error {
+	var parent *string
+	if parentURI != "" {
+		parent = &parentURI
+	}
 	_, err := m.pool.Exec(ctx, `
-		INSERT INTO collection (uri, cid, author_did, name, description, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO collection (uri, cid, author_did, name, description, parent_uri, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (uri) DO UPDATE
-			SET cid = EXCLUDED.cid, name = EXCLUDED.name, description = EXCLUDED.description
-	`, uri, cid, authorDID, name, description, createdAt)
+			SET cid = EXCLUDED.cid, name = EXCLUDED.name, description = EXCLUDED.description, parent_uri = EXCLUDED.parent_uri
+	`, uri, cid, authorDID, name, description, parent, createdAt)
 	return err
 }
 
@@ -325,7 +329,9 @@ type CollectionRow struct {
 	CID          string
 	Name         string
 	Description  string
+	ParentURI    string // empty for root collections
 	CreatedAt    *time.Time
+	LastSavedAt  *time.Time // newest save in this collection or its sub-collections
 	SaveCount    int
 	PreviewBlobs []string // up to 4; each is "did,cid"
 	Starred      *bool    // nil when unauthenticated
@@ -357,15 +363,18 @@ func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limi
 			c.cid,
 			c.name,
 			COALESCE(c.description, ''),
+			COALESCE(c.parent_uri, ''),
 			c.created_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri)::int AS save_count,
+			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
 			ARRAY(
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
-				WHERE s2.collection_uri = c.uri
+				WHERE (s2.collection_uri = c.uri
+				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
-				ORDER BY s2.quality_score DESC NULLS LAST, s2.uri ASC
+				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs
 		FROM collection c
@@ -385,7 +394,7 @@ func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limi
 	var result []CollectionRow
 	for rows.Next() {
 		var row CollectionRow
-		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs); err != nil {
+		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -406,11 +415,26 @@ func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limi
 	return result, nextCursor, nil
 }
 
-func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerDID string, limit int, cursor string) ([]CollectionRow, string, error) {
+// GetActorCollectionsPage lists an actor's collections. parent filters the
+// result: "" returns all collections, "root" returns only root-level
+// collections (no parent), and any other value returns the children of that
+// parent collection URI.
+func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerDID, parent string, limit int, cursor string) ([]CollectionRow, string, error) {
 	var args []any
 	args = append(args, actorDID)
 	args = append(args, limit)
 	args = append(args, viewerDID) // $3 — empty string means unauthenticated
+
+	parentClause := ""
+	switch parent {
+	case "":
+		// no filter
+	case "root":
+		parentClause = " AND c.parent_uri IS NULL"
+	default:
+		args = append(args, parent)
+		parentClause = fmt.Sprintf(" AND c.parent_uri = $%d", len(args))
+	}
 
 	cursorClause := ""
 	if cursor != "" {
@@ -433,15 +457,20 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			c.cid,
 			c.name,
 			COALESCE(c.description, ''),
+			COALESCE(c.parent_uri, ''),
 			c.created_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri)::int AS save_count,
+			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
+			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
 			ARRAY(
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
-				WHERE s2.collection_uri = c.uri
+				WHERE (s2.collection_uri = c.uri
+				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
-				ORDER BY s2.quality_score DESC NULLS LAST, s2.uri ASC
+				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
 			CASE WHEN $3 != '' THEN (sc.viewer_did IS NOT NULL) END AS starred
@@ -451,9 +480,10 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 		WHERE c.author_did = $1
 		  AND c.cid IS NOT NULL
 		  %s
+		  %s
 		ORDER BY c.created_at DESC NULLS LAST, c.uri ASC
 		LIMIT $2
-	`, cursorClause)
+	`, parentClause, cursorClause)
 
 	rows, err := m.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -464,7 +494,7 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 	var result []CollectionRow
 	for rows.Next() {
 		var row CollectionRow
-		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred); err != nil {
+		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -488,6 +518,85 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 func (m *PgStore) DeleteCollection(ctx context.Context, uri string) error {
 	_, err := m.pool.Exec(ctx, `DELETE FROM collection WHERE uri = $1`, uri)
 	return err
+}
+
+// --- Seen features (one-time "new feature" indicators, per user) ---
+
+func (m *PgStore) GetSeenFeatures(ctx context.Context, viewerDID string) ([]string, error) {
+	rows, err := m.pool.Query(ctx, `SELECT feature_key FROM seen_feature WHERE viewer_did = $1`, viewerDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+func (m *PgStore) MarkFeatureSeen(ctx context.Context, viewerDID, featureKey string) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO seen_feature (viewer_did, feature_key) VALUES ($1, $2)
+		 ON CONFLICT (viewer_did, feature_key) DO NOTHING`,
+		viewerDID, featureKey)
+	return err
+}
+
+// --- Moderation preferences (per-user, server-backed) ---
+
+// GetModerationPrefs returns the user's stored preferences, or the defaults when
+// no row exists yet.
+func (m *PgStore) GetModerationPrefs(ctx context.Context, viewerDID string) (ModerationPrefs, error) {
+	p := defaultModerationPrefs
+	err := m.pool.QueryRow(ctx,
+		`SELECT porn, sexual, nudity, graphic_media, ai_generated
+		 FROM moderation_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.Porn, &p.Sexual, &p.Nudity, &p.GraphicMedia, &p.AIGenerated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return defaultModerationPrefs, nil
+	}
+	if err != nil {
+		return ModerationPrefs{}, err
+	}
+	return p, nil
+}
+
+func (m *PgStore) SetModerationPrefs(ctx context.Context, viewerDID string, p ModerationPrefs) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO moderation_pref (viewer_did, porn, sexual, nudity, graphic_media, ai_generated, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, now())
+		 ON CONFLICT (viewer_did) DO UPDATE SET
+		     porn = EXCLUDED.porn, sexual = EXCLUDED.sexual, nudity = EXCLUDED.nudity,
+		     graphic_media = EXCLUDED.graphic_media, ai_generated = EXCLUDED.ai_generated,
+		     updated_at = now()`,
+		viewerDID, p.Porn, p.Sexual, p.Nudity, p.GraphicMedia, p.AIGenerated)
+	return err
+}
+
+// GetSubcollectionURIs returns the URIs of authorDID's collections whose parent
+// is parentURI.
+func (m *PgStore) GetSubcollectionURIs(ctx context.Context, parentURI, authorDID string) ([]string, error) {
+	rows, err := m.pool.Query(ctx,
+		`SELECT uri FROM collection WHERE parent_uri = $1 AND author_did = $2`,
+		parentURI, authorDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var uris []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			return nil, err
+		}
+		uris = append(uris, uri)
+	}
+	return uris, rows.Err()
 }
 
 func (m *PgStore) GetSaveRkeysInCollection(ctx context.Context, collectionURI, authorDID string) ([]string, error) {
@@ -520,15 +629,18 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 			c.cid,
 			c.name,
 			COALESCE(c.description, ''),
+			COALESCE(c.parent_uri, ''),
 			c.created_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri)::int AS save_count,
+			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
 			ARRAY(
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
-				WHERE s2.collection_uri = c.uri
+				WHERE (s2.collection_uri = c.uri
+				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
-				ORDER BY s2.quality_score DESC NULLS LAST, s2.uri ASC
+				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
 			CASE WHEN $2 != '' THEN (sc.viewer_did IS NOT NULL) END AS starred
@@ -540,7 +652,7 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 	`
 	var row CollectionRow
 	err := m.pool.QueryRow(ctx, query, collectionURI, viewerDID).
-		Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred)
+		Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -608,6 +720,7 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 			s.dominant_colors
 		FROM save s
 		WHERE s.uri = ANY($1)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
 	`
 	rows, err := m.pool.Query(ctx, query, saveURIs, viewerDID)
 	if err != nil {
@@ -699,6 +812,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 			s.dominant_colors
 		FROM save s
 		WHERE s.collection_uri = $1
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
 		  %s
 		ORDER BY s.created_at DESC NULLS LAST, s.uri ASC
 		LIMIT $2
@@ -1225,7 +1339,10 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		WHERE vi.embedding IS NOT NULL AND s.author_did <> ALL($5) ` + excludeClause + `
+		WHERE vi.embedding IS NOT NULL
+		  AND s.author_did <> ALL($5)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  ` + excludeClause + `
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
 	`
@@ -1289,6 +1406,7 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 		WHERE vi.embedding IS NOT NULL
 			AND s.author_did <> ALL($5)
 			AND vi.id != (SELECT vi_id FROM src)
+			AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
 		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
 		LIMIT $2 OFFSET $4
 	`
@@ -1551,7 +1669,9 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			s.dominant_colors
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
-		WHERE s.author_did <> ALL($4) ` + excludeClause + `
+		WHERE s.author_did <> ALL($4)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  ` + excludeClause + `
 		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
 		LIMIT $2 OFFSET $3
 	`
@@ -1571,6 +1691,333 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 	return result, rows.Err()
 }
 
+
+// --- Pinterest bulk import ---
+
+type ImportJobRow struct {
+	ID                  string
+	SessionID           string
+	OwnerDID            string
+	OAuthSessionID      string
+	Source              string
+	SourceBoardID       string
+	SourceBoardName     string
+	SourceBoardURL      string
+	SourceSectionID     string // non-empty when this job imports a board section
+	FilterSectionPins   bool   // board job: skip pins that belong to a section
+	TargetCollectionURI string
+	Status              string
+	ListCursor          string
+	Error               string
+}
+
+type ImportItemRow struct {
+	ID                  string
+	JobID               string
+	OwnerDID            string
+	SourcePinID         string
+	ImageURL            string
+	SourceURL           string
+	Rkey                string
+	Status              string
+	SaveURI             string
+	Error               string
+	AttemptCount        int
+	TargetCollectionURI string
+}
+
+type SessionJobStatus struct {
+	JobID     string
+	BoardName string
+	Status    string
+	Queued    int
+	Running   int
+	Done      int
+	Failed    int
+}
+
+type InflightUser struct {
+	DID            string
+	OAuthSessionID string
+}
+
+func (m *PgStore) UpsertImportSession(ctx context.Context, id, ownerDID, username string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO import_session (id, owner_did, username) VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username
+	`, id, ownerDID, username)
+	return err
+}
+
+type ActiveImportSession struct {
+	SessionID string
+	Username  string
+	StartedAt time.Time
+}
+
+// GetLatestActiveSession returns the most recently created session for ownerDID
+// that still has at least one non-terminal job. Returns nil if none.
+func (m *PgStore) GetLatestActiveSession(ctx context.Context, ownerDID string) (*ActiveImportSession, error) {
+	var s ActiveImportSession
+	err := m.pool.QueryRow(ctx, `
+		SELECT s.id, s.username, s.created_at
+		FROM import_session s
+		WHERE s.owner_did = $1
+		  AND EXISTS (
+		    SELECT 1 FROM import_job j
+		    WHERE j.session_id = s.id
+		      AND j.status NOT IN ('done', 'failed')
+		  )
+		ORDER BY s.created_at DESC
+		LIMIT 1
+	`, ownerDID).Scan(&s.SessionID, &s.Username, &s.StartedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return &s, err
+}
+
+func (m *PgStore) CreateImportJob(ctx context.Context, p ImportJobRow) (string, error) {
+	var id string
+	err := m.pool.QueryRow(ctx, `
+		INSERT INTO import_job
+			(session_id, owner_did, oauth_session_id, source, source_board_id, source_board_name, source_board_url, source_section_id, filter_section_pins, target_collection_uri, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'listing')
+		RETURNING id
+	`, p.SessionID, p.OwnerDID, p.OAuthSessionID, p.Source, p.SourceBoardID, p.SourceBoardName, p.SourceBoardURL, p.SourceSectionID, p.FilterSectionPins, p.TargetCollectionURI).Scan(&id)
+	return id, err
+}
+
+// BulkInsertImportItems inserts one row per pin with a freshly generated TID
+// rkey. Conflicts on (job_id, source_pin_id) are silently dropped so the
+// listing stage can be safely re-run after a crash.
+func (m *PgStore) BulkInsertImportItems(ctx context.Context, jobID, ownerDID string, pins []PinterestPin) (int, error) {
+	if len(pins) == 0 {
+		return 0, nil
+	}
+	rows := make([][]any, 0, len(pins))
+	clock := syntax.NewTIDClock(0)
+	for _, p := range pins {
+		rows = append(rows, []any{jobID, ownerDID, p.ID, p.ImageURL, p.SourceURL, clock.Next().String()})
+	}
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		CREATE TEMP TABLE _import_item_in (
+			job_id UUID, owner_did TEXT, source_pin_id TEXT, image_url TEXT, source_url TEXT, rkey TEXT
+		) ON COMMIT DROP
+	`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.CopyFrom(ctx,
+		pgx.Identifier{"_import_item_in"},
+		[]string{"job_id", "owner_did", "source_pin_id", "image_url", "source_url", "rkey"},
+		pgx.CopyFromRows(rows),
+	); err != nil {
+		return 0, err
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO import_item (job_id, owner_did, source_pin_id, image_url, source_url, rkey)
+		SELECT job_id, owner_did, source_pin_id, image_url, source_url, rkey FROM _import_item_in
+		ON CONFLICT (job_id, source_pin_id) DO NOTHING
+	`)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+func (m *PgStore) UpdateImportJobStatus(ctx context.Context, jobID, status, errMsg string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_job SET status=$2, error=$3, updated_at=now() WHERE id=$1`,
+		jobID, status, errMsg,
+	)
+	return err
+}
+
+func (m *PgStore) UpdateImportJobCursor(ctx context.Context, jobID, cursor string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_job SET list_cursor=$2, updated_at=now() WHERE id=$1`,
+		jobID, cursor,
+	)
+	return err
+}
+
+func (m *PgStore) ListJobsByOwnerStatus(ctx context.Context, ownerDID, status string) ([]ImportJobRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, session_id, owner_did, oauth_session_id, source,
+		       source_board_id, source_board_name, source_board_url, source_section_id, filter_section_pins, target_collection_uri,
+		       status, list_cursor, error
+		FROM import_job
+		WHERE owner_did = $1 AND status = $2
+		ORDER BY created_at
+	`, ownerDID, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ImportJobRow
+	for rows.Next() {
+		var j ImportJobRow
+		if err := rows.Scan(&j.ID, &j.SessionID, &j.OwnerDID, &j.OAuthSessionID, &j.Source,
+			&j.SourceBoardID, &j.SourceBoardName, &j.SourceBoardURL, &j.SourceSectionID, &j.FilterSectionPins, &j.TargetCollectionURI,
+			&j.Status, &j.ListCursor, &j.Error); err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// ClaimNextImportItem atomically transitions one queued item for ownerDID to
+// 'running' and returns it joined with the job's target_collection_uri. Returns
+// (nil, nil) when nothing is queued.
+func (m *PgStore) ClaimNextImportItem(ctx context.Context, ownerDID string) (*ImportItemRow, error) {
+	var i ImportItemRow
+	err := m.pool.QueryRow(ctx, `
+		WITH next AS (
+			SELECT id FROM import_item
+			WHERE owner_did = $1 AND status = 'queued'
+			ORDER BY created_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT 1
+		)
+		UPDATE import_item AS i
+		   SET status = 'running',
+		       attempt_count = attempt_count + 1,
+		       updated_at = now()
+		  FROM next, import_job AS j
+		 WHERE i.id = next.id
+		   AND j.id = i.job_id
+		RETURNING i.id, i.job_id, i.owner_did, i.source_pin_id, i.image_url, i.source_url, i.rkey,
+		          i.status, i.save_uri, i.error, i.attempt_count, j.target_collection_uri
+	`, ownerDID).Scan(
+		&i.ID, &i.JobID, &i.OwnerDID, &i.SourcePinID, &i.ImageURL, &i.SourceURL, &i.Rkey,
+		&i.Status, &i.SaveURI, &i.Error, &i.AttemptCount, &i.TargetCollectionURI,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
+}
+
+func (m *PgStore) MarkImportItemDone(ctx context.Context, itemID, saveURI string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='done', save_uri=$2, error='', updated_at=now() WHERE id=$1`,
+		itemID, saveURI,
+	)
+	return err
+}
+
+func (m *PgStore) MarkImportItemFailed(ctx context.Context, itemID, errMsg string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='failed', error=$2, updated_at=now() WHERE id=$1`,
+		itemID, errMsg,
+	)
+	return err
+}
+
+func (m *PgStore) RequeueImportItem(ctx context.Context, itemID, lastError string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='queued', error=$2, updated_at=now() WHERE id=$1`,
+		itemID, lastError,
+	)
+	return err
+}
+
+// MaybeFinalizeJob flips a 'running' job to 'done' once no items remain in
+// queued or running state. No-op when items remain, or when the job isn't
+// in the 'running' state.
+func (m *PgStore) MaybeFinalizeJob(ctx context.Context, jobID string) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE import_job
+		   SET status = 'done', updated_at = now()
+		 WHERE id = $1
+		   AND status = 'running'
+		   AND NOT EXISTS (
+		       SELECT 1 FROM import_item
+		        WHERE job_id = $1 AND status IN ('queued','running')
+		   )
+	`, jobID)
+	return err
+}
+
+// ResetRunningItemsForUser flips 'running' items back to 'queued' so a
+// restarted worker can re-claim them. Runs once per user at worker startup.
+func (m *PgStore) ResetRunningItemsForUser(ctx context.Context, ownerDID string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='queued', updated_at=now()
+		   WHERE owner_did=$1 AND status='running'`,
+		ownerDID,
+	)
+	return err
+}
+
+// ListInflightUsers returns DIDs that have a queued/running item OR a job
+// in the 'listing' state, plus the most recent oauth_session_id for each.
+func (m *PgStore) ListInflightUsers(ctx context.Context) ([]InflightUser, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (j.owner_did) j.owner_did, j.oauth_session_id
+		FROM import_job j
+		WHERE j.status = 'listing'
+		   OR EXISTS (
+		       SELECT 1 FROM import_item i
+		        WHERE i.job_id = j.id AND i.status IN ('queued','running')
+		   )
+		ORDER BY j.owner_did, j.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []InflightUser
+	for rows.Next() {
+		var u InflightUser
+		if err := rows.Scan(&u.DID, &u.OAuthSessionID); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+func (m *PgStore) GetSessionStatus(ctx context.Context, sessionID, ownerDID string) ([]SessionJobStatus, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT j.id, j.source_board_name, j.status,
+		       SUM(CASE WHEN i.status='queued'  THEN 1 ELSE 0 END)::int AS queued,
+		       SUM(CASE WHEN i.status='running' THEN 1 ELSE 0 END)::int AS running,
+		       SUM(CASE WHEN i.status='done'    THEN 1 ELSE 0 END)::int AS done,
+		       SUM(CASE WHEN i.status='failed'  THEN 1 ELSE 0 END)::int AS failed
+		FROM import_job j
+		LEFT JOIN import_item i ON i.job_id = j.id
+		WHERE j.session_id = $1 AND j.owner_did = $2
+		GROUP BY j.id
+		ORDER BY j.created_at
+	`, sessionID, ownerDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SessionJobStatus
+	for rows.Next() {
+		var s SessionJobStatus
+		if err := rows.Scan(&s.JobID, &s.BoardName, &s.Status, &s.Queued, &s.Running, &s.Done, &s.Failed); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // GetUserPDSEndpoint returns the PDS endpoint for a known user from the local DB.
 func (m *PgStore) GetUserPDSEndpoint(ctx context.Context, did string) (string, error) {
 	var endpoint string
@@ -1588,4 +2035,716 @@ func (m *PgStore) UpdateUserPDSEndpoint(ctx context.Context, did, endpoint strin
 		did, endpoint,
 	)
 	return err
+}
+
+// ── Moderation methods ───────────────────────────────────────────────────────
+
+// SafetyScores are the three classification-head outputs persisted on a blob.
+type SafetyScores struct {
+	NSFW        float32 `json:"nsfw"`
+	Violence    float32 `json:"violence"`
+	AIGenerated float32 `json:"ai_generated"`
+}
+
+const (
+	HarmStateClean     = "clean"
+	HarmStateSuspected = "suspected"
+	HarmStateBlocked   = "blocked"
+)
+
+// BlobModerationStateRow mirrors a row in blob_moderation_state.
+type BlobModerationStateRow struct {
+	BlobCID       string
+	HarmState     string
+	AIGenerated   bool
+	DecidedBy     string
+	DecidedAt     *time.Time
+	SafetyScores  *SafetyScores
+	Notes         string
+	UpdatedAt     time.Time
+}
+
+// LabelRow mirrors a row in label.
+type LabelRow struct {
+	ID        int64
+	Src       string
+	URI       string
+	CID       string
+	Val       string
+	Neg       bool
+	CTS       time.Time
+	Exp       *time.Time
+	Sig       []byte
+	Ver       int
+	BlobCID   string
+	CreatedAt time.Time
+}
+
+// ReviewItemRow mirrors a row in review_item.
+type ReviewItemRow struct {
+	ID         int64
+	Source     string
+	SourceRef  *int64
+	SubjectURI string
+	SubjectCID string
+	BlobCID    string
+	Category string
+	// LabelVal is the specific atproto label val applied for label_applied items
+	// (e.g. "porn", "nudity", "sexual", "graphic-media", "currents-ai-generated").
+	// Empty for source='ai' items where no label has been applied yet.
+	LabelVal  string
+	Score     *float32
+	Status    string
+	Priority  int
+	CreatedAt time.Time
+
+	// Populated by list/detail queries via a LEFT JOIN on report when source='report'.
+	// Empty strings on non-report items. Surfaces the original report context
+	// (raw reasonType, free text, reporter DID) so moderators see what was
+	// actually reported, not just the coarse `category` bucket.
+	ReportReasonType   string
+	ReportReasonText   string
+	ReportReporterDID  string
+
+	// Author self-attestation state. Disputed = true means the save's author
+	// pushed back on the auto-flag; the suspected label still stands but a
+	// moderator should weigh the dispute when deciding.
+	Disputed   bool
+	DisputedAt *time.Time
+}
+
+// UpsertBlobModerationState records the latest safety scores for a blob.
+// Preserves any existing human decision (harm_state, ai_generated, notes) — only
+// safety_scores and updated_at are refreshed on conflict.
+func (m *PgStore) UpsertBlobModerationState(ctx context.Context, blobCID string, scores SafetyScores) error {
+	scoresJSON, err := json.Marshal(scores)
+	if err != nil {
+		return err
+	}
+	_, err = m.pool.Exec(ctx, `
+		INSERT INTO blob_moderation_state (blob_cid, safety_scores, decided_by, decided_at)
+		VALUES ($1, $2, 'auto', now())
+		ON CONFLICT (blob_cid) DO UPDATE
+			SET safety_scores = EXCLUDED.safety_scores, updated_at = now()
+	`, blobCID, scoresJSON)
+	return err
+}
+
+// GetBlobModerationState returns the moderation state for a blob, if any.
+func (m *PgStore) GetBlobModerationState(ctx context.Context, blobCID string) (*BlobModerationStateRow, error) {
+	var row BlobModerationStateRow
+	var decidedBy, notes *string
+	var scoresJSON []byte
+	err := m.pool.QueryRow(ctx, `
+		SELECT blob_cid, harm_state, ai_generated, decided_by, decided_at, safety_scores, notes, updated_at
+		FROM blob_moderation_state WHERE blob_cid = $1
+	`, blobCID).Scan(&row.BlobCID, &row.HarmState, &row.AIGenerated, &decidedBy, &row.DecidedAt, &scoresJSON, &notes, &row.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if decidedBy != nil {
+		row.DecidedBy = *decidedBy
+	}
+	if notes != nil {
+		row.Notes = *notes
+	}
+	if len(scoresJSON) > 0 {
+		var s SafetyScores
+		if err := json.Unmarshal(scoresJSON, &s); err == nil {
+			row.SafetyScores = &s
+		}
+	}
+	return &row, nil
+}
+
+// UpsertReviewItem enqueues a moderation review item. Idempotent per (blob_cid, category)
+// when blob_cid is set, or per (subject_uri, category) otherwise. Re-enqueueing the
+// same blob+axis while a pending entry exists is a no-op.
+// Returns true if a new row was created.
+func (m *PgStore) UpsertReviewItem(ctx context.Context, item ReviewItemRow) (bool, error) {
+	cmd, err := m.pool.Exec(ctx, `
+		INSERT INTO review_item (source, source_ref, subject_uri, subject_cid, blob_cid, category, label_val, score, priority)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+		WHERE NOT EXISTS (
+			SELECT 1 FROM review_item
+			WHERE (
+				($5 <> '' AND blob_cid = $5) OR
+				($5 = ''  AND subject_uri = $3)
+			)
+			AND COALESCE(category, '') = COALESCE($6, '')
+			AND status = 'pending'
+		)
+	`, item.Source, item.SourceRef, item.SubjectURI, nullableString(item.SubjectCID), nullableString(item.BlobCID), nullableString(item.Category), nullableString(item.LabelVal), item.Score, item.Priority)
+	if err != nil {
+		return false, err
+	}
+	return cmd.RowsAffected() > 0, nil
+}
+
+// InsertLabel writes a signed label row and returns the new id.
+func (m *PgStore) InsertLabel(ctx context.Context, l LabelRow) (int64, error) {
+	var id int64
+	err := m.pool.QueryRow(ctx, `
+		INSERT INTO label (src, uri, cid, val, neg, cts, exp, sig, ver, blob_cid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id
+	`, l.Src, l.URI, nullableString(l.CID), l.Val, l.Neg, l.CTS, l.Exp, l.Sig, l.Ver, nullableString(l.BlobCID)).Scan(&id)
+	return id, err
+}
+
+// GetLabelsByURIs returns the currently active labels for each requested save URI.
+// Active = not negated by a later row with the same (src, uri, val). Returns a map keyed by URI.
+func (m *PgStore) GetLabelsByURIs(ctx context.Context, uris []string) (map[string][]LabelRow, error) {
+	out := make(map[string][]LabelRow, len(uris))
+	if len(uris) == 0 {
+		return out, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (src, uri, val)
+			id, src, uri, COALESCE(cid, ''), val, neg, cts, exp, sig, ver, COALESCE(blob_cid, ''), created_at
+		FROM label
+		WHERE uri = ANY($1)
+		ORDER BY src, uri, val, id DESC
+	`, uris)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r LabelRow
+		if err := rows.Scan(&r.ID, &r.Src, &r.URI, &r.CID, &r.Val, &r.Neg, &r.CTS, &r.Exp, &r.Sig, &r.Ver, &r.BlobCID, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		if r.Neg {
+			continue // the latest row negates this (src, uri, val) — skip
+		}
+		out[r.URI] = append(out[r.URI], r)
+	}
+	return out, rows.Err()
+}
+
+// ModerationEventRow mirrors a row in moderation_event.
+type ModerationEventRow struct {
+	ID         int64
+	ActorDID   string
+	Action     string
+	SubjectURI string
+	SubjectCID string
+	BlobCID    string
+	Payload    json.RawMessage
+	CreatedAt  time.Time
+}
+
+// QueryLabels returns labels matching uri patterns + optional source DID filter,
+// paginated by id. Cursor of 0 means start from the beginning. Returns the rows
+// and the next cursor (0 when no more pages).
+//
+// uriPatterns syntax: per the atproto spec, '*' is the only wildcard and may
+// only appear at the end of a pattern. We translate to SQL LIKE by mapping
+// '*' → '%'.
+func (m *PgStore) QueryLabels(ctx context.Context, uriPatterns, sources []string, cursor int64, limit int) ([]LabelRow, int64, error) {
+	if len(uriPatterns) == 0 {
+		return nil, 0, nil
+	}
+	likePatterns := make([]string, len(uriPatterns))
+	for i, p := range uriPatterns {
+		likePatterns[i] = strings.ReplaceAll(p, "*", "%")
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, src, uri, COALESCE(cid, ''), val, neg, cts, exp, sig, ver, COALESCE(blob_cid, ''), created_at
+		FROM label
+		WHERE uri LIKE ANY($1)
+		  AND (CARDINALITY($2::text[]) = 0 OR src = ANY($2))
+		  AND id > $3
+		ORDER BY id ASC
+		LIMIT $4
+	`, likePatterns, sources, cursor, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []LabelRow
+	var nextCursor int64
+	for rows.Next() {
+		var r LabelRow
+		if err := rows.Scan(&r.ID, &r.Src, &r.URI, &r.CID, &r.Val, &r.Neg, &r.CTS, &r.Exp, &r.Sig, &r.Ver, &r.BlobCID, &r.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, r)
+		nextCursor = r.ID
+	}
+	if int64(len(out)) < int64(limit) {
+		nextCursor = 0 // no more pages
+	}
+	return out, nextCursor, rows.Err()
+}
+
+// ListLabelsSince returns labels with id > cursor, ordered by id ASC, capped at
+// limit. Used by subscribeLabels to deliver backlog on connect before live tailing.
+func (m *PgStore) ListLabelsSince(ctx context.Context, cursor int64, limit int) ([]LabelRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, src, uri, COALESCE(cid, ''), val, neg, cts, exp, sig, ver, COALESCE(blob_cid, ''), created_at
+		FROM label
+		WHERE id > $1
+		ORDER BY id ASC
+		LIMIT $2
+	`, cursor, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []LabelRow
+	for rows.Next() {
+		var r LabelRow
+		if err := rows.Scan(&r.ID, &r.Src, &r.URI, &r.CID, &r.Val, &r.Neg, &r.CTS, &r.Exp, &r.Sig, &r.Ver, &r.BlobCID, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListPendingReviewItems returns the head of the review queue, filtered by
+// source and category. Empty string fields match all values.
+// order controls sort: "priority" (default) = priority DESC + created_at ASC,
+// "oldest" = created_at ASC, "newest" = created_at DESC.
+func (m *PgStore) ListPendingReviewItems(ctx context.Context, source, category, order string, limit, offset int) ([]ReviewItemRow, error) {
+	orderClause := "ri.priority DESC, ri.created_at ASC"
+	if order == "oldest" {
+		orderClause = "ri.created_at ASC"
+	} else if order == "newest" {
+		orderClause = "ri.created_at DESC"
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT ri.id, ri.source, ri.source_ref, ri.subject_uri,
+		       COALESCE(ri.subject_cid, ''), COALESCE(ri.blob_cid, ''),
+		       COALESCE(ri.category, ''), ri.score, ri.status, ri.priority, ri.created_at,
+		       COALESCE(r.reason_type, ''), COALESCE(r.reason_text, ''), COALESCE(r.reporter_did, ''),
+		       ri.disputed, ri.disputed_at
+		FROM review_item ri
+		LEFT JOIN report r ON ri.source = 'report' AND ri.source_ref = r.id
+		WHERE ri.status = 'pending'
+		  AND ($1 = '' OR ri.source = $1)
+		  AND ($2 = '' OR ri.category = $2)
+		ORDER BY `+orderClause+`
+		LIMIT $3 OFFSET $4
+	`, source, category, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReviewItemRow
+	for rows.Next() {
+		var r ReviewItemRow
+		if err := rows.Scan(
+			&r.ID, &r.Source, &r.SourceRef, &r.SubjectURI, &r.SubjectCID, &r.BlobCID,
+			&r.Category, &r.Score, &r.Status, &r.Priority, &r.CreatedAt,
+			&r.ReportReasonType, &r.ReportReasonText, &r.ReportReporterDID,
+			&r.Disputed, &r.DisputedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetReviewItem returns a single review_item by id, or nil if missing.
+func (m *PgStore) GetReviewItem(ctx context.Context, id int64) (*ReviewItemRow, error) {
+	var r ReviewItemRow
+	err := m.pool.QueryRow(ctx, `
+		SELECT ri.id, ri.source, ri.source_ref, ri.subject_uri,
+		       COALESCE(ri.subject_cid, ''), COALESCE(ri.blob_cid, ''),
+		       COALESCE(ri.category, ''), COALESCE(ri.label_val, ''), ri.score, ri.status, ri.priority, ri.created_at,
+		       COALESCE(rep.reason_type, ''), COALESCE(rep.reason_text, ''), COALESCE(rep.reporter_did, ''),
+		       ri.disputed, ri.disputed_at
+		FROM review_item ri
+		LEFT JOIN report rep ON ri.source = 'report' AND ri.source_ref = rep.id
+		WHERE ri.id = $1
+	`, id).Scan(
+		&r.ID, &r.Source, &r.SourceRef, &r.SubjectURI, &r.SubjectCID, &r.BlobCID,
+		&r.Category, &r.LabelVal, &r.Score, &r.Status, &r.Priority, &r.CreatedAt,
+		&r.ReportReasonType, &r.ReportReasonText, &r.ReportReporterDID,
+		&r.Disputed, &r.DisputedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ListPendingAttestationsByAuthor returns pending review_items for blobs that
+// the given DID has saved. Joins through blob_cid so all co-owners of a blob
+// (original saver + resavers) see the same review_item.
+func (m *PgStore) ListPendingAttestationsByAuthor(ctx context.Context, authorDID string, limit int) ([]ReviewItemRow, error) {
+	if authorDID == "" {
+		return nil, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, source, source_ref, subject_uri, subject_cid, blob_cid,
+		       category, label_val, score, status, priority, created_at,
+		       reason_type, reason_text, reporter_did, disputed, disputed_at
+		FROM (
+			SELECT DISTINCT ON (ri.id)
+			       ri.id, ri.source, ri.source_ref, ri.subject_uri,
+			       COALESCE(ri.subject_cid, '')  AS subject_cid,
+			       COALESCE(ri.blob_cid, '')     AS blob_cid,
+			       COALESCE(ri.category, '')     AS category,
+			       COALESCE(ri.label_val, '')    AS label_val,
+			       ri.score, ri.status, ri.priority, ri.created_at,
+			       COALESCE(r.reason_type, '')   AS reason_type,
+			       COALESCE(r.reason_text, '')   AS reason_text,
+			       COALESCE(r.reporter_did, '')  AS reporter_did,
+			       ri.disputed, ri.disputed_at
+			FROM review_item ri
+			JOIN save s ON s.pds_blob_cid = ri.blob_cid
+			LEFT JOIN report r ON ri.source = 'report' AND ri.source_ref = r.id
+			WHERE s.author_did = $1
+			  AND ri.status = 'pending'
+			  AND ri.source IN ('ai', 'label_applied')
+			ORDER BY ri.id
+		) deduped
+		ORDER BY priority DESC, created_at ASC
+		LIMIT $2
+	`, authorDID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReviewItemRow
+	for rows.Next() {
+		var r ReviewItemRow
+		if err := rows.Scan(
+			&r.ID, &r.Source, &r.SourceRef, &r.SubjectURI, &r.SubjectCID, &r.BlobCID,
+			&r.Category, &r.LabelVal, &r.Score, &r.Status, &r.Priority, &r.CreatedAt,
+			&r.ReportReasonType, &r.ReportReasonText, &r.ReportReporterDID,
+			&r.Disputed, &r.DisputedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// MarkReviewItemDisputed records an author's dispute of an auto-flag on their
+// own content: sets disputed=true and bumps priority by priorityBump. Does NOT
+// change status — the suspected label stays up and a moderator still owns the
+// decision.
+func (m *PgStore) MarkReviewItemDisputed(ctx context.Context, id int64, priorityBump int) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE review_item
+		   SET disputed = TRUE,
+		       disputed_at = now(),
+		       priority = priority + $2
+		 WHERE id = $1
+		   AND disputed = FALSE
+	`, id, priorityBump)
+	return err
+}
+
+// GetSaveAuthor returns the author DID for a save URI, or "" if unknown.
+// Used by self-attestation endpoints to enforce ownership.
+func (m *PgStore) GetSaveAuthor(ctx context.Context, uri string) (string, error) {
+	var did string
+	err := m.pool.QueryRow(ctx, `SELECT author_did FROM save WHERE uri = $1`, uri).Scan(&did)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return did, nil
+}
+
+// ResolveReviewItem marks an item resolved or dismissed. resolverDID is required
+// (no nil — auto-resolution isn't a thing yet).
+func (m *PgStore) ResolveReviewItem(ctx context.Context, id int64, status, resolverDID string) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE review_item SET status = $2 WHERE id = $1 AND status = 'pending'
+	`, id, status)
+	return err
+}
+
+// CountPendingReviewItemsByBlobCID returns the number of pending review_items
+// for a blob. Used by the ignore endpoint to clear harm_state once all items
+// are resolved.
+func (m *PgStore) CountPendingReviewItemsByBlobCID(ctx context.Context, blobCID string) (int64, error) {
+	var count int64
+	err := m.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM review_item
+		WHERE blob_cid = $1 AND status = 'pending'
+	`, blobCID).Scan(&count)
+	return count, err
+}
+
+// ListSaveURIsByBlobCID returns every save URI sharing the given blob CID, in
+// creation order. Used by the admin actions that need to apply a label or
+// negation to every save of a moderated image.
+func (m *PgStore) ListSaveURIsByBlobCID(ctx context.Context, blobCID string) ([]string, error) {
+	if blobCID == "" {
+		return nil, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT uri FROM save WHERE pds_blob_cid = $1 ORDER BY created_at ASC NULLS LAST, uri ASC
+	`, blobCID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// SetHarmState updates blob_moderation_state.harm_state (clean | suspected | blocked).
+// Used by TAP enrichment (suspected), the takedown action (blocked), and dismiss/ignore (clean).
+func (m *PgStore) SetHarmState(ctx context.Context, blobCID, state, decidedBy, notes string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO blob_moderation_state (blob_cid, harm_state, decided_by, decided_at, notes)
+		VALUES ($1, $2, $3, now(), $4)
+		ON CONFLICT (blob_cid) DO UPDATE
+			SET harm_state = EXCLUDED.harm_state,
+			    decided_by = EXCLUDED.decided_by,
+			    decided_at = EXCLUDED.decided_at,
+			    notes      = EXCLUDED.notes,
+			    updated_at = now()
+	`, blobCID, state, decidedBy, nullableString(notes))
+	return err
+}
+
+// ListModerationEventsByBlobCID returns the audit-log entries for a blob, newest first.
+func (m *PgStore) ListModerationEventsByBlobCID(ctx context.Context, blobCID string, limit int) ([]ModerationEventRow, error) {
+	if blobCID == "" {
+		return nil, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, actor_did, action, COALESCE(subject_uri, ''), COALESCE(subject_cid, ''), COALESCE(blob_cid, ''),
+		       payload, created_at
+		FROM moderation_event
+		WHERE blob_cid = $1
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, blobCID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ModerationEventRow
+	for rows.Next() {
+		var e ModerationEventRow
+		if err := rows.Scan(&e.ID, &e.ActorDID, &e.Action, &e.SubjectURI, &e.SubjectCID, &e.BlobCID, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ListModerationEventsByActor returns the audit-log entries an actor (moderator
+// or 'auto') has produced, newest first. Used by the /admin/me view so moderators
+// can review and undo their own actions.
+func (m *PgStore) ListModerationEventsByActor(ctx context.Context, actorDID string, limit, offset int) ([]ModerationEventRow, error) {
+	if actorDID == "" {
+		return nil, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT id, actor_did, action, COALESCE(subject_uri, ''), COALESCE(subject_cid, ''), COALESCE(blob_cid, ''),
+		       payload, created_at
+		FROM moderation_event
+		WHERE actor_did = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2 OFFSET $3
+	`, actorDID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ModerationEventRow
+	for rows.Next() {
+		var e ModerationEventRow
+		if err := rows.Scan(&e.ID, &e.ActorDID, &e.Action, &e.SubjectURI, &e.SubjectCID, &e.BlobCID, &e.Payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// UnclassifiedBlob carries one row from ListUnclassifiedBlobsBatch: a blob CID
+// that lacks a blob_moderation_state row, paired with a sample save URI for
+// review-item attribution and the existing 768-d embedding for classification.
+type UnclassifiedBlob struct {
+	BlobCID   string
+	SampleURI string
+	Embedding []float32
+}
+
+// ListUnclassifiedBlobsBatch returns up to limit blobs that have an embedding
+// but no blob_moderation_state row yet. Naturally resumable: each successful
+// classification adds a blob_moderation_state row, removing it from this set,
+// so re-calling with the same limit walks toward exhaustion.
+func (m *PgStore) ListUnclassifiedBlobsBatch(ctx context.Context, limit int) ([]UnclassifiedBlob, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (s.pds_blob_cid)
+			s.pds_blob_cid, s.uri, vi.embedding
+		FROM save s
+		JOIN visual_identity vi ON vi.id = s.visual_identity_id
+		WHERE vi.embedding IS NOT NULL
+		  AND s.pds_blob_cid <> ''
+		  AND NOT EXISTS (
+		    SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid
+		  )
+		ORDER BY s.pds_blob_cid, s.created_at ASC NULLS LAST, s.uri ASC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UnclassifiedBlob
+	for rows.Next() {
+		var b UnclassifiedBlob
+		var vec pgvector.Vector
+		if err := rows.Scan(&b.BlobCID, &b.SampleURI, &vec); err != nil {
+			return nil, err
+		}
+		b.Embedding = vec.Slice()
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// GetSuspectedBlobCIDs returns the subset of the given blob CIDs that have
+// harm_state='suspected'. Used to hydrate viewer.suspected in XRPC save responses.
+func (m *PgStore) GetSuspectedBlobCIDs(ctx context.Context, blobCIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	if len(blobCIDs) == 0 {
+		return out, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT blob_cid FROM blob_moderation_state
+		WHERE blob_cid = ANY($1) AND harm_state = 'suspected'
+	`, blobCIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid string
+		if err := rows.Scan(&cid); err != nil {
+			return nil, err
+		}
+		out[cid] = true
+	}
+	return out, rows.Err()
+}
+
+// CountUnclassifiedBlobs is a one-shot count of blobs that need backfill.
+// Used for progress logging in the backfill CLI.
+func (m *PgStore) CountUnclassifiedBlobs(ctx context.Context) (int64, error) {
+	var n int64
+	err := m.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT s.pds_blob_cid)
+		FROM save s
+		JOIN visual_identity vi ON vi.id = s.visual_identity_id
+		WHERE vi.embedding IS NOT NULL
+		  AND s.pds_blob_cid <> ''
+		  AND NOT EXISTS (
+		    SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid
+		  )
+	`).Scan(&n)
+	return n, err
+}
+
+// GetActiveLabelsByBlobCID returns the currently-active label values for a blob.
+// Used by handleSaveUpsert to materialize labels onto new save URIs sharing the blob.
+// Active = latest row per (src, val) is not negated.
+func (m *PgStore) GetActiveLabelsByBlobCID(ctx context.Context, blobCID string) ([]string, error) {
+	if blobCID == "" {
+		return nil, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (src, val) val, neg
+		FROM label
+		WHERE blob_cid = $1
+		ORDER BY src, val, id DESC
+	`, blobCID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var val string
+		var neg bool
+		if err := rows.Scan(&val, &neg); err != nil {
+			return nil, err
+		}
+		if !neg {
+			out = append(out, val)
+		}
+	}
+	return out, rows.Err()
+}
+
+// InsertReport persists a user-submitted report and returns the new id.
+func (m *PgStore) InsertReport(ctx context.Context, reporterDID, subjectURI, subjectCID, reasonType, reasonText string) (int64, error) {
+	var id int64
+	err := m.pool.QueryRow(ctx, `
+		INSERT INTO report (reporter_did, subject_uri, subject_cid, reason_type, reason_text)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, reporterDID, subjectURI, nullableString(subjectCID), reasonType, nullableString(reasonText)).Scan(&id)
+	return id, err
+}
+
+// InsertModerationEvent appends an audit-log entry.
+func (m *PgStore) InsertModerationEvent(ctx context.Context, actorDID, action, subjectURI, subjectCID, blobCID string, payload []byte) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO moderation_event (actor_did, action, subject_uri, subject_cid, blob_cid, payload)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, actorDID, action, nullableString(subjectURI), nullableString(subjectCID), nullableString(blobCID), nullableJSON(payload))
+	return err
+}
+
+// IsModerator returns the moderator's role if the DID is active, or empty string.
+func (m *PgStore) IsModerator(ctx context.Context, did string) (string, error) {
+	var role string
+	err := m.pool.QueryRow(ctx, `
+		SELECT role FROM moderator WHERE did = $1 AND disabled_at IS NULL
+	`, did).Scan(&role)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return role, nil
+}
+
+func nullableString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func nullableJSON(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return b
 }

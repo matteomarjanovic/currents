@@ -12,6 +12,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import UserIcon from '@lucide/svelte/icons/user';
+	import Download from '@lucide/svelte/icons/download';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Monitor from '@lucide/svelte/icons/monitor';
@@ -21,12 +22,26 @@
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import Settings from '@lucide/svelte/icons/settings';
+	import Bell from '@lucide/svelte/icons/bell';
 	import Logo from '$lib/assets/logo.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
+	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
+	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
+	import {
+		features,
+		loadSeenFeatures,
+		markFeatureSeen,
+		isFeatureSeen,
+		hasUnseenAnnouncement,
+		FEATURE_PINTEREST_IMPORT
+	} from '$lib/stores/features.svelte';
+	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
+	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
 
@@ -42,10 +57,37 @@
 	let searchOpen = $state(false);
 	let createCollectionOpen = $state(false);
 	let browserExtensionDialogOpen = $state(false);
+	let notificationsOpen = $state(false);
+
+	// Only items the user hasn't acted on yet count toward the unread indicator —
+	// disputes are waiting on a moderator, not on the author.
+	let pendingCount = $derived(notifications.items.filter((i) => !i.disputed).length);
+
+	// One-time "new feature" indicators (server-backed). Gate on `loaded` so we
+	// never flash a dot before knowing what the user has already seen.
+	let showPinterestNew = $derived(features.loaded && !isFeatureSeen(FEATURE_PINTEREST_IMPORT));
+	let hasFeatureDot = $derived(features.loaded && hasUnseenAnnouncement());
+
+	function openPinterestImport() {
+		markFeatureSeen(FEATURE_PINTEREST_IMPORT);
+		goto('/import/pinterest');
+	}
+
+	// Fetch the pending-attestation list once when the user is known. The store
+	// caches across navigations; opening the dialog refreshes it again.
+	onMount(() => {
+		if (user) {
+			void refreshNotifications();
+			if (!features.loaded) void loadSeenFeatures();
+			if (!modPrefsLoaded.value) void loadModerationPrefs();
+		}
+	});
 
 	function handleCollectionCreated(collection: CollectionView) {
 		addCollection(collection);
-		goto(resolve('/(with-navbar)/collection/[uri]', { uri: encodeURIComponent(collection.uri) }));
+		const rkey = collection.uri.split('/').pop() ?? '';
+		const handle = collection.author?.handle ?? user?.handle ?? '';
+		goto(`/profile/${handle}/collection/${rkey}`);
 	}
 
 	function handleBrowserExtension() {
@@ -88,10 +130,7 @@
 			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-2 py-3 md:px-4"
 	>
 		{#if !searchOpen}
-			<div
-				in:fade={{ duration: 250, easing: cubicOut }}
-				class="flex shrink-0 items-center gap-2"
-			>
+			<div in:fade={{ duration: 250, easing: cubicOut }} class="flex shrink-0 items-center gap-2">
 				<a href={resolve('/')} class="h-5 text-lg font-semibold text-foreground"><Logo /></a>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
@@ -191,7 +230,7 @@
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 				<DropdownMenu.Root>
-					<DropdownMenu.Trigger class="shrink-0 rounded-full outline-none">
+					<DropdownMenu.Trigger class="relative shrink-0 rounded-full outline-none">
 						<Avatar.Root size="default">
 							{#if user.avatar}
 								<Avatar.Image src={user.avatar} alt={user.displayName ?? user.handle} />
@@ -200,8 +239,14 @@
 								<UserIcon class="size-4" />
 							</Avatar.Fallback>
 						</Avatar.Root>
+						{#if pendingCount > 0 || hasFeatureDot}
+							<span
+								class="absolute -top-0.5 -right-0.5 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+								aria-label={pendingCount > 0 ? `${pendingCount} pending` : 'New feature available'}
+							></span>
+						{/if}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-48">
+					<DropdownMenu.Content align="end" class="w-56">
 						<DropdownMenu.Label>
 							{#if user.displayName}
 								<div class="text-base text-primary">{user.displayName}</div>
@@ -216,9 +261,29 @@
 							<UserIcon class="size-4" />
 							Profile
 						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => (notificationsOpen = true)}>
+							<Bell class="size-4" />
+							<span>Notifications</span>
+							{#if pendingCount > 0}
+								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">
+									{pendingCount}
+								</Badge>
+							{/if}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={openPinterestImport}>
+							<Download class="size-4" />
+							Import from Pinterest
+							{#if showPinterestNew}
+								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
+							{/if}
+						</DropdownMenu.Item>
 						<DropdownMenu.Item onclick={handleBrowserExtension}>
 							<Puzzle class="size-4" />
 							Browser extension
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => goto('/settings')}>
+							<Settings class="size-4" />
+							Settings
 						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							onclick={() => {
@@ -265,9 +330,7 @@
 				</DropdownMenu.Root>
 			{:else}
 				<a href={resolve('/login')}>
-					<Button variant="default" size="lg" class="shrink-0 rounded-full px-5"
-						>Log in</Button
-					>
+					<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
 				</a>
 			{/if}
 		{/if}
@@ -277,4 +340,5 @@
 {#if user}
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
 	<BrowserExtensionDialog bind:open={browserExtensionDialogOpen} />
+	<NotificationsDialog bind:open={notificationsOpen} />
 {/if}

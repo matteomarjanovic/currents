@@ -31,7 +31,7 @@ services:
       CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-cst-doing-orchestra-sandy.trycloudflare.com}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
-      FRONTEND_URL: http://localhost:5173
+      FRONTEND_URL: http://192.168.1.9:5173
       TAP_URL: ws://tap:2480/channel
       INFERENCE_URL: http://host.docker.internal:8000
     ports:
@@ -45,6 +45,7 @@ services:
         condition: service_healthy
     environment:
       TAP_DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
+      TAP_RELAY_URL: https://bsky.network
       TAP_SIGNAL_COLLECTION: is.currents.actor.profile
       TAP_COLLECTION_FILTERS: is.currents.*
     ports:

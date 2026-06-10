@@ -201,6 +201,7 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimSpace(r.PostFormValue("name"))
 	description := strings.TrimSpace(r.PostFormValue("description"))
+	parentURI := strings.TrimSpace(r.PostFormValue("parent"))
 
 	if name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
@@ -214,6 +215,24 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	if description != "" {
 		record["description"] = description
+	}
+	if parentURI != "" {
+		parsed, err := syntax.ParseATURI(parentURI)
+		if err != nil || parsed.Authority().String() != did.String() || parsed.Collection().String() != collectionNSID {
+			http.Error(w, "parent must be your own is.currents.feed.collection record", http.StatusBadRequest)
+			return
+		}
+		// Enforce a single level: the parent must itself be a root collection.
+		if existing, err := s.Store.GetCollectionByURI(r.Context(), parentURI, ""); err == nil && existing != nil && existing.ParentURI != "" {
+			http.Error(w, "sub-collections cannot have sub-collections", http.StatusBadRequest)
+			return
+		}
+		ref, err := resolveStrongRef(r.Context(), c, parentURI)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("resolving parent: %s", err), http.StatusBadRequest)
+			return
+		}
+		record["parent"] = ref
 	}
 
 	out, err := comatproto.RepoCreateRecord(r.Context(), c, &comatproto.RepoCreateRecord_Input{
@@ -294,12 +313,14 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	createdAt := syntax.DatetimeNow().String()
+	var parent any
 	if existing.Value != nil {
 		var cur map[string]any
 		if err := json.Unmarshal(*existing.Value, &cur); err == nil {
 			if ca, ok := cur["createdAt"].(string); ok && ca != "" {
 				createdAt = ca
 			}
+			parent = cur["parent"]
 		}
 	}
 
@@ -310,6 +331,9 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	if description != "" {
 		record["description"] = description
+	}
+	if parent != nil {
+		record["parent"] = parent
 	}
 
 	out, err := comatproto.RepoPutRecord(r.Context(), c, &comatproto.RepoPutRecord_Input{
@@ -342,10 +366,27 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 	rkey := r.PathValue("id")
 	collectionURI := "at://" + did.String() + "/" + collectionNSID + "/" + rkey
 
+	// Cascade: this collection's saves, plus every sub-collection (and its saves).
 	saveRkeys, err := s.Store.GetSaveRkeysInCollection(r.Context(), collectionURI, did.String())
 	if err != nil {
 		slog.Error("listing saves for cascade", "err", err, "collection", collectionURI)
 		// proceed without cascade rather than blocking the user
+	}
+	var subCollRkeys []string
+	subURIs, err := s.Store.GetSubcollectionURIs(r.Context(), collectionURI, did.String())
+	if err != nil {
+		slog.Error("listing subcollections for cascade", "err", err, "collection", collectionURI)
+	}
+	for _, sub := range subURIs {
+		subSaves, err := s.Store.GetSaveRkeysInCollection(r.Context(), sub, did.String())
+		if err != nil {
+			slog.Error("listing subcollection saves for cascade", "err", err, "subcollection", sub)
+			continue
+		}
+		saveRkeys = append(saveRkeys, subSaves...)
+		if rk := rkeyFromURI(sub); rk != "" {
+			subCollRkeys = append(subCollRkeys, rk)
+		}
 	}
 
 	if err := c.Post(r.Context(), "com.atproto.repo.deleteRecord", map[string]any{
@@ -360,15 +401,17 @@ func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("deleted collection", "rkey", rkey, "cascadeSaves", len(saveRkeys))
+	slog.Info("deleted collection", "rkey", rkey, "cascadeSaves", len(saveRkeys), "cascadeSubcollections", len(subCollRkeys))
 	w.WriteHeader(http.StatusNoContent)
 
-	if len(saveRkeys) > 0 {
-		go s.cascadeDeleteSaves(*did, sessionID, saveRkeys)
+	if len(saveRkeys) > 0 || len(subCollRkeys) > 0 {
+		go s.cascadeDelete(*did, sessionID, subCollRkeys, saveRkeys)
 	}
 }
 
-func (s *Server) cascadeDeleteSaves(did syntax.DID, sessionID string, rkeys []string) {
+// cascadeDelete removes the given save and collection records from the user's
+// PDS in the background. Saves are deleted first, then the (sub-)collections.
+func (s *Server) cascadeDelete(did syntax.DID, sessionID string, collRkeys, saveRkeys []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	oauthSess, err := s.OAuth.ResumeSession(ctx, did, sessionID)
@@ -377,14 +420,20 @@ func (s *Server) cascadeDeleteSaves(did syntax.DID, sessionID string, rkeys []st
 		return
 	}
 	cli := oauthSess.APIClient()
-	for _, rk := range rkeys {
+	del := func(collection, rk string) {
 		if err := cli.Post(ctx, "com.atproto.repo.deleteRecord", map[string]any{
 			"repo":       did.String(),
-			"collection": saveNSID,
+			"collection": collection,
 			"rkey":       rk,
 		}, nil); err != nil {
-			slog.Error("cascade delete save", "rkey", rk, "err", err)
+			slog.Error("cascade delete", "collection", collection, "rkey", rk, "err", err)
 		}
+	}
+	for _, rk := range saveRkeys {
+		del(saveNSID, rk)
+	}
+	for _, rk := range collRkeys {
+		del(collectionNSID, rk)
 	}
 }
 
@@ -409,6 +458,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	attrURL := strings.TrimSpace(r.PostFormValue("attribution_url"))
 	attrLicense := strings.TrimSpace(r.PostFormValue("attribution_license"))
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
+	selfLabelVals := parseSelfLabels(r.PostFormValue("labels"))
 
 	if collectionURI == "" {
 		http.Error(w, "collection is required", http.StatusBadRequest)
@@ -467,6 +517,9 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		"collection": collectionStrongRef,
 		"content":    buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit)),
 		"createdAt":  syntax.DatetimeNow().String(),
+	}
+	if labels := buildSelfLabelsRecord(selfLabelVals); labels != nil {
+		record["labels"] = labels
 	}
 	if url != "" {
 		record["originUrl"] = url
@@ -798,12 +851,12 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up the original save to get blob info and attribution
-	var authorDID, blobCID string
+	// Look up the original save to get blob info, source URL, and attribution
+	var authorDID, blobCID, origOriginURL string
 	var origAttrURL, origAttrLicense, origAttrCredit string
 	err = s.Store.pool.QueryRow(r.Context(),
-		`SELECT author_did, pds_blob_cid, COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '') FROM save WHERE uri = $1`, body.SaveURI,
-	).Scan(&authorDID, &blobCID, &origAttrURL, &origAttrLicense, &origAttrCredit)
+		`SELECT author_did, pds_blob_cid, COALESCE(origin_url, ''), COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '') FROM save WHERE uri = $1`, body.SaveURI,
+	).Scan(&authorDID, &blobCID, &origOriginURL, &origAttrURL, &origAttrLicense, &origAttrCredit)
 	if err != nil {
 		http.Error(w, "save not found", http.StatusNotFound)
 		return
@@ -865,6 +918,9 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		"content":    buildImageContentRecordWithAttribution(blobAny, resolvedAttribution),
 		"resaveOf":   resaveRef,
 		"createdAt":  syntax.DatetimeNow().String(),
+	}
+	if origOriginURL != "" {
+		record["originUrl"] = origOriginURL
 	}
 
 	out, err := comatproto.RepoCreateRecord(r.Context(), c, &comatproto.RepoCreateRecord_Input{

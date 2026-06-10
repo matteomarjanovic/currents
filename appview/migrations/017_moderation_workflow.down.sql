@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS review_item;
+DROP TABLE IF EXISTS report;
+DROP TABLE IF EXISTS moderator;

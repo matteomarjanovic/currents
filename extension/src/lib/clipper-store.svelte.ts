@@ -8,6 +8,7 @@ export interface Collection {
 
 export interface SiteHints {
   attributionCredit?: string;
+  originUrl?: string;
 }
 
 interface ClipperState {
