@@ -465,6 +465,15 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 
 	collRef, err := resolveStrongRef(ctx, c, item.TargetCollectionURI)
 	if err != nil {
+		// A missing target collection dooms every item in the job (they all
+		// point at the same record), so fail the whole job at once instead of
+		// retrying each item. Happens when the collection was deleted after the
+		// items were queued — e.g. cleaning up a previous import's leftovers.
+		if isRecordNotFound(err) {
+			_ = w.Store.FailImportJob(ctx, item.JobID, "target collection missing: "+err.Error())
+			slog.Warn("import job failed: target collection missing", "job_id", item.JobID, "collection", item.TargetCollectionURI)
+			return
+		}
 		w.failOrRequeue(ctx, item, "collection: "+err.Error())
 		return
 	}

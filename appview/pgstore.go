@@ -1853,6 +1853,24 @@ func (m *PgStore) UpdateImportJobStatus(ctx context.Context, jobID, status, errM
 	return err
 }
 
+// FailImportJob marks the job and all its still-pending items as failed in one
+// shot. Used for job-wide errors (e.g. the target collection was deleted) where
+// retrying individual items is pointless.
+func (m *PgStore) FailImportJob(ctx context.Context, jobID, reason string) error {
+	if _, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='failed', error=$2, updated_at=now()
+		   WHERE job_id=$1 AND status IN ('queued','running')`,
+		jobID, reason,
+	); err != nil {
+		return err
+	}
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_job SET status='failed', error=$2, updated_at=now() WHERE id=$1`,
+		jobID, reason,
+	)
+	return err
+}
+
 func (m *PgStore) UpdateImportJobCursor(ctx context.Context, jobID, cursor string) error {
 	_, err := m.pool.Exec(ctx,
 		`UPDATE import_job SET list_cursor=$2, updated_at=now() WHERE id=$1`,
