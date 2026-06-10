@@ -268,6 +268,22 @@ func (m *PgStore) DeleteSession(ctx context.Context, did syntax.DID, sessionID s
 	return err
 }
 
+// LatestOAuthSessionID returns the most recently updated OAuth session for did,
+// or "" when the user has none stored. The background import worker uses this to
+// always act under the user's current session rather than a session id pinned
+// when the job was created — which may since have been rotated by re-login.
+func (m *PgStore) LatestOAuthSessionID(ctx context.Context, did string) (string, error) {
+	var sid string
+	err := m.pool.QueryRow(ctx,
+		`SELECT session_id FROM oauth_sessions WHERE account_did = $1 ORDER BY updated_at DESC LIMIT 1`,
+		did,
+	).Scan(&sid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return sid, err
+}
+
 func (m *PgStore) GetAuthRequestInfo(ctx context.Context, state string) (*oauth.AuthRequestData, error) {
 	threshold := time.Now().Add(-m.cfg.AuthRequestExpiryDuration)
 	_, _ = m.pool.Exec(ctx,
@@ -1736,10 +1752,6 @@ type SessionJobStatus struct {
 	Failed    int
 }
 
-type InflightUser struct {
-	DID            string
-	OAuthSessionID string
-}
 
 func (m *PgStore) UpsertImportSession(ctx context.Context, id, ownerDID, username string) error {
 	_, err := m.pool.Exec(ctx, `
@@ -1934,6 +1946,17 @@ func (m *PgStore) RequeueImportItem(ctx context.Context, itemID, lastError strin
 	return err
 }
 
+// PauseImportItem returns a claimed item to the queue without consuming a retry
+// attempt. Used when the user's OAuth session is temporarily unavailable, so the
+// import resumes cleanly once they have a valid session again.
+func (m *PgStore) PauseImportItem(ctx context.Context, itemID string) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE import_item SET status='queued', attempt_count = GREATEST(attempt_count - 1, 0), updated_at=now() WHERE id=$1`,
+		itemID,
+	)
+	return err
+}
+
 // MaybeFinalizeJob flips a 'running' job to 'done' once no items remain in
 // queued or running state. No-op when items remain, or when the job isn't
 // in the 'running' state.
@@ -1963,29 +1986,28 @@ func (m *PgStore) ResetRunningItemsForUser(ctx context.Context, ownerDID string)
 }
 
 // ListInflightUsers returns DIDs that have a queued/running item OR a job
-// in the 'listing' state, plus the most recent oauth_session_id for each.
-func (m *PgStore) ListInflightUsers(ctx context.Context) ([]InflightUser, error) {
+// in the 'listing' state.
+func (m *PgStore) ListInflightUsers(ctx context.Context) ([]string, error) {
 	rows, err := m.pool.Query(ctx, `
-		SELECT DISTINCT ON (j.owner_did) j.owner_did, j.oauth_session_id
+		SELECT DISTINCT j.owner_did
 		FROM import_job j
 		WHERE j.status = 'listing'
 		   OR EXISTS (
 		       SELECT 1 FROM import_item i
 		        WHERE i.job_id = j.id AND i.status IN ('queued','running')
 		   )
-		ORDER BY j.owner_did, j.created_at DESC
 	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []InflightUser
+	var out []string
 	for rows.Next() {
-		var u InflightUser
-		if err := rows.Scan(&u.DID, &u.OAuthSessionID); err != nil {
+		var did string
+		if err := rows.Scan(&did); err != nil {
 			return nil, err
 		}
-		out = append(out, u)
+		out = append(out, did)
 	}
 	return out, rows.Err()
 }
@@ -2308,7 +2330,10 @@ func (m *PgStore) ListLabelsSince(ctx context.Context, cursor int64, limit int) 
 }
 
 // ListPendingReviewItems returns the head of the review queue, filtered by
-// source and category. Empty string fields match all values.
+// source and category. Empty string fields match all values, except that an
+// empty source omits 'label_applied' items — those are owner-facing dispute
+// notifications (served via ListPendingAttestationsByAuthor), not moderator
+// tasks. Pass source='label_applied' explicitly to see them.
 // order controls sort: "priority" (default) = priority DESC + created_at ASC,
 // "oldest" = created_at ASC, "newest" = created_at DESC.
 func (m *PgStore) ListPendingReviewItems(ctx context.Context, source, category, order string, limit, offset int) ([]ReviewItemRow, error) {
@@ -2328,6 +2353,7 @@ func (m *PgStore) ListPendingReviewItems(ctx context.Context, source, category, 
 		LEFT JOIN report r ON ri.source = 'report' AND ri.source_ref = r.id
 		WHERE ri.status = 'pending'
 		  AND ($1 = '' OR ri.source = $1)
+		  AND ($1 <> '' OR ri.source <> 'label_applied')
 		  AND ($2 = '' OR ri.category = $2)
 		ORDER BY `+orderClause+`
 		LIMIT $3 OFFSET $4

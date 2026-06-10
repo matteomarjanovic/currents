@@ -116,7 +116,7 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("creating job: %s", err), http.StatusInternalServerError)
 		return
 	}
-	s.ImportWorker.KickUser(did.String(), sessionID)
+	s.ImportWorker.KickUser(did.String())
 
 	slog.Info("created import job", "job_id", jobID, "did", did.String(), "board", body.PinterestBoardID)
 	w.Header().Set("Content-Type", "application/json")
@@ -202,11 +202,11 @@ func (w *ImportWorker) Run() {
 	if err != nil {
 		slog.Error("listing inflight import users", "err", err)
 	}
-	for _, u := range users {
-		if err := w.Store.ResetRunningItemsForUser(w.Context, u.DID); err != nil {
-			slog.Warn("resetting running items", "did", u.DID, "err", err)
+	for _, did := range users {
+		if err := w.Store.ResetRunningItemsForUser(w.Context, did); err != nil {
+			slog.Warn("resetting running items", "did", did, "err", err)
 		}
-		w.startDrain(u.DID, u.OAuthSessionID)
+		w.startDrain(did)
 	}
 
 	go func() {
@@ -222,8 +222,8 @@ func (w *ImportWorker) Run() {
 					slog.Warn("import watchdog", "err", err)
 					continue
 				}
-				for _, u := range inflight {
-					w.KickUser(u.DID, u.OAuthSessionID)
+				for _, did := range inflight {
+					w.KickUser(did)
 				}
 			}
 		}
@@ -234,7 +234,7 @@ func (w *ImportWorker) Run() {
 
 // KickUser ensures a drain goroutine is running for did and pokes it to look
 // for newly-queued work. Safe to call from any goroutine.
-func (w *ImportWorker) KickUser(did, oauthSessionID string) {
+func (w *ImportWorker) KickUser(did string) {
 	w.mu.Lock()
 	ch, ok := w.drains[did]
 	w.mu.Unlock()
@@ -245,10 +245,10 @@ func (w *ImportWorker) KickUser(did, oauthSessionID string) {
 		}
 		return
 	}
-	w.startDrain(did, oauthSessionID)
+	w.startDrain(did)
 }
 
-func (w *ImportWorker) startDrain(did, oauthSessionID string) {
+func (w *ImportWorker) startDrain(did string) {
 	w.mu.Lock()
 	if _, exists := w.drains[did]; exists {
 		w.mu.Unlock()
@@ -257,7 +257,7 @@ func (w *ImportWorker) startDrain(did, oauthSessionID string) {
 	wake := make(chan struct{}, 1)
 	w.drains[did] = wake
 	w.mu.Unlock()
-	go w.runForUser(did, oauthSessionID, wake)
+	go w.runForUser(did, wake)
 }
 
 func (w *ImportWorker) removeDrain(did string) {
@@ -266,7 +266,7 @@ func (w *ImportWorker) removeDrain(did string) {
 	w.mu.Unlock()
 }
 
-func (w *ImportWorker) runForUser(did, oauthSessionID string, wake <-chan struct{}) {
+func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 	defer w.removeDrain(did)
 	defer func() {
 		if r := recover(); r != nil {
@@ -316,7 +316,18 @@ func (w *ImportWorker) runForUser(did, oauthSessionID string, wake <-chan struct
 			}
 		}
 
-		w.processItem(ctx, item, did, oauthSessionID)
+		oauthSess := w.resumeLatestSession(ctx, did)
+		if oauthSess == nil {
+			// No usable session right now (logged out, rotated, or refresh
+			// failed). Return the item to the queue without burning a retry and
+			// pause this drain; the watchdog restarts it and the import resumes
+			// once a valid session is available again.
+			_ = w.Store.PauseImportItem(ctx, item.ID)
+			slog.Warn("import paused: no valid session", "did", did)
+			return
+		}
+
+		w.processItem(ctx, item, did, oauthSess)
 		if err := w.Store.MaybeFinalizeJob(ctx, item.JobID); err != nil {
 			slog.Warn("finalizing import job", "job_id", item.JobID, "err", err)
 		}
@@ -327,6 +338,28 @@ func (w *ImportWorker) runForUser(did, oauthSessionID string, wake <-chan struct
 		case <-time.After(importItemPaceDelay):
 		}
 	}
+}
+
+// resumeLatestSession resolves the user's most recent stored OAuth session,
+// refreshing tokens as needed. Returns nil when the user has no usable session,
+// so the caller can pause the import rather than fail it.
+func (w *ImportWorker) resumeLatestSession(ctx context.Context, did string) *oauth.ClientSession {
+	sid, err := w.Store.LatestOAuthSessionID(ctx, did)
+	if err != nil {
+		slog.Warn("looking up import session", "did", did, "err", err)
+		return nil
+	}
+	if sid == "" {
+		return nil
+	}
+	sess, err := w.OAuth.ResumeSession(ctx, syntax.DID(did), sid)
+	if err != nil {
+		// Session vanished between lookup and resume, or a token refresh failed.
+		// Treat as pausable rather than a hard failure.
+		slog.Warn("import session resume failed", "did", did, "err", err)
+		return nil
+	}
+	return sess
 }
 
 func (w *ImportWorker) runListingStage(ctx context.Context, job ImportJobRow) {
@@ -383,14 +416,7 @@ func (w *ImportWorker) failOrRequeue(ctx context.Context, item *ImportItemRow, r
 	}
 }
 
-func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did, oauthSessionID string) {
-	oauthSess, err := w.OAuth.ResumeSession(ctx, syntax.DID(did), oauthSessionID)
-	if err != nil {
-		_ = w.Store.MarkImportItemFailed(ctx, item.ID, "session expired: "+err.Error())
-		_ = w.Store.UpdateImportJobStatus(ctx, item.JobID, "failed", "session expired")
-		slog.Warn("import session expired", "did", did, "err", err)
-		return
-	}
+func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did string, oauthSess *oauth.ClientSession) {
 	c := oauthSess.APIClient()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.ImageURL, nil)

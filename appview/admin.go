@@ -537,6 +537,10 @@ func (s *Server) APIAdminQueueDismiss(w http.ResponseWriter, r *http.Request) {
 // APIAdminNegateLabel: generic label-removal endpoint. Used by the ai-generated
 // audit surface to retract a false positive that bypassed human review.
 // Body: {uri, val, blobCid?, notes?}
+//
+// When blobCid is supplied the negation fans out to every save URI sharing the
+// blob, mirroring how apply/confirm fan the label out in the first place — a
+// single negate on one URI would otherwise leave resaves labeled.
 func (s *Server) APIAdminNegateLabel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URI     string `json:"uri"`
@@ -557,18 +561,22 @@ func (s *Server) APIAdminNegateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	did, _, _ := s.currentSessionDID(r)
-	if _, err := s.Labeler.IssueLabel(r.Context(), IssueLabelParams{
-		Actor:   did.String(),
-		Action:  ActionLabelNegate,
-		URI:     body.URI,
-		BlobCID: body.BlobCID,
-		Val:     body.Val,
-		Neg:     true,
-	}); err != nil {
-		slog.Error("negate label", "uri", body.URI, "val", body.Val, "err", err)
-		http.Error(w, "internal", http.StatusInternalServerError)
-		return
+
+	uris := []string{body.URI}
+	if body.BlobCID != "" {
+		siblings, err := s.Store.ListSaveURIsByBlobCID(r.Context(), body.BlobCID)
+		if err != nil {
+			slog.Error("list siblings for negate", "blob_cid", body.BlobCID, "err", err)
+			http.Error(w, "internal", http.StatusInternalServerError)
+			return
+		}
+		if len(siblings) > 0 {
+			uris = siblings
+		}
 	}
+
+	s.issueLabelOnAllSiblings(r.Context(), uris, body.BlobCID, body.Val, did.String(), ActionLabelNegate, true)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
