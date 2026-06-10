@@ -32,6 +32,15 @@
 	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
 	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
+	import {
+		features,
+		loadSeenFeatures,
+		markFeatureSeen,
+		isFeatureSeen,
+		hasUnseenAnnouncement,
+		FEATURE_PINTEREST_IMPORT
+	} from '$lib/stores/features.svelte';
+	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
@@ -54,10 +63,24 @@
 	// disputes are waiting on a moderator, not on the author.
 	let pendingCount = $derived(notifications.items.filter((i) => !i.disputed).length);
 
+	// One-time "new feature" indicators (server-backed). Gate on `loaded` so we
+	// never flash a dot before knowing what the user has already seen.
+	let showPinterestNew = $derived(features.loaded && !isFeatureSeen(FEATURE_PINTEREST_IMPORT));
+	let hasFeatureDot = $derived(features.loaded && hasUnseenAnnouncement());
+
+	function openPinterestImport() {
+		markFeatureSeen(FEATURE_PINTEREST_IMPORT);
+		goto('/import/pinterest');
+	}
+
 	// Fetch the pending-attestation list once when the user is known. The store
 	// caches across navigations; opening the dialog refreshes it again.
 	onMount(() => {
-		if (user) void refreshNotifications();
+		if (user) {
+			void refreshNotifications();
+			if (!features.loaded) void loadSeenFeatures();
+			if (!modPrefsLoaded.value) void loadModerationPrefs();
+		}
 	});
 
 	function handleCollectionCreated(collection: CollectionView) {
@@ -216,10 +239,10 @@
 								<UserIcon class="size-4" />
 							</Avatar.Fallback>
 						</Avatar.Root>
-						{#if pendingCount > 0}
+						{#if pendingCount > 0 || hasFeatureDot}
 							<span
 								class="absolute -top-0.5 -right-0.5 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
-								aria-label="{pendingCount} pending"
+								aria-label={pendingCount > 0 ? `${pendingCount} pending` : 'New feature available'}
 							></span>
 						{/if}
 					</DropdownMenu.Trigger>
@@ -238,14 +261,6 @@
 							<UserIcon class="size-4" />
 							Profile
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => goto('/import/pinterest')}>
-							<Download class="size-4" />
-							Import from Pinterest
-						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={handleBrowserExtension}>
-							<Puzzle class="size-4" />
-							Browser extension
-						</DropdownMenu.Item>
 						<DropdownMenu.Item onclick={() => (notificationsOpen = true)}>
 							<Bell class="size-4" />
 							<span>Notifications</span>
@@ -254,6 +269,17 @@
 									{pendingCount}
 								</Badge>
 							{/if}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={openPinterestImport}>
+							<Download class="size-4" />
+							Import from Pinterest
+							{#if showPinterestNew}
+								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
+							{/if}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={handleBrowserExtension}>
+							<Puzzle class="size-4" />
+							Browser extension
 						</DropdownMenu.Item>
 						<DropdownMenu.Item onclick={() => goto('/settings')}>
 							<Settings class="size-4" />

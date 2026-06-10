@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -11,6 +11,7 @@
 	import Check from '@lucide/svelte/icons/check';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
+	import { markFeatureSeen, FEATURE_PINTEREST_IMPORT } from '$lib/stores/features.svelte';
 
 	type Stage = 'username' | 'pick' | 'progress';
 
@@ -103,6 +104,7 @@
 		}
 	});
 
+	onMount(() => markFeatureSeen(FEATURE_PINTEREST_IMPORT));
 	onDestroy(() => stopPolling());
 
 	function stopPolling() {
@@ -162,7 +164,11 @@
 
 	class Unauthorized extends Error {}
 
-	async function createCollection(name: string, description: string, parent?: string): Promise<string> {
+	async function createCollection(
+		name: string,
+		description: string,
+		parent?: string
+	): Promise<string> {
 		const res = await fetch(`${PUBLIC_APPVIEW_URL}/collection`, {
 			method: 'POST',
 			credentials: 'include',
@@ -250,7 +256,6 @@
 					pinterestUsername: uname,
 					collectionUri: rootUri
 				});
-
 			}
 			session = {
 				sessionId,

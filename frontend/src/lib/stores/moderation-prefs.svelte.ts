@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 import type { LabelView } from '$lib/types';
 
 export type AdultVisibility = 'show' | 'blur' | 'hide';
@@ -14,13 +14,14 @@ interface Prefs {
 	aiGenerated: AiVisibility;
 }
 
-const STORAGE_KEY = 'currents-mod-prefs-v2';
+// Defaults mirror the appview DB column defaults (migration 025). Used until the
+// server load completes, and as the resting state for users who never change them.
 const DEFAULTS: Prefs = {
 	porn: 'blur',
 	sexual: 'blur',
 	nudity: 'blur',
 	graphicMedia: 'blur',
-	aiGenerated: 'hide'
+	aiGenerated: 'show'
 };
 
 function isAdult(v: unknown): v is AdultVisibility {
@@ -30,56 +31,59 @@ function isAi(v: unknown): v is AiVisibility {
 	return v === 'show' || v === 'hide';
 }
 
-function load(): Prefs {
-	if (!browser) return { ...DEFAULTS };
+/**
+ * Reactive viewer preferences for moderation rendering. Server-backed so they
+ * follow the user across browsers and devices. Consumed by <LabeledMedia>
+ * (blur + badge) and the upstream filter via shouldHide().
+ */
+export const modPrefs = $state<Prefs>({ ...DEFAULTS });
+export const modPrefsLoaded = $state({ value: false });
+
+export async function loadModerationPrefs() {
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return { ...DEFAULTS };
-		const parsed = JSON.parse(raw) as Partial<Prefs>;
-		return {
-			porn: isAdult(parsed.porn) ? parsed.porn : DEFAULTS.porn,
-			sexual: isAdult(parsed.sexual) ? parsed.sexual : DEFAULTS.sexual,
-			nudity: isAdult(parsed.nudity) ? parsed.nudity : DEFAULTS.nudity,
-			graphicMedia: isAdult(parsed.graphicMedia) ? parsed.graphicMedia : DEFAULTS.graphicMedia,
-			aiGenerated: isAi(parsed.aiGenerated) ? parsed.aiGenerated : DEFAULTS.aiGenerated
-		};
+		const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/moderation/prefs`, {
+			credentials: 'include'
+		});
+		if (!res.ok) return;
+		const data = (await res.json()) as Partial<Prefs>;
+		if (isAdult(data.porn)) modPrefs.porn = data.porn;
+		if (isAdult(data.sexual)) modPrefs.sexual = data.sexual;
+		if (isAdult(data.nudity)) modPrefs.nudity = data.nudity;
+		if (isAdult(data.graphicMedia)) modPrefs.graphicMedia = data.graphicMedia;
+		if (isAi(data.aiGenerated)) modPrefs.aiGenerated = data.aiGenerated;
+		modPrefsLoaded.value = true;
 	} catch {
-		return { ...DEFAULTS };
+		// best-effort; the defaults remain in effect until a later load
 	}
 }
 
-/**
- * Reactive viewer preferences for moderation rendering. Consumed by
- * <LabeledMedia> (blur + badge) and the upstream filter via shouldHide().
- */
-export const modPrefs = $state<Prefs>(load());
-
-function persist() {
-	if (!browser) return;
+async function persist() {
 	try {
-		localStorage.setItem(
-			STORAGE_KEY,
-			JSON.stringify({
+		await fetch(`${PUBLIC_APPVIEW_URL}/api/moderation/prefs`, {
+			method: 'PUT',
+			credentials: 'include',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
 				porn: modPrefs.porn,
 				sexual: modPrefs.sexual,
 				nudity: modPrefs.nudity,
 				graphicMedia: modPrefs.graphicMedia,
 				aiGenerated: modPrefs.aiGenerated
 			})
-		);
+		});
 	} catch {
-		// quota or disabled storage; preferences remain in-memory for the session
+		// best-effort; will resync from the server on next load
 	}
 }
 
 export function setAdult(key: AdultKey, val: AdultVisibility) {
-	modPrefs[key] = val;
-	persist();
+	modPrefs[key] = val; // optimistic
+	void persist();
 }
 
 export function setAi(val: AiVisibility) {
-	modPrefs.aiGenerated = val;
-	persist();
+	modPrefs.aiGenerated = val; // optimistic
+	void persist();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,9 +148,7 @@ export function shouldHide(labels?: LabelView[]): boolean {
  * The effective visibility for a save's labels — the most restrictive
  * across all of them. Used by LabeledMedia to decide between blur and show.
  */
-export function effectiveVisibility(
-	labels?: LabelView[]
-): 'show' | 'blur' | 'hide' {
+export function effectiveVisibility(labels?: LabelView[]): 'show' | 'blur' | 'hide' {
 	if (!labels || labels.length === 0) return 'show';
 	let acc: 'show' | 'blur' | 'hide' = 'show';
 	for (const l of labels) {

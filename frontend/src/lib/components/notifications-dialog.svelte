@@ -154,7 +154,10 @@
 					{#if s.source === 'label_applied'}
 						<Button
 							size="sm"
-							onclick={async () => { await ignore(s); selectedItem = null; }}
+							onclick={async () => {
+								await ignore(s);
+								selectedItem = null;
+							}}
 							disabled={busyId !== null}
 						>
 							Acknowledge
@@ -162,7 +165,10 @@
 						<Button
 							size="sm"
 							variant="outline"
-							onclick={async () => { await dispute(s); selectedItem = null; }}
+							onclick={async () => {
+								await dispute(s);
+								selectedItem = null;
+							}}
 							disabled={busyId !== null || s.disputed}
 						>
 							{s.disputed ? 'Disputed' : 'Dispute'}
@@ -170,7 +176,10 @@
 					{:else}
 						<Button
 							size="sm"
-							onclick={async () => { await confirm(s); selectedItem = null; }}
+							onclick={async () => {
+								await confirm(s);
+								selectedItem = null;
+							}}
 							disabled={busyId !== null}
 						>
 							Confirm
@@ -178,7 +187,10 @@
 						<Button
 							size="sm"
 							variant="outline"
-							onclick={async () => { await ignore(s); selectedItem = null; }}
+							onclick={async () => {
+								await ignore(s);
+								selectedItem = null;
+							}}
 							disabled={busyId !== null}
 						>
 							Ignore

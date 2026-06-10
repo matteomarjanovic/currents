@@ -520,6 +520,64 @@ func (m *PgStore) DeleteCollection(ctx context.Context, uri string) error {
 	return err
 }
 
+// --- Seen features (one-time "new feature" indicators, per user) ---
+
+func (m *PgStore) GetSeenFeatures(ctx context.Context, viewerDID string) ([]string, error) {
+	rows, err := m.pool.Query(ctx, `SELECT feature_key FROM seen_feature WHERE viewer_did = $1`, viewerDID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+func (m *PgStore) MarkFeatureSeen(ctx context.Context, viewerDID, featureKey string) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO seen_feature (viewer_did, feature_key) VALUES ($1, $2)
+		 ON CONFLICT (viewer_did, feature_key) DO NOTHING`,
+		viewerDID, featureKey)
+	return err
+}
+
+// --- Moderation preferences (per-user, server-backed) ---
+
+// GetModerationPrefs returns the user's stored preferences, or the defaults when
+// no row exists yet.
+func (m *PgStore) GetModerationPrefs(ctx context.Context, viewerDID string) (ModerationPrefs, error) {
+	p := defaultModerationPrefs
+	err := m.pool.QueryRow(ctx,
+		`SELECT porn, sexual, nudity, graphic_media, ai_generated
+		 FROM moderation_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.Porn, &p.Sexual, &p.Nudity, &p.GraphicMedia, &p.AIGenerated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return defaultModerationPrefs, nil
+	}
+	if err != nil {
+		return ModerationPrefs{}, err
+	}
+	return p, nil
+}
+
+func (m *PgStore) SetModerationPrefs(ctx context.Context, viewerDID string, p ModerationPrefs) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO moderation_pref (viewer_did, porn, sexual, nudity, graphic_media, ai_generated, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, now())
+		 ON CONFLICT (viewer_did) DO UPDATE SET
+		     porn = EXCLUDED.porn, sexual = EXCLUDED.sexual, nudity = EXCLUDED.nudity,
+		     graphic_media = EXCLUDED.graphic_media, ai_generated = EXCLUDED.ai_generated,
+		     updated_at = now()`,
+		viewerDID, p.Porn, p.Sexual, p.Nudity, p.GraphicMedia, p.AIGenerated)
+	return err
+}
+
 // GetSubcollectionURIs returns the URIs of authorDID's collections whose parent
 // is parentURI.
 func (m *PgStore) GetSubcollectionURIs(ctx context.Context, parentURI, authorDID string) ([]string, error) {

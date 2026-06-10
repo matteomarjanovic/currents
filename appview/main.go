@@ -378,6 +378,10 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/import/pinterest/jobs", srv.APICreatePinterestJob)
 	http.HandleFunc("GET /api/import/active-session", srv.APIGetActiveImportSession)
 	http.HandleFunc("GET /api/import/sessions/{id}", srv.APIGetImportSession)
+	http.HandleFunc("GET /api/features/seen", srv.APIGetSeenFeatures)
+	http.HandleFunc("POST /api/features/seen/{key}", srv.APIMarkFeatureSeen)
+	http.HandleFunc("GET /api/moderation/prefs", srv.APIGetModerationPrefs)
+	http.HandleFunc("PUT /api/moderation/prefs", srv.APIPutModerationPrefs)
 
 	tapHandler.CDNBaseURL = cdnURL
 	go runTapListener(ctx, cctx.String("tap-url"), tapHandler)
