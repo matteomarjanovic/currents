@@ -1940,6 +1940,19 @@ func (m *PgStore) ClaimNextImportItem(ctx context.Context, ownerDID string) (*Im
 	return &i, nil
 }
 
+// CountRecentImportDone returns how many import items for ownerDID completed
+// in the last hour and in the last 24 hours, across all their jobs. Used to
+// budget PDS write points so imports never starve the user's own activity.
+func (m *PgStore) CountRecentImportDone(ctx context.Context, ownerDID string) (hourly, daily int, err error) {
+	err = m.pool.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE updated_at > now() - interval '1 hour'), count(*)
+		  FROM import_item
+		 WHERE owner_did = $1 AND status = 'done' AND updated_at > now() - interval '24 hours'`,
+		ownerDID,
+	).Scan(&hourly, &daily)
+	return hourly, daily, err
+}
+
 func (m *PgStore) MarkImportItemDone(ctx context.Context, itemID, saveURI string) error {
 	_, err := m.pool.Exec(ctx,
 		`UPDATE import_item SET status='done', save_uri=$2, error='', updated_at=now() WHERE id=$1`,

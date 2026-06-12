@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,13 +14,24 @@ import (
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/agnostic"
+	"github.com/bluesky-social/indigo/atproto/atclient"
 	"github.com/bluesky-social/indigo/atproto/auth/oauth"
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 )
 
-const importItemPaceDelay = 2 * time.Second
+// Each imported item is one record CREATE on the user's PDS, which costs 3 of
+// the PDS write points (capped at 5,000/hour and 35,000/day per account). The
+// pace and budgets below keep imports at ~72% of the hourly cap and ~77% of
+// the daily cap, so the user can keep posting on Bluesky while a large import
+// runs. Budgets are enforced by counting recently completed items in the DB,
+// so they hold across restarts and parallel jobs of the same user.
+const importItemPaceDelay = 3 * time.Second
+const importHourlyCreateBudget = 1200 // 3,600 of 5,000 hourly write points
+const importDailyCreateBudget = 9000  // 27,000 of 35,000 daily write points
+const importBudgetRecheck = time.Minute
+const importRateLimitWait = 5 * time.Minute
 const maxImportAttempts = 3
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -295,6 +307,19 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 			}
 		}
 
+		hourly, daily, err := w.Store.CountRecentImportDone(ctx, did)
+		if err != nil {
+			slog.Warn("counting recent import creates", "did", did, "err", err)
+		} else if hourly >= importHourlyCreateBudget || daily >= importDailyCreateBudget {
+			slog.Debug("import write budget exhausted, waiting", "did", did, "hourly", hourly, "daily", daily)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(importBudgetRecheck):
+			}
+			continue
+		}
+
 		item, err := w.Store.ClaimNextImportItem(ctx, did)
 		if err != nil {
 			slog.Warn("claiming import item", "did", did, "err", err)
@@ -327,7 +352,17 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 			return
 		}
 
-		w.processItem(ctx, item, did, oauthSess)
+		if w.processItem(ctx, item, did, oauthSess) {
+			// Rate limited: the item is back in the queue with its attempt
+			// refunded; back off before touching the PDS again.
+			slog.Warn("import rate limited, backing off", "did", did, "wait", importRateLimitWait)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(importRateLimitWait):
+			}
+			continue
+		}
 		if err := w.Store.MaybeFinalizeJob(ctx, item.JobID); err != nil {
 			slog.Warn("finalizing import job", "job_id", item.JobID, "err", err)
 		}
@@ -416,29 +451,42 @@ func (w *ImportWorker) failOrRequeue(ctx context.Context, item *ImportItemRow, r
 	}
 }
 
-func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did string, oauthSess *oauth.ClientSession) {
+// isRateLimited reports whether err is an HTTP 429 from the PDS.
+func isRateLimited(err error) bool {
+	var apiErr *atclient.APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusTooManyRequests
+}
+
+// processItem imports one item. It returns true when a 429 was hit (the item
+// is returned to the queue without consuming an attempt) so the caller can
+// back off before processing more work for this user.
+func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did string, oauthSess *oauth.ClientSession) (rateLimited bool) {
 	c := oauthSess.APIClient()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.ImageURL, nil)
 	if err != nil {
 		w.failOrRequeue(ctx, item, "fetch req: "+err.Error())
-		return
+		return false
 	}
 	req.Header.Set("User-Agent", pinterestUA)
 	resp, err := pinterestHTTP.Do(req)
 	if err != nil {
 		w.failOrRequeue(ctx, item, "fetch: "+err.Error())
-		return
+		return false
 	}
 	imageBytes, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		_ = w.Store.PauseImportItem(ctx, item.ID)
+		return true
+	}
 	if resp.StatusCode != http.StatusOK {
 		w.failOrRequeue(ctx, item, fmt.Sprintf("fetch status %d", resp.StatusCode))
-		return
+		return false
 	}
 	if readErr != nil {
 		w.failOrRequeue(ctx, item, "fetch body: "+readErr.Error())
-		return
+		return false
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -448,7 +496,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	imageBytes, contentType, err = prepareImageForUpload(ctx, w.Inference, imageBytes, contentType)
 	if err != nil {
 		w.failOrRequeue(ctx, item, "prepare: "+err.Error())
-		return
+		return false
 	}
 
 	var uploadOut struct {
@@ -456,8 +504,12 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	}
 	if err := c.LexDo(ctx, "POST", contentType, "com.atproto.repo.uploadBlob", nil,
 		bytes.NewReader(imageBytes), &uploadOut); err != nil {
+		if isRateLimited(err) {
+			_ = w.Store.PauseImportItem(ctx, item.ID)
+			return true
+		}
 		w.failOrRequeue(ctx, item, "uploadBlob: "+err.Error())
-		return
+		return false
 	}
 	blobJSON, _ := json.Marshal(uploadOut.Blob)
 	var blobAny any
@@ -465,6 +517,10 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 
 	collRef, err := resolveStrongRef(ctx, c, item.TargetCollectionURI)
 	if err != nil {
+		if isRateLimited(err) {
+			_ = w.Store.PauseImportItem(ctx, item.ID)
+			return true
+		}
 		// A missing target collection dooms every item in the job (they all
 		// point at the same record), so fail the whole job at once instead of
 		// retrying each item. Happens when the collection was deleted after the
@@ -472,10 +528,10 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 		if isRecordNotFound(err) {
 			_ = w.Store.FailImportJob(ctx, item.JobID, "target collection missing: "+err.Error())
 			slog.Warn("import job failed: target collection missing", "job_id", item.JobID, "collection", item.TargetCollectionURI)
-			return
+			return false
 		}
 		w.failOrRequeue(ctx, item, "collection: "+err.Error())
-		return
+		return false
 	}
 
 	originURL := item.SourceURL
@@ -497,8 +553,13 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 		Record:     record,
 	})
 	if err != nil {
+		if isRateLimited(err) {
+			_ = w.Store.PauseImportItem(ctx, item.ID)
+			return true
+		}
 		w.failOrRequeue(ctx, item, "putRecord: "+err.Error())
-		return
+		return false
 	}
 	_ = w.Store.MarkImportItemDone(ctx, item.ID, out.Uri)
+	return false
 }
