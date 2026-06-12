@@ -353,9 +353,6 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 		}
 
 		if w.processItem(ctx, item, did, oauthSess) {
-			// Rate limited: the item is back in the queue with its attempt
-			// refunded; back off before touching the PDS again.
-			slog.Warn("import rate limited, backing off", "did", did, "wait", importRateLimitWait)
 			select {
 			case <-ctx.Done():
 				return
@@ -477,6 +474,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	imageBytes, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests {
+		slog.Warn("import rate limited by image host, backing off", "did", did, "wait", importRateLimitWait)
 		_ = w.Store.PauseImportItem(ctx, item.ID)
 		return true
 	}
@@ -505,6 +503,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	if err := c.LexDo(ctx, "POST", contentType, "com.atproto.repo.uploadBlob", nil,
 		bytes.NewReader(imageBytes), &uploadOut); err != nil {
 		if isRateLimited(err) {
+			slog.Warn("import rate limited by PDS on uploadBlob, backing off", "did", did, "wait", importRateLimitWait)
 			_ = w.Store.PauseImportItem(ctx, item.ID)
 			return true
 		}
@@ -518,6 +517,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	collRef, err := resolveStrongRef(ctx, c, item.TargetCollectionURI)
 	if err != nil {
 		if isRateLimited(err) {
+			slog.Warn("import rate limited by PDS on getRecord, backing off", "did", did, "wait", importRateLimitWait)
 			_ = w.Store.PauseImportItem(ctx, item.ID)
 			return true
 		}
@@ -554,6 +554,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	})
 	if err != nil {
 		if isRateLimited(err) {
+			slog.Warn("import rate limited by PDS on putRecord, backing off", "did", did, "wait", importRateLimitWait)
 			_ = w.Store.PauseImportItem(ctx, item.ID)
 			return true
 		}
