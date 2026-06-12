@@ -2362,9 +2362,10 @@ func (m *PgStore) ListLabelsSince(ctx context.Context, cursor int64, limit int) 
 
 // ListPendingReviewItems returns the head of the review queue, filtered by
 // source and category. Empty string fields match all values, except that an
-// empty source omits 'label_applied' items — those are owner-facing dispute
-// notifications (served via ListPendingAttestationsByAuthor), not moderator
-// tasks. Pass source='label_applied' explicitly to see them.
+// empty source omits undisputed 'label_applied' items — those are owner-facing
+// dispute notifications (served via ListPendingAttestationsByAuthor), not
+// moderator tasks. Once an owner disputes one it surfaces here for review.
+// Pass source='label_applied' explicitly to see them all.
 // order controls sort: "priority" (default) = priority DESC + created_at ASC,
 // "oldest" = created_at ASC, "newest" = created_at DESC.
 func (m *PgStore) ListPendingReviewItems(ctx context.Context, source, category, order string, limit, offset int) ([]ReviewItemRow, error) {
@@ -2384,7 +2385,7 @@ func (m *PgStore) ListPendingReviewItems(ctx context.Context, source, category, 
 		LEFT JOIN report r ON ri.source = 'report' AND ri.source_ref = r.id
 		WHERE ri.status = 'pending'
 		  AND ($1 = '' OR ri.source = $1)
-		  AND ($1 <> '' OR ri.source <> 'label_applied')
+		  AND ($1 <> '' OR ri.source <> 'label_applied' OR ri.disputed)
 		  AND ($2 = '' OR ri.category = $2)
 		ORDER BY `+orderClause+`
 		LIMIT $3 OFFSET $4
@@ -2506,6 +2507,25 @@ func (m *PgStore) MarkReviewItemDisputed(ctx context.Context, id int64, priority
 	return err
 }
 
+// ResolveLabelAppliedItems resolves any pending 'label_applied' review_items for
+// a blob+val. Called when a label is negated: the dispute notification is moot
+// once the label it pointed at is gone, so it shouldn't linger on the owner's
+// notifications or (if disputed) in the moderator queue.
+func (m *PgStore) ResolveLabelAppliedItems(ctx context.Context, blobCID, val string) error {
+	if blobCID == "" || val == "" {
+		return nil
+	}
+	_, err := m.pool.Exec(ctx, `
+		UPDATE review_item
+		   SET status = 'resolved'
+		 WHERE source = 'label_applied'
+		   AND status = 'pending'
+		   AND blob_cid = $1
+		   AND label_val = $2
+	`, blobCID, val)
+	return err
+}
+
 // GetSaveAuthor returns the author DID for a save URI, or "" if unknown.
 // Used by self-attestation endpoints to enforce ownership.
 func (m *PgStore) GetSaveAuthor(ctx context.Context, uri string) (string, error) {
@@ -2610,32 +2630,63 @@ func (m *PgStore) ListModerationEventsByBlobCID(ctx context.Context, blobCID str
 	return out, rows.Err()
 }
 
-// ListModerationEventsByActor returns the audit-log entries an actor (moderator
-// or 'auto') has produced, newest first. Used by the /admin/me view so moderators
-// can review and undo their own actions.
-func (m *PgStore) ListModerationEventsByActor(ctx context.Context, actorDID string, limit, offset int) ([]ModerationEventRow, error) {
-	if actorDID == "" {
-		return nil, nil
-	}
+// ModeratedBlobRow is one card in the moderation history list: a blob with
+// activity, its most-recent event, and a deterministic sample save for preview.
+type ModeratedBlobRow struct {
+	BlobCID       string
+	LatestAction  string
+	LatestActor   string
+	LatestEventAt time.Time
+	SampleURI     string // deterministic sample save sharing the blob
+	SampleAuthor  string // author_did of SampleURI, for the preview URL
+}
+
+// ListModeratedBlobs returns distinct blobs that have moderation_event activity,
+// newest activity first, paginated. q (optional) matches a blob_cid prefix OR a
+// save uri substring. Each row carries a deterministic sample save (earliest by
+// created_at, then uri — same tiebreak as ListSaveURIsByBlobCID) for the preview
+// thumbnail; the sample is empty when no save row survives for the blob.
+func (m *PgStore) ListModeratedBlobs(ctx context.Context, q string, limit, offset int) ([]ModeratedBlobRow, error) {
 	rows, err := m.pool.Query(ctx, `
-		SELECT id, actor_did, action, COALESCE(subject_uri, ''), COALESCE(subject_cid, ''), COALESCE(blob_cid, ''),
-		       payload, created_at
-		FROM moderation_event
-		WHERE actor_did = $1
-		ORDER BY created_at DESC, id DESC
+		WITH latest AS (
+			SELECT DISTINCT ON (blob_cid)
+			       blob_cid, action, actor_did, created_at
+			FROM moderation_event
+			WHERE blob_cid IS NOT NULL AND blob_cid <> ''
+			ORDER BY blob_cid, created_at DESC, id DESC
+		),
+		sample AS (
+			SELECT DISTINCT ON (pds_blob_cid)
+			       pds_blob_cid, uri, author_did
+			FROM save
+			WHERE pds_blob_cid <> ''
+			ORDER BY pds_blob_cid, created_at ASC NULLS LAST, uri ASC
+		)
+		SELECT l.blob_cid, l.action, l.actor_did, l.created_at,
+		       COALESCE(s.uri, ''), COALESCE(s.author_did, '')
+		FROM latest l
+		LEFT JOIN sample s ON s.pds_blob_cid = l.blob_cid
+		WHERE ($1 = ''
+		       OR l.blob_cid ILIKE $1 || '%'
+		       OR EXISTS (
+		           SELECT 1 FROM save sv
+		           WHERE sv.pds_blob_cid = l.blob_cid
+		             AND sv.uri ILIKE '%' || $1 || '%'
+		       ))
+		ORDER BY l.created_at DESC
 		LIMIT $2 OFFSET $3
-	`, actorDID, limit, offset)
+	`, q, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ModerationEventRow
+	var out []ModeratedBlobRow
 	for rows.Next() {
-		var e ModerationEventRow
-		if err := rows.Scan(&e.ID, &e.ActorDID, &e.Action, &e.SubjectURI, &e.SubjectCID, &e.BlobCID, &e.Payload, &e.CreatedAt); err != nil {
+		var b ModeratedBlobRow
+		if err := rows.Scan(&b.BlobCID, &b.LatestAction, &b.LatestActor, &b.LatestEventAt, &b.SampleURI, &b.SampleAuthor); err != nil {
 			return nil, err
 		}
-		out = append(out, e)
+		out = append(out, b)
 	}
 	return out, rows.Err()
 }

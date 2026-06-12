@@ -212,6 +212,9 @@ See **`MODERATION.md`** for the full pipeline.
 | `POST` | `/api/admin/queue/{id}/confirm` | Moderator | Body `{val}`: issue canonical label on every URI sharing the blob; negate suspected |
 | `POST` | `/api/admin/queue/{id}/takedown` | Moderator | Body `{notes?}`: set `harm_state='blocked'`; issue `!hide` on every URI sharing the blob |
 | `POST` | `/api/admin/queue/{id}/dismiss` | Moderator | Negate suspected labels; mark item dismissed |
-| `POST` | `/api/admin/labels/negate` | Moderator | Body `{uri, val, blobCid?, notes?}`: issue a negation row (for e.g. removing a false-positive AI-generated label) |
+| `POST` | `/api/admin/labels/negate` | Moderator | Body `{uri, val, blobCid?, notes?}`: issue a negation row on every URI sharing the blob; resolve pending `label_applied` items |
+| `POST` | `/api/admin/labels/apply` | Moderator | Body `{blobCid, val}`: issue a canonical label on every URI sharing the blob; clear suspected; notify owners |
+| `GET` | `/api/admin/history` | Moderator | Blobs with moderation activity, newest first (`?q=` blob CID prefix or save URI substring, `?limit=`, `?offset=`) |
+| `GET` | `/api/admin/blob/{cid}` | Moderator | Blob detail: preview, blob state, sibling saves, active labels, audit events |
 
 See **`MODERATION.md`** for the architecture, label vocabulary, and code locations; **`MODERATION_DEPLOYMENT.md`** for keypair generation, DNS setup, and publishing the `app.bsky.labeler.service` record.

@@ -112,6 +112,7 @@ func processSafetyScores(ctx context.Context, handler *TapHandler, source BlobSo
 				SubjectURI: source.URI,
 				BlobCID:    blobCID,
 				Category:   a.name,
+				LabelVal:   a.autoVal,
 				Score:      &score,
 				Priority:   PriorityNormal,
 			}); err != nil {

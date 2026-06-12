@@ -191,6 +191,7 @@ func applyBackfillForBlob(
 				SubjectURI: blob.SampleURI,
 				BlobCID:    blob.BlobCID,
 				Category:   axis.name,
+				LabelVal:   axis.autoVal,
 				Score:      &score,
 				Priority:   PriorityNormal,
 			}); err != nil {

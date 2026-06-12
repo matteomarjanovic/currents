@@ -294,9 +294,9 @@ func (s *Server) createLabelAppliedItem(ctx context.Context, item *ReviewItemRow
 }
 
 // toModerationEventView projects a ModerationEventRow into the shape returned
-// by the queue-detail and /admin/me endpoints. Keeping one projector keeps the
-// two surfaces consistent (the /admin/me page's Negate button reads the same
-// `subjectUri` / `blobCid` / `payload.val` fields the queue-detail audit log uses).
+// by the queue-detail and blob-detail endpoints. Keeping one projector keeps the
+// two audit-log surfaces consistent (both read the same `subjectUri` / `blobCid`
+// / `payload.val` fields).
 func toModerationEventView(e ModerationEventRow) map[string]any {
 	v := map[string]any{
 		"id":        e.ID,
@@ -319,11 +319,21 @@ func toModerationEventView(e ModerationEventRow) map[string]any {
 	return v
 }
 
-// APIAdminMyEvents returns the current moderator's recent moderation_event rows,
-// newest first. Powers the /admin/me page (own action history + per-row Negate).
-func (s *Server) APIAdminMyEvents(w http.ResponseWriter, r *http.Request) {
-	did, _, _ := s.currentSessionDID(r)
-	// requireModerator already ensured did != nil
+// moderatedBlobView is one card in the /admin/history blob list.
+type moderatedBlobView struct {
+	BlobCID       string `json:"blobCid"`
+	LatestAction  string `json:"latestAction"`
+	LatestActor   string `json:"latestActor"`
+	LatestEventAt string `json:"latestEventAt"`
+	PreviewURL    string `json:"previewUrl,omitempty"`
+	SampleURI     string `json:"sampleUri,omitempty"`
+}
+
+// APIAdminHistory lists every blob with moderation activity, newest action
+// first, searchable by blob CID prefix or save URI substring (?q=). Powers the
+// /admin/history blob-centric label-management view.
+func (s *Server) APIAdminHistory(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 200 {
@@ -337,19 +347,165 @@ func (s *Server) APIAdminMyEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, err := s.Store.ListModerationEventsByActor(r.Context(), did.String(), limit, offset)
+	blobs, err := s.Store.ListModeratedBlobs(r.Context(), q, limit, offset)
 	if err != nil {
-		slog.Error("ListModerationEventsByActor", "err", err)
+		slog.Error("ListModeratedBlobs", "err", err)
 		http.Error(w, "internal", http.StatusInternalServerError)
 		return
 	}
 
-	views := make([]map[string]any, 0, len(events))
-	for _, e := range events {
-		views = append(views, toModerationEventView(e))
+	views := make([]moderatedBlobView, len(blobs))
+	for i, b := range blobs {
+		v := moderatedBlobView{
+			BlobCID:       b.BlobCID,
+			LatestAction:  b.LatestAction,
+			LatestActor:   b.LatestActor,
+			LatestEventAt: b.LatestEventAt.UTC().Format(time.RFC3339),
+			SampleURI:     b.SampleURI,
+		}
+		if b.SampleAuthor != "" && b.BlobCID != "" {
+			v.PreviewURL = s.CDNBaseURL + "/img/" + b.SampleAuthor + "/" + b.BlobCID
+		}
+		views[i] = v
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"events": views})
+	json.NewEncoder(w).Encode(map[string]any{"blobs": views})
+}
+
+// APIAdminBlobDetail assembles the full moderation context for a single blob:
+// preview, blob state, sibling saves, active labels, and the audit log. Mirrors
+// APIAdminQueueDetail minus the review_item — it's keyed by blob CID, not item id.
+func (s *Server) APIAdminBlobDetail(w http.ResponseWriter, r *http.Request) {
+	blobCID := r.PathValue("cid")
+	if blobCID == "" {
+		http.Error(w, "bad cid", http.StatusBadRequest)
+		return
+	}
+
+	resp := map[string]any{"blobCid": blobCID}
+	found := false
+
+	uris, err := s.Store.ListSaveURIsByBlobCID(r.Context(), blobCID)
+	if err != nil {
+		slog.Error("ListSaveURIsByBlobCID", "err", err)
+	} else if len(uris) > 0 {
+		found = true
+		saves := make([]map[string]any, 0, len(uris))
+		for _, u := range uris {
+			saves = append(saves, map[string]any{
+				"uri":       u,
+				"authorDid": authorDIDFromURI(u),
+			})
+		}
+		resp["saves"] = saves
+		if did := authorDIDFromURI(uris[0]); did != "" {
+			resp["previewUrl"] = s.CDNBaseURL + "/img/" + did + "/" + blobCID
+		}
+	}
+
+	blobState, err := s.Store.GetBlobModerationState(r.Context(), blobCID)
+	if err != nil {
+		slog.Error("GetBlobModerationState", "err", err)
+	} else if blobState != nil {
+		found = true
+		bs := map[string]any{
+			"harmState":   blobState.HarmState,
+			"aiGenerated": blobState.AIGenerated,
+			"decidedBy":   blobState.DecidedBy,
+		}
+		if blobState.SafetyScores != nil {
+			bs["safetyScores"] = blobState.SafetyScores
+		}
+		if blobState.DecidedAt != nil {
+			bs["decidedAt"] = blobState.DecidedAt.UTC().Format(time.RFC3339)
+		}
+		if blobState.Notes != "" {
+			bs["notes"] = blobState.Notes
+		}
+		resp["blobState"] = bs
+	}
+
+	labels, err := s.Store.GetActiveLabelsByBlobCID(r.Context(), blobCID)
+	if err != nil {
+		slog.Error("GetActiveLabelsByBlobCID", "err", err)
+	} else {
+		resp["activeLabels"] = labels
+	}
+
+	events, err := s.Store.ListModerationEventsByBlobCID(r.Context(), blobCID, 100)
+	if err != nil {
+		slog.Error("ListModerationEventsByBlobCID", "err", err)
+	} else {
+		if len(events) > 0 {
+			found = true
+		}
+		eventViews := make([]map[string]any, 0, len(events))
+		for _, e := range events {
+			eventViews = append(eventViews, toModerationEventView(e))
+		}
+		resp["events"] = eventViews
+	}
+
+	if !found {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// APIAdminApplyLabel attaches a canonical label to every save sharing a blob,
+// keyed by blob CID (no review_item). Blob-centric twin of APIAdminQueueApplyLabel,
+// used by the /admin/history detail view. Negation goes through APIAdminNegateLabel.
+func (s *Server) APIAdminApplyLabel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		BlobCID string `json:"blobCid"`
+		Val     string `json:"val"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.BlobCID == "" {
+		http.Error(w, "blobCid required", http.StatusBadRequest)
+		return
+	}
+	if !applyLabelAllowedVals[body.Val] {
+		http.Error(w, fmt.Sprintf("val %q not allowed", body.Val), http.StatusBadRequest)
+		return
+	}
+	if s.Labeler == nil {
+		http.Error(w, "labeler not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	did, _, _ := s.currentSessionDID(r)
+	actorDID := did.String()
+
+	uris, err := s.Store.ListSaveURIsByBlobCID(r.Context(), body.BlobCID)
+	if err != nil {
+		http.Error(w, "internal", http.StatusInternalServerError)
+		return
+	}
+	if len(uris) == 0 {
+		http.Error(w, "no saves for blob", http.StatusBadRequest)
+		return
+	}
+
+	s.issueLabelOnAllSiblings(r.Context(), uris, body.BlobCID, body.Val, actorDID, ActionLabelAdd, false)
+
+	// Clear suspected state if it was set.
+	if err := s.Store.SetHarmState(r.Context(), body.BlobCID, HarmStateClean, actorDID, ""); err != nil {
+		slog.Warn("clear harm state after apply-label", "blob_cid", body.BlobCID, "err", err)
+	}
+
+	// Notify blob owners so they can dispute if they disagree.
+	s.createLabelAppliedItem(r.Context(), &ReviewItemRow{
+		SubjectURI: uris[0],
+		BlobCID:    body.BlobCID,
+	}, body.Val)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "applied_to": len(uris)})
 }
 
 // applyLabelAllowedVals is the set of label values an admin may attach via the
@@ -576,6 +732,11 @@ func (s *Server) APIAdminNegateLabel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.issueLabelOnAllSiblings(r.Context(), uris, body.BlobCID, body.Val, did.String(), ActionLabelNegate, true)
+
+	// The label is gone, so any pending dispute notification for it is moot.
+	if err := s.Store.ResolveLabelAppliedItems(r.Context(), body.BlobCID, body.Val); err != nil {
+		slog.Warn("resolve label_applied after negate", "blob_cid", body.BlobCID, "val", body.Val, "err", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"ok": true})

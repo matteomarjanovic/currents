@@ -30,7 +30,7 @@
 
 	const navLinks = [
 		{ href: '/admin/queue', label: 'Queue' },
-		{ href: '/admin/me', label: 'My actions' }
+		{ href: '/admin/history', label: 'History' }
 	];
 </script>
 

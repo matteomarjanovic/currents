@@ -337,7 +337,9 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/admin/queue/{id}/takedown", srv.requireModerator(srv.APIAdminQueueTakedown))
 	http.HandleFunc("POST /api/admin/queue/{id}/dismiss", srv.requireModerator(srv.APIAdminQueueDismiss))
 	http.HandleFunc("POST /api/admin/labels/negate", srv.requireModerator(srv.APIAdminNegateLabel))
-	http.HandleFunc("GET /api/admin/me/events", srv.requireModerator(srv.APIAdminMyEvents))
+	http.HandleFunc("POST /api/admin/labels/apply", srv.requireModerator(srv.APIAdminApplyLabel))
+	http.HandleFunc("GET /api/admin/history", srv.requireModerator(srv.APIAdminHistory))
+	http.HandleFunc("GET /api/admin/blob/{cid}", srv.requireModerator(srv.APIAdminBlobDetail))
 
 	http.HandleFunc("GET /api/me/attestations", srv.APIMeListAttestations)
 	http.HandleFunc("POST /api/me/attestations/{id}/confirm", srv.APIMeAttestationConfirm)
