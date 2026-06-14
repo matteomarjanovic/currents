@@ -91,14 +91,14 @@
 		return c?.parentUri ? c.parentUri : uri;
 	}
 
-	// Most recently saved-into first; ties broken by newest collection.
+	// Most recent activity first: newest of {created, last save}.
+	function activityTs(c: CollectionView): number {
+		const saved = c.lastSavedAt ? Date.parse(c.lastSavedAt) : 0;
+		const created = c.createdAt ? Date.parse(c.createdAt) : 0;
+		return Math.max(saved, created);
+	}
 	function byRecentSave(a: CollectionView, b: CollectionView): number {
-		const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
-		const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
-		if (rb !== ra) return rb - ra;
-		const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
-		const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
-		return cb - ca;
+		return activityTs(b) - activityTs(a);
 	}
 
 	let childrenByParent = $derived.by(() => {

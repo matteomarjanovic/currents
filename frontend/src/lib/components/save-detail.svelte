@@ -85,6 +85,46 @@
 		};
 	});
 
+	// When the save arrived here mid-resave (an "optimistic" placeholder created
+	// elsewhere, e.g. saving from the masonry grid), poll until the real save
+	// record is indexed so the attribution dialog can stop "Waiting for save…".
+	$effect(() => {
+		const uri = save.uri;
+		const pending = currentSave.viewer?.saves?.some((s) => s.saveUri === 'optimistic') ?? false;
+		if (!auth.user || !pending) return;
+
+		let cancelled = false;
+		void (async () => {
+			for (let i = 0; i < 15 && !cancelled; i++) {
+				await new Promise((r) => setTimeout(r, 1000));
+				if (cancelled) return;
+				try {
+					const params = new URLSearchParams({ uris: uri });
+					const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`, {
+						credentials: 'include'
+					});
+					if (!res.ok) continue;
+					const data = (await res.json()) as { saves?: SaveView[] };
+					const fetched = data.saves?.[0];
+					const resolved =
+						fetched?.uri === uri &&
+						(fetched.viewer?.saves?.length ?? 0) > 0 &&
+						!fetched.viewer?.saves?.some((s) => s.saveUri === 'optimistic');
+					if (resolved) {
+						if (!cancelled) hydratedSave = fetched;
+						return;
+					}
+				} catch (error) {
+					console.error('resolve pending save failed', error);
+				}
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	});
+
 	function goBack() {
 		if (onClose) {
 			onClose();

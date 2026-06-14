@@ -16,18 +16,12 @@
 
 	const isOwner = $derived(!!auth.user && !!profile && auth.user.did === profile.did);
 
-	// Show only root collections as cards, most recently saved-into first.
+	// Show only root collections as cards, most recent activity first:
+	// newest of {created, last save}.
+	const activityTs = (c: (typeof collections)[number]) =>
+		Math.max(c.lastSavedAt ? Date.parse(c.lastSavedAt) : 0, c.createdAt ? Date.parse(c.createdAt) : 0);
 	const roots = $derived(
-		collections
-			.filter((c) => !c.parentUri)
-			.sort((a, b) => {
-				const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
-				const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
-				if (rb !== ra) return rb - ra;
-				const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
-				const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
-				return cb - ca;
-			})
+		collections.filter((c) => !c.parentUri).sort((a, b) => activityTs(b) - activityTs(a))
 	);
 	const sectionCounts = $derived.by(() => {
 		const m = new Map<string, number>();

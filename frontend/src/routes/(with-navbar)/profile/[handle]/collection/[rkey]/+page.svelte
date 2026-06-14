@@ -29,6 +29,7 @@
 	let createSectionOpen = $state(false);
 
 	let children = $state<CollectionView[]>([]);
+	let childrenLoaded = $state(false);
 	let parent = $state<CollectionView | null>(null);
 	let parentFetchedFor = '';
 
@@ -36,9 +37,13 @@
 		const uri = collectionUri;
 		untrack(() => {
 			children = [];
+			childrenLoaded = false;
 		});
 		const did = uri.split('/')[2];
-		if (!did) return;
+		if (!did) {
+			childrenLoaded = true;
+			return;
+		}
 		fetch(
 			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&parent=${encodeURIComponent(uri)}&limit=100`,
 			{ credentials: 'include' }
@@ -47,7 +52,10 @@
 			.then((d) => {
 				if (d) children = d.collections ?? [];
 			})
-			.catch(() => {});
+			.catch(() => {})
+			.finally(() => {
+				childrenLoaded = true;
+			});
 	});
 
 	$effect(() => {
@@ -195,7 +203,7 @@
 			</Button>
 		</div>
 	</div>
-{:else if !collection}
+{:else if !collection || !childrenLoaded}
 	<div class="mx-auto mb-6 max-w-5xl space-y-3 px-1">
 		<Skeleton class="h-8 w-64" />
 		<Skeleton class="h-4 w-32" />
@@ -221,17 +229,17 @@
 				? () => (createSectionOpen = true)
 				: undefined}
 		/>
-
-		{#if children.length > 0}
-			<h2 class="mt-6 mb-3 text-sm font-semibold text-foreground">Sections</h2>
-			<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-				{#each children as child (child.uri)}
-					<CollectionCard collection={child} />
-				{/each}
-			</div>
-			<h2 class="mt-8 mb-3 text-sm font-semibold text-foreground">Saves</h2>
-		{/if}
 	</div>
+
+	{#if children.length > 0}
+		<h2 class="mt-6 mb-3 text-base font-semibold text-foreground">Sections</h2>
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+			{#each children as child (child.uri)}
+				<CollectionCard collection={child} />
+			{/each}
+		</div>
+		<h2 class="mt-8 mb-3 text-base font-semibold text-foreground">Saves</h2>
+	{/if}
 
 	{#if scroll.items.length === 0 && !scroll.loading && !scroll.hasMore}
 		<div class="py-12 text-center text-sm text-muted-foreground">No saves yet.</div>

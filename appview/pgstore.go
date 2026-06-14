@@ -823,6 +823,20 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -843,7 +857,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -1259,7 +1273,7 @@ func scanSaveRows(rows pgx.Rows) ([]SaveRow, error) {
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -1350,6 +1364,20 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -1414,6 +1442,20 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -1680,6 +1722,20 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
 				FROM save rv WHERE rv.author_did = $1 AND rv.pds_blob_cid = s.pds_blob_cid
 			) END AS viewer_saves,
+			CASE WHEN $1 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $1 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
 			s.width,
 			s.height,
 			s.dominant_colors
@@ -1699,7 +1755,7 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

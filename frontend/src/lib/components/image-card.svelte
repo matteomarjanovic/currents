@@ -27,6 +27,12 @@
 		e.preventDefault();
 		pushState(href, { save: $state.snapshot(item) });
 	}
+
+	// Keep viewer save state on the item in sync so the snapshot pushed to the
+	// detail view reflects saves made here (drives the "Add attribution" button).
+	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
+		item.viewer = { ...(item.viewer ?? {}), saves };
+	}
 </script>
 
 <div
@@ -66,7 +72,12 @@
 							? 'translate-y-0'
 							: 'translate-y-2 group-hover:translate-y-0'}"
 					>
-						<CollectionSelector {item} variant="popover" onOpenChange={(o) => (dropdownOpen = o)} />
+							<CollectionSelector
+							{item}
+							variant="popover"
+							onOpenChange={(o) => (dropdownOpen = o)}
+							onSavesChange={handleSavesChange}
+						/>
 					</div>
 				</div>
 			{:else if auth.checked}
