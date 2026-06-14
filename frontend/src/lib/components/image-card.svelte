@@ -68,9 +68,9 @@
 						: 'opacity-0 group-hover:opacity-100'}"
 				>
 					<div
-						class="pointer-events-auto transition-transform duration-300 {dropdownOpen
-							? 'translate-y-0'
-							: 'translate-y-2 group-hover:translate-y-0'}"
+						class="transition-transform duration-300 {dropdownOpen
+							? 'pointer-events-auto translate-y-0'
+							: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
 					>
 							<CollectionSelector
 							{item}
@@ -85,7 +85,7 @@
 					class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
 				>
 					<div
-						class="pointer-events-auto flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-hover:translate-y-0"
+						class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-hover:pointer-events-auto group-hover:translate-y-0"
 					>
 						<Button size="sm" variant="default" onclick={promptLogin}>Save</Button>
 					</div>

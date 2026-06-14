@@ -4,13 +4,13 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
-	import PersonalizationButton from '$lib/components/personalization-button-v2.svelte';
+	import PersonalizationButton from '$lib/components/personalization-button-v3.svelte';
 
 	const personalizationValue = $derived.by(() => {
 		const raw = page.url.searchParams.get('personalization');
 		if (raw === null) return 0.6;
 		const n = Number(raw);
-		return Number.isFinite(n) ? Math.max(-0.6, Math.min(1, n)) : 0.6;
+		return Number.isFinite(n) ? Math.max(-1, Math.min(1, n)) : 0.6;
 	});
 
 	const feed = useInfiniteScroll(async (cursor) => {
