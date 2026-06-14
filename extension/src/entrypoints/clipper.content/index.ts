@@ -1,6 +1,25 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
 import { showClipper, hideClipper, type SiteHints } from '../../lib/clipper-store.svelte';
+import { setupPinterestGrid } from './pinterest-grid';
+import '../../lib/theme.css';
+
+// @font-face rules inside a shadow root are ignored, so the font is declared
+// at the document level the first time the clipper is shown.
+let fontInjected = false;
+function injectFont() {
+  if (fontInjected) return;
+  fontInjected = true;
+  const style = document.createElement('style');
+  style.textContent = `@font-face{font-family:'Instrument Sans Variable';font-style:normal;font-weight:300 700;font-display:swap;src:url('${browser.runtime.getURL('/fonts/instrument-sans-latin-wght-normal.woff2')}') format('woff2-variations');}`;
+  document.head.appendChild(style);
+}
+
+// Matches pinterest.com and every regional variant: country subdomains
+// (it.pinterest.com), ccTLDs (pinterest.co.uk, pinterest.fr), and www.
+function isPinterestHost(hostname: string): boolean {
+  return /(^|\.)pinterest\.[a-z.]+$/.test(hostname);
+}
 
 // externalSourceURL returns raw only when it is an http(s) URL pointing
 // somewhere other than Pinterest itself; otherwise undefined.
@@ -13,8 +32,7 @@ function externalSourceURL(raw: string | null | undefined): string | undefined {
     return undefined;
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined;
-  const host = u.hostname.replace(/^www\./, '');
-  if (host === 'pinterest.com' || host === 'pin.it' || host.startsWith('pinterest.')) {
+  if (isPinterestHost(u.hostname) || u.hostname.replace(/^www\./, '') === 'pin.it') {
     return undefined;
   }
   return raw;
@@ -45,7 +63,7 @@ function extractSiteHints(): SiteHints {
     const caption = document.querySelector<HTMLElement>('[data-testid="element-ml-caption"]');
     if (caption) return { attributionCredit: caption.textContent?.trim() };
   }
-  if (host === 'pinterest.com' || host.startsWith('pinterest.')) {
+  if (isPinterestHost(location.hostname)) {
     const originUrl = pinterestSourceUrl();
     if (originUrl) return { originUrl };
   }
@@ -61,7 +79,6 @@ export default defineContentScript({
       name: 'currents-clipper',
       position: 'overlay',
       anchor: 'html',
-      inheritStyles: true,
       onMount(container) {
         return mount(App, { target: container });
       },
@@ -84,6 +101,7 @@ export default defineContentScript({
 
     browser.runtime.onMessage.addListener((message) => {
       if (message.type !== 'SHOW_CLIPPER') return;
+      injectFont();
       const siteHints = extractSiteHints();
       showClipper({
         imgUrl: message.imgUrl ?? '',
@@ -97,5 +115,10 @@ export default defineContentScript({
     });
 
     document.addEventListener('currents-clipper-close', () => hideClipper());
+
+    if (isPinterestHost(location.hostname)) {
+      injectFont();
+      setupPinterestGrid();
+    }
   },
 });

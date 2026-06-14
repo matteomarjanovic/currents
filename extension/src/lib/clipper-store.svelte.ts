@@ -4,6 +4,10 @@ export interface Collection {
   uri: string;
   name: string;
   saveCount: number;
+  parentUri?: string;
+  previewImages?: string[];
+  createdAt?: string;
+  lastSavedAt?: string;
 }
 
 export interface SiteHints {
@@ -17,6 +21,7 @@ interface ClipperState {
   originUrl: string;
   pageTitle: string;
   collections: Collection[];
+  collectionsLoading: boolean;
   authState: AuthState;
   userHandle: string;
   siteHints: SiteHints;
@@ -28,13 +33,16 @@ export const clipper: ClipperState = $state({
   originUrl: '',
   pageTitle: '',
   collections: [],
+  collectionsLoading: false,
   authState: 'unauthenticated',
   userHandle: '',
   siteHints: {},
 });
 
-export function showClipper(data: Omit<typeof clipper, 'visible'>) {
-  Object.assign(clipper, data, { visible: true });
+export function showClipper(
+  data: Omit<ClipperState, 'visible' | 'collectionsLoading'> & { collectionsLoading?: boolean }
+) {
+  Object.assign(clipper, { collectionsLoading: false }, data, { visible: true });
 }
 
 export function hideClipper() {

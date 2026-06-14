@@ -53,56 +53,25 @@
   }
 </script>
 
-<main>
-  <div class="logo"><Logo /></div>
+<main class="flex min-w-50 flex-col gap-2 px-5 py-4 text-sm">
+  <div class="mb-1 h-7"><Logo /></div>
   {#if auth.status === "loading"}
-    <p class="muted">Checking login…</p>
+    <p class="text-muted-foreground">Checking login…</p>
   {:else if auth.status === "authenticated"}
     <p>Logged in as <strong>@{auth.handle}</strong></p>
     <a
+      class="text-primary underline-offset-4 hover:underline"
       href="{CURRENTS_FRONTEND_URL}/profile/{auth.handle}"
       target="_blank"
       rel="noreferrer">View your saves →</a
     >
   {:else}
-    <p class="muted">Not logged in.</p>
-    <a href={LOGIN_PAGE_URL} target="_blank" rel="noreferrer"
-      >Log in to Currents →</a
+    <p class="text-muted-foreground">Not logged in.</p>
+    <a
+      class="text-primary underline-offset-4 hover:underline"
+      href={LOGIN_PAGE_URL}
+      target="_blank"
+      rel="noreferrer">Log in to Currents →</a
     >
   {/if}
 </main>
-
-<style>
-  main {
-    padding: 16px 20px;
-    min-width: 200px;
-    font-family:
-      system-ui,
-      -apple-system,
-      sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  .logo {
-    height: 28px;
-    margin-bottom: 12px;
-  }
-
-  p {
-    margin: 0 0 8px;
-  }
-
-  .muted {
-    color: #888;
-  }
-
-  a {
-    color: #0057ff;
-    text-decoration: none;
-  }
-
-  a:hover {
-    text-decoration: underline;
-  }
-</style>

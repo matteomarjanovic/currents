@@ -11,6 +11,10 @@ interface Collection {
   uri: string;
   name: string;
   saveCount: number;
+  parentUri?: string;
+  previewImages?: string[];
+  createdAt?: string;
+  lastSavedAt?: string;
 }
 
 // --- Cookie helper ---
@@ -76,6 +80,10 @@ async function fetchCollections(did: string): Promise<Collection[]> {
       uri: c.uri,
       name: c.name,
       saveCount: c.saveCount ?? 0,
+      parentUri: c.parentUri,
+      previewImages: c.previewImages,
+      createdAt: c.createdAt,
+      lastSavedAt: c.lastSavedAt,
     }));
   } catch {
     return [];
@@ -87,12 +95,14 @@ async function fetchCollections(did: string): Promise<Collection[]> {
 async function handleCreateCollection(message: {
   name: string;
   description?: string;
+  parent?: string;
 }): Promise<{ ok: boolean; uri?: string; error?: string }> {
   const auth = await getAuth();
   if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
   const body = new URLSearchParams({ name: message.name });
   if (message.description) body.set('description', message.description);
+  if (message.parent) body.set('parent', message.parent);
 
   try {
     const resp = await appviewFetch(`${CURRENTS_URL}/collection`, {

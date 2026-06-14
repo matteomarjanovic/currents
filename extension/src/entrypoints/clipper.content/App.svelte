@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { clipper } from "../../lib/clipper-store.svelte";
+  import { untrack } from "svelte";
+  import { clipper, type Collection } from "../../lib/clipper-store.svelte";
+  import CollectionSelector from "../../lib/CollectionSelector.svelte";
+  import { Button } from "$lib/components/ui/button";
+  import { Input } from "$lib/components/ui/input";
+  import { Textarea } from "$lib/components/ui/textarea";
+  import X from "@lucide/svelte/icons/x";
 
   const LOGIN_PAGE_URL =
     import.meta.env.VITE_LOGIN_PAGE_URL ?? "https://currents.is/oauth/login";
@@ -7,11 +13,15 @@
   type SaveState = "idle" | "saving" | "saved" | "error";
   let saveState = $state<SaveState>("idle");
   let errorMsg = $state("");
-  let selectedCollectionUri = $state("");
+  // The user's explicit pick (null until they choose); otherwise we fall back
+  // to the most-recently-used default, which updates as collections load in.
+  let userPickedUri = $state<string | null>(null);
   let text = $state("");
   let attributionUrl = $state("");
   let attributionLicense = $state("");
   let attributionCredit = $state("");
+  let showAttribution = $state(false);
+  let pickerOpen = $state(false);
 
   // Auth polling
   let loginState = $state<"prompt" | "waiting">("prompt");
@@ -26,28 +36,55 @@
 
   // New collection creation
   let creatingCollection = $state(false);
+  let createParent = $state<Collection | null>(null);
   let newCollectionName = $state("");
   let newCollectionDescription = $state("");
   let collectionError = $state("");
 
-  // Reset form state whenever a new image is shown
+  // The collection that received the most recent save; on ties (a save in a
+  // section also bumps its root) prefer the section, then the newest collection.
+  function defaultCollectionUri(cols: Collection[]): string {
+    const best = [...cols].sort((a, b) => {
+      const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
+      const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
+      if (rb !== ra) return rb - ra;
+      if (!!a.parentUri !== !!b.parentUri) return a.parentUri ? -1 : 1;
+      const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
+      const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
+      return cb - ca;
+    });
+    return best[0]?.uri ?? "";
+  }
+
+  let selectedCollectionUri = $derived(
+    userPickedUri ?? defaultCollectionUri(clipper.collections),
+  );
+
+  // Reset form state whenever a new image is shown. Keyed on imgUrl so that
+  // collections arriving asynchronously don't wipe the form.
   $effect(() => {
-    if (clipper.visible) {
+    clipper.imgUrl;
+    if (!clipper.visible) return;
+    untrack(() => {
       saveState = "idle";
       errorMsg = "";
       text = "";
       attributionUrl = "";
       attributionLicense = "";
       attributionCredit = clipper.siteHints.attributionCredit ?? "";
+      // Collapse the attribution form by default; expand it when the site
+      // pre-filled a credit so the user sees what will be attributed.
+      showAttribution = !!attributionCredit;
       loginState = "prompt";
       stopPolling();
 
-      selectedCollectionUri = clipper.collections[0]?.uri ?? "";
+      userPickedUri = null;
       creatingCollection = false;
+      createParent = null;
       newCollectionName = "";
       newCollectionDescription = "";
       collectionError = "";
-    }
+    });
   });
 
   // Clean up polling when dialog closes
@@ -64,7 +101,7 @@
         clipper.authState = "authenticated";
         clipper.userHandle = res.handle;
         clipper.collections = res.collections;
-        selectedCollectionUri = res.collections[0]?.uri ?? "";
+        clipper.collectionsLoading = false;
       }
     }, 3000);
   }
@@ -74,7 +111,20 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") close();
+    if (e.key === "Escape" && !pickerOpen) close();
+  }
+
+  function startCreate(parent: Collection | null) {
+    createParent = parent;
+    creatingCollection = true;
+  }
+
+  function cancelCreate() {
+    creatingCollection = false;
+    createParent = null;
+    newCollectionName = "";
+    newCollectionDescription = "";
+    collectionError = "";
   }
 
   async function createCollection() {
@@ -86,17 +136,21 @@
         type: "CREATE_COLLECTION",
         name,
         description: newCollectionDescription.trim(),
+        parent: createParent?.uri,
       });
       if (response.ok) {
         clipper.collections = [
-          { uri: response.uri ?? "", name, saveCount: 0 },
+          {
+            uri: response.uri ?? "",
+            name,
+            saveCount: 0,
+            parentUri: createParent?.uri,
+            createdAt: new Date().toISOString(),
+          },
           ...clipper.collections,
         ];
-        selectedCollectionUri =
-          response.uri ?? clipper.collections[0]?.uri ?? "";
-        creatingCollection = false;
-        newCollectionName = "";
-        newCollectionDescription = "";
+        userPickedUri = response.uri ?? clipper.collections[0]?.uri ?? "";
+        cancelCreate();
       } else if (response.authError) {
         clipper.authState = "unauthenticated";
       } else {
@@ -135,14 +189,34 @@
       errorMsg = String(e);
     }
   }
+
+  let busy = $derived(saveState === "saving" || saveState === "saved");
+
+  // Promote the backdrop into the browser top layer so page UI can't paint
+  // over it, whatever z-index (or top layer) the page uses. Falls back to the
+  // shadow host's max z-index where the Popover API is unavailable.
+  let backdrop = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    try {
+      backdrop?.showPopover?.();
+    } catch {
+      // already shown
+    }
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 {#if clipper.visible}
-  <div class="backdrop" role="presentation" onclick={close}>
+  <div
+    bind:this={backdrop}
+    popover="manual"
+    class="fixed inset-0 isolate z-50 m-0 flex size-full items-center justify-center border-0 bg-black/30 p-0 font-sans"
+    role="presentation"
+    onclick={close}
+  >
     <div
-      class="card"
+      class="relative flex w-90 max-w-[calc(100vw-3rem)] flex-col gap-3 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 dark:ring-foreground/10"
       role="dialog"
       aria-modal="true"
       aria-label="Save to Currents"
@@ -152,17 +226,28 @@
       onmousedown={(e) => e.stopPropagation()}
       onpointerdown={(e) => e.stopPropagation()}
     >
-      <button class="close-btn" onclick={close} aria-label="Close">✕</button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="absolute top-3 right-3 text-muted-foreground"
+        onclick={close}
+        aria-label="Close"
+      >
+        <X />
+      </Button>
 
       {#if clipper.authState === "unauthenticated"}
         {#if loginState === "waiting"}
-          <div class="auth-waiting">
-            <div class="spinner"></div>
-            <p class="auth-prompt">Waiting for authentication…</p>
+          <div class="flex flex-col items-center gap-3 py-2">
+            <div
+              class="size-6 animate-spin rounded-full border-3 border-muted border-t-foreground"
+            ></div>
+            <p>Waiting for authentication…</p>
           </div>
         {:else}
-          <p class="auth-prompt">
+          <p class="pr-6">
             <a
+              class="text-primary underline underline-offset-4"
               href={LOGIN_PAGE_URL}
               target="_blank"
               rel="noreferrer"
@@ -173,366 +258,124 @@
           </p>
         {/if}
       {:else}
-        <img class="preview" src={clipper.imgUrl} alt="Preview" />
+        <img
+          class="max-h-50 w-full rounded-2xl bg-muted object-contain"
+          src={clipper.imgUrl}
+          alt="Preview"
+        />
 
-        <div class="field-group">
-          <span class="section-label">Collection</span>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs text-muted-foreground">
+            {#if creatingCollection && createParent}
+              New section in {createParent.name}
+            {:else if creatingCollection}
+              New collection
+            {:else}
+              Collection
+            {/if}
+          </span>
           {#if creatingCollection}
-            <div class="new-collection">
-              <input
+            <div class="flex flex-col gap-2">
+              <Input
                 type="text"
-                placeholder="Collection name"
+                placeholder={createParent ? "Section name" : "Collection name"}
                 bind:value={newCollectionName}
                 onkeydown={(e) => {
                   if (e.key === "Enter") createCollection();
                 }}
               />
-              <textarea
-                class="description"
+              <Textarea
                 placeholder="Description (optional)"
-                rows="2"
+                rows={2}
+                class="min-h-13"
                 bind:value={newCollectionDescription}
-              ></textarea>
-              <div class="new-collection-actions">
-                <button
-                  class="secondary-btn"
-                  onclick={() => {
-                    creatingCollection = false;
-                    newCollectionName = "";
-                    newCollectionDescription = "";
-                    collectionError = "";
-                  }}
+              />
+              <div class="flex gap-2">
+                <Button variant="outline" class="flex-1" onclick={cancelCreate}
+                  >Cancel</Button
                 >
-                  Cancel
-                </button>
-                <button
+                <Button
+                  class="flex-1"
                   onclick={createCollection}
                   disabled={!newCollectionName.trim()}
                 >
                   Create
-                </button>
+                </Button>
               </div>
               {#if collectionError}
-                <p class="error">{collectionError}</p>
+                <p class="text-xs text-destructive">{collectionError}</p>
               {/if}
             </div>
           {:else}
-            <div class="collection-row">
-              <select
-                bind:value={selectedCollectionUri}
-                disabled={saveState === "saving" || saveState === "saved"}
-              >
-                {#if clipper.collections.length === 0}
-                  <option value="">No collections yet</option>
-                {/if}
-                {#each clipper.collections as col (col.uri)}
-                  <option value={col.uri}>{col.name}</option>
-                {/each}
-              </select>
-              <button
-                class="icon-btn"
-                title="New collection"
-                onclick={() => {
-                  creatingCollection = true;
-                }}
-                disabled={saveState === "saving" || saveState === "saved"}
-                >+</button
-              >
-            </div>
+            <CollectionSelector
+              collections={clipper.collections}
+              selectedUri={selectedCollectionUri}
+              loading={clipper.collectionsLoading}
+              disabled={busy}
+              onSelect={(uri) => (userPickedUri = uri)}
+              onCreate={startCreate}
+              onOpenChange={(open) => (pickerOpen = open)}
+            />
           {/if}
         </div>
 
-        <input
+        <Input
           type="text"
           placeholder="Add a note (optional)"
           bind:value={text}
-          disabled={saveState === "saving" || saveState === "saved"}
+          disabled={busy}
         />
 
-        <div class="attribution">
-          <span class="section-label">Attribution</span>
-          <input
-            type="text"
-            placeholder="Credit (e.g. photographer name)"
-            bind:value={attributionCredit}
-            disabled={saveState === "saving" || saveState === "saved"}
-          />
-          <input
-            type="url"
-            placeholder="Source URL"
-            bind:value={attributionUrl}
-            disabled={saveState === "saving" || saveState === "saved"}
-          />
-          <input
-            type="text"
-            placeholder="License (e.g. CC BY 4.0)"
-            bind:value={attributionLicense}
-            disabled={saveState === "saving" || saveState === "saved"}
-          />
-        </div>
-
-        {#if saveState === "idle" || saveState === "error"}
-          <button
-            onclick={save}
-            disabled={!selectedCollectionUri || creatingCollection}
+        {#if showAttribution}
+          <div class="flex flex-col gap-2">
+            <span class="text-xs text-muted-foreground">Attribution</span>
+            <Input
+              type="text"
+              placeholder="Credit (e.g. photographer name)"
+              bind:value={attributionCredit}
+              disabled={busy}
+            />
+            <Input
+              type="url"
+              placeholder="Source URL"
+              bind:value={attributionUrl}
+              disabled={busy}
+            />
+            <Input
+              type="text"
+              placeholder="License (e.g. CC BY 4.0)"
+              bind:value={attributionLicense}
+              disabled={busy}
+            />
+          </div>
+        {:else}
+          <Button
+            variant="link"
+            size="sm"
+            class="h-auto justify-start self-start p-0 text-foreground"
+            onclick={() => (showAttribution = true)}
+            disabled={busy}
           >
-            Save to Currents
-          </button>
+            + Add attribution (recommended)
+          </Button>
+        {/if}
+
+        {#if saveState === "saved"}
+          <p class="text-center font-medium">Saved!</p>
+        {:else}
+          <Button
+            onclick={save}
+            disabled={!selectedCollectionUri ||
+              creatingCollection ||
+              saveState === "saving"}
+          >
+            {saveState === "saving" ? "Saving…" : "Save to Currents"}
+          </Button>
           {#if saveState === "error"}
-            <p class="error">{errorMsg}</p>
+            <p class="text-xs text-destructive">{errorMsg}</p>
           {/if}
-        {:else if saveState === "saving"}
-          <button disabled>Saving…</button>
-        {:else if saveState === "saved"}
-          <p class="success">Saved!</p>
         {/if}
       {/if}
     </div>
   </div>
 {/if}
-
-<style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 2147483647;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color-scheme: light;
-    font-family:
-      system-ui,
-      -apple-system,
-      sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  .card {
-    background: #fff;
-    color: #111;
-    border-radius: 12px;
-    padding: 24px;
-    width: 360px;
-    max-width: calc(100vw - 48px);
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
-  }
-
-  .preview {
-    width: 100%;
-    max-height: 200px;
-    object-fit: contain;
-    border-radius: 6px;
-    background: #f0f0f0;
-  }
-
-  select,
-  input[type="text"],
-  input[type="url"] {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 14px;
-    box-sizing: border-box;
-    font-family: inherit;
-    background-color: #fff;
-    color: #111;
-  }
-
-  select:focus,
-  input[type="text"]:focus,
-  input[type="url"]:focus {
-    outline: 2px solid #0057ff;
-    border-color: transparent;
-  }
-
-  .collection-row {
-    display: flex;
-    gap: 8px;
-  }
-
-  .collection-row select {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .icon-btn {
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    background: #f0f0f0;
-    color: #111;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 18px;
-    font-family: inherit;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .icon-btn:hover:not(:disabled) {
-    background: #e0e0e0;
-  }
-
-  .icon-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .new-collection {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .new-collection-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .new-collection-actions button {
-    flex: 1;
-  }
-
-  .secondary-btn {
-    background: transparent !important;
-    color: #111 !important;
-    border: 1px solid #ccc !important;
-    border-radius: 6px !important;
-  }
-
-  .secondary-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.05) !important;
-    cursor: pointer;
-  }
-
-  .field-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .section-label {
-    font-size: 13px;
-    color: #666;
-  }
-
-  .attribution {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  button:not(.close-btn):not(.icon-btn):not(.secondary-btn) {
-    padding: 10px;
-    background: #000000;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-  }
-
-  button:not(.close-btn):not(.icon-btn):not(.toggle-link):not(
-      .secondary-btn
-    ):hover:not(:disabled) {
-    background: #000a1d;
-  }
-
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .close-btn {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    background: none;
-    border: none;
-    font-size: 16px;
-    cursor: pointer;
-    color: #888;
-    line-height: 1;
-    padding: 2px 4px;
-  }
-
-  .close-btn:hover {
-    color: #111;
-  }
-
-  .error {
-    color: #c00;
-    font-size: 13px;
-    margin: 0;
-  }
-
-  .success {
-    color: #080;
-    font-size: 14px;
-    margin: 0;
-    font-weight: 500;
-  }
-
-  .auth-prompt {
-    font-size: 14px;
-    margin: 0;
-  }
-
-  .auth-prompt a {
-    color: #0057ff;
-    text-decoration: underline;
-  }
-
-  .auth-waiting {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 0;
-  }
-
-  .spinner {
-    width: 24px;
-    height: 24px;
-    border: 3px solid #ddd;
-    border-top-color: #0057ff;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  textarea.description {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 14px;
-    box-sizing: border-box;
-    font-family: inherit;
-    background-color: #fff;
-    color: #111;
-    resize: vertical;
-    min-height: 52px;
-  }
-
-  textarea.description:focus {
-    outline: 2px solid #0057ff;
-    border-color: transparent;
-  }
-</style>
