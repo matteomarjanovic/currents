@@ -109,17 +109,19 @@
 				</Avatar.Fallback>
 			</Avatar.Root>
 
-			<div class="min-w-0 flex-1 pb-1">
-				<h1 class="truncate text-2xl font-semibold text-foreground">
-					{profile.displayName ?? profile.handle}
-				</h1>
-				<div class="truncate text-sm text-muted-foreground">@{profile.handle}</div>
+			<div class="flex min-w-0 items-center gap-3 pb-1">
+				<div class="min-w-0">
+					<h1 class="truncate text-2xl font-semibold text-foreground">
+						{profile.displayName ?? profile.handle}
+					</h1>
+					<div class="truncate text-sm text-muted-foreground">@{profile.handle}</div>
+				</div>
 				{#if !isOwner}
 					<Button
 						type="button"
 						variant={following ? 'secondary' : 'default'}
 						size="sm"
-						class="mt-2 rounded-full"
+						class="shrink-0 rounded-full"
 						onclick={toggleFollow}
 						disabled={followLoading}
 					>
