@@ -27,6 +27,7 @@ export interface ActorProfileView {
 	avatar?: string;
 	banner?: string;
 	createdAt?: string;
+	viewer?: { following?: string; followedBy?: string };
 }
 
 export interface SaveAttribution {

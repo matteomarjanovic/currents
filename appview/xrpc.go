@@ -221,6 +221,14 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) XRPCGetActorProfile(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+
 	actorParam := r.URL.Query().Get("actor")
 	if actorParam == "" {
 		http.Error(w, `{"error":"InvalidRequest","message":"actor is required"}`, http.StatusBadRequest)
@@ -246,16 +254,22 @@ func (s *Server) XRPCGetActorProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type profileViewerState struct {
+		Following  string `json:"following,omitempty"`
+		FollowedBy string `json:"followedBy,omitempty"`
+	}
+
 	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Description string `json:"description,omitempty"`
-		Pronouns    string `json:"pronouns,omitempty"`
-		Website     string `json:"website,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-		Banner      string `json:"banner,omitempty"`
-		CreatedAt   string `json:"createdAt,omitempty"`
+		DID         string              `json:"did"`
+		Handle      string              `json:"handle"`
+		DisplayName string              `json:"displayName,omitempty"`
+		Description string              `json:"description,omitempty"`
+		Pronouns    string              `json:"pronouns,omitempty"`
+		Website     string              `json:"website,omitempty"`
+		Avatar      string              `json:"avatar,omitempty"`
+		Banner      string              `json:"banner,omitempty"`
+		CreatedAt   string              `json:"createdAt,omitempty"`
+		Viewer      *profileViewerState `json:"viewer,omitempty"`
 	}
 
 	view := profileView{DID: actorDID.String(), Handle: resolvedHandle}
@@ -273,6 +287,19 @@ func (s *Server) XRPCGetActorProfile(w http.ResponseWriter, r *http.Request) {
 	} else if view.Handle == "" {
 		if ident, err := s.Dir.LookupDID(r.Context(), actorDID); err == nil {
 			view.Handle = ident.Handle.String()
+		}
+	}
+
+	if viewerDID != nil && viewerDID.String() != actorDID.String() {
+		vs := &profileViewerState{}
+		if uri, err := s.Store.GetFollowURI(r.Context(), viewerDID.String(), actorDID.String()); err == nil {
+			vs.Following = uri
+		}
+		if uri, err := s.Store.GetFollowURI(r.Context(), actorDID.String(), viewerDID.String()); err == nil {
+			vs.FollowedBy = uri
+		}
+		if vs.Following != "" || vs.FollowedBy != "" {
+			view.Viewer = vs
 		}
 	}
 

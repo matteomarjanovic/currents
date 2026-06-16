@@ -2979,6 +2979,35 @@ func (m *PgStore) IsModerator(ctx context.Context, did string) (string, error) {
 	return role, nil
 }
 
+func (m *PgStore) UpsertFollow(ctx context.Context, uri, followerDID, subjectDID string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO follow (uri, follower_did, subject_did)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, uri, followerDID, subjectDID)
+	return err
+}
+
+func (m *PgStore) DeleteFollow(ctx context.Context, uri string) error {
+	_, err := m.pool.Exec(ctx, `DELETE FROM follow WHERE uri = $1`, uri)
+	return err
+}
+
+// GetFollowURI returns the AT-URI of the follow record from followerDID to subjectDID, or "" if none.
+func (m *PgStore) GetFollowURI(ctx context.Context, followerDID, subjectDID string) (string, error) {
+	var uri string
+	err := m.pool.QueryRow(ctx, `
+		SELECT uri FROM follow WHERE follower_did = $1 AND subject_did = $2
+	`, followerDID, subjectDID).Scan(&uri)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return uri, nil
+}
+
 func nullableString(s string) any {
 	if s == "" {
 		return nil

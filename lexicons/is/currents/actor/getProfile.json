@@ -30,7 +30,12 @@
             "website": { "type": "string", "format": "uri" },
             "avatar": { "type": "string", "format": "uri" },
             "banner": { "type": "string", "format": "uri" },
-            "createdAt": { "type": "string", "format": "datetime" }
+            "createdAt": { "type": "string", "format": "datetime" },
+            "viewer": {
+              "type": "ref",
+              "ref": "is.currents.actor.defs#profileViewerState",
+              "description": "Viewer-specific state. Only present when the request is authenticated."
+            }
           }
         }
       }

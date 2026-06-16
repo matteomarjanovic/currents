@@ -1,0 +1,26 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.graph.follow",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Declares a social follow relationship on Currents.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["subject", "createdAt"],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "format": "did",
+            "description": "DID of the account being followed."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

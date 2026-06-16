@@ -6,6 +6,9 @@
 	import UserIcon from '@lucide/svelte/icons/user';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import Pencil from '@lucide/svelte/icons/pencil';
+	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	let {
 		profile,
@@ -16,6 +19,56 @@
 		isOwner?: boolean;
 		onEdit?: () => void;
 	} = $props();
+
+	const subjectDid = $derived(profile.did);
+	const initialFollowing = $derived(!!profile.viewer?.following);
+	const initialFollowUri = $derived(profile.viewer?.following ?? '');
+
+	let following = $state(false);
+	let followUri = $state('');
+	let followLoading = $state(false);
+	let scopeMissing = $state(false);
+
+	$effect(() => {
+		following = initialFollowing;
+		followUri = initialFollowUri;
+	});
+
+	async function toggleFollow() {
+		followLoading = true;
+		try {
+			if (following) {
+				const rkey = followUri.split('/').at(-1);
+				const res = await fetch(`${PUBLIC_APPVIEW_URL}/follow/${rkey}`, {
+					method: 'DELETE',
+					credentials: 'include'
+				});
+				if (res.ok) {
+					following = false;
+					followUri = '';
+				}
+			} else {
+				const res = await fetch(`${PUBLIC_APPVIEW_URL}/follow`, {
+					method: 'POST',
+					credentials: 'include',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ subject: subjectDid })
+				});
+				if (res.ok) {
+					const data = await res.json();
+					following = true;
+					followUri = data.uri;
+				} else if (res.status === 403) {
+					const data = await res.json().catch(() => ({}));
+					if (data.error === 'ScopeMissing') scopeMissing = true;
+				}
+			}
+		} catch (e) {
+			console.error('follow toggle failed:', e);
+		} finally {
+			followLoading = false;
+		}
+	}
 
 	const initials = $derived(
 		(profile.displayName ?? profile.handle ?? '?').trim().charAt(0).toUpperCase()
@@ -61,6 +114,18 @@
 					{profile.displayName ?? profile.handle}
 				</h1>
 				<div class="truncate text-sm text-muted-foreground">@{profile.handle}</div>
+				{#if !isOwner}
+					<Button
+						type="button"
+						variant={following ? 'secondary' : 'default'}
+						size="sm"
+						class="mt-2 rounded-full"
+						onclick={toggleFollow}
+						disabled={followLoading}
+					>
+						{following ? 'Following' : 'Follow'}
+					</Button>
+				{/if}
 			</div>
 		</div>
 
@@ -100,3 +165,36 @@
 
 	<Separator class="mt-6" />
 </section>
+
+<Dialog.Root bind:open={scopeMissing}>
+	<Dialog.Content class="max-w-sm">
+		<Dialog.Header>
+			<Dialog.Title>New permission required</Dialog.Title>
+			<Dialog.Description>
+				To follow users, Currents needs permission to create follow records on your AT Protocol
+				account. You'll be redirected to re-authorize — it only takes a moment.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (scopeMissing = false)}>Cancel</Button>
+			<Button
+				onclick={() => {
+					const form = document.createElement('form');
+					form.method = 'POST';
+					form.action = `${PUBLIC_APPVIEW_URL}/oauth/login`;
+					const u = document.createElement('input');
+					u.name = 'username';
+					u.value = auth.user?.handle ?? '';
+					const r = document.createElement('input');
+					r.name = 'return_to';
+					r.value = window.location.href;
+					form.append(u, r);
+					document.body.append(form);
+					form.submit();
+				}}
+			>
+				Re-authorize
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

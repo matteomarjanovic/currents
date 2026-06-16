@@ -28,6 +28,7 @@ import (
 const (
 	collectionNSID = "is.currents.feed.collection"
 	saveNSID       = "is.currents.feed.save"
+	followNSID     = "is.currents.graph.follow"
 	maxBlobSize    = 19 * 1024 * 1024
 )
 
@@ -828,6 +829,79 @@ func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("deleted save", "rkey", rkey)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) CreateFollow(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		Subject string `json:"subject"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Subject == "" {
+		http.Error(w, "subject is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := syntax.ParseDID(body.Subject); err != nil {
+		http.Error(w, "invalid subject DID", http.StatusBadRequest)
+		return
+	}
+
+	out, err := comatproto.RepoCreateRecord(r.Context(), c, &comatproto.RepoCreateRecord_Input{
+		Collection: followNSID,
+		Repo:       did.String(),
+		Record: map[string]any{
+			"$type":     followNSID,
+			"subject":   body.Subject,
+			"createdAt": syntax.DatetimeNow().String(),
+		},
+	})
+	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		if strings.Contains(err.Error(), "ScopeMissingError") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "ScopeMissing"})
+			return
+		}
+		slog.Error("creating follow", "err", err, "subject", body.Subject, "follower", did.String())
+		http.Error(w, fmt.Sprintf("creating follow: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("created follow", "uri", out.Uri)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"uri":%q}`, out.Uri)
+}
+
+func (s *Server) DeleteFollow(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	rkey := r.PathValue("rkey")
+
+	if err := c.Post(r.Context(), "com.atproto.repo.deleteRecord", map[string]any{
+		"repo":       did.String(),
+		"collection": followNSID,
+		"rkey":       rkey,
+	}, nil); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		http.Error(w, fmt.Sprintf("deleting follow: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("deleted follow", "rkey", rkey)
 	w.WriteHeader(http.StatusNoContent)
 }
 

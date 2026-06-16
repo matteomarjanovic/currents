@@ -184,7 +184,7 @@ func runServer(cctx *cli.Context) error {
 		return fmt.Errorf("missing session-secret")
 	}
 
-	scopes := []string{"atproto", "repo:is.currents.actor.profile", "repo:is.currents.feed.collection", "repo:is.currents.feed.save", "blob:image/*"}
+	scopes := []string{"atproto", "repo:is.currents.actor.profile", "repo:is.currents.feed.collection", "repo:is.currents.feed.save", "repo:is.currents.graph.follow", "blob:image/*"}
 	bind := ":8080"
 	dir := identity.DefaultDirectory()
 
@@ -369,6 +369,9 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.actor.searchActors", srv.XRPCSearchActors)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getRelatedSaves", srv.XRPCGetRelatedSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
+
+	http.HandleFunc("POST /follow", srv.CreateFollow)
+	http.HandleFunc("DELETE /follow/{rkey}", srv.DeleteFollow)
 
 	http.HandleFunc("POST /save", srv.CreateSave)
 	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)

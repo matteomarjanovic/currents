@@ -190,6 +190,20 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		}
 		return nil
 
+	case followNSID:
+		slog.Info("TAP follow received", "uri", atURI, "action", ev.Action, "did", ev.DID)
+		if ev.Action == "delete" {
+			return handler.Store.DeleteFollow(ctx, atURI)
+		}
+		var f struct {
+			Subject   string `json:"subject"`
+			CreatedAt string `json:"createdAt"`
+		}
+		if err := json.Unmarshal(ev.Record, &f); err != nil {
+			return fmt.Errorf("unmarshal follow record: %w", err)
+		}
+		return handler.Store.UpsertFollow(ctx, atURI, ev.DID, f.Subject)
+
 	case "is.currents.actor.profile":
 		if ev.Action == "delete" {
 			return nil // profile deletion not meaningful; skip
