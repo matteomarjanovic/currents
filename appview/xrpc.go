@@ -495,6 +495,185 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Saves: views})
 }
 
+func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"q is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 25
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
+			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
+				offset = n
+			}
+		}
+	}
+
+	viewerStr := ""
+	if viewerDID != nil {
+		viewerStr = viewerDID.String()
+	}
+
+	rows, err := s.Store.SearchCollections(r.Context(), q, viewerStr, limit, offset)
+	if err != nil {
+		slog.Error("SearchCollections", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	type collectionViewerState struct {
+		Starred bool `json:"starred"`
+	}
+	type collectionView struct {
+		URI           string                 `json:"uri"`
+		CID           string                 `json:"cid"`
+		Author        profileView            `json:"author"`
+		Name          string                 `json:"name"`
+		Description   string                 `json:"description,omitempty"`
+		ParentURI     string                 `json:"parentUri,omitempty"`
+		SaveCount     int                    `json:"saveCount,omitempty"`
+		PreviewImages []string               `json:"previewImages,omitempty"`
+		CreatedAt     string                 `json:"createdAt"`
+		LastSavedAt   string                 `json:"lastSavedAt,omitempty"`
+		Viewer        *collectionViewerState `json:"viewer,omitempty"`
+	}
+
+	authorCache := map[string]profileView{}
+	views := make([]collectionView, 0, len(rows))
+	for _, row := range rows {
+		author, ok := authorCache[row.AuthorDID]
+		if !ok {
+			author = profileView{DID: row.AuthorDID}
+			if actorRow, err := s.Store.GetActorByDID(r.Context(), row.AuthorDID); err == nil && actorRow != nil {
+				author.Handle = actorRow.Handle
+				author.DisplayName = actorRow.DisplayName
+				author.Avatar = actorRow.Avatar
+			}
+			authorCache[row.AuthorDID] = author
+		}
+
+		cv := collectionView{
+			URI:         row.URI,
+			CID:         row.CID,
+			Author:      author,
+			Name:        row.Name,
+			Description: row.Description,
+			ParentURI:   row.ParentURI,
+			SaveCount:   row.SaveCount,
+		}
+		if row.CreatedAt != nil {
+			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		if row.LastSavedAt != nil {
+			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
+		}
+		for _, blob := range row.PreviewBlobs {
+			parts := strings.SplitN(blob, ",", 2)
+			if len(parts) == 2 {
+				cv.PreviewImages = append(cv.PreviewImages, s.CDNBaseURL+"/img/"+parts[0]+"/"+parts[1])
+			}
+		}
+		if viewerDID != nil && row.Starred != nil {
+			cv.Viewer = &collectionViewerState{Starred: *row.Starred}
+		}
+		views = append(views, cv)
+	}
+
+	var nextCursor string
+	if len(rows) == limit {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(rows))))
+	}
+
+	type response struct {
+		Cursor      string           `json:"cursor,omitempty"`
+		Collections []collectionView `json:"collections"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Collections: views})
+}
+
+func (s *Server) XRPCSearchActors(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"q is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 25
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
+			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
+				offset = n
+			}
+		}
+	}
+
+	rows, err := s.Store.SearchActors(r.Context(), q, limit, offset)
+	if err != nil {
+		slog.Error("SearchActors", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Description string `json:"description,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	views := make([]profileView, 0, len(rows))
+	for _, row := range rows {
+		views = append(views, profileView{
+			DID:         row.DID,
+			Handle:      row.Handle,
+			DisplayName: row.DisplayName,
+			Description: row.Description,
+			Avatar:      row.Avatar,
+		})
+	}
+
+	var nextCursor string
+	if len(rows) == limit {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(rows))))
+	}
+
+	type response struct {
+		Cursor string        `json:"cursor,omitempty"`
+		Actors []profileView `json:"actors"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Actors: views})
+}
+
 func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 	viewerDID, err := s.optionalAuth(r)
 	if err != nil {

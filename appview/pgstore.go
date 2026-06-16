@@ -343,6 +343,7 @@ func (m *PgStore) UpsertCollection(ctx context.Context, uri, cid, authorDID, nam
 type CollectionRow struct {
 	URI          string
 	CID          string
+	AuthorDID    string // populated by search; empty for single-actor listings
 	Name         string
 	Description  string
 	ParentURI    string // empty for root collections
@@ -529,6 +530,85 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(ts + "|" + last.URI))
 	}
 	return result, nextCursor, nil
+}
+
+// SearchCollections returns collections whose name matches q (case-insensitive
+// substring), ranked by save count. Offset-based pagination. Each row carries its
+// AuthorDID so the caller can hydrate per-collection author profiles.
+func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, limit, offset int) ([]CollectionRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT
+			c.uri,
+			c.cid,
+			c.author_did,
+			c.name,
+			COALESCE(c.description, ''),
+			COALESCE(c.parent_uri, ''),
+			c.created_at,
+			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
+			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
+			ARRAY(
+				SELECT s2.author_did || ',' || s2.pds_blob_cid
+				FROM save s2
+				WHERE (s2.collection_uri = c.uri
+				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
+				  AND s2.content_nsid = 'is.currents.content.image'
+				  AND s2.pds_blob_cid <> ''
+				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
+				LIMIT 4
+			) AS preview_blobs,
+			CASE WHEN $2 != '' THEN (sc.viewer_did IS NOT NULL) END AS starred
+		FROM collection c
+		LEFT JOIN starred_collection sc
+			ON sc.collection_uri = c.uri AND sc.viewer_did = NULLIF($2, '')
+		WHERE c.cid IS NOT NULL
+		  AND c.name ILIKE '%' || $1 || '%'
+		ORDER BY save_count DESC, c.created_at DESC NULLS LAST, c.uri ASC
+		LIMIT $3 OFFSET $4
+	`, q, viewerDID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CollectionRow
+	for rows.Next() {
+		var row CollectionRow
+		if err := rows.Scan(&row.URI, &row.CID, &row.AuthorDID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// SearchActors returns users whose handle or display name matches q
+// (case-insensitive substring). Offset-based pagination.
+func (m *PgStore) SearchActors(ctx context.Context, q string, limit, offset int) ([]ActorRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT did, COALESCE(handle, ''), COALESCE(display_name, ''), COALESCE(description, ''),
+		       COALESCE(pronouns, ''), COALESCE(website, ''), COALESCE(avatar, ''), COALESCE(banner, ''), created_at
+		FROM "user"
+		WHERE handle ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%'
+		ORDER BY (handle ILIKE $1 || '%') DESC, handle ASC
+		LIMIT $2 OFFSET $3
+	`, q, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ActorRow
+	for rows.Next() {
+		var row ActorRow
+		if err := rows.Scan(&row.DID, &row.Handle, &row.DisplayName, &row.Description, &row.Pronouns, &row.Website, &row.Avatar, &row.Banner, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
 
 func (m *PgStore) DeleteCollection(ctx context.Context, uri string) error {

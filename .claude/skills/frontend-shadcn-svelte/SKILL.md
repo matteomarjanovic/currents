@@ -36,6 +36,29 @@ Currents is a visual discovery app (Pinterest alternative). The UI should feel:
    - `playground-link` — share a repro if debugging
 3. After finishing a component, run `svelte-autofixer` to confirm there are no rune/syntax issues.
 
+## Visual verification with Playwright
+
+You can verify rendered UI (layout, alignment, sizing, screenshots) in a real browser. Playwright and a cached Chromium are already available on this machine via the npx cache — **no `npm install` is needed**, and do not add Playwright to `package.json` just for a check.
+
+Workflow:
+
+1. Start the dev server in the background: `npm run dev` (reads `frontend/.env`, serves on `http://localhost:5173`). The top bar / search UI renders even if the appview backend is down, so most chrome can be checked without the full stack.
+2. Confirm Playwright is reachable: `npx --no-install playwright --version`. Find the cached module path with `find ~/.npm/_npx -path '*playwright/index.js'`.
+3. Write a throwaway `.mjs` script in `/tmp` and import the cached module by **absolute path** (ESM ignores `NODE_PATH`, and the package isn't resolvable from the project):
+   ```js
+   import pw from '/Users/<you>/.npm/_npx/<hash>/node_modules/playwright/index.js';
+   const { chromium } = pw;
+   const browser = await chromium.launch();
+   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+   await page.goto('http://localhost:5173/explore', { waitUntil: 'domcontentloaded' });
+   // measure: const box = await page.locator('[data-slot=select-trigger]').first().boundingBox();
+   // screenshot: await page.locator('header').first().screenshot({ path: '/tmp/out.png' });
+   await browser.close();
+   ```
+4. `boundingBox()` returns `{x, y, width, height}` — ideal for asserting alignment/equal heights. Screenshot to `/tmp/*.png` and read it back to eyeball the result.
+5. Use a `width >= 768` viewport to hit the `md:` breakpoint (the desktop search bar is hidden below it).
+6. Clean up: kill the dev server (`pkill -f "vite dev"`) and remove the `/tmp` script + screenshots when done.
+
 ## shadcn-svelte documentation links
 
 Full docs are available as LLM-readable markdown. Reference these when implementing or debugging:

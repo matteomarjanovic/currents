@@ -5,6 +5,8 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as ButtonGroup from '$lib/components/ui/button-group';
+	import * as Select from '$lib/components/ui/select';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { setMode, resetMode, userPrefersMode } from 'mode-watcher';
@@ -53,7 +55,16 @@
 		landing?: boolean;
 	} = $props();
 
+	const SEARCH_TYPES = [
+		{ value: 'saves', label: 'Images' },
+		{ value: 'collections', label: 'Collections' },
+		{ value: 'users', label: 'Users' }
+	] as const;
+	type SearchType = (typeof SEARCH_TYPES)[number]['value'];
+
 	let query = $state('');
+	let searchType = $state<SearchType>('saves');
+	let searchLabel = $derived(SEARCH_TYPES.find((t) => t.value === searchType)?.label ?? 'Images');
 	let searchOpen = $state(false);
 	let createCollectionOpen = $state(false);
 	let browserExtensionDialogOpen = $state(false);
@@ -112,16 +123,62 @@
 	$effect(() => {
 		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
 		else if (page.params.query) query = page.params.query;
+		const t = page.params.type;
+		if (t === 'collections' || t === 'users' || t === 'saves') searchType = t;
 	});
 
 	function onsubmit(e: Event) {
 		e.preventDefault();
 		const trimmed = query.trim();
-		if (trimmed) {
-			goto(resolve('/(with-navbar)/search/[query]', { query: encodeURIComponent(trimmed) }));
-		}
+		if (!trimmed) return;
+		goto(
+			resolve('/(with-navbar)/search/[type]/[query]', {
+				type: searchType,
+				query: encodeURIComponent(trimmed)
+			})
+		);
 	}
 </script>
+
+{#snippet searchBar(autofocus: boolean)}
+	<ButtonGroup.Root class="h-11 w-full">
+		<Select.Root type="single" bind:value={searchType}>
+			<Select.Trigger
+				class="{landing
+					? 'bg-accent/50 backdrop-blur-sm'
+					: ''} h-11! w-28 shrink-0 rounded-l-full text-muted-foreground"
+			>
+				{searchLabel}
+			</Select.Trigger>
+			<Select.Content>
+				{#each SEARCH_TYPES as t (t.value)}
+					<Select.Item value={t.value} label={t.label}>{t.label}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+		<ButtonGroup.Separator class="my-0" />
+		<Input
+			type="search"
+			placeholder="Search..."
+			bind:value={query}
+			{autofocus}
+			autocorrect="off"
+			autocapitalize="off"
+			autocomplete="off"
+			spellcheck={false}
+			class="{landing ? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70' : ''} h-11"
+		/>
+		<Button
+			type="submit"
+			variant="outline"
+			size="icon"
+			aria-label="Search"
+			class="{landing ? 'bg-accent/50 backdrop-blur-sm' : ''} h-11! w-11 shrink-0"
+		>
+			<SearchIcon class="size-4" />
+		</Button>
+	</ButtonGroup.Root>
+{/snippet}
 
 <Tooltip.Provider>
 	<header
@@ -149,18 +206,7 @@
 			class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center md:flex md:max-w-sm lg:max-w-md"
 		>
 			<form {onsubmit} class="w-full md:max-w-sm lg:max-w-md">
-				<Input
-					type="search"
-					placeholder="Search images..."
-					bind:value={query}
-					autocorrect="off"
-					autocapitalize="off"
-					autocomplete="off"
-					spellcheck={false}
-					class="{landing
-						? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
-						: ''} h-11 rounded-full"
-				/>
+				{@render searchBar(false)}
 			</form>
 		</div>
 
@@ -183,19 +229,7 @@
 				class="absolute inset-0 flex items-center gap-2 px-2 md:hidden"
 			>
 				<form {onsubmit} class="flex-1">
-					<Input
-						type="search"
-						placeholder="Search images..."
-						bind:value={query}
-						autofocus
-						autocorrect="off"
-						autocapitalize="off"
-						autocomplete="off"
-						spellcheck={false}
-						class="{landing
-							? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70'
-							: ''} h-11 rounded-full"
-					/>
+					{@render searchBar(true)}
 				</form>
 				<Button
 					variant="outline"
