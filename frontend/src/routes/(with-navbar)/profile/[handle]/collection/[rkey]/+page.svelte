@@ -5,6 +5,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import SelectableSaveGrid from '$lib/components/selectable-save-grid.svelte';
 	import CollectionHeader from '$lib/components/collection-header.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import CollectionEditDialog from '$lib/components/collection-edit-dialog.svelte';
@@ -176,6 +177,74 @@
 		const handle = c.author?.handle ?? c.uri.split('/')[2];
 		return `/profile/${handle}/collection/${rkey}`;
 	}
+
+	// ── Bulk self-labeling (owner) ────────────────────────────────────────────
+	const SELF_LABEL_OPTIONS = [
+		{ val: 'porn', label: 'Porn' },
+		{ val: 'sexual', label: 'Sexual' },
+		{ val: 'nudity', label: 'Nudity' },
+		{ val: 'graphic-media', label: 'Graphic' },
+		{ val: 'currents-ai-generated', label: 'AI-generated' }
+	];
+	let selectionMode = $state(false);
+	let selectedUris = $state<Set<string>>(new Set());
+	let bulkLabels = $state<Set<string>>(new Set());
+	let applying = $state(false);
+	let bulkResult = $state<{ applied: number; skipped: number; failed: number } | null>(null);
+
+	function enterSelection() {
+		selectionMode = true;
+		selectedUris = new Set();
+		bulkLabels = new Set();
+		bulkResult = null;
+	}
+	function exitSelection() {
+		selectionMode = false;
+		selectedUris = new Set();
+		bulkLabels = new Set();
+	}
+	function toggleSelect(uri: string) {
+		const next = new Set(selectedUris);
+		if (next.has(uri)) next.delete(uri);
+		else next.add(uri);
+		selectedUris = next;
+	}
+	function selectAllLoaded() {
+		selectedUris = new Set(scroll.items.filter((i) => !i.resaveOf).map((i) => i.uri));
+	}
+	function toggleBulkLabel(val: string) {
+		const next = new Set(bulkLabels);
+		if (next.has(val)) next.delete(val);
+		else next.add(val);
+		bulkLabels = next;
+	}
+
+	async function applyBulkLabels() {
+		const rkeys = [...selectedUris].map((u) => u.split('/').pop()).filter(Boolean) as string[];
+		const labels = [...bulkLabels];
+		if (rkeys.length === 0 || labels.length === 0) return;
+		applying = true;
+		bulkResult = null;
+		try {
+			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/labels/bulk`, {
+				method: 'PUT',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ rkeys, labels })
+			});
+			if (!res.ok) {
+				bulkResult = { applied: 0, skipped: 0, failed: rkeys.length };
+				return;
+			}
+			bulkResult = await res.json();
+			selectedUris = new Set();
+			bulkLabels = new Set();
+		} catch {
+			bulkResult = { applied: 0, skipped: 0, failed: rkeys.length };
+		} finally {
+			applying = false;
+		}
+	}
 </script>
 
 {#if notFound}
@@ -228,6 +297,7 @@
 			onCreateSection={isOwner && !collection.parentUri
 				? () => (createSectionOpen = true)
 				: undefined}
+			onBulkLabel={isOwner ? enterSelection : undefined}
 		/>
 	</div>
 
@@ -244,10 +314,87 @@
 	{#if scroll.items.length === 0 && !scroll.loading && !scroll.hasMore}
 		<div class="py-12 text-center text-sm text-muted-foreground">No saves yet.</div>
 	{:else}
-		<MasonryGrid items={scroll.items} loading={scroll.loading} />
+		{#if selectionMode}
+			<SelectableSaveGrid items={scroll.items} selected={selectedUris} onToggle={toggleSelect} />
+		{:else}
+			<MasonryGrid items={scroll.items} loading={scroll.loading} />
+		{/if}
 		{#if scroll.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}
+		{#if selectionMode}
+			<div class="h-44"></div>
+		{/if}
+	{/if}
+
+	{#if selectionMode}
+		<div
+			class="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-popover/95 p-3 backdrop-blur-sm"
+		>
+			<div class="mx-auto flex max-w-5xl flex-col gap-3">
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<div class="flex items-center gap-3 text-sm">
+						<span class="font-medium">{selectedUris.size} selected</span>
+						<button
+							type="button"
+							class="text-xs text-muted-foreground underline-offset-2 hover:underline"
+							onclick={selectAllLoaded}
+						>
+							Select all loaded
+						</button>
+						{#if selectedUris.size > 0}
+							<button
+								type="button"
+								class="text-xs text-muted-foreground underline-offset-2 hover:underline"
+								onclick={() => (selectedUris = new Set())}
+							>
+								Clear
+							</button>
+						{/if}
+					</div>
+					<div class="flex items-center gap-2">
+						<Button variant="ghost" size="sm" onclick={exitSelection} disabled={applying}>
+							Cancel
+						</Button>
+						<Button
+							size="sm"
+							onclick={applyBulkLabels}
+							disabled={applying || selectedUris.size === 0 || bulkLabels.size === 0}
+						>
+							{applying ? 'Applying…' : `Apply to ${selectedUris.size}`}
+						</Button>
+					</div>
+				</div>
+				<div class="flex flex-wrap items-center gap-1.5 text-xs">
+					<span class="text-muted-foreground">Labels to add:</span>
+					{#each SELF_LABEL_OPTIONS as opt (opt.val)}
+						{@const active = bulkLabels.has(opt.val)}
+						<button
+							type="button"
+							onclick={() => toggleBulkLabel(opt.val)}
+							disabled={applying}
+							class="rounded-full border px-2.5 py-1 transition-colors {active
+								? 'border-foreground bg-foreground text-background'
+								: 'border-border text-muted-foreground hover:bg-muted'}"
+						>
+							{opt.label}
+						</button>
+					{/each}
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Resaves can't be labeled and aren't selectable. Add-only — labels can't be removed here,
+					and apply to every copy of each image.
+				</p>
+				{#if bulkResult}
+					<p class="text-xs font-medium text-foreground">
+						Applied to {bulkResult.applied}{bulkResult.skipped > 0
+							? ` · ${bulkResult.skipped} skipped`
+							: ''}{bulkResult.failed > 0 ? ` · ${bulkResult.failed} failed` : ''}. Labels may take
+						a moment to appear.
+					</p>
+				{/if}
+			</div>
+		</div>
 	{/if}
 
 	{#if isOwner}

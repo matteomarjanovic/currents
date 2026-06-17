@@ -1,4 +1,5 @@
 import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { auth } from '$lib/stores/auth.svelte';
 import type { LabelView } from '$lib/types';
 
 export type AdultVisibility = 'show' | 'blur' | 'hide';
@@ -21,6 +22,18 @@ const DEFAULTS: Prefs = {
 	sexual: 'blur',
 	nudity: 'blur',
 	graphicMedia: 'blur',
+	aiGenerated: 'show'
+};
+
+// Logged-out visitors get the safest possible defaults — every adult/violence
+// label fully hidden, only the informational AI-generated label shown — and have
+// no way to loosen them (preferences live in settings, behind auth). Logged-in
+// users use their own server-backed prefs (the blur DEFAULTS until they change them).
+const LOGGED_OUT_DEFAULTS: Prefs = {
+	porn: 'hide',
+	sexual: 'hide',
+	nudity: 'hide',
+	graphicMedia: 'hide',
 	aiGenerated: 'show'
 };
 
@@ -113,20 +126,29 @@ function mostRestrictive(
  *  - `currents-ai-generated`: AiVisibility is 2-state; "show" is treated as
  *    show, "hide" as hide. Blur is not an option for AI.
  */
+// The preferences actually in force for the current viewer: a logged-in user's
+// own prefs, or the safe logged-out defaults for unauthenticated visitors (which
+// also covers the brief window before auth resolves — erring on the side of
+// hiding). Reads `auth.user` reactively, so visibility recomputes on login/logout.
+function activePrefs(): Prefs {
+	return auth.user ? modPrefs : LOGGED_OUT_DEFAULTS;
+}
+
 export function visibilityFor(labelVal: string): 'show' | 'blur' | 'hide' {
+	const prefs = activePrefs();
 	switch (labelVal) {
 		case '!hide':
 			return 'hide';
 		case 'porn':
-			return modPrefs.porn;
+			return prefs.porn;
 		case 'sexual':
-			return modPrefs.sexual;
+			return prefs.sexual;
 		case 'nudity':
-			return modPrefs.nudity;
+			return prefs.nudity;
 		case 'graphic-media':
-			return modPrefs.graphicMedia;
+			return prefs.graphicMedia;
 		case 'currents-ai-generated':
-			return modPrefs.aiGenerated;
+			return prefs.aiGenerated;
 		default:
 			return 'show';
 	}
@@ -153,6 +175,20 @@ export function effectiveVisibility(labels?: LabelView[]): 'show' | 'blur' | 'hi
 	let acc: 'show' | 'blur' | 'hide' = 'show';
 	for (const l of labels) {
 		acc = mostRestrictive(acc, visibilityFor(l.val));
+		if (acc === 'hide') break;
+	}
+	return acc;
+}
+
+/**
+ * Like effectiveVisibility, but for a bare list of label values rather than full
+ * LabelViews. Used for collection-preview items, which carry only the vals.
+ */
+export function effectiveVisibilityForVals(vals?: string[]): 'show' | 'blur' | 'hide' {
+	if (!vals || vals.length === 0) return 'show';
+	let acc: 'show' | 'blur' | 'hide' = 'show';
+	for (const v of vals) {
+		acc = mostRestrictive(acc, visibilityFor(v));
 		if (acc === 'hide') break;
 	}
 	return acc;

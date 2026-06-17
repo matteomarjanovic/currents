@@ -6,6 +6,7 @@
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
+	import Tag from '@lucide/svelte/icons/tag';
 	import type { CollectionView } from '$lib/types';
 
 	interface Props {
@@ -15,9 +16,11 @@
 		onDelete: () => void;
 		// Provided only when a section can be created here (owned, root-level collection).
 		onCreateSection?: () => void;
+		// Provided only when the collection has labelable (own, non-resave) saves.
+		onBulkLabel?: () => void;
 	}
 
-	let { collection, isOwner, onEdit, onDelete, onCreateSection }: Props = $props();
+	let { collection, isOwner, onEdit, onDelete, onCreateSection, onBulkLabel }: Props = $props();
 </script>
 
 <section class="mb-6">
@@ -60,6 +63,12 @@
 						<DropdownMenu.Item onclick={onCreateSection}>
 							<FolderPlus class="size-4" />
 							Create section
+						</DropdownMenu.Item>
+					{/if}
+					{#if onBulkLabel}
+						<DropdownMenu.Item onclick={onBulkLabel}>
+							<Tag class="size-4" />
+							Apply labels to images
 						</DropdownMenu.Item>
 					{/if}
 					<DropdownMenu.Separator />

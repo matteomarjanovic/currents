@@ -391,6 +391,7 @@ func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limi
 				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs
@@ -487,6 +488,7 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
@@ -556,6 +558,7 @@ func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, li
 				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
@@ -736,6 +739,7 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
 				  AND s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
@@ -1843,7 +1847,6 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 	return result, rows.Err()
 }
 
-
 // --- Pinterest bulk import ---
 
 type ImportJobRow struct {
@@ -1887,7 +1890,6 @@ type SessionJobStatus struct {
 	Done      int
 	Failed    int
 }
-
 
 func (m *PgStore) UpsertImportSession(ctx context.Context, id, ownerDID, username string) error {
 	_, err := m.pool.Exec(ctx, `
@@ -2243,14 +2245,14 @@ const (
 
 // BlobModerationStateRow mirrors a row in blob_moderation_state.
 type BlobModerationStateRow struct {
-	BlobCID       string
-	HarmState     string
-	AIGenerated   bool
-	DecidedBy     string
-	DecidedAt     *time.Time
-	SafetyScores  *SafetyScores
-	Notes         string
-	UpdatedAt     time.Time
+	BlobCID      string
+	HarmState    string
+	AIGenerated  bool
+	DecidedBy    string
+	DecidedAt    *time.Time
+	SafetyScores *SafetyScores
+	Notes        string
+	UpdatedAt    time.Time
 }
 
 // LabelRow mirrors a row in label.
@@ -2277,7 +2279,7 @@ type ReviewItemRow struct {
 	SubjectURI string
 	SubjectCID string
 	BlobCID    string
-	Category string
+	Category   string
 	// LabelVal is the specific atproto label val applied for label_applied items
 	// (e.g. "porn", "nudity", "sexual", "graphic-media", "currents-ai-generated").
 	// Empty for source='ai' items where no label has been applied yet.
@@ -2291,9 +2293,9 @@ type ReviewItemRow struct {
 	// Empty strings on non-report items. Surfaces the original report context
 	// (raw reasonType, free text, reporter DID) so moderators see what was
 	// actually reported, not just the coarse `category` bucket.
-	ReportReasonType   string
-	ReportReasonText   string
-	ReportReporterDID  string
+	ReportReasonType  string
+	ReportReasonText  string
+	ReportReporterDID string
 
 	// Author self-attestation state. Disputed = true means the save's author
 	// pushed back on the auto-flag; the suspected label still stands but a
@@ -2942,6 +2944,85 @@ func (m *PgStore) GetActiveLabelsByBlobCID(ctx context.Context, blobCID string) 
 		}
 	}
 	return out, rows.Err()
+}
+
+// GetActiveLabelsByBlobCIDs is the batched form of GetActiveLabelsByBlobCID:
+// it returns active label values keyed by blob CID for all requested CIDs in a
+// single query. Used to hydrate collection-preview labels for a page of cards.
+func (m *PgStore) GetActiveLabelsByBlobCIDs(ctx context.Context, blobCIDs []string) (map[string][]string, error) {
+	out := make(map[string][]string)
+	if len(blobCIDs) == 0 {
+		return out, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (blob_cid, src, val) blob_cid, val, neg
+		FROM label
+		WHERE blob_cid = ANY($1)
+		ORDER BY blob_cid, src, val, id DESC
+	`, blobCIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, val string
+		var neg bool
+		if err := rows.Scan(&cid, &val, &neg); err != nil {
+			return nil, err
+		}
+		if !neg {
+			out[cid] = append(out[cid], val)
+		}
+	}
+	return out, rows.Err()
+}
+
+// SelfLabelBackfillRow is a historical URI-scoped self-label paired with the
+// blob CID of its save. Used by the self-label backfill to make the label
+// blob-keyed so it propagates like a newly-declared one.
+type SelfLabelBackfillRow struct {
+	URI     string
+	Val     string
+	BlobCID string
+}
+
+// ListURIScopedSelfLabels returns active self-labels that predate blob-keyed
+// propagation: label rows with NULL blob_cid whose val is a content-warning
+// value, joined to their save's blob CID. Moderator/auto labels always carry a
+// blob_cid, so the NULL filter isolates self-labels.
+func (m *PgStore) ListURIScopedSelfLabels(ctx context.Context) ([]SelfLabelBackfillRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT l.uri, l.val, s.pds_blob_cid
+		FROM label l
+		JOIN save s ON s.uri = l.uri
+		WHERE l.blob_cid IS NULL
+		  AND l.neg = FALSE
+		  AND l.val = ANY($1)
+		  AND s.pds_blob_cid <> ''
+	`, selfLabelValsList())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SelfLabelBackfillRow
+	for rows.Next() {
+		var r SelfLabelBackfillRow
+		if err := rows.Scan(&r.URI, &r.Val, &r.BlobCID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SetSelfLabelBlobCID backfills blob_cid onto a historical URI-scoped self-label
+// so it joins the blob's active-label set and propagates to future resaves.
+func (m *PgStore) SetSelfLabelBlobCID(ctx context.Context, uri, val, blobCID string) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE label SET blob_cid = $3
+		WHERE uri = $1 AND val = $2 AND blob_cid IS NULL AND neg = FALSE
+	`, uri, val, blobCID)
+	return err
 }
 
 // InsertReport persists a user-submitted report and returns the new id.

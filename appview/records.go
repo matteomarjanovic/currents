@@ -619,6 +619,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		OriginURL string          `json:"originUrl"`
 		Text      string          `json:"text"`
 		ResaveOf  json.RawMessage `json:"resaveOf"`
+		Labels    json.RawMessage `json:"labels"`
 	}
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
@@ -663,6 +664,15 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		var resaveAny any
 		json.Unmarshal(existingVal.ResaveOf, &resaveAny)
 		record["resaveOf"] = resaveAny
+	}
+
+	// Preserve self-labels — RepoPutRecord replaces the whole record, so editing
+	// other fields must not strip the creator's content-warning declaration.
+	if len(existingVal.Labels) > 0 && string(existingVal.Labels) != "null" {
+		var labelsAny any
+		if json.Unmarshal(existingVal.Labels, &labelsAny) == nil {
+			record["labels"] = labelsAny
+		}
 	}
 
 	out, err := comatproto.RepoPutRecord(r.Context(), c, &comatproto.RepoPutRecord_Input{
@@ -758,6 +768,7 @@ func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClien
 		OriginURL  string          `json:"originUrl"`
 		Text       string          `json:"text"`
 		ResaveOf   json.RawMessage `json:"resaveOf"`
+		Labels     json.RawMessage `json:"labels"`
 	}
 	if existing.Value != nil {
 		if err := json.Unmarshal(*existing.Value, &existingVal); err != nil {
@@ -795,6 +806,13 @@ func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClien
 		}
 		record["resaveOf"] = resaveAny
 	}
+	// Preserve self-labels — RepoPutRecord replaces the whole record.
+	if len(existingVal.Labels) > 0 && string(existingVal.Labels) != "null" {
+		var labelsAny any
+		if err := json.Unmarshal(existingVal.Labels, &labelsAny); err == nil {
+			record["labels"] = labelsAny
+		}
+	}
 
 	if _, err := comatproto.RepoPutRecord(ctx, c, &comatproto.RepoPutRecord_Input{
 		Collection: saveNSID,
@@ -805,6 +823,196 @@ func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClien
 		return fmt.Errorf("put record: %w", err)
 	}
 	return nil
+}
+
+// applyLabelsToOwnedSave merges newLabels (add-only) into the self-labels of one
+// of the viewer's own saves and writes the record back. It returns the resulting
+// label set, whether the record was actually updated, and whether it was skipped
+// because the save is a resave (only originators self-label). RepoPutRecord
+// rewrites the record's `labels` field; the TAP listener then re-issues and fans
+// out the labeler labels via the normal save-upsert path, so no propagation logic
+// is duplicated here. Shared by the single-save and bulk endpoints.
+func applyLabelsToOwnedSave(ctx context.Context, c *atclient.APIClient, did *syntax.DID, rkey string, newLabels []string) (vals []string, applied bool, isResave bool, err error) {
+	existing, err := comatproto.RepoGetRecord(ctx, c, "", saveNSID, did.String(), rkey)
+	if err != nil {
+		return nil, false, false, fmt.Errorf("get record: %w", err)
+	}
+	var existingVal struct {
+		Content    json.RawMessage `json:"content"`
+		Collection json.RawMessage `json:"collection"`
+		CreatedAt  string          `json:"createdAt"`
+		OriginURL  string          `json:"originUrl"`
+		Text       string          `json:"text"`
+		ResaveOf   json.RawMessage `json:"resaveOf"`
+		Labels     *selfLabels     `json:"labels"`
+	}
+	if existing.Value != nil {
+		if err := json.Unmarshal(*existing.Value, &existingVal); err != nil {
+			return nil, false, false, fmt.Errorf("unmarshal save: %w", err)
+		}
+	}
+	if existingVal.ResaveOf != nil && string(existingVal.ResaveOf) != "null" {
+		return nil, false, true, nil
+	}
+
+	// Add-only merge: existing self-labels ∪ submitted (dedup, preserve order).
+	have := map[string]bool{}
+	if existingVal.Labels != nil {
+		for _, lv := range existingVal.Labels.Values {
+			if _, ok := allowedSelfLabelVals[lv.Val]; ok && !have[lv.Val] {
+				have[lv.Val] = true
+				vals = append(vals, lv.Val)
+			}
+		}
+	}
+	for _, v := range newLabels {
+		if !have[v] {
+			have[v] = true
+			vals = append(vals, v)
+			applied = true
+		}
+	}
+	if !applied {
+		return vals, false, false, nil // nothing new to add
+	}
+
+	record := map[string]any{
+		"$type":     saveNSID,
+		"createdAt": existingVal.CreatedAt,
+		"labels":    buildSelfLabelsRecord(vals),
+	}
+	if existingVal.Content != nil {
+		var contentAny any
+		json.Unmarshal(existingVal.Content, &contentAny)
+		record["content"] = contentAny
+	}
+	if existingVal.Collection != nil {
+		var collectionAny any
+		json.Unmarshal(existingVal.Collection, &collectionAny)
+		record["collection"] = collectionAny
+	}
+	if existingVal.OriginURL != "" {
+		record["originUrl"] = existingVal.OriginURL
+	}
+	if existingVal.Text != "" {
+		record["text"] = existingVal.Text
+	}
+	if _, err := comatproto.RepoPutRecord(ctx, c, &comatproto.RepoPutRecord_Input{
+		Collection: saveNSID,
+		Repo:       did.String(),
+		Rkey:       rkey,
+		Record:     record,
+	}); err != nil {
+		return nil, false, false, fmt.Errorf("put record: %w", err)
+	}
+	return vals, true, false, nil
+}
+
+// UpdateSaveLabels adds creator self-labels to a single save the viewer owns (the
+// save-detail editor). Add-only; disallowed on resaves. See applyLabelsToOwnedSave.
+func (s *Server) UpdateSaveLabels(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	rkey := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	newLabels := parseSelfLabels(r.PostFormValue("labels"))
+	if len(newLabels) == 0 {
+		http.Error(w, "no valid labels", http.StatusBadRequest)
+		return
+	}
+
+	vals, _, isResave, err := applyLabelsToOwnedSave(r.Context(), c, did, rkey, newLabels)
+	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		http.Error(w, fmt.Sprintf("updating labels: %s", err), http.StatusInternalServerError)
+		return
+	}
+	if isResave {
+		http.Error(w, "cannot add labels to a resave", http.StatusForbidden)
+		return
+	}
+
+	uri := "at://" + did.String() + "/" + saveNSID + "/" + rkey
+	slog.Info("updated save labels", "uri", uri, "labels", vals)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"uri": uri, "labels": vals})
+}
+
+// UpdateSaveLabelsBulk applies the same add-only self-labels to many of the
+// viewer's saves at once (collection-page bulk labeling). Resaves are skipped
+// server-side regardless of the UI. PutRecords fan out with bounded concurrency.
+func (s *Server) UpdateSaveLabelsBulk(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		Rkeys  []string `json:"rkeys"`
+		Labels []string `json:"labels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	// Validate against the allowed self-label vocab (dedup, preserve order).
+	seen := map[string]bool{}
+	var newLabels []string
+	for _, v := range body.Labels {
+		if _, ok := allowedSelfLabelVals[v]; ok && !seen[v] {
+			seen[v] = true
+			newLabels = append(newLabels, v)
+		}
+	}
+	if len(newLabels) == 0 || len(body.Rkeys) == 0 {
+		http.Error(w, "rkeys and labels are required", http.StatusBadRequest)
+		return
+	}
+	if len(body.Rkeys) > 500 {
+		http.Error(w, "too many saves (max 500 per request)", http.StatusBadRequest)
+		return
+	}
+
+	var wg sync.WaitGroup
+	var applied, skipped, failed atomic.Int64
+	sem := make(chan struct{}, 8)
+	for _, rkey := range body.Rkeys {
+		wg.Add(1)
+		go func(rkey string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			_, ok, isResave, err := applyLabelsToOwnedSave(r.Context(), c, did, rkey, newLabels)
+			switch {
+			case err != nil:
+				slog.Warn("bulk label apply failed", "rkey", rkey, "err", err)
+				failed.Add(1)
+			case isResave, !ok:
+				skipped.Add(1)
+			default:
+				applied.Add(1)
+			}
+		}(rkey)
+	}
+	wg.Wait()
+
+	slog.Info("bulk applied save labels", "did", did.String(),
+		"applied", applied.Load(), "skipped", skipped.Load(), "failed", failed.Load())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{
+		"applied": applied.Load(),
+		"skipped": skipped.Load(),
+		"failed":  failed.Load(),
+	})
 }
 
 func (s *Server) DeleteSave(w http.ResponseWriter, r *http.Request) {

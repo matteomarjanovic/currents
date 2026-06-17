@@ -33,7 +33,8 @@
 		{ val: 'porn', label: 'Porn' },
 		{ val: 'sexual', label: 'Sexual' },
 		{ val: 'nudity', label: 'Nudity' },
-		{ val: 'graphic-media', label: 'Graphic' }
+		{ val: 'graphic-media', label: 'Graphic' },
+		{ val: 'currents-ai-generated', label: 'AI-generated' }
 	];
 
 	function toggleSelfLabel(val: string) {
@@ -200,7 +201,7 @@
 	</div>
 
 	<div class="flex flex-wrap items-center gap-2 text-xs">
-		<span class="text-muted-foreground">Content warnings (apply to all images in this batch):</span>
+		<span class="text-muted-foreground">Apply labels (to all images in this batch):</span>
 		{#each SELF_LABEL_OPTIONS as opt (opt.val)}
 			{@const active = selectedSelfLabels.has(opt.val)}
 			<button

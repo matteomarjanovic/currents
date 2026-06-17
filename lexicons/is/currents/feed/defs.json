@@ -39,13 +39,13 @@
           "type": "integer",
           "description": "Number of saves currently in the collection."
         },
-        "previewImages": {
+        "previews": {
           "type": "array",
           "maxLength": 4,
-          "description": "Up to four CDN preview image URLs for items in the collection.",
+          "description": "Up to four preview items, each a CDN image URL plus the active label values on its blob (so clients can apply the viewer's blur/hide preferences).",
           "items": {
-            "type": "string",
-            "format": "uri"
+            "type": "ref",
+            "ref": "#previewItem"
           }
         },
         "createdAt": {
@@ -57,6 +57,26 @@
           "type": "ref",
           "ref": "#collectionViewerState",
           "description": "Viewer-specific state. Only present when the request is authenticated."
+        }
+      }
+    },
+    "previewItem": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "CDN preview image URL."
+        },
+        "labels": {
+          "type": "array",
+          "description": "Active label values on the preview image's blob, for viewer-side blur/hide.",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

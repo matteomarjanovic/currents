@@ -55,6 +55,18 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:   "backfill-self-labels",
+				Usage:  "make historical creator self-labels blob-keyed and propagate them to existing copies (one-shot, idempotent)",
+				Action: runBackfillSelfLabels,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "log what would change without writing",
+						Value: false,
+					},
+				},
+			},
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -377,6 +389,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)
 	http.HandleFunc("GET /save/{id}", srv.GetSave)
 	http.HandleFunc("PUT /save/{id}", srv.UpdateSave)
+	http.HandleFunc("PUT /save/{id}/labels", srv.UpdateSaveLabels)
+	http.HandleFunc("PUT /save/labels/bulk", srv.UpdateSaveLabelsBulk)
 	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)
 	http.HandleFunc("POST /resave", srv.CreateResave)
 

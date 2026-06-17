@@ -5,7 +5,7 @@ export interface Collection {
   name: string;
   saveCount: number;
   parentUri?: string;
-  previewImages?: string[];
+  previews?: { url: string; labels?: string[] }[];
   createdAt?: string;
   lastSavedAt?: string;
 }

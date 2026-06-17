@@ -93,6 +93,45 @@ func (s *Server) optionalAuth(r *http.Request) (*syntax.DID, error) {
 	return &d, nil
 }
 
+// previewItem is one collection-preview image plus the active label values on
+// its blob, so the client can apply the viewer's blur/hide preferences (the same
+// logic save tiles use). Labels are blob-keyed and may be empty.
+type previewItem struct {
+	URL    string   `json:"url"`
+	Labels []string `json:"labels,omitempty"`
+}
+
+// previewBlobCIDs extracts the blob CIDs from "did,cid" preview-blob entries.
+func previewBlobCIDs(blobs []string) []string {
+	cids := make([]string, 0, len(blobs))
+	for _, b := range blobs {
+		if parts := strings.SplitN(b, ",", 2); len(parts) == 2 {
+			cids = append(cids, parts[1])
+		}
+	}
+	return cids
+}
+
+// buildPreviewItems turns "did,cid" preview-blob entries into previewItems,
+// attaching each blob's active labels (from labelsByCID) for viewer-side blur/hide.
+func buildPreviewItems(blobs []string, labelsByCID map[string][]string, cdnBaseURL string) []previewItem {
+	if len(blobs) == 0 {
+		return nil
+	}
+	out := make([]previewItem, 0, len(blobs))
+	for _, b := range blobs {
+		parts := strings.SplitN(b, ",", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		out = append(out, previewItem{
+			URL:    cdnBaseURL + "/img/" + parts[0] + "/" + parts[1],
+			Labels: labelsByCID[parts[1]],
+		})
+	}
+	return out
+}
+
 func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request) {
 	viewerDID, err := s.optionalAuth(r)
 	if err != nil {
@@ -170,17 +209,27 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		Starred bool `json:"starred"`
 	}
 	type collectionView struct {
-		URI           string                 `json:"uri"`
-		CID           string                 `json:"cid"`
-		Author        profileView            `json:"author"`
-		Name          string                 `json:"name"`
-		Description   string                 `json:"description,omitempty"`
-		ParentURI     string                 `json:"parentUri,omitempty"`
-		SaveCount     int                    `json:"saveCount,omitempty"`
-		PreviewImages []string               `json:"previewImages,omitempty"`
-		CreatedAt     string                 `json:"createdAt"`
-		LastSavedAt   string                 `json:"lastSavedAt,omitempty"`
-		Viewer        *collectionViewerState `json:"viewer,omitempty"`
+		URI         string                 `json:"uri"`
+		CID         string                 `json:"cid"`
+		Author      profileView            `json:"author"`
+		Name        string                 `json:"name"`
+		Description string                 `json:"description,omitempty"`
+		ParentURI   string                 `json:"parentUri,omitempty"`
+		SaveCount   int                    `json:"saveCount,omitempty"`
+		Previews    []previewItem          `json:"previews,omitempty"`
+		CreatedAt   string                 `json:"createdAt"`
+		LastSavedAt string                 `json:"lastSavedAt,omitempty"`
+		Viewer      *collectionViewerState `json:"viewer,omitempty"`
+	}
+
+	var previewCIDs []string
+	for _, row := range rows {
+		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
+	}
+	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
+	if err != nil {
+		slog.Warn("hydrate preview labels", "err", err)
+		labelsByCID = map[string][]string{}
 	}
 
 	views := make([]collectionView, 0, len(rows))
@@ -200,12 +249,7 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		if row.LastSavedAt != nil {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
-		for _, blob := range row.PreviewBlobs {
-			parts := strings.SplitN(blob, ",", 2)
-			if len(parts) == 2 {
-				cv.PreviewImages = append(cv.PreviewImages, s.CDNBaseURL+"/img/"+parts[0]+"/"+parts[1])
-			}
-		}
+		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
 		if viewerDID != nil && row.Starred != nil {
 			cv.Viewer = &collectionViewerState{Starred: *row.Starred}
 		}
@@ -371,16 +415,16 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		Starred bool `json:"starred"`
 	}
 	type collectionView struct {
-		URI           string                 `json:"uri"`
-		CID           string                 `json:"cid"`
-		Author        profileView            `json:"author"`
-		Name          string                 `json:"name"`
-		Description   string                 `json:"description,omitempty"`
-		ParentURI     string                 `json:"parentUri,omitempty"`
-		SaveCount     int                    `json:"saveCount,omitempty"`
-		PreviewImages []string               `json:"previewImages,omitempty"`
-		CreatedAt     string                 `json:"createdAt"`
-		Viewer        *collectionViewerState `json:"viewer,omitempty"`
+		URI         string                 `json:"uri"`
+		CID         string                 `json:"cid"`
+		Author      profileView            `json:"author"`
+		Name        string                 `json:"name"`
+		Description string                 `json:"description,omitempty"`
+		ParentURI   string                 `json:"parentUri,omitempty"`
+		SaveCount   int                    `json:"saveCount,omitempty"`
+		Previews    []previewItem          `json:"previews,omitempty"`
+		CreatedAt   string                 `json:"createdAt"`
+		Viewer      *collectionViewerState `json:"viewer,omitempty"`
 	}
 	cv := collectionView{
 		URI:         collRow.URI,
@@ -394,12 +438,12 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 	if collRow.CreatedAt != nil {
 		cv.CreatedAt = collRow.CreatedAt.UTC().Format(time.RFC3339)
 	}
-	for _, blob := range collRow.PreviewBlobs {
-		parts := strings.SplitN(blob, ",", 2)
-		if len(parts) == 2 {
-			cv.PreviewImages = append(cv.PreviewImages, s.CDNBaseURL+"/img/"+parts[0]+"/"+parts[1])
-		}
+	previewLabels, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewBlobCIDs(collRow.PreviewBlobs))
+	if err != nil {
+		slog.Warn("hydrate preview labels", "err", err)
+		previewLabels = map[string][]string{}
 	}
+	cv.Previews = buildPreviewItems(collRow.PreviewBlobs, previewLabels, s.CDNBaseURL)
 	if viewerDID != nil && collRow.Starred != nil {
 		cv.Viewer = &collectionViewerState{Starred: *collRow.Starred}
 	}
@@ -574,20 +618,30 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 		Starred bool `json:"starred"`
 	}
 	type collectionView struct {
-		URI           string                 `json:"uri"`
-		CID           string                 `json:"cid"`
-		Author        profileView            `json:"author"`
-		Name          string                 `json:"name"`
-		Description   string                 `json:"description,omitempty"`
-		ParentURI     string                 `json:"parentUri,omitempty"`
-		SaveCount     int                    `json:"saveCount,omitempty"`
-		PreviewImages []string               `json:"previewImages,omitempty"`
-		CreatedAt     string                 `json:"createdAt"`
-		LastSavedAt   string                 `json:"lastSavedAt,omitempty"`
-		Viewer        *collectionViewerState `json:"viewer,omitempty"`
+		URI         string                 `json:"uri"`
+		CID         string                 `json:"cid"`
+		Author      profileView            `json:"author"`
+		Name        string                 `json:"name"`
+		Description string                 `json:"description,omitempty"`
+		ParentURI   string                 `json:"parentUri,omitempty"`
+		SaveCount   int                    `json:"saveCount,omitempty"`
+		Previews    []previewItem          `json:"previews,omitempty"`
+		CreatedAt   string                 `json:"createdAt"`
+		LastSavedAt string                 `json:"lastSavedAt,omitempty"`
+		Viewer      *collectionViewerState `json:"viewer,omitempty"`
 	}
 
 	authorCache := map[string]profileView{}
+	var previewCIDs []string
+	for _, row := range rows {
+		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
+	}
+	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
+	if err != nil {
+		slog.Warn("hydrate preview labels", "err", err)
+		labelsByCID = map[string][]string{}
+	}
+
 	views := make([]collectionView, 0, len(rows))
 	for _, row := range rows {
 		author, ok := authorCache[row.AuthorDID]
@@ -616,12 +670,7 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 		if row.LastSavedAt != nil {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
-		for _, blob := range row.PreviewBlobs {
-			parts := strings.SplitN(blob, ",", 2)
-			if len(parts) == 2 {
-				cv.PreviewImages = append(cv.PreviewImages, s.CDNBaseURL+"/img/"+parts[0]+"/"+parts[1])
-			}
-		}
+		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
 		if viewerDID != nil && row.Starred != nil {
 			cv.Viewer = &collectionViewerState{Starred: *row.Starred}
 		}

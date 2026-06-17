@@ -105,14 +105,27 @@ type selfLabelValue struct {
 	Val string `json:"val"`
 }
 
-// allowedSelfLabelVals is the set of Bluesky-canonical content labels creators
-// may apply to their own saves. Restricting to this set prevents arbitrary
-// label-value injection via the upload form.
+// allowedSelfLabelVals is the set of labels creators may self-apply to their own
+// saves: the four Bluesky-canonical content warnings (which blur) plus the
+// Currents AI-generated provenance label (which only badges, never blurs).
+// Restricting to this set prevents arbitrary label-value injection via the form.
 var allowedSelfLabelVals = map[string]struct{}{
-	"porn":          {},
-	"sexual":        {},
-	"nudity":        {},
-	"graphic-media": {},
+	"porn":                  {},
+	"sexual":                {},
+	"nudity":                {},
+	"graphic-media":         {},
+	"currents-ai-generated": {},
+}
+
+// selfLabelValsList returns the allowed self-label values as a slice (single
+// source of truth: derived from allowedSelfLabelVals). Used by the self-label
+// backfill to isolate self-labels from moderator/auto labels.
+func selfLabelValsList() []string {
+	out := make([]string, 0, len(allowedSelfLabelVals))
+	for v := range allowedSelfLabelVals {
+		out = append(out, v)
+	}
+	return out
 }
 
 // parseSelfLabels reads a comma-separated form value into a deduplicated list

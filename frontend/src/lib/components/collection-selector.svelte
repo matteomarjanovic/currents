@@ -253,9 +253,9 @@
 </script>
 
 {#snippet preview(col: CollectionView)}
-	{#if col.previewImages?.[0]}
+	{#if col.previews?.[0]}
 		<img
-			src={col.previewImages[0]}
+			src={col.previews[0].url}
 			alt=""
 			loading="lazy"
 			class="size-9 shrink-0 rounded-md object-cover"

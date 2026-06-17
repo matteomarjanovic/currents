@@ -44,17 +44,19 @@
 	let effective = $derived(effectiveVisibility(labelList));
 	let blurMatches = $derived(labelList.filter((l) => BLUR_LABELS.has(l.val)));
 
+	let revealed = $state(false);
+	let shouldBlur = $derived(effective === 'blur' && !revealed);
+
 	// AI badge: render the corner badge when the save has any AI label AND the
-	// AI visibility resolved to "show" AND the save isn't being blurred (which
-	// would hide the badge behind the overlay anyway).
+	// AI visibility resolved to "show", as long as it wouldn't sit behind the blur
+	// overlay — i.e. the image isn't blurred, or it has been revealed. (A save can
+	// be both AI-generated and, say, sexual; its AI provenance should still show
+	// once the image is unblurred.)
 	let aiBadge = $derived(
 		labelList.some((l) => AI_VALS.has(l.val)) &&
 			visibilityFor('currents-ai-generated') === 'show' &&
-			effective !== 'blur'
+			!shouldBlur
 	);
-
-	let revealed = $state(false);
-	let shouldBlur = $derived(effective === 'blur' && !revealed);
 
 	function summarize(): string {
 		const present = new Set(blurMatches.map((l) => l.val));
@@ -94,10 +96,16 @@
 
 		{#if shouldBlur}
 			<div
-				class="absolute inset-0 z-50 flex flex-col items-center justify-center gap-2 bg-black/30 p-3 text-center text-white backdrop-blur-sm"
+				class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/30 p-3 text-center text-white backdrop-blur-sm"
 			>
 				<EyeOff class="size-6" />
 				<p class="text-sm font-medium">{summarize()}</p>
+				<a
+					href="/settings"
+					class="pb-5 text-xs text-white/80 underline underline-offset-2 transition-colors hover:text-white"
+				>
+					Change visibility settings
+				</a>
 				<button
 					type="button"
 					class="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-white/90"
@@ -111,7 +119,7 @@
 		{#if aiBadge}
 			<div
 				class="pointer-events-none absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white backdrop-blur-sm"
-				title="Detected as likely AI-generated imagery"
+				title="AI-generated"
 			>
 				<Sparkles class="size-3" aria-hidden="true" />
 				<span>AI</span>

@@ -6,10 +6,14 @@ import (
 	"log/slog"
 )
 
-// applyModerationAfterSaveUpsert runs after a save row is persisted: it
-// materializes any pre-existing blob-level labels onto the new save URI (so a
-// resave of a known-labeled image inherits the labels) and issues creator-declared
-// self-labels (URI-scoped, not propagated to other resaves).
+// applyModerationAfterSaveUpsert runs after a save row is persisted. It (1)
+// materializes any pre-existing blob-level labels onto the new save URI so a
+// resave or re-upload of known-labeled bytes inherits them, and (2) issues the
+// creator's self-labels blob-keyed so the warning propagates to every copy of
+// those bytes — past copies via retroactive fan-out, future copies via the
+// materialization in (1). A content warning is a fact about the bytes, not about
+// one record; we never forge a self-label into another user's repo, the labeler
+// issues the propagated copies.
 //
 // Errors are logged and swallowed — moderation is best-effort and must never
 // block the save indexing pipeline.
@@ -18,12 +22,17 @@ func applyModerationAfterSaveUpsert(ctx context.Context, handler *TapHandler, sa
 		return
 	}
 
+	// Labels already active for this blob (canonical harm labels, self-labels
+	// declared on other copies). Materialize each onto the new URI, and keep the
+	// set so a self-label below only fans out the first time a val appears.
+	activeBlobVals := map[string]struct{}{}
 	if blobCID != "" {
 		vals, err := handler.Store.GetActiveLabelsByBlobCID(ctx, blobCID)
 		if err != nil {
 			slog.Warn("get active blob labels", "blob_cid", blobCID, "err", err)
 		}
 		for _, v := range vals {
+			activeBlobVals[v] = struct{}{}
 			if _, err := handler.Labeler.IssueLabel(ctx, IssueLabelParams{
 				Actor:   "auto",
 				Action:  ActionLabelAdd,
@@ -36,21 +45,60 @@ func applyModerationAfterSaveUpsert(ctx context.Context, handler *TapHandler, sa
 		}
 	}
 
-	if self != nil {
-		for _, lv := range self.Values {
-			if lv.Val == "" {
-				continue
-			}
-			if _, err := handler.Labeler.IssueLabel(ctx, IssueLabelParams{
-				Actor:  authorDID,
-				Action: ActionSelfLabel,
-				URI:    saveURI,
-				// BlobCID intentionally left empty: self-labels are the creator's
-				// declaration about THEIR copy; they don't propagate to resaves.
-				Val: lv.Val,
-			}); err != nil {
-				slog.Warn("issue self-label", "uri", saveURI, "val", lv.Val, "err", err)
-			}
+	if self == nil {
+		return
+	}
+	for _, lv := range self.Values {
+		if lv.Val == "" {
+			continue
+		}
+		// The creator's voluntary declaration about their own copy, attributed to
+		// the author and blob-keyed so it joins the blob's active-label set.
+		if _, err := handler.Labeler.IssueLabel(ctx, IssueLabelParams{
+			Actor:   authorDID,
+			Action:  ActionSelfLabel,
+			URI:     saveURI,
+			BlobCID: blobCID,
+			Val:     lv.Val,
+		}); err != nil {
+			slog.Warn("issue self-label", "uri", saveURI, "val", lv.Val, "err", err)
+			continue
+		}
+		// Retroactively warn existing copies of the same bytes — once per (blob,
+		// val), so repeat saves of the same blob don't re-fan-out.
+		if blobCID == "" {
+			continue
+		}
+		if _, already := activeBlobVals[lv.Val]; already {
+			continue
+		}
+		activeBlobVals[lv.Val] = struct{}{}
+		propagateLabelToBlobSiblings(ctx, handler, blobCID, saveURI, lv.Val)
+	}
+}
+
+// propagateLabelToBlobSiblings issues val (labeler-attributed) on every existing
+// save URI sharing blobCID except sourceURI, so a creator's content warning
+// applies to copies already in the index. Future copies inherit via the
+// materialization step in applyModerationAfterSaveUpsert. Best-effort.
+func propagateLabelToBlobSiblings(ctx context.Context, handler *TapHandler, blobCID, sourceURI, val string) {
+	uris, err := handler.Store.ListSaveURIsByBlobCID(ctx, blobCID)
+	if err != nil {
+		slog.Warn("list sibling uris for self-label fan-out", "blob_cid", blobCID, "val", val, "err", err)
+		return
+	}
+	for _, u := range uris {
+		if u == sourceURI {
+			continue
+		}
+		if _, err := handler.Labeler.IssueLabel(ctx, IssueLabelParams{
+			Actor:   "auto",
+			Action:  ActionLabelAdd,
+			URI:     u,
+			BlobCID: blobCID,
+			Val:     val,
+		}); err != nil {
+			slog.Warn("propagate self-label to sibling", "uri", u, "val", val, "err", err)
 		}
 	}
 }

@@ -46,6 +46,13 @@
           "createdAt": {
             "type": "string",
             "format": "datetime"
+          },
+          "labels": {
+            "type": "union",
+            "refs": [
+              "com.atproto.label.defs#selfLabels"
+            ],
+            "description": "Self-declared content-warning labels the creator attaches to this save."
           }
         }
       }

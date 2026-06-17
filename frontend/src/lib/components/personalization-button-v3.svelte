@@ -12,17 +12,23 @@
 		{ value: '0', label: 'General', noiseIntensity: 3 },
 		{ value: '-1', label: 'New worlds', noiseIntensity: 7 }
 	];
-	const DEFAULT_VALUE = '1';
-
+	// Logged-out visitors only ever get the general feed (personalization needs a
+	// viewer to rank against); logged-in users default to personal.
 	const selectedValue = $derived.by(() => {
+		if (!auth.user) return '0';
 		const raw = page.url.searchParams.get('personalization');
-		return OPTIONS.some((o) => o.value === raw) ? raw! : DEFAULT_VALUE;
+		return OPTIONS.some((o) => o.value === raw) ? raw! : '1';
 	});
 	const selected = $derived(OPTIONS.find((o) => o.value === selectedValue)!);
 
 	let open = $state(false);
 
 	function selectValue(v: string) {
+		// General is the only option open to logged-out visitors; the rest need auth.
+		if (!auth.user && v !== '0') {
+			loginPrompt.open = true;
+			return;
+		}
 		if (v === selectedValue) return;
 		const url = new URL(page.url);
 		url.searchParams.set('personalization', v);
@@ -38,15 +44,6 @@
 				type="button"
 				class="flex cursor-pointer items-center gap-2 rounded-full border-none bg-primary-foreground/80 py-0.5 pr-0.5 pl-3 backdrop-blur-sm transition-transform duration-100 aria-expanded:scale-95"
 				aria-label="Adjust personalization"
-				onclick={(e: MouseEvent) => {
-					if (!auth.user) {
-						e.preventDefault();
-						e.stopPropagation();
-						loginPrompt.open = true;
-						return;
-					}
-					(props.onclick as ((event: MouseEvent) => void) | undefined)?.(e);
-				}}
 			>
 				<ChevronUp
 					class="size-4 text-foreground/60 transition-transform duration-200 {open

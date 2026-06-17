@@ -12,7 +12,7 @@ interface Collection {
   name: string;
   saveCount: number;
   parentUri?: string;
-  previewImages?: string[];
+  previews?: { url: string; labels?: string[] }[];
   createdAt?: string;
   lastSavedAt?: string;
 }
@@ -81,7 +81,7 @@ async function fetchCollections(did: string): Promise<Collection[]> {
       name: c.name,
       saveCount: c.saveCount ?? 0,
       parentUri: c.parentUri,
-      previewImages: c.previewImages,
+      previews: c.previews,
       createdAt: c.createdAt,
       lastSavedAt: c.lastSavedAt,
     }));
@@ -138,6 +138,7 @@ async function handleSave(message: {
   attributionUrl?: string;
   attributionLicense?: string;
   attributionCredit?: string;
+  labels?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const auth = await getAuth();
   if (!auth) return { ok: false, error: 'Not logged in', authError: true };
@@ -171,6 +172,7 @@ async function handleSave(message: {
   if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);
   if (message.attributionLicense) form.append('attribution_license', message.attributionLicense);
   if (message.attributionCredit) form.append('attribution_credit', message.attributionCredit);
+  if (message.labels) form.append('labels', message.labels);
 
   try {
     const resp = await appviewFetch(`${CURRENTS_URL}/save`, {

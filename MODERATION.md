@@ -121,6 +121,8 @@ Backend endpoints (auth: session cookie; ownership check: `session_did == save.a
 
 The Currents-defined labels are declared in the `app.bsky.labeler.service` record (see [`MODERATION_DEPLOYMENT.md`](MODERATION_DEPLOYMENT.md)). The frontend's [`labeled-media.svelte`](frontend/src/lib/components/labeled-media.svelte) consumes them via the `labels[]` field on every `SaveView` and honors a user preference store in [`stores/moderation-prefs.svelte.ts`](frontend/src/lib/stores/moderation-prefs.svelte.ts).
 
+**Per-viewer defaults differ by auth state** (`activePrefs()` in the prefs store). Logged-in users get the server-backed `moderation_pref` row (adult/violence axes default to `blur`, AI-generated `show`) and can change it in settings. **Logged-out visitors get the safest defaults — every adult/violence label `hide`, AI-generated `show` — and can't loosen them** (preferences live behind auth). Resolution reads `auth.user` reactively, so visibility flips on login/logout; this also covers the pre-auth window (defaults to hiding until login is confirmed).
+
 ---
 
 ## Blob-CID keying
@@ -141,7 +143,7 @@ The labeler issues per-URI labels (atproto labels target AT-URIs), but the `blob
 1. **TAP listener** (`appview/tap.go`) receives a `is.currents.feed.save` record from the firehose and calls `handleSaveUpsert`.
 2. Save row is upserted in three branches (resave-of-known, same-CID-already-linked, novel). After every successful upsert, `applyModerationAfterSaveUpsert` (`appview/moderation_tap.go`) runs:
    - **Materialize:** `GetActiveLabelsByBlobCID` returns any labels already issued for this blob; each is re-issued on the new save URI via `LabelerIssuer.IssueLabel`. So a resave of a known-NSFW image inherits the blur instantly, without re-running inference.
-   - **Self-labels:** if the record contains a `com.atproto.label.defs#selfLabels` block, each `val` is issued as a labeler-signed label attributed to the author (`actor_did = save.AuthorDID`, `action = self_label`). Self-labels are URI-scoped (empty `blob_cid` on the label row) — they don't propagate to other resaves of the same bytes.
+   - **Self-labels:** if the record contains a `com.atproto.label.defs#selfLabels` block, each `val` is issued as a labeler-signed label attributed to the author (`actor_did = save.AuthorDID`, `action = self_label`) **and blob-keyed**, so the warning joins the blob's active-label set. Existing copies of the same bytes are labeled by a retroactive fan-out (`propagateLabelToBlobSiblings`, once per `(blob, val)`); future copies inherit via the materialization above. A content warning is a fact about the bytes, not one record — but we never write a `labels` block into another user's repo; the labeler issues the propagated copies.
 3. For novel images, `enqueueBlobEnrichment` schedules async work. Eventually `processBlobEnrichment` calls `Inference.EmbedImage`, which now includes `safety_scores` when heads are loaded.
 4. `processSafetyScores` (`appview/moderation_tap.go`) walks the threshold ladder per axis:
    - Harm score → `HarmAutoSuspected`: issue the suspected label on the source URI + `UpsertReviewItem(priority=High)`
@@ -162,8 +164,11 @@ The blocked-blob filter (`AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b 
 - `GetGlobalFeedSaves`
 - `GetSavesPage` (collection saves)
 - `GetSavesByURIs` (direct lookup)
+- the `preview_blobs` subquery shared by the collection-listing queries (`GetActorCollectionsPage`, the authed variant, `GetCollectionByURI`, `SearchCollectionsPage`) — so a taken-down image never surfaces as a collection-card thumbnail either
 
-So a taken-down save is invisible from discovery, from any collection's listing, AND from a direct URL hit — but its label is still queryable so Bluesky clients can also choose to hide it.
+So a taken-down save is invisible from discovery, from any collection's listing, from a direct URL hit, AND from collection-card previews — but its label is still queryable so Bluesky clients can also choose to hide it.
+
+**Collection previews also honor per-viewer preferences.** Each `previewItem` returned by the collection-listing endpoints carries its blob's active label values (`GetActiveLabelsByBlobCIDs`), and the web [`collection-card.svelte`](frontend/src/lib/components/collection-card.svelte) applies the same `effectiveVisibility` logic as save tiles — dropping `hide`-preference previews and blurring `blur`-preference ones — via `effectiveVisibilityForVals`.
 
 ### A user reports a save
 
@@ -253,7 +258,7 @@ The atproto [label spec](https://atproto.com/specs/label) mentions labels-in-rec
 
 | Mechanism | Storage | Who writes it | We do this |
 |---|---|---|---|
-| **Self-labels** — creator's voluntary declaration about their own content, attached to the labeled record itself under the `com.atproto.label.defs#selfLabels` shape | Inside the labeled record, in the **subject's own repo** on their PDS | The creator at record-write time | ✅ Upload picker → `parseSelfLabels` in [`appview/save_content.go`](appview/save_content.go) → embedded in the save record on the PDS. The TAP listener re-issues them as labeler-signed copies so consumers don't have to fetch the record to see them. |
+| **Self-labels** — creator's voluntary declaration about their own content, attached to the labeled record itself under the `com.atproto.label.defs#selfLabels` shape | Inside the labeled record, in the **subject's own repo** on their PDS | The creator at record-write time | ✅ Upload picker (web + extension) → `parseSelfLabels` in [`appview/save_content.go`](appview/save_content.go) → embedded in the save record on the PDS. The TAP listener re-issues each as a **blob-keyed** labeler-signed copy so consumers see it without fetching the record, and so every copy of the same bytes (existing siblings + future resaves) inherits the warning. We never forge a self-label into a resaver's repo — only the original creator's repo holds their declaration; propagation is labeler-issued. |
 | **Labeler-issued labels** — signed `com.atproto.label.defs#label` records produced by a labeler (auto-classified, reviewer-applied, etc.) | The **labeler's own database**, distributed via `subscribeLabels` / `queryLabels`. **NOT in any user's repo.** | The labeler (us). Third-party writes to a user's repo would violate the atproto trust model. | ✅ `label` table in Postgres + the XRPC endpoints above. Matches Ozone's design (Bluesky's reference labeler also keeps labels in its own DB, not in subject repos). |
 
 So when the spec mentions labels associated with a record, what lives *in the record's own repo* is only the creator's self-labels. Labels you didn't ask for are in the labeler's database, served over the wire — same as how Bluesky's own moderation works.
@@ -301,9 +306,13 @@ For v1, `harm_state` only has two effective values: `clean` and `blocked`. The `
 
 ## Self-labels
 
-Creators can voluntarily warn viewers by attaching atproto's `com.atproto.label.defs#selfLabels` block to their save record. The upload UI exposes a chip picker (`porn`, `sexual`, `nudity`, `graphic-media`); selected values are CSV-encoded in the `labels` form field. `CreateSave` (`appview/records.go`) parses with `parseSelfLabels` (`appview/save_content.go`), which validates against the canonical Bluesky vocab and silently drops anything else (no arbitrary-label injection via the form).
+Creators can voluntarily label their own content by attaching atproto's `com.atproto.label.defs#selfLabels` block to their save record (declared on `is.currents.feed.save`, defs in [`lexicons/com/atproto/label/defs.json`](lexicons/com/atproto/label/defs.json)). The web upload UI and the browser-extension clipper both expose a chip picker: the four Bluesky content warnings (`porn`, `sexual`, `nudity`, `graphic-media`, which blur) plus the Currents `currents-ai-generated` provenance label (which only badges — same val and rendering as the auto-classifier's AI flag, so self-disclosure and detection converge). Selected values are CSV-encoded in the `labels` form field. `CreateSave` (`appview/records.go`) parses with `parseSelfLabels` (`appview/save_content.go`), which validates against `allowedSelfLabelVals` and silently drops anything else (no arbitrary-label injection via the form).
 
-When the save lands via TAP, `applyModerationAfterSaveUpsert` issues a labeler-signed label per self-label, attributed to the author (`actor = save.AuthorDID`, `action = self_label`). Self-label rows have `blob_cid = ''` so they DON'T propagate to resaves — each user makes their own declaration about their own copy.
+A content warning is a property of the **bytes**, not of one record, so when the save lands via TAP, `applyModerationAfterSaveUpsert` issues a **blob-keyed** labeler-signed label per self-label, attributed to the author (`actor = save.AuthorDID`, `action = self_label`). Being blob-keyed, the warning propagates to every copy of the same bytes: existing copies via a retroactive fan-out (`propagateLabelToBlobSiblings`, once per `(blob, val)`), future copies via the standard materialization on the next blob-CID lookup. Self-labels only ever **blur** (never take down / `!hide`), are per-viewer-overridable, fully audited in `moderation_event`, and moderator-negatable — so the design biases toward propagating warnings (a wrongful blur is low-harm and reversible; a missed NSFW is not).
+
+Crucially, we never forge a `labels` block into a resaver's PDS record: only the original creator's repo holds their own declaration. Propagation onto other copies is **labeler-issued** (the labeler making a claim, which the atproto trust model permits). Historical URI-scoped self-labels declared before this change are migrated by the `appview backfill-self-labels` CLI (`appview/backfill_self_labels.go`).
+
+Creators can also add self-labels **after** upload (e.g. to warn on Pinterest-imported saves) via `PUT /save/{id}/labels` (`UpdateSaveLabels` in `appview/records.go`), surfaced as a picker on the save-detail page for owned saves — and **in bulk** from a collection's 3-dots menu (`PUT /save/labels/bulk` → `UpdateSaveLabelsBulk`, which fans the shared `applyLabelsToOwnedSave` helper out across the selected saves with bounded concurrency; the collection page enters a selection mode backed by `selectable-save-grid.svelte`). Both are **add-only** (merge with existing self-labels; removal is intentionally unsupported — adding a self-label is monotonic and can't weaken moderation) and **disallowed on resaves** (only originators declare; a non-resave is exactly as safe as upload-time labeling — resaves are skipped server-side in the bulk path regardless of the UI). It rewrites the record's `labels` field, then the TAP listener re-issues and fans out via the normal save-upsert path. Note: `UpdateSave` and `UpdateSaveAttribution` preserve the `labels` field on `RepoPutRecord` (which replaces the whole record), so editing a save's other fields no longer strips its self-labels.
 
 ---
 
@@ -326,10 +335,11 @@ Flags: `--batch-size` (default 512), `--interval` (default 1s, throttles to avoi
 | Labeler signing/issuing | `appview/labeler_signer.go`, `appview/labeler_issuer.go` |
 | Labeler endpoints | `appview/labeler_did.go`, `appview/labeler_query.go`, `appview/labeler_subscribe.go`, `appview/labeler_report.go` |
 | Admin backend | `appview/admin.go` (`requireModerator` middleware + queue handlers) |
-| Self-label parsing | `appview/save_content.go` (`parseSelfLabels`, `buildSelfLabelsRecord`) + `appview/records.go` (`CreateSave`) |
+| Self-label parsing + propagation | `appview/save_content.go` (`parseSelfLabels`, `buildSelfLabelsRecord`) + `appview/records.go` (`CreateSave`) + `appview/moderation_tap.go` (`applyModerationAfterSaveUpsert`, `propagateLabelToBlobSiblings`) |
+| Self-label pickers | `frontend/src/routes/(with-navbar)/upload/+page.svelte` + `extension/src/entrypoints/clipper.content/App.svelte` (`labels` form field → `CreateSave`) |
 | XRPC label hydration | `appview/save_content.go` (`hydrateLabels`, `labelView`, `Labels` field on `saveView`) + every save-listing handler in `appview/xrpc.go` |
 | Inference heads | `inference/main.py` (`_load_safety_heads`, `_classify_safety`, `_l2_normalize`, `/classify/safety/embeddings`) |
-| Backfill CLI | `appview/backfill_moderation.go` + subcommand in `appview/main.go` |
+| Backfill CLI | `appview/backfill_moderation.go` (re-score blobs), `appview/backfill_self_labels.go` (propagate historical self-labels) + subcommands in `appview/main.go` |
 | Admin UI | `frontend/src/routes/(admin)/admin/*` |
 | Label rendering wrapper | `frontend/src/lib/components/labeled-media.svelte` |
 | Report dialog | `frontend/src/lib/components/report-dialog.svelte` |

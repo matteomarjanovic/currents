@@ -1,3 +1,10 @@
+// One collection-preview image plus the active label values on its blob, so the
+// card can apply the viewer's blur/hide preferences (same logic as save tiles).
+export interface PreviewItem {
+	url: string;
+	labels?: string[];
+}
+
 export interface CollectionView {
 	uri: string;
 	cid?: string;
@@ -11,7 +18,7 @@ export interface CollectionView {
 	description?: string;
 	parentUri?: string;
 	saveCount?: number;
-	previewImages?: string[];
+	previews?: PreviewItem[];
 	createdAt?: string;
 	lastSavedAt?: string;
 	viewer?: { starred?: boolean };

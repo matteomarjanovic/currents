@@ -22,6 +22,22 @@
   let attributionCredit = $state("");
   let showAttribution = $state(false);
   let pickerOpen = $state(false);
+  let selectedSelfLabels = $state<Set<string>>(new Set());
+
+  const SELF_LABEL_OPTIONS: { val: string; label: string }[] = [
+    { val: "porn", label: "Porn" },
+    { val: "sexual", label: "Sexual" },
+    { val: "nudity", label: "Nudity" },
+    { val: "graphic-media", label: "Graphic" },
+    { val: "currents-ai-generated", label: "AI-generated" },
+  ];
+
+  function toggleSelfLabel(val: string) {
+    const next = new Set(selectedSelfLabels);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    selectedSelfLabels = next;
+  }
 
   // Auth polling
   let loginState = $state<"prompt" | "waiting">("prompt");
@@ -75,6 +91,7 @@
       // Collapse the attribution form by default; expand it when the site
       // pre-filled a credit so the user sees what will be attributed.
       showAttribution = !!attributionCredit;
+      selectedSelfLabels = new Set();
       loginState = "prompt";
       stopPolling();
 
@@ -174,6 +191,7 @@
         attributionUrl: attributionUrl.trim(),
         attributionLicense: attributionLicense.trim(),
         attributionCredit: attributionCredit.trim(),
+        labels: Array.from(selectedSelfLabels).join(","),
       });
       if (response.ok) {
         saveState = "saved";
@@ -325,6 +343,23 @@
           bind:value={text}
           disabled={busy}
         />
+
+        <span class="text-xs text-muted-foreground -mb-1">Apply labels:</span>
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+          {#each SELF_LABEL_OPTIONS as opt (opt.val)}
+            {@const active = selectedSelfLabels.has(opt.val)}
+            <button
+              type="button"
+              onclick={() => toggleSelfLabel(opt.val)}
+              disabled={busy}
+              class="rounded-full border px-2 py-0.5 transition-colors {active
+                ? 'border-foreground bg-foreground text-background'
+                : 'border-border text-muted-foreground hover:bg-muted'}"
+            >
+              {opt.label}
+            </button>
+          {/each}
+        </div>
 
         {#if showAttribution}
           <div class="flex flex-col gap-2">

@@ -25,11 +25,14 @@ for raw_handle in $handles_csv; do
   fi
 
   echo "tap-seed: resolving $handle"
-  response=$(curl -fsS "$resolver_url/xrpc/com.atproto.identity.resolveHandle?handle=$handle")
+  if ! response=$(curl -fsS "$resolver_url/xrpc/com.atproto.identity.resolveHandle?handle=$handle"); then
+    echo "tap-seed: could not resolve $handle (skipping)" >&2
+    continue
+  fi
   did=$(printf '%s' "$response" | sed -n 's/.*"did":"\([^"]*\)".*/\1/p')
   if [ -z "$did" ]; then
-    echo "tap-seed: could not resolve DID for $handle" >&2
-    exit 1
+    echo "tap-seed: could not resolve DID for $handle (skipping)" >&2
+    continue
   fi
 
   if [ -n "$dids_json" ]; then

@@ -37,7 +37,19 @@
 		const isLegalPage = page.url.pathname === '/terms' || page.url.pathname === '/privacy';
 		const isRootPage = page.url.pathname === '/';
 		const isExplorePage = page.url.pathname === '/explore';
-		if (!user && !isLoginPage && !isRegisterPage && !isLegalPage && !isRootPage && !isExplorePage) {
+		// Single-image (save-detail) pages are public — viewing an image must never
+		// require login. Per-label moderation still applies (a logged-out viewer sees
+		// the hidden-content state for labeled images), but the route itself is open.
+		const isSavePage = page.url.pathname.includes('/save/');
+		if (
+			!user &&
+			!isLoginPage &&
+			!isRegisterPage &&
+			!isLegalPage &&
+			!isRootPage &&
+			!isExplorePage &&
+			!isSavePage
+		) {
 			goto('/login');
 		}
 	});

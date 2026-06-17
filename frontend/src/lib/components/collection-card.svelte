@@ -1,11 +1,19 @@
 <script lang="ts">
 	import type { CollectionView } from '$lib/types';
+	import { effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
 
 	let { collection, sectionCount = 0 }: { collection: CollectionView; sectionCount?: number } =
 		$props();
 
-	const previews = $derived(collection.previewImages ?? []);
-	const cells = $derived([0, 1, 2, 3].map((i) => previews[i]));
+	// Apply the viewer's moderation prefs to previews, mirroring save tiles: drop
+	// hidden ones, keep the rest (blurred where the pref says so).
+	const visiblePreviews = $derived(
+		(collection.previews ?? [])
+			.map((p) => ({ url: p.url, vis: effectiveVisibilityForVals(p.labels) }))
+			.filter((p) => p.vis !== 'hide')
+			.slice(0, 4)
+	);
+	const cells = $derived([0, 1, 2, 3].map((i) => visiblePreviews[i]));
 	const href = $derived.by(() => {
 		const rkey = collection.uri.split('/').pop() ?? '';
 		const handle = collection.author?.handle ?? collection.uri.split('/')[2];
@@ -17,9 +25,14 @@
 	<div
 		class="relative grid aspect-square grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden rounded-lg bg-muted"
 	>
-		{#each cells as src, i (i)}
-			{#if src}
-				<img {src} alt="" loading="lazy" class="h-full w-full object-cover" />
+		{#each cells as cell, i (i)}
+			{#if cell}
+				<img
+					src={cell.url}
+					alt=""
+					loading="lazy"
+					class="h-full w-full object-cover {cell.vis === 'blur' ? 'blur-md' : ''}"
+				/>
 			{:else}
 				<div class="h-full w-full bg-muted"></div>
 			{/if}
