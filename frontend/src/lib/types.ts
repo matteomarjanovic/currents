@@ -34,6 +34,8 @@ export interface ActorProfileView {
 	avatar?: string;
 	banner?: string;
 	createdAt?: string;
+	followersCount?: number;
+	followsCount?: number;
 	viewer?: { following?: string; followedBy?: string };
 }
 

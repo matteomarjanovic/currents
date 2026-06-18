@@ -34,6 +34,7 @@
 	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
 	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
+	import { social, refreshSocial } from '$lib/stores/social.svelte';
 	import {
 		features,
 		loadSeenFeatures,
@@ -73,6 +74,8 @@
 	// Only items the user hasn't acted on yet count toward the unread indicator —
 	// disputes are waiting on a moderator, not on the author.
 	let pendingCount = $derived(notifications.items.filter((i) => !i.disputed).length);
+	// Combined unread = pending moderation items + unseen followers (Activity tab).
+	let unreadCount = $derived(pendingCount + social.unseenCount);
 
 	// One-time "new feature" indicators (server-backed). Gate on `loaded` so we
 	// never flash a dot before knowing what the user has already seen.
@@ -89,6 +92,7 @@
 	onMount(() => {
 		if (user) {
 			void refreshNotifications();
+			void refreshSocial();
 			if (!features.loaded) void loadSeenFeatures();
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 		}
@@ -273,10 +277,10 @@
 								<UserIcon class="size-4" />
 							</Avatar.Fallback>
 						</Avatar.Root>
-						{#if pendingCount > 0 || hasFeatureDot}
+						{#if unreadCount > 0 || hasFeatureDot}
 							<span
 								class="absolute -top-0.5 -right-0.5 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
-								aria-label={pendingCount > 0 ? `${pendingCount} pending` : 'New feature available'}
+								aria-label={unreadCount > 0 ? `${unreadCount} unread` : 'New feature available'}
 							></span>
 						{/if}
 					</DropdownMenu.Trigger>
@@ -298,9 +302,9 @@
 						<DropdownMenu.Item onclick={() => (notificationsOpen = true)}>
 							<Bell class="size-4" />
 							<span>Notifications</span>
-							{#if pendingCount > 0}
+							{#if unreadCount > 0}
 								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">
-									{pendingCount}
+									{unreadCount}
 								</Badge>
 							{/if}
 						</DropdownMenu.Item>

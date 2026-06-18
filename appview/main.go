@@ -357,6 +357,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/me/attestations/{id}/confirm", srv.APIMeAttestationConfirm)
 	http.HandleFunc("POST /api/me/attestations/{id}/ignore", srv.APIMeAttestationIgnore)
 	http.HandleFunc("POST /api/me/attestations/{id}/dispute", srv.APIMeAttestationDispute)
+	http.HandleFunc("GET /api/me/social", srv.APIMeSocial)
+	http.HandleFunc("POST /api/me/social/seen", srv.APIMeSocialSeen)
 
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)
@@ -379,6 +381,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchSaves", srv.XRPCSearchSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchCollections", srv.XRPCSearchCollections)
 	http.HandleFunc("GET /xrpc/is.currents.actor.searchActors", srv.XRPCSearchActors)
+	http.HandleFunc("GET /xrpc/is.currents.graph.getFollowers", srv.XRPCGetFollowers)
+	http.HandleFunc("GET /xrpc/is.currents.graph.getFollows", srv.XRPCGetFollows)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getRelatedSaves", srv.XRPCGetRelatedSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
 

@@ -1,0 +1,49 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.graph.getFollowers",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Enumerate accounts that follow the given actor.",
+      "parameters": {
+        "type": "params",
+        "required": ["actor"],
+        "properties": {
+          "actor": {
+            "type": "string",
+            "format": "at-identifier",
+            "description": "DID or handle of the actor whose followers to list."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["followers"],
+          "properties": {
+            "cursor": {
+              "type": "string"
+            },
+            "followers": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "is.currents.actor.defs#profileView"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

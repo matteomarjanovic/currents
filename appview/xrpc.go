@@ -304,19 +304,25 @@ func (s *Server) XRPCGetActorProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type profileView struct {
-		DID         string              `json:"did"`
-		Handle      string              `json:"handle"`
-		DisplayName string              `json:"displayName,omitempty"`
-		Description string              `json:"description,omitempty"`
-		Pronouns    string              `json:"pronouns,omitempty"`
-		Website     string              `json:"website,omitempty"`
-		Avatar      string              `json:"avatar,omitempty"`
-		Banner      string              `json:"banner,omitempty"`
-		CreatedAt   string              `json:"createdAt,omitempty"`
-		Viewer      *profileViewerState `json:"viewer,omitempty"`
+		DID            string              `json:"did"`
+		Handle         string              `json:"handle"`
+		DisplayName    string              `json:"displayName,omitempty"`
+		Description    string              `json:"description,omitempty"`
+		Pronouns       string              `json:"pronouns,omitempty"`
+		Website        string              `json:"website,omitempty"`
+		Avatar         string              `json:"avatar,omitempty"`
+		Banner         string              `json:"banner,omitempty"`
+		CreatedAt      string              `json:"createdAt,omitempty"`
+		FollowersCount int                 `json:"followersCount"`
+		FollowsCount   int                 `json:"followsCount"`
+		Viewer         *profileViewerState `json:"viewer,omitempty"`
 	}
 
 	view := profileView{DID: actorDID.String(), Handle: resolvedHandle}
+	if followers, follows, err := s.Store.CountFollows(r.Context(), actorDID.String()); err == nil {
+		view.FollowersCount = followers
+		view.FollowsCount = follows
+	}
 	if row, err := s.Store.GetActorByDID(r.Context(), actorDID.String()); err == nil && row != nil {
 		view.Handle = row.Handle
 		view.DisplayName = row.DisplayName
@@ -748,6 +754,95 @@ func (s *Server) XRPCSearchActors(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Actors: views})
+}
+
+func (s *Server) XRPCGetFollowers(w http.ResponseWriter, r *http.Request) {
+	s.xrpcFollowList(w, r, "followers")
+}
+
+func (s *Server) XRPCGetFollows(w http.ResponseWriter, r *http.Request) {
+	s.xrpcFollowList(w, r, "follows")
+}
+
+// xrpcFollowList serves both getFollowers (actors following the subject) and
+// getFollows (actors the subject follows); kind is the response array key.
+func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind string) {
+	actorParam := r.URL.Query().Get("actor")
+	if actorParam == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"actor is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var actorDID syntax.DID
+	if parsed, err := syntax.ParseDID(actorParam); err == nil {
+		actorDID = parsed
+	} else if handle, err := syntax.ParseHandle(actorParam); err == nil {
+		ident, err := s.Dir.LookupHandle(r.Context(), handle)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "NotFound", "message": "actor not found"})
+			return
+		}
+		actorDID = ident.DID
+	} else {
+		http.Error(w, `{"error":"InvalidRequest","message":"invalid actor"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
+			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
+				offset = n
+			}
+		}
+	}
+
+	var rows []ActorRow
+	var err error
+	if kind == "followers" {
+		rows, err = s.Store.GetFollowers(r.Context(), actorDID.String(), limit, offset)
+	} else {
+		rows, err = s.Store.GetFollows(r.Context(), actorDID.String(), limit, offset)
+	}
+	if err != nil {
+		slog.Error("follow list", "kind", kind, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Description string `json:"description,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	views := make([]profileView, 0, len(rows))
+	for _, row := range rows {
+		views = append(views, profileView{
+			DID:         row.DID,
+			Handle:      row.Handle,
+			DisplayName: row.DisplayName,
+			Description: row.Description,
+			Avatar:      row.Avatar,
+		})
+	}
+
+	resp := map[string]any{kind: views}
+	if len(rows) == limit {
+		resp["cursor"] = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(rows))))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {

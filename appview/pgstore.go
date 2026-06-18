@@ -3089,6 +3089,132 @@ func (m *PgStore) GetFollowURI(ctx context.Context, followerDID, subjectDID stri
 	return uri, nil
 }
 
+// CountFollows returns how many actors follow did (followers) and how many did follows (follows).
+func (m *PgStore) CountFollows(ctx context.Context, did string) (followers, follows int, err error) {
+	err = m.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM follow WHERE subject_did = $1),
+			(SELECT COUNT(*) FROM follow WHERE follower_did = $1)
+	`, did).Scan(&followers, &follows)
+	return
+}
+
+// GetFollowers returns the actors that follow subjectDID, newest follow first.
+func (m *PgStore) GetFollowers(ctx context.Context, subjectDID string, limit, offset int) ([]ActorRow, error) {
+	return m.queryFollowActors(ctx, `
+		SELECT u.did, COALESCE(u.handle, ''), COALESCE(u.display_name, ''), COALESCE(u.description, ''),
+		       COALESCE(u.pronouns, ''), COALESCE(u.website, ''), COALESCE(u.avatar, ''), COALESCE(u.banner, ''), u.created_at
+		FROM follow f
+		JOIN "user" u ON u.did = f.follower_did
+		WHERE f.subject_did = $1
+		ORDER BY f.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, subjectDID, limit, offset)
+}
+
+// GetFollows returns the actors that followerDID follows, newest follow first.
+func (m *PgStore) GetFollows(ctx context.Context, followerDID string, limit, offset int) ([]ActorRow, error) {
+	return m.queryFollowActors(ctx, `
+		SELECT u.did, COALESCE(u.handle, ''), COALESCE(u.display_name, ''), COALESCE(u.description, ''),
+		       COALESCE(u.pronouns, ''), COALESCE(u.website, ''), COALESCE(u.avatar, ''), COALESCE(u.banner, ''), u.created_at
+		FROM follow f
+		JOIN "user" u ON u.did = f.subject_did
+		WHERE f.follower_did = $1
+		ORDER BY f.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, followerDID, limit, offset)
+}
+
+func (m *PgStore) queryFollowActors(ctx context.Context, query, did string, limit, offset int) ([]ActorRow, error) {
+	rows, err := m.pool.Query(ctx, query, did, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ActorRow
+	for rows.Next() {
+		var row ActorRow
+		if err := rows.Scan(&row.DID, &row.Handle, &row.DisplayName, &row.Description, &row.Pronouns, &row.Website, &row.Avatar, &row.Banner, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// FollowerNotificationRow is one entry in a user's Activity feed: someone who
+// followed them, plus whether the viewer follows that person back.
+type FollowerNotificationRow struct {
+	DID           string
+	Handle        string
+	DisplayName   string
+	Avatar        string
+	FollowedAt    time.Time
+	FollowBackURI string // AT-URI of the viewer's follow-back record, "" if not following back
+}
+
+// ListFollowerNotifications returns the actors that follow did (newest first),
+// joined with each one's follow-back record from did (for the "Following" state).
+func (m *PgStore) ListFollowerNotifications(ctx context.Context, did string, limit, offset int) ([]FollowerNotificationRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT u.did, COALESCE(u.handle, ''), COALESCE(u.display_name, ''), COALESCE(u.avatar, ''),
+		       f.created_at, COALESCE(fb.uri, '')
+		FROM follow f
+		JOIN "user" u ON u.did = f.follower_did
+		LEFT JOIN follow fb ON fb.follower_did = $1 AND fb.subject_did = f.follower_did
+		WHERE f.subject_did = $1
+		ORDER BY f.created_at DESC
+		LIMIT $2 OFFSET $3
+	`, did, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []FollowerNotificationRow
+	for rows.Next() {
+		var row FollowerNotificationRow
+		if err := rows.Scan(&row.DID, &row.Handle, &row.DisplayName, &row.Avatar, &row.FollowedAt, &row.FollowBackURI); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// CountFollowersSince counts how many actors followed did after the given time.
+func (m *PgStore) CountFollowersSince(ctx context.Context, did string, since time.Time) (int, error) {
+	var n int
+	err := m.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM follow WHERE subject_did = $1 AND created_at > $2
+	`, did, since).Scan(&n)
+	return n, err
+}
+
+// GetSocialSeenAt returns when the user last marked their Activity tab seen, or
+// the zero time if they never have (so every follower counts as unseen).
+func (m *PgStore) GetSocialSeenAt(ctx context.Context, did string) (time.Time, error) {
+	var t time.Time
+	err := m.pool.QueryRow(ctx, `
+		SELECT social_seen_at FROM notification_seen WHERE viewer_did = $1
+	`, did).Scan(&t)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	return t, err
+}
+
+// MarkSocialSeen records that the user has seen their Activity tab as of now.
+func (m *PgStore) MarkSocialSeen(ctx context.Context, did string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO notification_seen (viewer_did, social_seen_at)
+		VALUES ($1, NOW())
+		ON CONFLICT (viewer_did) DO UPDATE SET social_seen_at = NOW()
+	`, did)
+	return err
+}
+
 func nullableString(s string) any {
 	if s == "" {
 		return nil

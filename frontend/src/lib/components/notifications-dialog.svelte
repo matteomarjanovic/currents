@@ -2,6 +2,7 @@
 	import { toast } from 'svelte-sonner';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import Bell from '@lucide/svelte/icons/bell';
@@ -11,19 +12,31 @@
 		refreshNotifications,
 		type AttestationItem
 	} from '$lib/stores/notifications.svelte';
+	import { refreshSocial, markSocialSeen } from '$lib/stores/social.svelte';
+	import ActivityList from './activity-list.svelte';
+	import FollowScopeDialog from './follow-scope-dialog.svelte';
 
 	interface Props {
 		open: boolean;
 	}
 	let { open = $bindable() }: Props = $props();
 
+	let tab = $state<'activity' | 'moderation'>('activity');
 	let busyId = $state<number | null>(null);
 	let selectedItem = $state<AttestationItem | null>(null);
+	let scopeMissing = $state(false);
+
+	// Moderation items the user hasn't acted on yet (disputes wait on a moderator).
+	const pendingCount = $derived(notifications.items.filter((i) => !i.disputed).length);
 
 	$effect(() => {
 		if (open) {
 			selectedItem = null;
+			tab = 'activity';
 			void refreshNotifications();
+			// Fetch first, so the served list reflects the old "seen" mark (keeping
+			// the new-follower highlights), then clear the unread dot.
+			void refreshSocial().then(() => markSocialSeen());
 		}
 	});
 
@@ -113,10 +126,10 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="my-5 min-h-5/6 content-start">
+	<Dialog.Content class="flex h-5/6 flex-col gap-0 overflow-hidden p-0 pt-6 sm:max-w-md">
 		{#if selectedItem}
 			{@const s = selectedItem}
-			<div class="flex flex-col gap-4">
+			<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-6">
 				<button
 					type="button"
 					onclick={() => (selectedItem = null)}
@@ -199,100 +212,120 @@
 				</div>
 			</div>
 		{:else}
-			<Dialog.Header>
-				<Dialog.Title class="flex items-center gap-2">
-					<Bell class="size-4" />
-					Notifications
+			<Dialog.Header class="px-6 pb-3 text-left">
+				<Dialog.Title class="flex items-center gap-2 pr-8 text-base">
+					<Bell class="size-4 shrink-0 text-muted-foreground" />
+					<span class="min-w-0 truncate">Notifications</span>
 				</Dialog.Title>
-				<Dialog.Description>
-					Pending labels on your saves. Confirm suspected content or dispute applied labels.
-				</Dialog.Description>
 			</Dialog.Header>
 
-			{#if notifications.loading && notifications.items.length === 0}
-				<div class="py-6 text-center text-sm text-muted-foreground">Loading…</div>
-			{:else if notifications.error}
-				<div
-					class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-				>
-					{notifications.error}
-				</div>
-			{:else if notifications.items.length === 0}
-				<div class="py-8 text-center text-sm text-muted-foreground">
-					All caught up — no pending labels.
-				</div>
-			{:else}
-				<ul class="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
-					{#each notifications.items as item (item.id)}
-						<li
-							class="flex shrink-0 items-stretch gap-3 overflow-hidden rounded-lg border border-border bg-card"
+			<Tabs.Root bind:value={tab} class="flex min-h-0 w-full flex-1 gap-0">
+				<Tabs.List variant="line" class="grid w-full shrink-0 grid-cols-2 rounded-none">
+					<Tabs.Trigger value="activity">Activity</Tabs.Trigger>
+					<Tabs.Trigger value="moderation">
+						Moderation
+						{#if pendingCount > 0}
+							<span class="ml-1.5 inline-block size-1.5 rounded-full bg-red-500"></span>
+						{/if}
+					</Tabs.Trigger>
+				</Tabs.List>
+
+				<Tabs.Content value="activity" class="mt-3 flex min-h-0 flex-col">
+					<ActivityList
+						onNavigate={() => (open = false)}
+						onScopeMissing={() => (scopeMissing = true)}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="moderation" class="mt-3 flex min-h-0 flex-col">
+					{#if notifications.loading && notifications.items.length === 0}
+						<div class="py-6 text-center text-sm text-muted-foreground">Loading…</div>
+					{:else if notifications.error}
+						<div
+							class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
 						>
-							{#if item.previewUrl}
-								<button
-									type="button"
-									onclick={() => (selectedItem = item)}
-									class="relative flex w-28 flex-shrink-0 cursor-pointer overflow-hidden bg-muted"
+							{notifications.error}
+						</div>
+					{:else if notifications.items.length === 0}
+						<div class="py-8 text-center text-sm text-muted-foreground">
+							All caught up — no pending labels.
+						</div>
+					{:else}
+						<ul class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
+							{#each notifications.items as item (item.id)}
+								<li
+									class="flex shrink-0 items-stretch gap-3 overflow-hidden rounded-lg border border-border bg-card"
 								>
-									<img
-										src={item.previewUrl}
-										alt=""
-										loading="lazy"
-										class="h-full w-full object-cover transition-opacity hover:opacity-90"
-									/>
-								</button>
-							{:else}
-								<div class="w-28 flex-shrink-0 bg-muted"></div>
-							{/if}
-							<div class="flex min-w-0 flex-1 flex-col gap-1 p-2">
-								<div class="flex flex-wrap items-center gap-1.5 text-xs">
-									<Badge variant="secondary">{categoryLabel(item)}</Badge>
-									{#if item.disputed}
-										<Badge variant="outline">disputed</Badge>
-									{/if}
-								</div>
-								<p class="my-1 text-xs leading-snug text-muted-foreground">
-									{#if item.source === 'label_applied'}
-										A content label was applied to this save. Labeled saves aren't removed — they
-										stay visible in the app and are only hidden for users who choose to filter that
-										content.
-									{:else}
-										Our auto-classifier flagged this image. No label has been applied yet — you can
-										confirm this flag or dismiss it. Even if labeled, the save stays visible and is
-										only hidden for users who choose to filter that content.
-									{/if}
-								</p>
-								<div class="mt-auto flex flex-wrap gap-1.5">
-									{#if item.source === 'label_applied'}
-										<Button size="sm" onclick={() => ignore(item)} disabled={busyId !== null}>
-											Acknowledge
-										</Button>
-										<Button
-											size="sm"
-											variant="outline"
-											onclick={() => dispute(item)}
-											disabled={busyId !== null || item.disputed}
+									{#if item.previewUrl}
+										<button
+											type="button"
+											onclick={() => (selectedItem = item)}
+											class="relative flex w-28 flex-shrink-0 cursor-pointer overflow-hidden bg-muted"
 										>
-											{item.disputed ? 'Disputed' : 'Dispute'}
-										</Button>
+											<img
+												src={item.previewUrl}
+												alt=""
+												loading="lazy"
+												class="h-full w-full object-cover transition-opacity hover:opacity-90"
+											/>
+										</button>
 									{:else}
-										<Button size="sm" onclick={() => confirm(item)} disabled={busyId !== null}>
-											Confirm
-										</Button>
-										<Button
-											size="sm"
-											variant="outline"
-											onclick={() => ignore(item)}
-											disabled={busyId !== null}
-										>
-											Ignore
-										</Button>
+										<div class="w-28 flex-shrink-0 bg-muted"></div>
 									{/if}
-								</div>
-							</div>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+									<div class="flex min-w-0 flex-1 flex-col gap-1 p-2">
+										<div class="flex flex-wrap items-center gap-1.5 text-xs">
+											<Badge variant="secondary">{categoryLabel(item)}</Badge>
+											{#if item.disputed}
+												<Badge variant="outline">disputed</Badge>
+											{/if}
+										</div>
+										<p class="my-1 text-xs leading-snug text-muted-foreground">
+											{#if item.source === 'label_applied'}
+												A content label was applied to this save. Labeled saves aren't removed —
+												they stay visible in the app and are only hidden for users who choose to
+												filter that content.
+											{:else}
+												Our auto-classifier flagged this image. No label has been applied yet — you
+												can confirm this flag or dismiss it. Even if labeled, the save stays visible
+												and is only hidden for users who choose to filter that content.
+											{/if}
+										</p>
+										<div class="mt-auto flex flex-wrap gap-1.5">
+											{#if item.source === 'label_applied'}
+												<Button size="sm" onclick={() => ignore(item)} disabled={busyId !== null}>
+													Acknowledge
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => dispute(item)}
+													disabled={busyId !== null || item.disputed}
+												>
+													{item.disputed ? 'Disputed' : 'Dispute'}
+												</Button>
+											{:else}
+												<Button size="sm" onclick={() => confirm(item)} disabled={busyId !== null}>
+													Confirm
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => ignore(item)}
+													disabled={busyId !== null}
+												>
+													Ignore
+												</Button>
+											{/if}
+										</div>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</Tabs.Content>
+			</Tabs.Root>
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>
+
+<FollowScopeDialog bind:open={scopeMissing} />

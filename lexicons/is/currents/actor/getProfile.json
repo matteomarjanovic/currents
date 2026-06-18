@@ -31,6 +31,8 @@
             "avatar": { "type": "string", "format": "uri" },
             "banner": { "type": "string", "format": "uri" },
             "createdAt": { "type": "string", "format": "datetime" },
+            "followersCount": { "type": "integer", "description": "Number of actors that follow this actor." },
+            "followsCount": { "type": "integer", "description": "Number of actors this actor follows." },
             "viewer": {
               "type": "ref",
               "ref": "is.currents.actor.defs#profileViewerState",
