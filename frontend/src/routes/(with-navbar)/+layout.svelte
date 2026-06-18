@@ -38,7 +38,7 @@
 
 		const isPublic =
 			page.url.pathname === '/' ||
-			page.url.pathname === '/explore' ||
+			page.url.pathname.startsWith('/explore') ||
 			page.url.pathname.startsWith('/login') ||
 			page.url.pathname.startsWith('/register') ||
 			page.url.pathname.startsWith('/profile/') ||

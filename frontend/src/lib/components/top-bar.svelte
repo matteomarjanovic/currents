@@ -125,7 +125,7 @@
 	}
 
 	$effect(() => {
-		if (page.url.pathname === '/explore' || page.url.pathname === '/') query = '';
+		if (page.url.pathname.startsWith('/explore') || page.url.pathname === '/') query = '';
 		else if (page.params.query) query = page.params.query;
 		const t = page.params.type;
 		if (t === 'collections' || t === 'users' || t === 'saves') searchType = t;

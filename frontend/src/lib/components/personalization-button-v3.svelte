@@ -6,33 +6,22 @@
 	import FlowField from './flow-field.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loginPrompt } from '$lib/stores/login-prompt.svelte';
+	import { FEED_LEVELS, findFeedLevel } from '$lib/feed-levels';
 
-	const OPTIONS = [
-		{ value: '1', label: 'Personal', noiseIntensity: 0.5 },
-		{ value: '0', label: 'General', noiseIntensity: 3 },
-		{ value: '-1', label: 'New worlds', noiseIntensity: 7 }
-	];
-	// Logged-out visitors only ever get the general feed (personalization needs a
-	// viewer to rank against); logged-in users default to personal.
-	const selectedValue = $derived.by(() => {
-		if (!auth.user) return '0';
-		const raw = page.url.searchParams.get('personalization');
-		return OPTIONS.some((o) => o.value === raw) ? raw! : '1';
-	});
-	const selected = $derived(OPTIONS.find((o) => o.value === selectedValue)!);
+	// The active level comes from the route; default to general if the slug is unknown.
+	const selected = $derived(findFeedLevel(page.params.level) ?? FEED_LEVELS[1]);
 
 	let open = $state(false);
 
-	function selectValue(v: string) {
-		// General is the only option open to logged-out visitors; the rest need auth.
-		if (!auth.user && v !== '0') {
+	function selectLevel(slug: string) {
+		const level = findFeedLevel(slug)!;
+		// General is the only feed open to logged-out visitors; the rest need auth.
+		if (!auth.user && level.value !== 0) {
 			loginPrompt.open = true;
 			return;
 		}
-		if (v === selectedValue) return;
-		const url = new URL(page.url);
-		url.searchParams.set('personalization', v);
-		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+		if (slug === selected.slug) return;
+		goto(`/explore/${slug}`, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 </script>
 
@@ -61,10 +50,10 @@
 	</DropdownMenu.Trigger>
 
 	<DropdownMenu.Content side="top" align="end" sideOffset={8} class="w-44">
-		<DropdownMenu.RadioGroup value={selectedValue} onValueChange={selectValue}>
-			{#each OPTIONS as option (option.value)}
-				<DropdownMenu.RadioItem value={option.value}>
-					{option.label}
+		<DropdownMenu.RadioGroup value={selected.slug} onValueChange={selectLevel}>
+			{#each FEED_LEVELS as level (level.slug)}
+				<DropdownMenu.RadioItem value={level.slug}>
+					{level.label}
 				</DropdownMenu.RadioItem>
 			{/each}
 		</DropdownMenu.RadioGroup>

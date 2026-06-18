@@ -1,64 +1,11 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
-	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
-	import MasonryGrid from '$lib/components/masonry-grid.svelte';
-	import PersonalizationButton from '$lib/components/personalization-button-v3.svelte';
+	import { goto } from '$app/navigation';
+	import { auth } from '$lib/stores/auth.svelte';
 
-	const personalizationValue = $derived.by(() => {
-		const raw = page.url.searchParams.get('personalization');
-		if (raw === null) return 0.6;
-		const n = Number(raw);
-		return Number.isFinite(n) ? Math.max(-1, Math.min(1, n)) : 0.6;
-	});
-
-	const feed = useInfiniteScroll(async (cursor) => {
-		const params = new URLSearchParams({
-			personalized: String(personalizationValue),
-			limit: '50',
-			excludeSaved: 'true'
-		});
-		if (cursor) params.set('cursor', cursor);
-
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getFeed?${params}`, {
-			credentials: 'include'
-		});
-		const data = await res.json();
-		return { items: data.feed, cursor: data.cursor };
-	});
-
-	let sentinel: HTMLDivElement = $state(undefined!);
-
+	// Personalization lives in the route now. Logged-in visitors get their
+	// personal feed; everyone else gets the general one.
 	$effect(() => {
-		void personalizationValue;
-		const timeout = setTimeout(() => {
-			untrack(() => {
-				feed.reset();
-				feed.loadMore();
-			});
-		}, 300);
-		return () => clearTimeout(timeout);
-	});
-
-	$effect(() => {
-		if (!sentinel) return;
-		const observer = new IntersectionObserver(
-			(entries) => {
-				if (entries[0].isIntersecting) feed.loadMore();
-			},
-			{ rootMargin: '400px' }
-		);
-		observer.observe(sentinel);
-		return () => observer.disconnect();
+		if (!auth.checked) return;
+		goto(auth.user ? '/explore/personal' : '/explore/general', { replaceState: true });
 	});
 </script>
-
-<MasonryGrid items={feed.items} loading={feed.loading} />
-{#if feed.hasMore}
-	<div bind:this={sentinel} class="h-1"></div>
-{/if}
-
-<div class="fixed right-5 bottom-5 z-20">
-	<PersonalizationButton />
-</div>
