@@ -246,7 +246,12 @@ func decodeSaveImageContent(contentRaw json.RawMessage) (*saveImageContent, erro
 	return &content, nil
 }
 
-func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *saveAttribution) (any, error) {
+// buildSaveContentWithAttribution rebuilds image content with attribution
+// applied. When overwrite is false, a nil/empty attribution preserves the
+// record's existing attribution (used when editing unrelated fields). When
+// overwrite is true, the passed attribution fully replaces it — a nil/empty
+// attribution clears it (used by the dedicated attribution endpoint).
+func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *saveAttribution, overwrite bool) (any, error) {
 	content, err := decodeSaveImageContent(contentRaw)
 	if err != nil {
 		return nil, err
@@ -260,6 +265,8 @@ func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *sa
 	content.Attribution = saveAttributionOrNil(content.Attribution)
 	if attr := saveAttributionOrNil(attribution); attr != nil {
 		content.Attribution = attr
+	} else if overwrite {
+		content.Attribution = nil
 	}
 	return content, nil
 }

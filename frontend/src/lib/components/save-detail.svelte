@@ -12,6 +12,7 @@
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
+	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
@@ -19,6 +20,7 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Flag from '@lucide/svelte/icons/flag';
+	import Tag from '@lucide/svelte/icons/tag';
 	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
 
 	interface Props {
@@ -100,9 +102,12 @@
 				if (cancelled) return;
 				try {
 					const params = new URLSearchParams({ uris: uri });
-					const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`, {
-						credentials: 'include'
-					});
+					const res = await fetch(
+						`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`,
+						{
+							credentials: 'include'
+						}
+					);
 					if (!res.ok) continue;
 					const data = (await res.json()) as { saves?: SaveView[] };
 					const fetched = data.saves?.[0];
@@ -182,68 +187,11 @@
 
 	// ── Owner self-label editor (add-only) ───────────────────────────────────
 	// Lets the originator add content-warning / AI labels to an already-uploaded
-	// save. Add-only and owner+non-resave gated, mirroring the upload picker; the
-	// PUT rewrites the record's `labels`, and TAP propagates to every copy.
-	const SELF_LABEL_OPTIONS = [
-		{ val: 'porn', label: 'Porn' },
-		{ val: 'sexual', label: 'Sexual' },
-		{ val: 'nudity', label: 'Nudity' },
-		{ val: 'graphic-media', label: 'Graphic' },
-		{ val: 'currents-ai-generated', label: 'AI-generated' }
-	];
+	// save via <ContentLabelDialog>. Owner + non-resave gated; the dialog PUTs the
+	// record's `labels` and TAP propagates the change to every copy.
 	let isResave = $derived(!!currentSave.resaveOf);
 	let canEditLabels = $derived(isOwnSave && !isResave && !!image);
-	// Vals already on the save (any source) — shown locked, since removal is
-	// intentionally not supported here.
-	let appliedVals = $derived(new Set((currentSave.labels ?? []).map((l) => l.val)));
-	let pendingAdds = $state<Set<string>>(new Set());
-	let savingLabels = $state(false);
-
-	$effect(() => {
-		void currentSave.uri;
-		untrack(() => (pendingAdds = new Set()));
-	});
-
-	function toggleAdd(val: string) {
-		if (appliedVals.has(val)) return; // applied labels are locked (add-only)
-		const next = new Set(pendingAdds);
-		if (next.has(val)) next.delete(val);
-		else next.add(val);
-		pendingAdds = next;
-	}
-
-	async function saveLabels() {
-		if (pendingAdds.size === 0) return;
-		savingLabels = true;
-		try {
-			const rkey = currentSave.uri.split('/').pop() ?? '';
-			const body = new URLSearchParams({ labels: [...pendingAdds].join(',') });
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}/labels`, {
-				method: 'PUT',
-				credentials: 'include',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-				body
-			});
-			if (!res.ok) {
-				console.error('apply labels failed', await res.text());
-				return;
-			}
-			// Optimistic: reflect new labels immediately (the signed labeler labels
-			// propagate async via TAP). effectiveVisibility only reads `val`.
-			const added = [...pendingAdds];
-			const base = hydratedSave ?? save;
-			const now = new Date().toISOString();
-			hydratedSave = {
-				...base,
-				labels: [...(base.labels ?? []), ...added.map((v) => ({ src: '', val: v, cts: now }))]
-			};
-			pendingAdds = new Set();
-		} catch (e) {
-			console.error('apply labels failed', e);
-		} finally {
-			savingLabels = false;
-		}
-	}
+	let labelDialogOpen = $state(false);
 </script>
 
 {#snippet attributionFields(attr: SaveAttribution)}
@@ -266,7 +214,21 @@
 	{/if}
 {/snippet}
 
-{#snippet info()}
+{#snippet reportButton(extra: string)}
+	{#if auth.user && !isOwnSave}
+		<Button
+			variant="link"
+			size="sm"
+			class="gap-1 px-0 text-xs text-muted-foreground hover:text-foreground {extra}"
+			onclick={() => (reportDialogOpen = true)}
+		>
+			<Flag class="size-3" />
+			Report
+		</Button>
+	{/if}
+{/snippet}
+
+{#snippet info(showReport: boolean)}
 	{#if currentSave.text}
 		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
@@ -316,49 +278,20 @@
 		</Button>
 	{/if}
 
-	{#if auth.user && !isOwnSave}
+	{#if showReport}
+		{@render reportButton('self-start')}
+	{/if}
+
+	{#if canEditLabels}
 		<Button
 			variant="link"
 			size="sm"
 			class="self-start gap-1 px-0 text-xs text-muted-foreground hover:text-foreground"
-			onclick={() => (reportDialogOpen = true)}
+			onclick={() => (labelDialogOpen = true)}
 		>
-			<Flag class="size-3" />
-			Report
+			<Tag class="size-3" />
+			Add content labels
 		</Button>
-	{/if}
-
-	{#if canEditLabels}
-		<div class="flex flex-col gap-2">
-			<span class="text-xs font-medium text-muted-foreground">Content labels</span>
-			<div class="flex flex-wrap items-center gap-1.5 text-xs">
-				{#each SELF_LABEL_OPTIONS as opt (opt.val)}
-					{@const applied = appliedVals.has(opt.val)}
-					{@const pending = pendingAdds.has(opt.val)}
-					<button
-						type="button"
-						disabled={applied || savingLabels}
-						onclick={() => toggleAdd(opt.val)}
-						title={applied ? 'Already applied' : 'Add this label'}
-						class="rounded-full border px-2.5 py-1 transition-colors {applied || pending
-							? 'border-foreground bg-foreground text-background'
-							: 'border-border text-muted-foreground hover:bg-muted'} {applied
-							? 'cursor-default opacity-90'
-							: ''}"
-					>
-						{opt.label}
-					</button>
-				{/each}
-			</div>
-			{#if pendingAdds.size > 0}
-				<Button size="sm" class="self-start" onclick={saveLabels} disabled={savingLabels}>
-					{savingLabels ? 'Saving…' : 'Apply labels'}
-				</Button>
-			{/if}
-			<p class="text-xs text-muted-foreground">
-				Labels apply to every copy of this image and can't be removed here.
-			</p>
-		</div>
 	{/if}
 {/snippet}
 
@@ -415,7 +348,7 @@
 				{@render saveControl('popover')}
 			</div>
 		</div>
-		{@render info()}
+		{@render info(true)}
 		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
 			<p>Scroll down to view related images</p>
 			<ArrowDown class="size-4" />
@@ -452,11 +385,8 @@
 			<ArrowLeft class="size-4" />
 			Back
 		</Button>
-		<div class="w-auto min-w-32">
-			{@render saveControl('drawer')}
-		</div>
+		{@render reportButton('')}
 	</div>
-	{@render info()}
 	{#if hiddenByPrefs}
 		{@render hiddenState()}
 	{:else if image}
@@ -476,6 +406,8 @@
 			Unsupported content
 		</div>
 	{/if}
+	{@render saveControl('drawer')}
+	{@render info(false)}
 </div>
 
 {#if related.items.length > 0 || related.loading}
@@ -497,6 +429,21 @@
 			hydratedSave = {
 				...base,
 				viewer: { ...(base.viewer ?? {}), attribution: attr }
+			};
+		}}
+	/>
+{/if}
+
+{#if canEditLabels}
+	<ContentLabelDialog
+		bind:open={labelDialogOpen}
+		save={currentSave}
+		onSaved={(added) => {
+			const base = hydratedSave ?? save;
+			const now = new Date().toISOString();
+			hydratedSave = {
+				...base,
+				labels: [...(base.labels ?? []), ...added.map((v) => ({ src: '', val: v, cts: now }))]
 			};
 		}}
 	/>

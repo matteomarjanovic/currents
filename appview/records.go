@@ -627,6 +627,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	contentAny, err := buildSaveContentWithAttribution(
 		existingVal.Content,
 		saveAttributionFromFields(attrURL, attrLicense, attrCredit),
+		false,
 	)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("parsing existing save content: %s", err), http.StatusInternalServerError)
@@ -776,7 +777,7 @@ func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClien
 		}
 	}
 
-	contentAny, err := buildSaveContentWithAttribution(existingVal.Content, attribution)
+	contentAny, err := buildSaveContentWithAttribution(existingVal.Content, attribution, true)
 	if err != nil {
 		return fmt.Errorf("build content: %w", err)
 	}

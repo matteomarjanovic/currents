@@ -59,7 +59,7 @@ func TestDecodeSaveImageContent(t *testing.T) {
 func TestBuildSaveContentWithAttributionPreservesNestedAttribution(t *testing.T) {
 	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
 
-	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil)
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, false)
 	if err != nil {
 		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestBuildSaveContentWithAttributionPreservesNestedAttribution(t *testing.T)
 func TestBuildSaveContentWithAttributionOverridesNestedAttribution(t *testing.T) {
 	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
 
-	contentAny, err := buildSaveContentWithAttribution(contentRaw, &saveAttribution{Credit: "updated"})
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, &saveAttribution{Credit: "updated"}, false)
 	if err != nil {
 		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBuildSaveContentWithAttributionOverridesNestedAttribution(t *testing.T)
 func TestBuildSaveContentWithAttributionRepairsMissingBlobType(t *testing.T) {
 	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
 
-	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil)
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, false)
 	if err != nil {
 		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
 	}
@@ -113,6 +113,22 @@ func TestBuildSaveContentWithAttributionRepairsMissingBlobType(t *testing.T) {
 	}
 	if content.Image.Type != "blob" {
 		t.Fatalf("expected repaired blob type, got %q", content.Image.Type)
+	}
+}
+
+func TestBuildSaveContentWithAttributionOverwriteClearsNestedAttribution(t *testing.T) {
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"attribution":{"credit":"nested"}}`)
+
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, nil, true)
+	if err != nil {
+		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
+	}
+	content, ok := contentAny.(*saveImageContent)
+	if !ok {
+		t.Fatalf("expected *saveImageContent, got %T", contentAny)
+	}
+	if content.Attribution != nil {
+		t.Fatalf("expected cleared attribution, got %#v", content.Attribution)
 	}
 }
 
