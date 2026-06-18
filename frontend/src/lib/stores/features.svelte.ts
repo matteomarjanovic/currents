@@ -7,10 +7,11 @@ import { SvelteSet } from 'svelte/reactivity';
 // when the user engages with it — no backend change needed.
 
 export const FEATURE_PINTEREST_IMPORT = 'pinterest-import';
+export const FEATURE_BLUESKY_IMPORT = 'bluesky-import';
 
 // Features currently surfaced with a "new" indicator. Drop a key here once the
 // feature is no longer newsworthy.
-export const ACTIVE_ANNOUNCEMENTS = [FEATURE_PINTEREST_IMPORT];
+export const ACTIVE_ANNOUNCEMENTS = [FEATURE_PINTEREST_IMPORT, FEATURE_BLUESKY_IMPORT];
 
 export const features = $state({
 	seen: new SvelteSet<string>(),

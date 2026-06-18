@@ -3143,6 +3143,38 @@ func (m *PgStore) queryFollowActors(ctx context.Context, query, did string, limi
 	return result, rows.Err()
 }
 
+// FindFollowableCurrentsUsers returns the Currents users among candidateDIDs that
+// viewerDID does not already follow (excluding the viewer themselves) — the
+// candidates for the "import Bluesky follows" dialog. Reuses the ActorRow shape.
+func (m *PgStore) FindFollowableCurrentsUsers(ctx context.Context, viewerDID string, candidateDIDs []string) ([]ActorRow, error) {
+	if len(candidateDIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT u.did, COALESCE(u.handle, ''), COALESCE(u.display_name, ''), COALESCE(u.description, ''),
+		       COALESCE(u.pronouns, ''), COALESCE(u.website, ''), COALESCE(u.avatar, ''), COALESCE(u.banner, ''), u.created_at
+		FROM "user" u
+		WHERE u.did = ANY($2)
+		  AND u.did <> $1
+		  AND NOT EXISTS (SELECT 1 FROM follow f WHERE f.follower_did = $1 AND f.subject_did = u.did)
+		ORDER BY u.display_name NULLS LAST, u.handle
+	`, viewerDID, candidateDIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ActorRow
+	for rows.Next() {
+		var row ActorRow
+		if err := rows.Scan(&row.DID, &row.Handle, &row.DisplayName, &row.Description, &row.Pronouns, &row.Website, &row.Avatar, &row.Banner, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 // FollowerNotificationRow is one entry in a user's Activity feed: someone who
 // followed them, plus whether the viewer follows that person back.
 type FollowerNotificationRow struct {

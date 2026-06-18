@@ -41,7 +41,8 @@
 		markFeatureSeen,
 		isFeatureSeen,
 		hasUnseenAnnouncement,
-		FEATURE_PINTEREST_IMPORT
+		FEATURE_PINTEREST_IMPORT,
+		FEATURE_BLUESKY_IMPORT
 	} from '$lib/stores/features.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { onMount } from 'svelte';
@@ -80,6 +81,7 @@
 	// One-time "new feature" indicators (server-backed). Gate on `loaded` so we
 	// never flash a dot before knowing what the user has already seen.
 	let showPinterestNew = $derived(features.loaded && !isFeatureSeen(FEATURE_PINTEREST_IMPORT));
+	let showBlueskyImportNew = $derived(features.loaded && !isFeatureSeen(FEATURE_BLUESKY_IMPORT));
 	let hasFeatureDot = $derived(features.loaded && hasUnseenAnnouncement());
 
 	function openPinterestImport() {
@@ -298,6 +300,9 @@
 						>
 							<UserIcon class="size-4" />
 							Profile
+							{#if showBlueskyImportNew}
+								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
+							{/if}
 						</DropdownMenu.Item>
 						<DropdownMenu.Item onclick={() => (notificationsOpen = true)}>
 							<Bell class="size-4" />

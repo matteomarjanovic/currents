@@ -359,6 +359,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/me/attestations/{id}/dispute", srv.APIMeAttestationDispute)
 	http.HandleFunc("GET /api/me/social", srv.APIMeSocial)
 	http.HandleFunc("POST /api/me/social/seen", srv.APIMeSocialSeen)
+	http.HandleFunc("GET /api/me/bluesky-follows", srv.APIMeBlueskyFollows)
 
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)

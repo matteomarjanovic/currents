@@ -87,6 +87,84 @@ func (s *Server) APIMeSocial(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// APIMeBlueskyFollows returns the Currents users that the signed-in user already
+// follows on Bluesky but does not yet follow on Currents — the candidates for the
+// "import Bluesky follows" dialog. A user's Currents DID is their Bluesky DID, so
+// their Bluesky follow graph lives in their own PDS as app.bsky.graph.follow records.
+func (s *Server) APIMeBlueskyFollows(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	// Page through the user's Bluesky follow records, collecting subject DIDs.
+	// Capped to bound latency for accounts that follow very many people.
+	const maxPages = 50
+	subjects := make([]string, 0, 256)
+	cursor := ""
+	for page := 0; page < maxPages; page++ {
+		params := map[string]any{
+			"repo":       did.String(),
+			"collection": "app.bsky.graph.follow",
+			"limit":      100,
+		}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		var resp struct {
+			Cursor  string `json:"cursor"`
+			Records []struct {
+				Value struct {
+					Subject string `json:"subject"`
+				} `json:"value"`
+			} `json:"records"`
+		}
+		if err := c.Get(r.Context(), "com.atproto.repo.listRecords", params, &resp); err != nil {
+			if s.handleSessionError(err, w, r) {
+				return
+			}
+			slog.Error("listing bluesky follows", "err", err, "did", did.String())
+			http.Error(w, "could not read Bluesky follows", http.StatusBadGateway)
+			return
+		}
+		for _, rec := range resp.Records {
+			if rec.Value.Subject != "" {
+				subjects = append(subjects, rec.Value.Subject)
+			}
+		}
+		if resp.Cursor == "" || len(resp.Records) == 0 {
+			break
+		}
+		cursor = resp.Cursor
+	}
+
+	rows, err := s.Store.FindFollowableCurrentsUsers(r.Context(), did.String(), subjects)
+	if err != nil {
+		slog.Error("FindFollowableCurrentsUsers", "err", err)
+		http.Error(w, "internal", http.StatusInternalServerError)
+		return
+	}
+
+	type actorView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	actors := make([]actorView, 0, len(rows))
+	for _, row := range rows {
+		actors = append(actors, actorView{
+			DID:         row.DID,
+			Handle:      row.Handle,
+			DisplayName: row.DisplayName,
+			Avatar:      row.Avatar,
+		})
+	}
+	json.NewEncoder(w).Encode(map[string]any{"actors": actors})
+}
+
 // APIMeSocialSeen marks the Activity tab seen as of now, clearing the unread dot.
 func (s *Server) APIMeSocialSeen(w http.ResponseWriter, r *http.Request) {
 	did, _, _ := s.currentSessionDID(r)
