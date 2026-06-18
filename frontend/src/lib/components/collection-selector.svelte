@@ -10,6 +10,7 @@
 		addCollection
 	} from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
+	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
 	import { Button } from '$lib/components/ui/button';
 	import { Toggle } from '$lib/components/ui/toggle';
 	import * as Popover from '$lib/components/ui/popover';
@@ -159,6 +160,8 @@
 				if (res.status === 401) {
 					auth.user = null;
 					promptLogin();
+				} else if (res.status === 429) {
+					toast.error(RATE_LIMIT_MESSAGE);
 				}
 				throw new Error(`save: ${res.status}`);
 			}

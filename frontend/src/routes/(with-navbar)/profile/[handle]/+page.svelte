@@ -13,13 +13,17 @@
 	let loading = $state(true);
 	let notFound = $state(false);
 	let editOpen = $state(false);
+	let activeImport = $state(false);
 
 	const isOwner = $derived(!!auth.user && !!profile && auth.user.did === profile.did);
 
 	// Show only root collections as cards, most recent activity first:
 	// newest of {created, last save}.
 	const activityTs = (c: (typeof collections)[number]) =>
-		Math.max(c.lastSavedAt ? Date.parse(c.lastSavedAt) : 0, c.createdAt ? Date.parse(c.createdAt) : 0);
+		Math.max(
+			c.lastSavedAt ? Date.parse(c.lastSavedAt) : 0,
+			c.createdAt ? Date.parse(c.createdAt) : 0
+		);
 	const roots = $derived(
 		collections.filter((c) => !c.parentUri).sort((a, b) => activityTs(b) - activityTs(a))
 	);
@@ -67,6 +71,27 @@
 			});
 	});
 
+	// On your own profile, surface an in-flight Pinterest import so you can jump
+	// to its status (imports run server-side and can take a long time).
+	$effect(() => {
+		if (!isOwner) {
+			activeImport = false;
+			return;
+		}
+		void (async () => {
+			try {
+				const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/active-session`, {
+					credentials: 'include'
+				});
+				if (!res.ok) return;
+				const data = await res.json();
+				activeImport = !!data.sessionId;
+			} catch {
+				// best-effort; no banner on failure
+			}
+		})();
+	});
+
 	function onProfileSaved(updated: ActorProfileView) {
 		profile = updated;
 		if (auth.user && auth.user.did === updated.did) {
@@ -107,6 +132,24 @@
 		</div>
 	{:else}
 		<ProfileHeader {profile} {isOwner} onEdit={() => (editOpen = true)} />
+
+		{#if isOwner && activeImport}
+			<a
+				href="/import/pinterest"
+				class="mb-6 flex items-center gap-2.5 rounded-lg border bg-muted/40 px-4 py-3 text-sm transition-colors hover:bg-muted"
+			>
+				<span class="relative flex size-2">
+					<span
+						class="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75"
+					></span>
+					<span class="relative inline-flex size-2 rounded-full bg-primary"></span>
+				</span>
+				<span
+					>A Pinterest import is in progress — <span class="font-medium underline">view status</span
+					></span
+				>
+			</a>
+		{/if}
 
 		<h2 class="mb-4 text-lg font-semibold text-foreground">Collections</h2>
 		{#if roots.length === 0}

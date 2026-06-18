@@ -448,6 +448,14 @@
 						{/if}
 					</div>
 				</div>
+				{#if !allDone}
+					<p class="text-xs leading-relaxed text-muted-foreground">
+						Large imports can take a while — hours, or longer for big boards. If progress looks
+						stuck, your data server is briefly limiting uploads; the import keeps going on its own
+						and resumes automatically. You can safely leave this page — it continues in the
+						background.
+					</p>
+				{/if}
 				{#if status && status.jobs.length > 0}
 					<ul class="space-y-2">
 						{#each status.jobs as job (job.jobId)}

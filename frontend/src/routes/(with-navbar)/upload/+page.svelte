@@ -9,6 +9,9 @@
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import X from '@lucide/svelte/icons/x';
 	import Check from '@lucide/svelte/icons/check';
+	import TriangleAlert from '@lucide/svelte/icons/alert-triangle';
+	import { toast } from 'svelte-sonner';
+	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
 
 	type StagedStatus = 'pending' | 'uploading' | 'done' | 'error';
 	type Staged = {
@@ -24,6 +27,7 @@
 	let selectedSelfLabels = $state<Set<string>>(new Set());
 	let uploading = $state(false);
 	let completed = $state(false);
+	let rateLimited = $state(false);
 	let popoverDismissed = $state(false);
 	let dragActive = $state(false);
 	let dragDepth = 0;
@@ -50,7 +54,7 @@
 	let processed = $derived(doneCount + errorCount);
 	let progressValue = $derived(total === 0 ? 0 : (processed / total) * 100);
 	let canSave = $derived(!uploading && total > 0 && !!selectedCollectionUri);
-	let popoverOpen = $derived((uploading || completed) && !popoverDismissed);
+	let popoverOpen = $derived((uploading || completed || rateLimited) && !popoverDismissed);
 
 	function addFiles(files: FileList | File[]) {
 		const imgs = Array.from(files).filter((f) => f.type.startsWith('image/'));
@@ -95,7 +99,7 @@
 		if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files);
 	}
 
-	async function uploadOne(item: Staged): Promise<'ok' | 'unauthorized'> {
+	async function uploadOne(item: Staged): Promise<'ok' | 'unauthorized' | 'rate-limited'> {
 		item.status = 'uploading';
 		try {
 			const form = new FormData();
@@ -115,6 +119,12 @@
 					item.status = 'pending';
 					return 'unauthorized';
 				}
+				// Rate-limited by the PDS: leave the item pending so a retry picks it
+				// back up, and let the caller stop launching new uploads.
+				if (res.status === 429) {
+					item.status = 'pending';
+					return 'rate-limited';
+				}
 				item.status = 'error';
 				item.error = (await res.text()).trim() || `HTTP ${res.status}`;
 				return 'ok';
@@ -131,18 +141,21 @@
 		if (!canSave) return;
 		uploading = true;
 		completed = false;
+		rateLimited = false;
 		popoverDismissed = false;
 
 		const queue = staged.filter((s) => s.status !== 'done');
 		let cursor = 0;
 		let unauthorized = false;
+		let hitRateLimit = false;
 
 		async function worker() {
-			while (!unauthorized) {
+			while (!unauthorized && !hitRateLimit) {
 				const i = cursor++;
 				if (i >= queue.length) return;
 				const result = await uploadOne(queue[i]);
 				if (result === 'unauthorized') unauthorized = true;
+				else if (result === 'rate-limited') hitRateLimit = true;
 			}
 		}
 
@@ -153,6 +166,13 @@
 		if (unauthorized) {
 			auth.user = null;
 			promptLogin();
+			return;
+		}
+		// Stop on the first rate-limit instead of turning the whole batch red:
+		// remaining items stay pending so "Retry remaining" can resume them.
+		if (hitRateLimit) {
+			rateLimited = true;
+			toast.error(RATE_LIMIT_MESSAGE);
 			return;
 		}
 		completed = true;
@@ -332,6 +352,26 @@
 						Go to collection
 					</Button>
 				{/if}
+			</div>
+		{:else if rateLimited}
+			<div class="space-y-3">
+				<div class="flex items-center gap-2">
+					<TriangleAlert class="size-5 text-destructive" />
+					<div class="font-medium">Upload paused</div>
+					<button
+						type="button"
+						class="ml-auto rounded-full p-1 text-muted-foreground hover:bg-foreground/10"
+						onclick={() => (popoverDismissed = true)}
+						aria-label="Dismiss"
+					>
+						<X class="size-4" />
+					</button>
+				</div>
+				<div class="text-sm text-muted-foreground">{RATE_LIMIT_MESSAGE}</div>
+				{#if doneCount > 0}
+					<div class="text-xs text-muted-foreground">{doneCount} uploaded so far.</div>
+				{/if}
+				<Button variant="default" class="w-full" onclick={startUpload}>Retry remaining</Button>
 			</div>
 		{/if}
 	</div>

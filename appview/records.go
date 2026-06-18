@@ -440,6 +440,13 @@ func (s *Server) cascadeDelete(did syntax.DID, sessionID string, collRkeys, save
 
 // --- Saves ---
 
+// rateLimitMessage is returned (with HTTP 429) when the user's PDS rejects a
+// blob upload with its own 429. PDSes cap blob uploads per IP, and the appview
+// uploads on the user's behalf, so this can trip during busy periods even for
+// light users. Phrased for a non-technical reader and kept identical to the
+// frontend copy (see frontend/src/lib/rate-limit.ts).
+const rateLimitMessage = "Your data server is temporarily limiting uploads. Please try again in a few minutes."
+
 func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	c, did, err := s.apiClientFromSession(r)
 	if err != nil {
@@ -497,6 +504,10 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
 		if s.handleSessionError(err, w, r) {
+			return
+		}
+		if isRateLimited(err) {
+			http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
 			return
 		}
 		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
@@ -1159,6 +1170,10 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
 		if s.handleSessionError(err, w, r) {
+			return
+		}
+		if isRateLimited(err) {
+			http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
 			return
 		}
 		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)

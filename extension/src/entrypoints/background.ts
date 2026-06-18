@@ -184,6 +184,13 @@ async function handleSave(message: {
     if (resp.type === 'opaqueredirect' || resp.status === 0) {
       return { ok: true };
     }
+    // PDS rate-limit: the user's data server is throttling blob uploads.
+    if (resp.status === 429) {
+      return {
+        ok: false,
+        error: 'Your data server is temporarily limiting uploads. Please try again in a few minutes.',
+      };
+    }
     const errorText = await resp.text();
     return { ok: false, error: errorText.trim() || `HTTP ${resp.status}` };
   } catch (e) {
