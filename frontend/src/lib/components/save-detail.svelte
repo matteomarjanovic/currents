@@ -286,7 +286,7 @@
 		<Button
 			variant="link"
 			size="sm"
-			class="self-start gap-1 px-0 text-xs text-muted-foreground hover:text-foreground"
+			class="gap-1 self-start px-0 text-xs text-muted-foreground hover:text-foreground"
 			onclick={() => (labelDialogOpen = true)}
 		>
 			<Tag class="size-3" />

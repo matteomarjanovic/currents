@@ -55,6 +55,8 @@
 	);
 	let actors = $derived(loadedType === 'users' ? (search.items as ActorProfileView[]) : []);
 
+	const pageTitle = $derived(page.params.query ? page.params.query + ' · Search' : 'Search');
+
 	let sentinel: HTMLDivElement = $state(undefined!);
 
 	$effect(() => {
@@ -81,6 +83,10 @@
 		return () => observer.disconnect();
 	});
 </script>
+
+<svelte:head>
+	<title>{pageTitle} · Currents</title>
+</svelte:head>
 
 {#if searchType === 'saves'}
 	<MasonryGrid items={saves} loading={search.loading} />

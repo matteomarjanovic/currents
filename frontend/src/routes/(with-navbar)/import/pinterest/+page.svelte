@@ -340,7 +340,7 @@
 </script>
 
 <svelte:head>
-	<title>Import from Pinterest</title>
+	<title>Import from Pinterest · Currents</title>
 </svelte:head>
 
 <div class="mx-auto max-w-2xl">

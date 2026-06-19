@@ -174,6 +174,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Review · Admin · Currents</title>
+</svelte:head>
+
 <div class="flex flex-col gap-4">
 	<div class="flex items-center gap-2">
 		<Button variant="ghost" size="sm" onclick={() => goto('/admin/queue')}>

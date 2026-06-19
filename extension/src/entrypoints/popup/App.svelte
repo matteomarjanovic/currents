@@ -4,7 +4,7 @@
   const CURRENTS_URL =
     import.meta.env.VITE_CURRENTS_URL ?? "https://api.currents.is";
   const LOGIN_PAGE_URL =
-    import.meta.env.VITE_LOGIN_PAGE_URL ?? "https://currents.is/oauth/login";
+    import.meta.env.VITE_LOGIN_PAGE_URL ?? "https://currents.is/login/extension";
   const CURRENTS_FRONTEND_URL =
     import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? "https://currents.is";
 

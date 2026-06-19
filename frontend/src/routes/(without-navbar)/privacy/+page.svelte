@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>Privacy Policy • Currents</title>
+	<title>Privacy Policy · Currents</title>
 	<meta
 		name="description"
 		content="Privacy Policy for the hosted Currents web app, browser extension, APIs, and related services."

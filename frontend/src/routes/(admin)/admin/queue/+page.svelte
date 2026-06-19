@@ -116,6 +116,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Queue · Admin · Currents</title>
+</svelte:head>
+
 <div class="flex flex-col gap-4">
 	<header class="flex flex-wrap items-end justify-between gap-3">
 		<div>

@@ -1,4 +1,5 @@
-const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://currents.is';
+const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://api.currents.is';
+const FRONTEND_URL = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
 const AUTH_TTL_MS = 60_000;
 
 interface AuthCache {
@@ -239,6 +240,14 @@ export default defineBackground(() => {
     if (changeInfo.cookie.name !== 'currents-session') return;
     if (changeInfo.removed) {
       await browser.storage.session.remove('authCache');
+    }
+  });
+
+  // Auto-close the login tab once OAuth lands on the success page. The page
+  // shows a 5s countdown, so we close it after the same delay.
+  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url?.startsWith(`${FRONTEND_URL}/login/success`)) {
+      setTimeout(() => browser.tabs.remove(tabId), 5000);
     }
   });
 

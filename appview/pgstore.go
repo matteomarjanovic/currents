@@ -962,6 +962,101 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 	return result, nextCursor, nil
 }
 
+// GetUnsortedSavesPage returns an actor's saves that belong to no collection
+// (collection_uri = ''), newest first. Mirrors GetSavesPage but scopes by author
+// instead of collection. Blocked blobs are excluded.
+func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID string, limit int, cursor string) ([]SaveRow, string, error) {
+	args := []any{authorDID, limit, viewerDID}
+
+	cursorClause := ""
+	if cursor != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err == nil {
+			parts := strings.SplitN(string(raw), "|", 2)
+			if len(parts) == 2 {
+				ts, err := time.Parse(time.RFC3339Nano, parts[0])
+				if err == nil {
+					args = append(args, ts.UTC(), parts[1])
+					cursorClause = fmt.Sprintf(" AND (s.created_at < $%d OR (s.created_at = $%d AND s.uri > $%d))", len(args)-1, len(args)-1, len(args))
+				}
+			}
+		}
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			s.content_nsid,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(s.resave_of_cid, ''),
+			s.created_at,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
+			s.width,
+			s.height,
+			s.dominant_colors
+		FROM save s
+		WHERE s.author_did = $1
+		  AND s.collection_uri = ''
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  %s
+		ORDER BY s.created_at DESC NULLS LAST, s.uri ASC
+		LIMIT $2
+	`, cursorClause)
+
+	rows, err := m.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var result []SaveRow
+	for rows.Next() {
+		var row SaveRow
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
+			return nil, "", err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var nextCursor string
+	if len(result) == limit {
+		last := result[len(result)-1]
+		ts := ""
+		if last.CreatedAt != nil {
+			ts = last.CreatedAt.UTC().Format(time.RFC3339Nano)
+		}
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(ts + "|" + last.URI))
+	}
+	return result, nextCursor, nil
+}
+
 type UpsertSaveParams struct {
 	URI                string
 	AuthorDID          string

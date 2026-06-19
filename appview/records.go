@@ -468,11 +468,6 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 	selfLabelVals := parseSelfLabels(r.PostFormValue("labels"))
 
-	if collectionURI == "" {
-		http.Error(w, "collection is required", http.StatusBadRequest)
-		return
-	}
-
 	// Require image
 	file, header, fileErr := r.FormFile("image")
 	if fileErr != nil {
@@ -517,18 +512,19 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	var blobAny any
 	json.Unmarshal(blobJSON, &blobAny)
 
-	// Resolve collection strongRef
-	collectionStrongRef, err := resolveStrongRef(r.Context(), c, collectionURI)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
-		return
-	}
-
 	record := map[string]any{
-		"$type":      saveNSID,
-		"collection": collectionStrongRef,
-		"content":    buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit)),
-		"createdAt":  syntax.DatetimeNow().String(),
+		"$type":     saveNSID,
+		"content":   buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit)),
+		"createdAt": syntax.DatetimeNow().String(),
+	}
+	// A save with no collection is "unsorted" — it lives on the user's profile only.
+	if collectionURI != "" {
+		collectionStrongRef, err := resolveStrongRef(r.Context(), c, collectionURI)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
+			return
+		}
+		record["collection"] = collectionStrongRef
 	}
 	if labels := buildSelfLabelsRecord(selfLabelVals); labels != nil {
 		record["labels"] = labels
@@ -1140,8 +1136,8 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if body.SaveURI == "" || body.CollectionURI == "" {
-		http.Error(w, "saveUri and collectionUri are required", http.StatusBadRequest)
+	if body.SaveURI == "" {
+		http.Error(w, "saveUri is required", http.StatusBadRequest)
 		return
 	}
 
@@ -1184,11 +1180,6 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(blobJSON, &blobAny)
 
 	// Resolve strong refs
-	collectionStrongRef, err := resolveStrongRef(r.Context(), c, body.CollectionURI)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
-		return
-	}
 	resaveRef, err := resolveStrongRefPublic(r.Context(), s.Store, s.Dir, body.SaveURI)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("resolving save: %s", err), http.StatusBadRequest)
@@ -1211,11 +1202,19 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	record := map[string]any{
-		"$type":      saveNSID,
-		"collection": collectionStrongRef,
-		"content":    buildImageContentRecordWithAttribution(blobAny, resolvedAttribution),
-		"resaveOf":   resaveRef,
-		"createdAt":  syntax.DatetimeNow().String(),
+		"$type":     saveNSID,
+		"content":   buildImageContentRecordWithAttribution(blobAny, resolvedAttribution),
+		"resaveOf":  resaveRef,
+		"createdAt": syntax.DatetimeNow().String(),
+	}
+	// No collection → an "unsorted" resave that lives on the viewer's profile only.
+	if body.CollectionURI != "" {
+		collectionStrongRef, err := resolveStrongRef(r.Context(), c, body.CollectionURI)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
+			return
+		}
+		record["collection"] = collectionStrongRef
 	}
 	if origOriginURL != "" {
 		record["originUrl"] = origOriginURL

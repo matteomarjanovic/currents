@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-	<title>Terms of Service • Currents</title>
+	<title>Terms of Service · Currents</title>
 	<meta
 		name="description"
 		content="Terms of Service for the hosted Currents web app, browser extension, APIs, and related services."

@@ -8,6 +8,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import Plus from '@lucide/svelte/icons/plus';
   import FolderPlus from '@lucide/svelte/icons/folder-plus';
+  import User from '@lucide/svelte/icons/user';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 
   interface Props {
@@ -29,6 +30,10 @@
     onCreate,
     onOpenChange
   }: Props = $props();
+
+  // Saves with no collection ("unsorted") use the empty string as their URI,
+  // matching the server — picking this row targets the profile.
+  const UNSORTED_URI = '';
 
   let open = $state(false);
   // When set, the list shows this collection's sections instead of the roots.
@@ -80,7 +85,9 @@
   let selectedName = $derived(
     loading
       ? 'Loading collections…'
-      : (collections.find((c) => c.uri === selectedUri)?.name ?? 'Select collection')
+      : selectedUri === UNSORTED_URI
+        ? 'Profile (unsorted)'
+        : (collections.find((c) => c.uri === selectedUri)?.name ?? 'Select collection')
   );
 
   function pick(uri: string) {
@@ -192,12 +199,33 @@
         {@render pickRow(sec, 'Public', false)}
       {/each}
     {:else}
+      <!-- Save directly to the profile, with no collection ("unsorted"). -->
       <button
-        class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
+        class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
+        onclick={() => pick(UNSORTED_URI)}
+      >
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+          <User class="size-4 text-muted-foreground" />
+        </span>
+        <span class="flex flex-1 flex-col items-start truncate">
+          <span class="truncate">Profile</span>
+          <span class="text-xs text-muted-foreground">Save without a collection</span>
+        </span>
+        {#if selectedUri === UNSORTED_URI}
+          <Check class="size-4 shrink-0" />
+        {/if}
+      </button>
+      <button
+        class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
         onclick={() => create(null)}
       >
-        <Plus class="size-4 shrink-0" />
-        <span class="truncate">Create new collection</span>
+        <span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+          <Plus class="size-4 text-muted-foreground" />
+        </span>
+        <span class="flex flex-1 flex-col items-start truncate">
+          <span class="truncate">Create new collection</span>
+          <span class="text-xs text-muted-foreground">Group your saves</span>
+        </span>
       </button>
       {#each rootCollections as root (root.uri)}
         {#if sectionCount(root.uri) > 0}

@@ -378,6 +378,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.getActorCollections", srv.XRPCGetActorCollections)
 	http.HandleFunc("GET /xrpc/is.currents.actor.getProfile", srv.XRPCGetActorProfile)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getCollectionSaves", srv.XRPCGetCollectionSaves)
+	http.HandleFunc("GET /xrpc/is.currents.feed.getUnsortedSaves", srv.XRPCGetUnsortedSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getSaves", srv.XRPCGetSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchSaves", srv.XRPCSearchSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchCollections", srv.XRPCSearchCollections)

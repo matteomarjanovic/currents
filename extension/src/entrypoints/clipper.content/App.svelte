@@ -8,7 +8,7 @@
   import X from "@lucide/svelte/icons/x";
 
   const LOGIN_PAGE_URL =
-    import.meta.env.VITE_LOGIN_PAGE_URL ?? "https://currents.is/oauth/login";
+    import.meta.env.VITE_LOGIN_PAGE_URL ?? "https://currents.is/login/extension";
 
   type SaveState = "idle" | "saving" | "saved" | "error";
   let saveState = $state<SaveState>("idle");
@@ -179,7 +179,6 @@
   }
 
   async function save() {
-    if (!selectedCollectionUri) return;
     saveState = "saving";
     try {
       const response = await browser.runtime.sendMessage({
@@ -400,9 +399,7 @@
         {:else}
           <Button
             onclick={save}
-            disabled={!selectedCollectionUri ||
-              creatingCollection ||
-              saveState === "saving"}
+            disabled={creatingCollection || saveState === "saving"}
           >
             {saveState === "saving" ? "Saving…" : "Save to Currents"}
           </Button>

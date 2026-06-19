@@ -21,6 +21,7 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Plus from '@lucide/svelte/icons/plus';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
+	import User from '@lucide/svelte/icons/user';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import SaveToast from '$lib/components/save-toast.svelte';
 
@@ -52,7 +53,7 @@
 	let userSelectedUri = $state<string | null>(null);
 	let selectedCollectionUri = $derived(
 		pickerMode
-			? (selectedUri ?? '')
+			? selectedUri
 			: (userSelectedUri ??
 					toTopLevel(localSaves[0]?.collectionUri ?? collections.lastUsedUri ?? ''))
 	);
@@ -81,6 +82,10 @@
 	});
 
 	const OPTIMISTIC_URI = 'optimistic';
+	// Saves with no collection ("unsorted") use the empty string as their collection
+	// URI — matching the server's representation — so the same save/unsave machinery
+	// keyed on collection URI works for the profile pseudo-destination.
+	const UNSORTED_URI = '';
 
 	function isSavedIn(uri: string): string | null {
 		return localSaves.find((s) => s.collectionUri === uri)?.saveUri ?? null;
@@ -135,11 +140,14 @@
 	}
 
 	let selectedName = $derived(
-		collections.items.find((c) => c.uri === selectedCollectionUri)?.name ?? 'Select collection'
+		selectedCollectionUri === UNSORTED_URI
+			? 'Profile (unsorted)'
+			: (collections.items.find((c) => c.uri === selectedCollectionUri)?.name ??
+					'Select collection')
 	);
 
 	function isSavedInSelected() {
-		return isSavedIn(selectedCollectionUri);
+		return isSavedIn(selectedCollectionUri ?? '');
 	}
 
 	let anySaved = $derived(localSaves.length > 0);
@@ -148,7 +156,7 @@
 		if (!item) return;
 		localSaves = [...localSaves, { collectionUri, saveUri: OPTIMISTIC_URI }];
 		onSavesChange?.(localSaves);
-		setLastUsedCollection(collectionUri);
+		if (collectionUri !== UNSORTED_URI) setLastUsedCollection(collectionUri);
 		try {
 			const res = await fetch(`${PUBLIC_APPVIEW_URL}/resave`, {
 				method: 'POST',
@@ -173,7 +181,9 @@
 			);
 			onSavesChange?.(localSaves);
 			const collectionName =
-				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
+				collectionUri === UNSORTED_URI
+					? 'your profile'
+					: (collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection');
 			toast(SaveToast, {
 				componentProps: {
 					imageUrl: getImageContent(item)?.imageUrl,
@@ -207,7 +217,9 @@
 				throw new Error(`unsave: ${res.status}`);
 			}
 			const collectionName =
-				collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection';
+				collectionUri === UNSORTED_URI
+					? 'your profile'
+					: (collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection');
 			toast.success(`Removed from ${collectionName}`);
 		} catch (e) {
 			console.error('unsave failed', e);
@@ -219,7 +231,7 @@
 	function toggleCollection(uri: string) {
 		if (pickerMode) {
 			onSelect?.(uri);
-			setLastUsedCollection(uri);
+			if (uri !== UNSORTED_URI) setLastUsedCollection(uri);
 			open = false;
 			return;
 		}
@@ -234,12 +246,13 @@
 	}
 
 	function handleButtonClick() {
-		if (!selectedCollectionUri) return;
-		const existing = isSavedIn(selectedCollectionUri);
+		// '' is a valid target (the profile / unsorted destination), so don't bail on it.
+		const uri = selectedCollectionUri ?? '';
+		const existing = isSavedIn(uri);
 		if (existing) {
-			unsave(existing, selectedCollectionUri);
+			unsave(existing, uri);
 		} else {
-			save(selectedCollectionUri);
+			save(uri);
 		}
 	}
 
@@ -331,12 +344,33 @@
 			{@render saveRow(sec, 'Public', false)}
 		{/each}
 	{:else}
+		<!-- Save directly to the profile, with no collection ("unsorted"). -->
 		<button
-			class="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-sm hover:bg-foreground/10"
+			class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
+			onclick={() => toggleCollection(UNSORTED_URI)}
+		>
+			<span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+				<User class="size-4 text-muted-foreground" />
+			</span>
+			<span class="flex flex-1 flex-col items-start truncate">
+				<span class="truncate">Profile</span>
+				<span class="text-xs text-muted-foreground">Save without a collection</span>
+			</span>
+			{#if isSavedIn(UNSORTED_URI)}
+				<Check class="size-4 shrink-0" />
+			{/if}
+		</button>
+		<button
+			class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
 			onclick={() => openCreate(null)}
 		>
-			<Plus class="size-4 shrink-0" />
-			<span class="truncate">Create new collection</span>
+			<span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+				<Plus class="size-4 text-muted-foreground" />
+			</span>
+			<span class="flex flex-1 flex-col items-start truncate">
+				<span class="truncate">Create new collection</span>
+				<span class="text-xs text-muted-foreground">Group your saves</span>
+			</span>
 		</button>
 		{#each rootCollections as root (root.uri)}
 			{#if sectionCount(root.uri) > 0}
@@ -377,7 +411,6 @@
 				size="sm"
 				pressed={!!isSavedInSelected()}
 				onPressedChange={handleButtonClick}
-				disabled={!selectedCollectionUri}
 				class="border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
 			>
 				{isSavedInSelected() ? 'Saved' : 'Save'}
@@ -394,7 +427,12 @@
 						<ChevronDown class="ml-1 size-3 shrink-0" />
 					</Button>
 				{:else}
-					<Button {...props} variant={anySaved ? 'secondary' : 'default'} class="w-full">
+					<Button
+						{...props}
+						variant={anySaved ? 'secondary' : 'default'}
+						size="lg"
+						class="w-full text-lg"
+					>
 						{anySaved ? 'Saved' : 'Save'}
 					</Button>
 				{/if}

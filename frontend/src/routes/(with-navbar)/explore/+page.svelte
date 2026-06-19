@@ -9,3 +9,7 @@
 		goto(auth.user ? '/explore/personal' : '/explore/general', { replaceState: true });
 	});
 </script>
+
+<svelte:head>
+	<title>Explore · Currents</title>
+</svelte:head>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
@@ -102,9 +103,7 @@
 
 	function handleCollectionCreated(collection: CollectionView) {
 		addCollection(collection);
-		const rkey = collection.uri.split('/').pop() ?? '';
-		const handle = collection.author?.handle ?? user?.handle ?? '';
-		goto(`/profile/${handle}/collection/${rkey}`);
+		toast.success(`Collection "${collection.name}" created`);
 	}
 
 	function handleBrowserExtension() {

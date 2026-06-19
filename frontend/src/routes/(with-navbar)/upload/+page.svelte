@@ -23,7 +23,8 @@
 	};
 
 	let staged = $state<Staged[]>([]);
-	let selectedCollectionUri = $state<string>('');
+	// undefined = nothing chosen yet; '' = the profile (unsorted, no collection).
+	let selectedCollectionUri = $state<string | undefined>(undefined);
 	let selectedSelfLabels = $state<Set<string>>(new Set());
 	let uploading = $state(false);
 	let completed = $state(false);
@@ -53,7 +54,7 @@
 	let errorCount = $derived(staged.filter((s) => s.status === 'error').length);
 	let processed = $derived(doneCount + errorCount);
 	let progressValue = $derived(total === 0 ? 0 : (processed / total) * 100);
-	let canSave = $derived(!uploading && total > 0 && !!selectedCollectionUri);
+	let canSave = $derived(!uploading && total > 0 && selectedCollectionUri !== undefined);
 	let popoverOpen = $derived((uploading || completed || rateLimited) && !popoverDismissed);
 
 	function addFiles(files: FileList | File[]) {
@@ -104,7 +105,7 @@
 		try {
 			const form = new FormData();
 			form.append('image', item.file, item.file.name);
-			form.append('collection', selectedCollectionUri);
+			form.append('collection', selectedCollectionUri ?? '');
 			if (selectedSelfLabels.size > 0) {
 				form.append('labels', Array.from(selectedSelfLabels).join(','));
 			}
@@ -182,6 +183,10 @@
 		for (const s of staged) URL.revokeObjectURL(s.url);
 	});
 </script>
+
+<svelte:head>
+	<title>Upload · Currents</title>
+</svelte:head>
 
 <svelte:window
 	ondragenter={onDragEnter}
@@ -350,6 +355,10 @@
 						href={`/profile/${auth.user?.handle}/collection/${selectedCollectionUri.split('/').pop()}`}
 					>
 						Go to collection
+					</Button>
+				{:else}
+					<Button variant="default" class="w-full" href={`/profile/${auth.user?.handle}`}>
+						Go to profile
 					</Button>
 				{/if}
 			</div>

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { removeCollection } from '$lib/stores/collections.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import SelectableSaveGrid from '$lib/components/selectable-save-grid.svelte';
@@ -12,6 +14,7 @@
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Button } from '$lib/components/ui/button';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import type { CollectionView } from '$lib/types';
 	import type { PageData } from './$types';
@@ -162,6 +165,8 @@
 				return;
 			}
 			deleteOpen = false;
+			removeCollection(collection.uri);
+			toast.success(`Collection "${collection.name}" deleted`);
 			const handle = auth.user?.handle ?? '';
 			await goto(handle ? `/profile/${handle}` : '/', {
 				replaceState: true,
@@ -247,6 +252,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{(collection?.name || 'Collection') + ' · Currents'}</title>
+</svelte:head>
+
 {#if notFound}
 	<div class="mx-auto max-w-5xl">
 		<div class="py-24 text-center">
@@ -281,13 +290,17 @@
 	<MasonryGrid items={[]} loading={true} />
 {:else}
 	<div class="mx-auto max-w-5xl">
+		<Button variant="ghost" size="sm" class="mb-1 -ml-2" onclick={() => history.back()}>
+			<ArrowLeft />
+			Back
+		</Button>
 		{#if parent}
-			<a
-				href={collectionHref(parent)}
-				class="mb-2 inline-block text-sm text-muted-foreground hover:text-foreground"
-			>
-				← {parent.name}
-			</a>
+			<span class="mb-1 ml-1 block text-sm text-muted-foreground">
+				Section of
+				<a href={collectionHref(parent)} class="text-foreground">
+					{parent.name}
+				</a>
+			</span>
 		{/if}
 		<CollectionHeader
 			{collection}
@@ -303,7 +316,9 @@
 
 	{#if children.length > 0}
 		<h2 class="mt-6 mb-3 text-base font-semibold text-foreground">Sections</h2>
-		<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+		<div
+			class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+		>
 			{#each children as child (child.uri)}
 				<CollectionCard collection={child} />
 			{/each}

@@ -481,6 +481,89 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response{Collection: cv, Cursor: nextCursor, Saves: views})
 }
 
+// XRPCGetUnsortedSaves lists an actor's saves that belong to no collection.
+func (s *Server) XRPCGetUnsortedSaves(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+
+	actorParam := r.URL.Query().Get("actor")
+	if actorParam == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"actor is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Resolve actor: DID or handle → DID
+	var actorDID syntax.DID
+	if parsed, err := syntax.ParseDID(actorParam); err == nil {
+		actorDID = parsed
+	} else if handle, err := syntax.ParseHandle(actorParam); err == nil {
+		ident, err := s.Dir.LookupHandle(r.Context(), handle)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "NotFound", "message": "actor not found"})
+			return
+		}
+		actorDID = ident.DID
+	} else {
+		http.Error(w, `{"error":"InvalidRequest","message":"invalid actor"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+	cursor := r.URL.Query().Get("cursor")
+
+	viewerStr := ""
+	if viewerDID != nil {
+		viewerStr = viewerDID.String()
+	}
+
+	// Hydrate the actor profile once — every row shares the same author.
+	author := profileView{DID: actorDID.String()}
+	if row, err := s.Store.GetActorByDID(r.Context(), actorDID.String()); err == nil && row != nil {
+		author.Handle = row.Handle
+		author.DisplayName = row.DisplayName
+		author.Avatar = row.Avatar
+	} else if ident, err := s.Dir.LookupDID(r.Context(), actorDID); err == nil {
+		author.Handle = ident.Handle.String()
+	}
+
+	saveRows, nextCursor, err := s.Store.GetUnsortedSavesPage(r.Context(), actorDID.String(), viewerStr, limit, cursor)
+	if err != nil {
+		slog.Error("GetUnsortedSavesPage", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	views := make([]saveView, 0, len(saveRows))
+	for _, row := range saveRows {
+		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
+	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "getUnsortedSaves", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "getUnsortedSaves", "err", err)
+	}
+
+	type response struct {
+		Cursor string     `json:"cursor,omitempty"`
+		Saves  []saveView `json:"saves"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Saves: views})
+}
+
 func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	viewerDID, err := s.optionalAuth(r)
 	if err != nil {

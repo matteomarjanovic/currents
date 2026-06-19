@@ -71,6 +71,10 @@
 	});
 </script>
 
+<svelte:head>
+	<title>Explore · Currents</title>
+</svelte:head>
+
 {#if showEmpty}
 	<div
 		class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center gap-6 px-4 text-center"

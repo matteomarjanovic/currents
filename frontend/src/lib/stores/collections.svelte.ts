@@ -1,5 +1,11 @@
+import { SvelteSet } from 'svelte/reactivity';
 import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 import type { CollectionView } from '$lib/types';
+
+// URIs of collections deleted this session. The PDS→TAP index lags a deletion,
+// so freshly-fetched lists (e.g. the profile page) still include them; surfaces
+// reading collections filter against this tombstone for an immediate update.
+export const deletedCollectionUris = new SvelteSet<string>();
 
 export const collections = $state({
 	items: [] as CollectionView[],
@@ -30,4 +36,9 @@ export function setLastUsedCollection(uri: string) {
 
 export function addCollection(collection: CollectionView) {
 	collections.items = [collection, ...collections.items];
+}
+
+export function removeCollection(uri: string) {
+	collections.items = collections.items.filter((c) => c.uri !== uri);
+	deletedCollectionUris.add(uri);
 }
