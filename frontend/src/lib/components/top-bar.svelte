@@ -5,8 +5,7 @@
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as ButtonGroup from '$lib/components/ui/button-group';
+	import * as InputGroup from '$lib/components/ui/input-group';
 	import * as Select from '$lib/components/ui/select';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
@@ -146,23 +145,21 @@
 </script>
 
 {#snippet searchBar(autofocus: boolean)}
-	<ButtonGroup.Root class="h-11 w-full">
-		<Select.Root type="single" bind:value={searchType}>
-			<Select.Trigger
-				class="{landing
-					? 'bg-accent/50 backdrop-blur-sm'
-					: ''} h-11! w-28 shrink-0 rounded-l-full text-muted-foreground"
+	<InputGroup.Root
+		class="{landing ? 'bg-accent/50 backdrop-blur-sm' : ''} h-11 w-full rounded-full"
+	>
+		<InputGroup.Addon align="inline-start">
+			<InputGroup.Button
+				size="icon-sm"
+				aria-label="Search"
+				disabled
+				class="rounded-full text-muted-foreground"
 			>
-				{searchLabel}
-			</Select.Trigger>
-			<Select.Content>
-				{#each SEARCH_TYPES as t (t.value)}
-					<Select.Item value={t.value} label={t.label}>{t.label}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-		<ButtonGroup.Separator class="my-0" />
-		<Input
+				<SearchIcon class="size-4" />
+			</InputGroup.Button>
+		</InputGroup.Addon>
+
+		<InputGroup.Input
 			type="search"
 			placeholder="Search..."
 			bind:value={query}
@@ -171,18 +168,24 @@
 			autocapitalize="off"
 			autocomplete="off"
 			spellcheck={false}
-			class="{landing ? 'bg-accent/50 backdrop-blur-sm placeholder:text-white/70' : ''} h-11"
+			class={landing ? 'placeholder:text-white/70' : ''}
 		/>
-		<Button
-			type="submit"
-			variant="outline"
-			size="icon"
-			aria-label="Search"
-			class="{landing ? 'bg-accent/50 backdrop-blur-sm' : ''} h-11! w-11 shrink-0"
-		>
-			<SearchIcon class="size-4" />
-		</Button>
-	</ButtonGroup.Root>
+
+		<InputGroup.Addon align="inline-end">
+			<Select.Root type="single" bind:value={searchType}>
+				<Select.Trigger
+					class="h-8 gap-1 rounded-full border-0 bg-transparent px-2.5 text-muted-foreground shadow-none hover:bg-accent focus-visible:ring-0"
+				>
+					{searchLabel}
+				</Select.Trigger>
+				<Select.Content align="end" class="rounded-2xl">
+					{#each SEARCH_TYPES as t (t.value)}
+						<Select.Item value={t.value} label={t.label}>{t.label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</InputGroup.Addon>
+	</InputGroup.Root>
 {/snippet}
 
 <Tooltip.Provider>
@@ -208,9 +211,9 @@
 		{/if}
 
 		<div
-			class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center md:flex md:max-w-sm lg:max-w-md"
+			class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center justify-center md:flex md:max-w-sm lg:max-w-md"
 		>
-			<form {onsubmit} class="w-full md:max-w-sm lg:max-w-md">
+			<form {onsubmit} class="w-full md:max-w-xs lg:max-w-sm">
 				{@render searchBar(false)}
 			</form>
 		</div>
