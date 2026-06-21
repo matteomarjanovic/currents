@@ -17,6 +17,12 @@
                     ],
                     "maxSize": 20000000
                 },
+                "alt": {
+                    "type": "string",
+                    "description": "Alt text describing the image for accessibility.",
+                    "maxGraphemes": 2000,
+                    "maxLength": 20000
+                },
                 "attribution": {
                     "type": "ref",
                     "ref": "is.currents.content.defs#attribution",

@@ -49,7 +49,7 @@
 					{#if image}
 						<img
 							src={image.imageUrl}
-							alt=""
+							alt={image.alt ?? ''}
 							loading="lazy"
 							class="h-full w-full object-cover {blurred ? 'blur-md' : ''} {ok
 								? ''

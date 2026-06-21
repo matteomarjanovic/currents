@@ -8,7 +8,8 @@
   import X from "@lucide/svelte/icons/x";
 
   const LOGIN_PAGE_URL =
-    import.meta.env.VITE_LOGIN_PAGE_URL ?? "https://currents.is/login/extension";
+    import.meta.env.VITE_LOGIN_PAGE_URL ??
+    "https://currents.is/login/extension";
 
   type SaveState = "idle" | "saving" | "saved" | "error";
   let saveState = $state<SaveState>("idle");
@@ -17,6 +18,7 @@
   // to the most-recently-used default, which updates as collections load in.
   let userPickedUri = $state<string | null>(null);
   let text = $state("");
+  let alt = $state("");
   let attributionUrl = $state("");
   let attributionLicense = $state("");
   let attributionCredit = $state("");
@@ -85,6 +87,7 @@
       saveState = "idle";
       errorMsg = "";
       text = "";
+      alt = "";
       attributionUrl = "";
       attributionLicense = "";
       attributionCredit = clipper.siteHints.attributionCredit ?? "";
@@ -101,8 +104,25 @@
       newCollectionName = "";
       newCollectionDescription = "";
       collectionError = "";
+      void suggestAlt(clipper.imgUrl);
     });
   });
+
+  // Pre-fill the alt field if this exact image already has alt text in the
+  // network. Best-effort; never overwrites text the user has already typed.
+  async function suggestAlt(imgUrl: string) {
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: "LOOKUP_ALT",
+        imgUrl,
+      });
+      if (response?.alt && clipper.imgUrl === imgUrl && !alt.trim()) {
+        alt = response.alt;
+      }
+    } catch {
+      // best-effort suggestion
+    }
+  }
 
   // Clean up polling when dialog closes
   $effect(() => {
@@ -186,6 +206,7 @@
         imgUrl: clipper.imgUrl,
         collectionUri: selectedCollectionUri,
         text: text.trim(),
+        alt: alt.trim(),
         originUrl: clipper.originUrl,
         attributionUrl: attributionUrl.trim(),
         attributionLicense: attributionLicense.trim(),
@@ -233,7 +254,7 @@
     onclick={close}
   >
     <div
-      class="relative flex w-90 max-w-[calc(100vw-3rem)] flex-col gap-3 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 dark:ring-foreground/10"
+      class="relative flex max-h-[95vh] w-90 max-w-[calc(100vw-3rem)] flex-col gap-3 rounded-4xl bg-popover p-6 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 dark:ring-foreground/10"
       role="dialog"
       aria-modal="true"
       aria-label="Save to Currents"
@@ -276,137 +297,159 @@
         {/if}
       {:else}
         <img
-          class="max-h-50 w-full rounded-2xl bg-muted object-contain"
+          class="max-h-[20vh] w-full shrink-0 rounded-2xl bg-muted object-contain"
           src={clipper.imgUrl}
           alt="Preview"
         />
 
-        <div class="flex flex-col gap-1">
-          <span class="text-xs text-muted-foreground">
-            {#if creatingCollection && createParent}
-              New section in {createParent.name}
-            {:else if creatingCollection}
-              New collection
-            {:else}
-              Collection
-            {/if}
-          </span>
-          {#if creatingCollection}
-            <div class="flex flex-col gap-2">
-              <Input
-                type="text"
-                placeholder={createParent ? "Section name" : "Collection name"}
-                bind:value={newCollectionName}
-                onkeydown={(e) => {
-                  if (e.key === "Enter") createCollection();
-                }}
-              />
-              <Textarea
-                placeholder="Description (optional)"
-                rows={2}
-                class="min-h-13"
-                bind:value={newCollectionDescription}
-              />
-              <div class="flex gap-2">
-                <Button variant="outline" class="flex-1" onclick={cancelCreate}
-                  >Cancel</Button
-                >
-                <Button
-                  class="flex-1"
-                  onclick={createCollection}
-                  disabled={!newCollectionName.trim()}
-                >
-                  Create
-                </Button>
-              </div>
-              {#if collectionError}
-                <p class="text-xs text-destructive">{collectionError}</p>
+        <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          <div class="flex flex-col gap-1">
+            <span class="text-xs text-muted-foreground">
+              {#if creatingCollection && createParent}
+                New section in {createParent.name}
+              {:else if creatingCollection}
+                New collection
+              {:else}
+                Collection
               {/if}
-            </div>
-          {:else}
-            <CollectionSelector
-              collections={clipper.collections}
-              selectedUri={selectedCollectionUri}
-              loading={clipper.collectionsLoading}
+            </span>
+            {#if creatingCollection}
+              <div class="flex flex-col gap-2">
+                <Input
+                  type="text"
+                  placeholder={createParent
+                    ? "Section name"
+                    : "Collection name"}
+                  bind:value={newCollectionName}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter") createCollection();
+                  }}
+                />
+                <Textarea
+                  placeholder="Description (optional)"
+                  rows={2}
+                  class="min-h-13"
+                  bind:value={newCollectionDescription}
+                />
+                <div class="flex gap-2">
+                  <Button
+                    variant="outline"
+                    class="flex-1"
+                    onclick={cancelCreate}>Cancel</Button
+                  >
+                  <Button
+                    class="flex-1"
+                    onclick={createCollection}
+                    disabled={!newCollectionName.trim()}
+                  >
+                    Create
+                  </Button>
+                </div>
+                {#if collectionError}
+                  <p class="text-xs text-destructive">{collectionError}</p>
+                {/if}
+              </div>
+            {:else}
+              <CollectionSelector
+                collections={clipper.collections}
+                selectedUri={selectedCollectionUri}
+                loading={clipper.collectionsLoading}
+                disabled={busy}
+                onSelect={(uri) => (userPickedUri = uri)}
+                onCreate={startCreate}
+                onOpenChange={(open) => (pickerOpen = open)}
+              />
+            {/if}
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <span class="text-xs text-muted-foreground">Alt text</span>
+            <Textarea
+              placeholder="Describe the image (optional but recommended)"
+              bind:value={alt}
               disabled={busy}
-              onSelect={(uri) => (userPickedUri = uri)}
-              onCreate={startCreate}
-              onOpenChange={(open) => (pickerOpen = open)}
+              maxlength={2000}
+              rows={2}
             />
-          {/if}
-        </div>
+          </div>
 
-        <Input
-          type="text"
-          placeholder="Add a note (optional)"
-          bind:value={text}
-          disabled={busy}
-        />
-
-        <span class="text-xs text-muted-foreground -mb-1">Apply labels:</span>
-        <div class="flex flex-wrap items-center gap-1.5 text-xs">
-          {#each SELF_LABEL_OPTIONS as opt (opt.val)}
-            {@const active = selectedSelfLabels.has(opt.val)}
-            <button
-              type="button"
-              onclick={() => toggleSelfLabel(opt.val)}
-              disabled={busy}
-              class="rounded-full border px-2 py-0.5 transition-colors {active
-                ? 'border-foreground bg-foreground text-background'
-                : 'border-border text-muted-foreground hover:bg-muted'}"
-            >
-              {opt.label}
-            </button>
-          {/each}
-        </div>
-
-        {#if showAttribution}
-          <div class="flex flex-col gap-2">
-            <span class="text-xs text-muted-foreground">Attribution</span>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs text-muted-foreground">Note</span>
             <Input
               type="text"
-              placeholder="Credit (e.g. photographer name)"
-              bind:value={attributionCredit}
-              disabled={busy}
-            />
-            <Input
-              type="url"
-              placeholder="Source URL"
-              bind:value={attributionUrl}
-              disabled={busy}
-            />
-            <Input
-              type="text"
-              placeholder="License (e.g. CC BY 4.0)"
-              bind:value={attributionLicense}
+              placeholder="Add a note (optional)"
+              bind:value={text}
               disabled={busy}
             />
           </div>
-        {:else}
-          <Button
-            variant="link"
-            size="sm"
-            class="h-auto justify-start self-start p-0 text-foreground"
-            onclick={() => (showAttribution = true)}
-            disabled={busy}
-          >
-            + Add attribution (recommended)
-          </Button>
-        {/if}
 
-        {#if saveState === "saved"}
-          <p class="text-center font-medium">Saved!</p>
-        {:else}
-          <Button
-            onclick={save}
-            disabled={creatingCollection || saveState === "saving"}
-          >
-            {saveState === "saving" ? "Saving…" : "Save to Currents"}
-          </Button>
-          {#if saveState === "error"}
-            <p class="text-xs text-destructive">{errorMsg}</p>
+          <span class="text-xs text-muted-foreground -mb-1">Apply labels:</span>
+          <div class="flex flex-wrap items-center gap-1.5 text-xs">
+            {#each SELF_LABEL_OPTIONS as opt (opt.val)}
+              {@const active = selectedSelfLabels.has(opt.val)}
+              <button
+                type="button"
+                onclick={() => toggleSelfLabel(opt.val)}
+                disabled={busy}
+                class="rounded-full border px-2 py-0.5 transition-colors {active
+                  ? 'border-foreground bg-foreground text-background'
+                  : 'border-border text-muted-foreground hover:bg-muted'}"
+              >
+                {opt.label}
+              </button>
+            {/each}
+          </div>
+
+          {#if showAttribution}
+            <div class="flex flex-col gap-2">
+              <span class="text-xs text-muted-foreground">Attribution</span>
+              <Input
+                type="text"
+                placeholder="Credit (e.g. photographer name)"
+                bind:value={attributionCredit}
+                disabled={busy}
+              />
+              <Input
+                type="url"
+                placeholder="Source URL"
+                bind:value={attributionUrl}
+                disabled={busy}
+              />
+              <Input
+                type="text"
+                placeholder="License (e.g. CC BY 4.0)"
+                bind:value={attributionLicense}
+                disabled={busy}
+              />
+            </div>
+          {:else}
+            <Button
+              variant="link"
+              size="sm"
+              class="h-auto justify-start self-start p-0 text-foreground"
+              onclick={() => (showAttribution = true)}
+              disabled={busy}
+            >
+              + Add attribution (recommended)
+            </Button>
           {/if}
-        {/if}
+        </div>
+
+        <div class="flex shrink-0 flex-col gap-2">
+          {#if saveState === "saved"}
+            <p class="text-center font-medium">Saved!</p>
+          {:else}
+            <Button
+              onclick={save}
+              disabled={creatingCollection || saveState === "saving"}
+            >
+              {saveState === "saving" ? "Saving…" : "Save to Currents"}
+            </Button>
+            {#if saveState === "error"}
+              <p class="text-xs text-destructive">{errorMsg}</p>
+            {/if}
+          {/if}
+        </div>
       {/if}
     </div>
   </div>

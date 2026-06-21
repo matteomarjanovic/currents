@@ -780,6 +780,7 @@ type SaveRow struct {
 	Width              *int
 	Height             *int
 	DominantColors     json.RawMessage // nil when visual identity not yet resolved
+	AltText            string
 }
 
 func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerDID string) ([]SaveRow, error) {
@@ -817,7 +818,8 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 			) END AS viewer_attribution,
 			s.width,
 			s.height,
-			s.dominant_colors
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
 		FROM save s
 		WHERE s.uri = ANY($1)
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
@@ -831,7 +833,7 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -840,6 +842,25 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 		return nil, err
 	}
 	return result, nil
+}
+
+// GetAltByBlobCID returns the most recent non-empty alt text saved for the exact
+// blob CID, or "" if none exists. Powers alt-text suggestions on re-upload.
+func (m *PgStore) GetAltByBlobCID(ctx context.Context, blobCID string) (string, error) {
+	var alt string
+	err := m.pool.QueryRow(ctx, `
+		SELECT alt_text FROM save
+		WHERE pds_blob_cid = $1 AND COALESCE(alt_text, '') <> ''
+		ORDER BY created_at DESC NULLS LAST
+		LIMIT 1
+	`, blobCID).Scan(&alt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return alt, nil
 }
 
 func (m *PgStore) GetSaveRkeysByAuthorAndBlob(ctx context.Context, authorDID, blobCID string) ([]string, error) {
@@ -923,7 +944,8 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 			) END AS viewer_attribution,
 			s.width,
 			s.height,
-			s.dominant_colors
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
 		FROM save s
 		WHERE s.collection_uri = $1
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
@@ -941,7 +963,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -1017,7 +1039,8 @@ func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID
 			) END AS viewer_attribution,
 			s.width,
 			s.height,
-			s.dominant_colors
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
 		FROM save s
 		WHERE s.author_did = $1
 		  AND s.collection_uri = ''
@@ -1036,7 +1059,7 @@ func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -1076,12 +1099,13 @@ type UpsertSaveParams struct {
 	Width              *int
 	Height             *int
 	DominantColors     json.RawMessage
+	AltText            string
 }
 
 func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 	_, err := m.pool.Exec(ctx, `
-		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors, alt_text)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (uri) DO UPDATE
 			SET collection_uri      = EXCLUDED.collection_uri,
 			    pds_blob_cid        = EXCLUDED.pds_blob_cid,
@@ -1097,8 +1121,9 @@ func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 			    quality_score       = EXCLUDED.quality_score,
 			    width               = EXCLUDED.width,
 			    height              = EXCLUDED.height,
-			    dominant_colors     = EXCLUDED.dominant_colors
-	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors))
+			    dominant_colors     = EXCLUDED.dominant_colors,
+			    alt_text            = EXCLUDED.alt_text
+	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors), p.AltText)
 	return err
 }
 
@@ -1145,7 +1170,7 @@ func (m *PgStore) DeleteSave(ctx context.Context, uri string) error {
 			_ = tx.QueryRow(ctx, `
 				SELECT author_did, pds_blob_cid, uri FROM save
 				WHERE visual_identity_id = $1
-				ORDER BY quality_score DESC NULLS LAST
+				ORDER BY (COALESCE(alt_text, '') <> '') DESC, quality_score DESC NULLS LAST
 				LIMIT 1
 			`, *viID).Scan(&newDID, &newCID, &newURI)
 
@@ -1270,6 +1295,21 @@ func (m *PgStore) MaybePromoteCanonical(ctx context.Context, viID, blobDID, blob
 		UPDATE visual_identity
 		SET canonical_blob_did = $2, canonical_blob_cid = $3, canonical_save_uri = $4
 		WHERE id = $1
+	`, viID, blobDID, blobCID, saveURI)
+	return err
+}
+
+// MaybePromoteCanonicalForAlt promotes the given save to canonical for its VI when the
+// current canonical has no alt text. Callers invoke this only for saves that carry alt
+// text, so a no-alt canonical (which would render inaccessible in search/feed/related)
+// is replaced by an accessible one. Guarding on an empty current alt keeps it monotonic:
+// a canonical that already has alt is never displaced, avoiding churn between savers.
+func (m *PgStore) MaybePromoteCanonicalForAlt(ctx context.Context, viID, blobDID, blobCID, saveURI string) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE visual_identity vi
+		SET canonical_blob_did = $2, canonical_blob_cid = $3, canonical_save_uri = $4
+		WHERE vi.id = $1
+		  AND COALESCE((SELECT alt_text FROM save WHERE uri = vi.canonical_save_uri), '') = ''
 	`, viID, blobDID, blobCID, saveURI)
 	return err
 }
@@ -1452,7 +1492,7 @@ func scanSaveRows(rows pgx.Rows) ([]SaveRow, error) {
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -1559,7 +1599,8 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 			) END AS viewer_attribution,
 			s.width,
 			s.height,
-			s.dominant_colors
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE vi.embedding IS NOT NULL
@@ -1637,7 +1678,8 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 			) END AS viewer_attribution,
 			s.width,
 			s.height,
-			s.dominant_colors
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE vi.embedding IS NOT NULL
@@ -1917,7 +1959,8 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			) END AS viewer_attribution,
 			s.width,
 			s.height,
-			s.dominant_colors
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE s.author_did <> ALL($4)
@@ -1934,7 +1977,7 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

@@ -1,3 +1,5 @@
+import { blobCidFromBytes } from '../lib/blob-cid';
+
 const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://api.currents.is';
 const FRONTEND_URL = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
 const AUTH_TTL_MS = 60_000;
@@ -135,6 +137,7 @@ async function handleSave(message: {
   imgUrl: string;
   collectionUri: string;
   text: string;
+  alt?: string;
   originUrl: string;
   attributionUrl?: string;
   attributionLicense?: string;
@@ -146,17 +149,7 @@ async function handleSave(message: {
 
   let imageBlob: Blob;
   try {
-    if (message.imgUrl.startsWith('data:')) {
-      // data URI — decode directly without a network fetch
-      const [header, b64] = message.imgUrl.split(',');
-      const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      imageBlob = new Blob([bytes], { type: mime });
-    } else {
-      const imgResp = await fetch(message.imgUrl);
-      if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status}`);
-      imageBlob = await imgResp.blob();
-    }
+    imageBlob = await fetchImageBlob(message.imgUrl);
   } catch (e) {
     return { ok: false, error: `Could not fetch image: ${e}` };
   }
@@ -169,6 +162,7 @@ async function handleSave(message: {
   form.append('image', imageBlob, filename);
   form.append('collection', message.collectionUri);
   if (message.text) form.append('title', message.text);
+  if (message.alt) form.append('alt', message.alt);
   if (message.originUrl) form.append('url', message.originUrl);
   if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);
   if (message.attributionLicense) form.append('attribution_license', message.attributionLicense);
@@ -199,6 +193,36 @@ async function handleSave(message: {
   }
 }
 
+async function fetchImageBlob(imgUrl: string): Promise<Blob> {
+  if (imgUrl.startsWith('data:')) {
+    // data URI — decode directly without a network fetch
+    const [header, b64] = imgUrl.split(',');
+    const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return new Blob([bytes], { type: mime });
+  }
+  const imgResp = await fetch(imgUrl);
+  if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status}`);
+  return imgResp.blob();
+}
+
+// Looks up an existing alt text for the image at imgUrl (matched by exact blob
+// CID) so the clipper can pre-fill the field. Best-effort: returns '' on any error.
+async function handleLookupAlt(message: { imgUrl: string }): Promise<{ alt: string }> {
+  try {
+    const auth = await getAuth();
+    if (!auth) return { alt: '' };
+    const blob = await fetchImageBlob(message.imgUrl);
+    const cid = await blobCidFromBytes(await blob.arrayBuffer());
+    const resp = await appviewFetch(`${CURRENTS_URL}/api/blob/alt?cid=${encodeURIComponent(cid)}`);
+    if (!resp.ok) return { alt: '' };
+    const data = await resp.json();
+    return { alt: typeof data.alt === 'string' ? data.alt : '' };
+  } catch {
+    return { alt: '' };
+  }
+}
+
 // --- Entry point ---
 
 export default defineBackground(() => {
@@ -212,25 +236,16 @@ export default defineBackground(() => {
   });
 
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
-    console.log('[currents] contextMenu clicked', info.menuItemId, info.srcUrl, tab?.id);
     if (info.menuItemId !== 'save-to-currents' || !info.srcUrl || !tab?.id) return;
-
-    const auth = await getAuth();
-    console.log('[currents] auth result', auth ? `did=${auth.did}` : 'null');
-    const collections: Collection[] = auth ? await fetchCollections(auth.did) : [];
-    console.log('[currents] collections', collections.length);
-
+    // Open the dialog immediately; the content script resolves auth + collections
+    // in the background (via CHECK_AUTH), matching the Pinterest save button.
     try {
       await browser.tabs.sendMessage(tab.id, {
         type: 'SHOW_CLIPPER',
         imgUrl: info.srcUrl,
         originUrl: tab.url ?? '',
         pageTitle: tab.title ?? '',
-        collections,
-        authState: auth ? 'authenticated' : 'unauthenticated',
-        userHandle: auth?.handle ?? '',
       });
-      console.log('[currents] sendMessage succeeded');
     } catch (e) {
       console.error('[currents] sendMessage failed', e);
     }
@@ -254,6 +269,10 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SAVE_IMAGE') {
       handleSave(message).then(sendResponse);
+      return true;
+    }
+    if (message.type === 'LOOKUP_ALT') {
+      handleLookupAlt(message).then(sendResponse);
       return true;
     }
     if (message.type === 'CREATE_COLLECTION') {

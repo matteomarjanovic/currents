@@ -44,7 +44,7 @@
 			{#if image}
 				<img
 					src={image.imageUrl}
-					alt={item.text ?? ''}
+					alt={image.alt ?? item.text ?? ''}
 					loading="lazy"
 					class="w-full"
 					style={image.width && image.height

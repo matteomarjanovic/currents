@@ -158,6 +158,60 @@ func TestBuildSaveViewMovesAttributionIntoImageContent(t *testing.T) {
 	}
 }
 
+func TestDecodeSaveImageContentExtractsAlt(t *testing.T) {
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"alt":"a cat on a mat"}`)
+	content, err := decodeSaveImageContent(contentRaw)
+	if err != nil {
+		t.Fatalf("decodeSaveImageContent failed: %v", err)
+	}
+	if content == nil {
+		t.Fatal("expected image content")
+	}
+	if content.Alt != "a cat on a mat" {
+		t.Fatalf("unexpected alt: %q", content.Alt)
+	}
+}
+
+func TestBuildSaveViewSurfacesAlt(t *testing.T) {
+	view := buildSaveView(
+		SaveRow{
+			URI:         "at://did:plc:test/is.currents.feed.save/123",
+			BlobCID:     "bafkcid",
+			AuthorDID:   "did:plc:test",
+			ContentNSID: saveContentImageNSID,
+			AltText:     "a cat on a mat",
+		},
+		profileView{DID: "did:plc:test", Handle: "tester"},
+		false,
+		"https://cdn.example.com",
+	)
+	content, ok := view.Content.(imageView)
+	if !ok {
+		t.Fatalf("expected imageView content, got %T", view.Content)
+	}
+	if content.Alt != "a cat on a mat" {
+		t.Fatalf("unexpected alt on content view: %q", content.Alt)
+	}
+}
+
+// Editing a save (e.g. changing its collection or attribution) rebuilds the
+// content via buildSaveContentWithAttribution; alt text must survive the round-trip.
+func TestBuildSaveContentWithAttributionPreservesAlt(t *testing.T) {
+	contentRaw := json.RawMessage(`{"$type":"is.currents.content.image","image":{"$type":"blob","ref":{"$link":"bafkcid"},"mimeType":"image/jpeg"},"alt":"keep me"}`)
+
+	contentAny, err := buildSaveContentWithAttribution(contentRaw, &saveAttribution{Credit: "updated"}, false)
+	if err != nil {
+		t.Fatalf("buildSaveContentWithAttribution failed: %v", err)
+	}
+	content, ok := contentAny.(*saveImageContent)
+	if !ok {
+		t.Fatalf("expected *saveImageContent, got %T", contentAny)
+	}
+	if content.Alt != "keep me" {
+		t.Fatalf("expected alt preserved through edit, got %q", content.Alt)
+	}
+}
+
 func TestDecodeSaveImageContentSkipsNonImage(t *testing.T) {
 	content, err := decodeSaveImageContent(json.RawMessage(`{"$type":"is.currents.content.note"}`))
 	if err != nil {

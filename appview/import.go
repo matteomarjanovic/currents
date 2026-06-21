@@ -541,7 +541,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	record := map[string]any{
 		"$type":      saveNSID,
 		"collection": collRef,
-		"content":    buildImageContentRecordWithAttribution(blobAny, nil),
+		"content":    buildImageContentRecordWithAttribution(blobAny, nil, ""),
 		"createdAt":  syntax.DatetimeNow().String(),
 		"originUrl":  originURL,
 	}

@@ -1,6 +1,6 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
-import { showClipper, hideClipper, type SiteHints } from '../../lib/clipper-store.svelte';
+import { clipper, showClipper, hideClipper, type SiteHints } from '../../lib/clipper-store.svelte';
 import { setupPinterestGrid } from './pinterest-grid';
 import '../../lib/theme.css';
 
@@ -103,14 +103,25 @@ export default defineContentScript({
       if (message.type !== 'SHOW_CLIPPER') return;
       injectFont();
       const siteHints = extractSiteHints();
+      // Open the dialog immediately, then resolve auth + collections in the
+      // background (like the Pinterest save button) so it doesn't wait on a
+      // network round-trip.
       showClipper({
         imgUrl: message.imgUrl ?? '',
         originUrl: siteHints.originUrl ?? message.originUrl ?? '',
         pageTitle: message.pageTitle ?? '',
-        collections: message.collections,
-        authState: message.authState,
-        userHandle: message.userHandle,
+        collections: [],
+        collectionsLoading: true,
+        authState: 'authenticated',
+        userHandle: '',
         siteHints,
+      });
+      browser.runtime.sendMessage({ type: 'CHECK_AUTH' }).then((res) => {
+        if (!clipper.visible) return; // dismissed while loading
+        clipper.authState = res.authenticated ? 'authenticated' : 'unauthenticated';
+        clipper.collections = res.authenticated ? res.collections : [];
+        clipper.userHandle = res.authenticated ? res.handle : '';
+        clipper.collectionsLoading = false;
       });
     });
 

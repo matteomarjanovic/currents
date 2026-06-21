@@ -259,6 +259,7 @@ func handleSaveUpsert(
 			return err
 		}
 		if content != nil {
+			base.AltText = content.Alt
 			if attr := saveAttributionOrNil(content.Attribution); attr != nil {
 				base.AttributionURL = attr.URL
 				base.AttributionLicense = attr.License
@@ -288,6 +289,7 @@ func handleSaveUpsert(
 				return err
 			}
 			applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
+			promoteCanonicalForAlt(ctx, handler, base, ev.DID, pdsBlobCID, atURI)
 			return nil
 		}
 		// Original not in DB yet — fall through.
@@ -305,6 +307,7 @@ func handleSaveUpsert(
 			return err
 		}
 		applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
+		promoteCanonicalForAlt(ctx, handler, base, ev.DID, pdsBlobCID, atURI)
 		return nil
 	}
 
@@ -315,6 +318,19 @@ func handleSaveUpsert(
 	applyModerationAfterSaveUpsert(ctx, handler, atURI, ev.DID, pdsBlobCID, s.Labels)
 	handler.enqueueBlobEnrichment(pdsBlobCID)
 	return nil
+}
+
+// promoteCanonicalForAlt promotes a freshly-upserted save to its visual identity's
+// canonical when the save carries alt text and the current canonical does not, so the
+// deduped surfaces (search, related, feed) surface accessible alt text whenever any
+// saver of the image provides it. No-op for saves without alt or without a resolved VI.
+func promoteCanonicalForAlt(ctx context.Context, handler *TapHandler, base UpsertSaveParams, blobDID, blobCID, saveURI string) {
+	if base.AltText == "" || base.VisualIdentityID == nil {
+		return
+	}
+	if err := handler.Store.MaybePromoteCanonicalForAlt(ctx, *base.VisualIdentityID, blobDID, blobCID, saveURI); err != nil {
+		slog.Error("MaybePromoteCanonicalForAlt", "uri", saveURI, "err", err)
+	}
 }
 
 func (h *TapHandler) backgroundContext() context.Context {

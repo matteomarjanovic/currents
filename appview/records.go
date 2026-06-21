@@ -463,6 +463,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	title := strings.TrimSpace(r.PostFormValue("title"))
 	collectionURI := strings.TrimSpace(r.PostFormValue("collection"))
 	resaveOfURI := strings.TrimSpace(r.PostFormValue("resaveOf"))
+	altText := strings.TrimSpace(r.PostFormValue("alt"))
 	attrURL := strings.TrimSpace(r.PostFormValue("attribution_url"))
 	attrLicense := strings.TrimSpace(r.PostFormValue("attribution_license"))
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
@@ -514,7 +515,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 
 	record := map[string]any{
 		"$type":     saveNSID,
-		"content":   buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit)),
+		"content":   buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit), altText),
 		"createdAt": syntax.DatetimeNow().String(),
 	}
 	// A save with no collection is "unsorted" — it lives on the user's profile only.
@@ -1142,11 +1143,11 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look up the original save to get blob info, source URL, and attribution
-	var authorDID, blobCID, origOriginURL string
+	var authorDID, blobCID, origOriginURL, origAlt string
 	var origAttrURL, origAttrLicense, origAttrCredit string
 	err = s.Store.pool.QueryRow(r.Context(),
-		`SELECT author_did, pds_blob_cid, COALESCE(origin_url, ''), COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '') FROM save WHERE uri = $1`, body.SaveURI,
-	).Scan(&authorDID, &blobCID, &origOriginURL, &origAttrURL, &origAttrLicense, &origAttrCredit)
+		`SELECT author_did, pds_blob_cid, COALESCE(origin_url, ''), COALESCE(alt_text, ''), COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '') FROM save WHERE uri = $1`, body.SaveURI,
+	).Scan(&authorDID, &blobCID, &origOriginURL, &origAlt, &origAttrURL, &origAttrLicense, &origAttrCredit)
 	if err != nil {
 		http.Error(w, "save not found", http.StatusNotFound)
 		return
@@ -1203,7 +1204,7 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 
 	record := map[string]any{
 		"$type":     saveNSID,
-		"content":   buildImageContentRecordWithAttribution(blobAny, resolvedAttribution),
+		"content":   buildImageContentRecordWithAttribution(blobAny, resolvedAttribution, origAlt),
 		"resaveOf":  resaveRef,
 		"createdAt": syntax.DatetimeNow().String(),
 	}

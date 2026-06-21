@@ -43,6 +43,7 @@ type imageView struct {
 	Width         int              `json:"width,omitempty"`
 	Height        int              `json:"height,omitempty"`
 	DominantColor string           `json:"dominantColor,omitempty"`
+	Alt           string           `json:"alt,omitempty"`
 	Attribution   *saveAttribution `json:"attribution,omitempty"`
 }
 
@@ -76,6 +77,7 @@ type saveBlobRef struct {
 type saveImageContent struct {
 	Type        string           `json:"$type"`
 	Image       saveBlobRef      `json:"image"`
+	Alt         string           `json:"alt,omitempty"`
 	Attribution *saveAttribution `json:"attribution,omitempty"`
 }
 
@@ -197,10 +199,13 @@ func saveAttributionFromFields(url, license, credit string) *saveAttribution {
 	})
 }
 
-func buildImageContentRecordWithAttribution(blob any, attribution *saveAttribution) map[string]any {
+func buildImageContentRecordWithAttribution(blob any, attribution *saveAttribution, alt string) map[string]any {
 	record := map[string]any{
 		"$type": saveContentImageNSID,
 		"image": blob,
+	}
+	if alt != "" {
+		record["alt"] = alt
 	}
 	if attr := saveAttributionOrNil(attribution); attr != nil {
 		record["attribution"] = attr
@@ -392,6 +397,7 @@ func buildSaveContentView(row SaveRow, cdnBaseURL string) any {
 		Type:        saveContentImageViewNSID,
 		BlobCID:     row.BlobCID,
 		ImageURL:    cdnBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
+		Alt:         row.AltText,
 		Attribution: saveAttributionFromFields(row.AttributionURL, row.AttributionLicense, row.AttributionCredit),
 	}
 	if row.Width != nil {

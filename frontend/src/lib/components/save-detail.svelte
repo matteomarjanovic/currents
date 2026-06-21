@@ -364,7 +364,7 @@
 			>
 				<img
 					src={image.imageUrl}
-					alt={currentSave.text ?? ''}
+					alt={image.alt ?? currentSave.text ?? ''}
 					class="max-h-full max-w-full object-contain"
 					style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 				/>
@@ -393,7 +393,7 @@
 		<LabeledMedia labels={currentSave.labels}>
 			<img
 				src={image.imageUrl}
-				alt={currentSave.text ?? ''}
+				alt={image.alt ?? currentSave.text ?? ''}
 				class="w-full"
 				style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
 			/>

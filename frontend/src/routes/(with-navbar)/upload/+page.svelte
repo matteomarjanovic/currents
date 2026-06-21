@@ -3,6 +3,9 @@
 	import { onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import { Label } from '$lib/components/ui/label';
+	import * as Popover from '$lib/components/ui/popover';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -12,6 +15,7 @@
 	import TriangleAlert from '@lucide/svelte/icons/alert-triangle';
 	import { toast } from 'svelte-sonner';
 	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
+	import { blobCidFromBytes } from '$lib/blob-cid';
 
 	type StagedStatus = 'pending' | 'uploading' | 'done' | 'error';
 	type Staged = {
@@ -20,6 +24,8 @@
 		url: string;
 		status: StagedStatus;
 		error?: string;
+		alt?: string;
+		altSuggested?: boolean;
 	};
 
 	let staged = $state<Staged[]>([]);
@@ -66,6 +72,27 @@
 			status: 'pending'
 		}));
 		staged = [...staged, ...mapped];
+		for (const item of mapped) void prefillAlt(item.id, item.file);
+	}
+
+	// If this exact image already has alt text somewhere in the network, pre-fill
+	// the field with it as a suggestion (best-effort; never overwrites typed text).
+	async function prefillAlt(id: string, file: File) {
+		try {
+			const cid = await blobCidFromBytes(await file.arrayBuffer());
+			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/blob/alt?cid=${encodeURIComponent(cid)}`, {
+				credentials: 'include'
+			});
+			if (!res.ok) return;
+			const data: { alt?: string } = await res.json();
+			const item = staged.find((s) => s.id === id);
+			if (item && data.alt && !item.alt?.trim()) {
+				item.alt = data.alt;
+				item.altSuggested = true;
+			}
+		} catch {
+			// Best-effort; ignore (e.g. CID mismatch after an oversized image is downscaled).
+		}
 	}
 
 	function removeStaged(id: string) {
@@ -106,6 +133,9 @@
 			const form = new FormData();
 			form.append('image', item.file, item.file.name);
 			form.append('collection', selectedCollectionUri ?? '');
+			if (item.alt?.trim()) {
+				form.append('alt', item.alt.trim());
+			}
 			if (selectedSelfLabels.size > 0) {
 				form.append('labels', Array.from(selectedSelfLabels).join(','));
 			}
@@ -289,9 +319,44 @@
 						</div>
 					{/if}
 					{#if !uploading && item.status !== 'done'}
+						<Popover.Root>
+							<Popover.Trigger>
+								{#snippet child({ props })}
+									<button
+										{...props}
+										type="button"
+										class="absolute top-1.5 left-1.5 flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition-colors hover:opacity-90 {item.alt?.trim()
+											? 'bg-primary text-primary-foreground'
+											: 'bg-black/60 text-white'}"
+										aria-label="Add alt text"
+									>
+										ALT
+										{#if item.alt?.trim()}<Check class="size-3" />{/if}
+									</button>
+								{/snippet}
+							</Popover.Trigger>
+							<Popover.Content align="start" class="w-80 gap-0 space-y-2">
+								<div class="flex justify-center overflow-hidden rounded-md bg-muted">
+									<img src={item.url} alt="" class="max-h-48 w-auto object-contain" />
+								</div>
+								<Label for={`alt-${item.id}`} class="pt-2 text-xs font-medium"
+									>Alt text{#if item.altSuggested}<span class="font-normal text-muted-foreground">
+											· suggested, edit if needed</span
+										>{/if}</Label
+								>
+								<Textarea
+									id={`alt-${item.id}`}
+									bind:value={item.alt}
+									oninput={() => (item.altSuggested = false)}
+									maxlength={2000}
+									rows={3}
+									placeholder="Describe this image for people who use screen readers."
+								/>
+							</Popover.Content>
+						</Popover.Root>
 						<button
 							type="button"
-							class="absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/80 focus-visible:opacity-100"
+							class="absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
 							onclick={() => removeStaged(item.id)}
 							aria-label="Remove image"
 						>
