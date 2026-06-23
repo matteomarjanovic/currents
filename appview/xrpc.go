@@ -206,20 +206,21 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 	}
 
 	type collectionViewerState struct {
-		Starred bool `json:"starred"`
+		Favourite string `json:"favourite,omitempty"`
 	}
 	type collectionView struct {
-		URI         string                 `json:"uri"`
-		CID         string                 `json:"cid"`
-		Author      profileView            `json:"author"`
-		Name        string                 `json:"name"`
-		Description string                 `json:"description,omitempty"`
-		ParentURI   string                 `json:"parentUri,omitempty"`
-		SaveCount   int                    `json:"saveCount,omitempty"`
-		Previews    []previewItem          `json:"previews,omitempty"`
-		CreatedAt   string                 `json:"createdAt"`
-		LastSavedAt string                 `json:"lastSavedAt,omitempty"`
-		Viewer      *collectionViewerState `json:"viewer,omitempty"`
+		URI            string                 `json:"uri"`
+		CID            string                 `json:"cid"`
+		Author         profileView            `json:"author"`
+		Name           string                 `json:"name"`
+		Description    string                 `json:"description,omitempty"`
+		ParentURI      string                 `json:"parentUri,omitempty"`
+		SaveCount      int                    `json:"saveCount,omitempty"`
+		FavouriteCount int                    `json:"favouriteCount,omitempty"`
+		Previews       []previewItem          `json:"previews,omitempty"`
+		CreatedAt      string                 `json:"createdAt"`
+		LastSavedAt    string                 `json:"lastSavedAt,omitempty"`
+		Viewer         *collectionViewerState `json:"viewer,omitempty"`
 	}
 
 	var previewCIDs []string
@@ -235,13 +236,14 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 	views := make([]collectionView, 0, len(rows))
 	for _, row := range rows {
 		cv := collectionView{
-			URI:         row.URI,
-			CID:         row.CID,
-			Author:      actor,
-			Name:        row.Name,
-			Description: row.Description,
-			ParentURI:   row.ParentURI,
-			SaveCount:   row.SaveCount,
+			URI:            row.URI,
+			CID:            row.CID,
+			Author:         actor,
+			Name:           row.Name,
+			Description:    row.Description,
+			ParentURI:      row.ParentURI,
+			SaveCount:      row.SaveCount,
+			FavouriteCount: row.FavouriteCount,
 		}
 		if row.CreatedAt != nil {
 			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
@@ -250,8 +252,8 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
 		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
-		if viewerDID != nil && row.Starred != nil {
-			cv.Viewer = &collectionViewerState{Starred: *row.Starred}
+		if viewerDID != nil && row.FavouriteURI != nil {
+			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
 		}
 		views = append(views, cv)
 	}
@@ -418,28 +420,30 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 	}
 
 	type collectionViewerState struct {
-		Starred bool `json:"starred"`
+		Favourite string `json:"favourite,omitempty"`
 	}
 	type collectionView struct {
-		URI         string                 `json:"uri"`
-		CID         string                 `json:"cid"`
-		Author      profileView            `json:"author"`
-		Name        string                 `json:"name"`
-		Description string                 `json:"description,omitempty"`
-		ParentURI   string                 `json:"parentUri,omitempty"`
-		SaveCount   int                    `json:"saveCount,omitempty"`
-		Previews    []previewItem          `json:"previews,omitempty"`
-		CreatedAt   string                 `json:"createdAt"`
-		Viewer      *collectionViewerState `json:"viewer,omitempty"`
+		URI            string                 `json:"uri"`
+		CID            string                 `json:"cid"`
+		Author         profileView            `json:"author"`
+		Name           string                 `json:"name"`
+		Description    string                 `json:"description,omitempty"`
+		ParentURI      string                 `json:"parentUri,omitempty"`
+		SaveCount      int                    `json:"saveCount,omitempty"`
+		FavouriteCount int                    `json:"favouriteCount,omitempty"`
+		Previews       []previewItem          `json:"previews,omitempty"`
+		CreatedAt      string                 `json:"createdAt"`
+		Viewer         *collectionViewerState `json:"viewer,omitempty"`
 	}
 	cv := collectionView{
-		URI:         collRow.URI,
-		CID:         collRow.CID,
-		Author:      author,
-		Name:        collRow.Name,
-		Description: collRow.Description,
-		ParentURI:   collRow.ParentURI,
-		SaveCount:   collRow.SaveCount,
+		URI:            collRow.URI,
+		CID:            collRow.CID,
+		Author:         author,
+		Name:           collRow.Name,
+		Description:    collRow.Description,
+		ParentURI:      collRow.ParentURI,
+		SaveCount:      collRow.SaveCount,
+		FavouriteCount: collRow.FavouriteCount,
 	}
 	if collRow.CreatedAt != nil {
 		cv.CreatedAt = collRow.CreatedAt.UTC().Format(time.RFC3339)
@@ -450,8 +454,8 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 		previewLabels = map[string][]string{}
 	}
 	cv.Previews = buildPreviewItems(collRow.PreviewBlobs, previewLabels, s.CDNBaseURL)
-	if viewerDID != nil && collRow.Starred != nil {
-		cv.Viewer = &collectionViewerState{Starred: *collRow.Starred}
+	if viewerDID != nil && collRow.FavouriteURI != nil {
+		cv.Viewer = &collectionViewerState{Favourite: *collRow.FavouriteURI}
 	}
 
 	saveRows, nextCursor, err := s.Store.GetSavesPage(r.Context(), collectionParam, viewerStr, limit, cursor)
@@ -704,20 +708,21 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 		Avatar      string `json:"avatar,omitempty"`
 	}
 	type collectionViewerState struct {
-		Starred bool `json:"starred"`
+		Favourite string `json:"favourite,omitempty"`
 	}
 	type collectionView struct {
-		URI         string                 `json:"uri"`
-		CID         string                 `json:"cid"`
-		Author      profileView            `json:"author"`
-		Name        string                 `json:"name"`
-		Description string                 `json:"description,omitempty"`
-		ParentURI   string                 `json:"parentUri,omitempty"`
-		SaveCount   int                    `json:"saveCount,omitempty"`
-		Previews    []previewItem          `json:"previews,omitempty"`
-		CreatedAt   string                 `json:"createdAt"`
-		LastSavedAt string                 `json:"lastSavedAt,omitempty"`
-		Viewer      *collectionViewerState `json:"viewer,omitempty"`
+		URI            string                 `json:"uri"`
+		CID            string                 `json:"cid"`
+		Author         profileView            `json:"author"`
+		Name           string                 `json:"name"`
+		Description    string                 `json:"description,omitempty"`
+		ParentURI      string                 `json:"parentUri,omitempty"`
+		SaveCount      int                    `json:"saveCount,omitempty"`
+		FavouriteCount int                    `json:"favouriteCount,omitempty"`
+		Previews       []previewItem          `json:"previews,omitempty"`
+		CreatedAt      string                 `json:"createdAt"`
+		LastSavedAt    string                 `json:"lastSavedAt,omitempty"`
+		Viewer         *collectionViewerState `json:"viewer,omitempty"`
 	}
 
 	authorCache := map[string]profileView{}
@@ -745,13 +750,14 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		cv := collectionView{
-			URI:         row.URI,
-			CID:         row.CID,
-			Author:      author,
-			Name:        row.Name,
-			Description: row.Description,
-			ParentURI:   row.ParentURI,
-			SaveCount:   row.SaveCount,
+			URI:            row.URI,
+			CID:            row.CID,
+			Author:         author,
+			Name:           row.Name,
+			Description:    row.Description,
+			ParentURI:      row.ParentURI,
+			SaveCount:      row.SaveCount,
+			FavouriteCount: row.FavouriteCount,
 		}
 		if row.CreatedAt != nil {
 			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
@@ -760,8 +766,134 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
 		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
-		if viewerDID != nil && row.Starred != nil {
-			cv.Viewer = &collectionViewerState{Starred: *row.Starred}
+		if viewerDID != nil && row.FavouriteURI != nil {
+			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
+		}
+		views = append(views, cv)
+	}
+
+	var nextCursor string
+	if len(rows) == limit {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(rows))))
+	}
+
+	type response struct {
+		Cursor      string           `json:"cursor,omitempty"`
+		Collections []collectionView `json:"collections"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Collections: views})
+}
+
+func (s *Server) XRPCGetImageCollections(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+
+	uri := r.URL.Query().Get("uri")
+	if uri == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"uri is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
+			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
+				offset = n
+			}
+		}
+	}
+
+	viewerStr := ""
+	if viewerDID != nil {
+		viewerStr = viewerDID.String()
+	}
+
+	rows, err := s.Store.GetImageCollectionsPage(r.Context(), uri, viewerStr, limit, offset)
+	if err != nil {
+		slog.Error("GetImageCollectionsPage", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	type collectionViewerState struct {
+		Favourite string `json:"favourite,omitempty"`
+	}
+	type collectionView struct {
+		URI            string                 `json:"uri"`
+		CID            string                 `json:"cid"`
+		Author         profileView            `json:"author"`
+		Name           string                 `json:"name"`
+		Description    string                 `json:"description,omitempty"`
+		ParentURI      string                 `json:"parentUri,omitempty"`
+		SaveCount      int                    `json:"saveCount,omitempty"`
+		FavouriteCount int                    `json:"favouriteCount,omitempty"`
+		Previews       []previewItem          `json:"previews,omitempty"`
+		CreatedAt      string                 `json:"createdAt"`
+		LastSavedAt    string                 `json:"lastSavedAt,omitempty"`
+		Viewer         *collectionViewerState `json:"viewer,omitempty"`
+	}
+
+	authorCache := map[string]profileView{}
+	var previewCIDs []string
+	for _, row := range rows {
+		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
+	}
+	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
+	if err != nil {
+		slog.Warn("hydrate preview labels", "err", err)
+		labelsByCID = map[string][]string{}
+	}
+
+	views := make([]collectionView, 0, len(rows))
+	for _, row := range rows {
+		author, ok := authorCache[row.AuthorDID]
+		if !ok {
+			author = profileView{DID: row.AuthorDID}
+			if actorRow, err := s.Store.GetActorByDID(r.Context(), row.AuthorDID); err == nil && actorRow != nil {
+				author.Handle = actorRow.Handle
+				author.DisplayName = actorRow.DisplayName
+				author.Avatar = actorRow.Avatar
+			}
+			authorCache[row.AuthorDID] = author
+		}
+
+		cv := collectionView{
+			URI:            row.URI,
+			CID:            row.CID,
+			Author:         author,
+			Name:           row.Name,
+			Description:    row.Description,
+			ParentURI:      row.ParentURI,
+			SaveCount:      row.SaveCount,
+			FavouriteCount: row.FavouriteCount,
+		}
+		if row.CreatedAt != nil {
+			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		if row.LastSavedAt != nil {
+			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
+		}
+		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
+		if viewerDID != nil && row.FavouriteURI != nil {
+			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
 		}
 		views = append(views, cv)
 	}
@@ -845,6 +977,137 @@ func (s *Server) XRPCGetFollowers(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) XRPCGetFollows(w http.ResponseWriter, r *http.Request) {
 	s.xrpcFollowList(w, r, "follows")
+}
+
+func (s *Server) XRPCGetFavouriteCollections(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+
+	actorParam := r.URL.Query().Get("actor")
+	if actorParam == "" {
+		http.Error(w, `{"error":"InvalidRequest","message":"actor is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var actorDID syntax.DID
+	if parsed, err := syntax.ParseDID(actorParam); err == nil {
+		actorDID = parsed
+	} else if handle, err := syntax.ParseHandle(actorParam); err == nil {
+		ident, err := s.Dir.LookupHandle(r.Context(), handle)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "NotFound", "message": "actor not found"})
+			return
+		}
+		actorDID = ident.DID
+	} else {
+		http.Error(w, `{"error":"InvalidRequest","message":"invalid actor"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+	cursor := r.URL.Query().Get("cursor")
+
+	viewerStr := ""
+	if viewerDID != nil {
+		viewerStr = viewerDID.String()
+	}
+
+	rows, nextCursor, err := s.Store.GetFavouriteCollectionsPage(r.Context(), actorDID.String(), viewerStr, limit, cursor)
+	if err != nil {
+		slog.Error("GetFavouriteCollectionsPage", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type profileView struct {
+		DID         string `json:"did"`
+		Handle      string `json:"handle"`
+		DisplayName string `json:"displayName,omitempty"`
+		Avatar      string `json:"avatar,omitempty"`
+	}
+	type collectionViewerState struct {
+		Favourite string `json:"favourite,omitempty"`
+	}
+	type collectionView struct {
+		URI            string                 `json:"uri"`
+		CID            string                 `json:"cid"`
+		Author         profileView            `json:"author"`
+		Name           string                 `json:"name"`
+		Description    string                 `json:"description,omitempty"`
+		ParentURI      string                 `json:"parentUri,omitempty"`
+		SaveCount      int                    `json:"saveCount,omitempty"`
+		FavouriteCount int                    `json:"favouriteCount,omitempty"`
+		Previews       []previewItem          `json:"previews,omitempty"`
+		CreatedAt      string                 `json:"createdAt"`
+		LastSavedAt    string                 `json:"lastSavedAt,omitempty"`
+		Viewer         *collectionViewerState `json:"viewer,omitempty"`
+	}
+
+	authorCache := map[string]profileView{}
+	var previewCIDs []string
+	for _, row := range rows {
+		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
+	}
+	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
+	if err != nil {
+		slog.Warn("hydrate preview labels", "err", err)
+		labelsByCID = map[string][]string{}
+	}
+
+	views := make([]collectionView, 0, len(rows))
+	for _, row := range rows {
+		author, ok := authorCache[row.AuthorDID]
+		if !ok {
+			author = profileView{DID: row.AuthorDID}
+			if actorRow, err := s.Store.GetActorByDID(r.Context(), row.AuthorDID); err == nil && actorRow != nil {
+				author.Handle = actorRow.Handle
+				author.DisplayName = actorRow.DisplayName
+				author.Avatar = actorRow.Avatar
+			}
+			authorCache[row.AuthorDID] = author
+		}
+
+		cv := collectionView{
+			URI:            row.URI,
+			CID:            row.CID,
+			Author:         author,
+			Name:           row.Name,
+			Description:    row.Description,
+			ParentURI:      row.ParentURI,
+			SaveCount:      row.SaveCount,
+			FavouriteCount: row.FavouriteCount,
+		}
+		if row.CreatedAt != nil {
+			cv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+		}
+		if row.LastSavedAt != nil {
+			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
+		}
+		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
+		if viewerDID != nil && row.FavouriteURI != nil {
+			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
+		}
+		views = append(views, cv)
+	}
+
+	type response struct {
+		Cursor      string           `json:"cursor,omitempty"`
+		Collections []collectionView `json:"collections"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Collections: views})
 }
 
 // xrpcFollowList serves both getFollowers (actors following the subject) and

@@ -108,6 +108,6 @@
 	{/if}
 {/if}
 
-<div class="fixed right-5 bottom-5 z-20">
+<div class="fixed right-2 bottom-5 z-20 md:right-4">
 	<PersonalizationButton />
 </div>

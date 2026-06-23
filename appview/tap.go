@@ -204,6 +204,25 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		}
 		return handler.Store.UpsertFollow(ctx, atURI, ev.DID, f.Subject)
 
+	case favouriteNSID:
+		slog.Info("TAP favourite received", "uri", atURI, "action", ev.Action, "did", ev.DID)
+		if ev.Action == "delete" {
+			return handler.Store.DeleteFavourite(ctx, atURI)
+		}
+		var f struct {
+			Subject struct {
+				URI string `json:"uri"`
+			} `json:"subject"`
+			CreatedAt string `json:"createdAt"`
+		}
+		if err := json.Unmarshal(ev.Record, &f); err != nil {
+			return fmt.Errorf("unmarshal favourite record: %w", err)
+		}
+		if f.Subject.URI == "" {
+			return fmt.Errorf("favourite record missing subject uri")
+		}
+		return handler.Store.UpsertFavourite(ctx, atURI, ev.DID, f.Subject.URI)
+
 	case "is.currents.actor.profile":
 		if ev.Action == "delete" {
 			return nil // profile deletion not meaningful; skip

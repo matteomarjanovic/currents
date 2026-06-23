@@ -58,6 +58,21 @@
 		return { items: data.saves ?? [], cursor: data.cursor };
 	});
 
+	// Collections this user has favourited (public, like GitHub stars). Fetched
+	// lazily the first time the Favourites tab is opened.
+	const favourites = useInfiniteScroll<CollectionView>(async (cursor) => {
+		const handle = page.params.handle ?? '';
+		const params = new URLSearchParams({ actor: handle, limit: '30' });
+		if (cursor) params.set('cursor', cursor);
+		const res = await fetch(
+			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.graph.getFavouriteCollections?${params}`,
+			{ credentials: 'include' }
+		);
+		if (!res.ok) return { items: [], cursor: undefined };
+		const data = await res.json();
+		return { items: data.collections ?? [], cursor: data.cursor };
+	});
+
 	$effect(() => {
 		const handle = page.params.handle ?? '';
 		loading = true;
@@ -66,6 +81,7 @@
 		collections = [];
 		activeTab = 'collections';
 		unsorted.reset();
+		favourites.reset();
 
 		Promise.all([
 			fetch(
@@ -117,10 +133,15 @@
 		})();
 	});
 
-	// Load the first page of unsorted saves the first time the tab is opened.
+	// Load the first page of unsorted saves / favourites the first time each tab is opened.
 	$effect(() => {
 		if (activeTab === 'unsorted' && unsorted.items.length === 0 && unsorted.hasMore) {
 			unsorted.loadMore();
+		}
+	});
+	$effect(() => {
+		if (activeTab === 'favourites' && favourites.items.length === 0 && favourites.hasMore) {
+			favourites.loadMore();
 		}
 	});
 
@@ -134,6 +155,19 @@
 			{ rootMargin: '400px' }
 		);
 		observer.observe(sentinel);
+		return () => observer.disconnect();
+	});
+
+	let favSentinel: HTMLDivElement | undefined = $state(undefined);
+	$effect(() => {
+		if (!favSentinel) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting) favourites.loadMore();
+			},
+			{ rootMargin: '400px' }
+		);
+		observer.observe(favSentinel);
 		return () => observer.disconnect();
 	});
 
@@ -201,10 +235,18 @@
 		{/if}
 
 		<Tabs.Root bind:value={activeTab}>
-			<Tabs.List variant="line">
-				<Tabs.Trigger value="collections">Collections</Tabs.Trigger>
-				<Tabs.Trigger value="unsorted">Unsorted saves</Tabs.Trigger>
-			</Tabs.List>
+			<!-- Horizontal scroll so the tab strip never overflows the page on mobile.
+			     pb/-mb pair keeps room for the line-variant underline (sits ~1px below the
+			     list) which overflow-x would otherwise clip. -->
+			<div
+				class="-mb-1.5 overflow-x-auto pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			>
+				<Tabs.List variant="line" class="w-fit">
+					<Tabs.Trigger value="collections">Collections</Tabs.Trigger>
+					<Tabs.Trigger value="unsorted">Unsorted</Tabs.Trigger>
+					<Tabs.Trigger value="favourites">Favourite collections</Tabs.Trigger>
+				</Tabs.List>
+			</div>
 
 			<Tabs.Content value="collections" class="mt-4">
 				{#if roots.length === 0}
@@ -225,6 +267,23 @@
 					<MasonryGrid items={unsorted.items} loading={unsorted.loading} />
 					{#if unsorted.hasMore}
 						<div bind:this={sentinel} class="h-1"></div>
+					{/if}
+				{/if}
+			</Tabs.Content>
+
+			<Tabs.Content value="favourites" class="mt-4">
+				{#if favourites.items.length === 0 && !favourites.loading && !favourites.hasMore}
+					<div class="py-12 text-center text-sm text-muted-foreground">
+						No favourite collections yet.
+					</div>
+				{:else}
+					<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+						{#each favourites.items as c (c.uri)}
+							<CollectionCard collection={c} sectionCount={0} />
+						{/each}
+					</div>
+					{#if favourites.hasMore}
+						<div bind:this={favSentinel} class="h-1"></div>
 					{/if}
 				{/if}
 			</Tabs.Content>

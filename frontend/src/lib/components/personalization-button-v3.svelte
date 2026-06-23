@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { Button } from '$lib/components/ui/button';
 	import FlowField from './flow-field.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loginPrompt } from '$lib/stores/login-prompt.svelte';
@@ -28,10 +29,10 @@
 <DropdownMenu.Root bind:open>
 	<DropdownMenu.Trigger>
 		{#snippet child({ props })}
-			<button
+			<Button
 				{...props}
-				type="button"
-				class="flex cursor-pointer items-center gap-2 rounded-full border-none bg-primary-foreground/80 py-0.5 pr-0.5 pl-3 backdrop-blur-sm transition-transform duration-100 aria-expanded:scale-95"
+				variant="glass"
+				class="h-auto cursor-pointer gap-2 rounded-full py-0.5 pr-0.5 pl-3 transition-transform duration-100 aria-expanded:scale-95"
 				aria-label="Adjust personalization"
 			>
 				<ChevronUp
@@ -45,7 +46,7 @@
 				<div class="h-11 w-11 overflow-hidden rounded-full">
 					<FlowField noiseIntensity={selected.noiseIntensity} lineCount={7} />
 				</div>
-			</button>
+			</Button>
 		{/snippet}
 	</DropdownMenu.Trigger>
 

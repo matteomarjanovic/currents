@@ -1,0 +1,49 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.graph.getFavouriteCollections",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Enumerate collections the given actor has favourited, most recent first. Auth is optional; if provided, viewer-specific state is included in each collection.",
+      "parameters": {
+        "type": "params",
+        "required": ["actor"],
+        "properties": {
+          "actor": {
+            "type": "string",
+            "format": "at-identifier",
+            "description": "DID or handle of the actor whose favourited collections to list."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["collections"],
+          "properties": {
+            "cursor": {
+              "type": "string"
+            },
+            "collections": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "is.currents.feed.defs#collectionView"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

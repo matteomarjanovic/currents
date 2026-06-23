@@ -1,9 +1,18 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import Logo from '$lib/assets/logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Avatar from '$lib/components/ui/avatar';
+	import * as Accordion from '$lib/components/ui/accordion';
+	import * as Item from '$lib/components/ui/item';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import FavouriteToggle from '$lib/components/favourite-toggle.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -13,15 +22,22 @@
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
 	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
-	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
+	import { shouldHide, effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Flag from '@lucide/svelte/icons/flag';
 	import Tag from '@lucide/svelte/icons/tag';
-	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
+	import Star from '@lucide/svelte/icons/star';
+	import {
+		getImageContent,
+		type CollectionView,
+		type SaveAttribution,
+		type SaveView
+	} from '$lib/types';
 
 	interface Props {
 		save: SaveView;
@@ -142,6 +158,54 @@
 		}
 	}
 
+	// ── Floating controls ────────────────────────────────────────────────────
+	// The back / scroll-to-top buttons appear once the primary view has scrolled
+	// out of sight: the in-flow top bar on mobile, the full-height hero on
+	// desktop. Each ref is only laid out on its own breakpoint — the other is
+	// `display:none`, so it reads as not-visible and the AND falls through to the
+	// active one. Initialising to `true` avoids a flash before the observers run.
+	// Viewport-relative, so this works for both the full-page route and the
+	// `fixed inset-0` masonry overlay.
+	let topControls: HTMLDivElement | undefined = $state();
+	let desktopHero: HTMLDivElement | undefined = $state();
+	let mobileTopVisible = $state(true);
+	let desktopHeroVisible = $state(true);
+	let scrolledPastTop = $derived(!mobileTopVisible && !desktopHeroVisible);
+
+	$effect(() => {
+		if (!topControls) return;
+		const observer = new IntersectionObserver(([entry]) => {
+			mobileTopVisible = entry.isIntersecting;
+		});
+		observer.observe(topControls);
+		return () => observer.disconnect();
+	});
+
+	$effect(() => {
+		if (!desktopHero) return;
+		const observer = new IntersectionObserver(([entry]) => {
+			desktopHeroVisible = entry.isIntersecting;
+		});
+		observer.observe(desktopHero);
+		return () => observer.disconnect();
+	});
+
+	function scrollToTop() {
+		// Scroll the actual container to position 0 (the overlay's `overflow-y-auto`
+		// div, or the window for the full-page route). `scrollIntoView` would stop at
+		// topControls and skip the container's top padding, landing just short of the top.
+		let el: HTMLElement | null = topControls ?? null;
+		while (el) {
+			const oy = getComputedStyle(el).overflowY;
+			if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) {
+				el.scrollTo({ top: 0, behavior: 'smooth' });
+				return;
+			}
+			el = el.parentElement;
+		}
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
 	let authorName = $derived(currentSave.author.displayName || currentSave.author.handle);
 
 	const related = useInfiniteScroll(async (cursor) => {
@@ -176,6 +240,57 @@
 		observer.observe(sentinel);
 		return () => observer.disconnect();
 	});
+
+	// ── "In other collections" accordion ─────────────────────────────────────
+	// The public collections (any user's) that hold the same image, by exact blob
+	// CID, ordered by favourite count. Loaded lazily the first time the accordion
+	// is opened; "Show more" paginates (an image is rarely in many collections).
+	const imageCollections = useInfiniteScroll<CollectionView>(async (cursor) => {
+		const params = new URLSearchParams({ uri: currentSave.uri, limit: '50' });
+		if (cursor) params.set('cursor', cursor);
+		const res = await fetch(
+			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getImageCollections?${params}`,
+			{ credentials: 'include' }
+		);
+		if (!res.ok) return { items: [], cursor: undefined };
+		const data = await res.json();
+		return { items: data.collections ?? [], cursor: data.cursor };
+	});
+	let collectionsAccordionValue = $state('');
+
+	$effect(() => {
+		void currentSave.uri;
+		untrack(() => {
+			imageCollections.reset();
+			collectionsAccordionValue = '';
+		});
+	});
+
+	$effect(() => {
+		if (
+			collectionsAccordionValue === 'collections' &&
+			imageCollections.items.length === 0 &&
+			imageCollections.hasMore
+		) {
+			imageCollections.loadMore();
+		}
+	});
+
+	function collectionHref(c: CollectionView) {
+		const rkey = c.uri.split('/').pop() ?? '';
+		const handle = c.author?.handle ?? c.uri.split('/')[2];
+		return `/profile/${handle}/collection/${rkey}`;
+	}
+
+	// First collection preview the viewer is allowed to see, with blur applied per
+	// their moderation prefs (mirrors collection-card). null when none are visible.
+	function collectionPreview(c: CollectionView) {
+		for (const p of c.previews ?? []) {
+			const vis = effectiveVisibilityForVals(p.labels);
+			if (vis !== 'hide') return { url: p.url, blur: vis === 'blur' };
+		}
+		return null;
+	}
 
 	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
 		const base = hydratedSave ?? save;
@@ -295,9 +410,87 @@
 	{/if}
 {/snippet}
 
+{#snippet imageCollectionsSection()}
+	<Accordion.Root type="single" bind:value={collectionsAccordionValue}>
+		<Accordion.Item value="collections">
+			<Accordion.Trigger>In other collections</Accordion.Trigger>
+			<Accordion.Content>
+				{#if imageCollections.loading && imageCollections.items.length === 0}
+					<div class="flex justify-center py-3"><Spinner /></div>
+				{:else if imageCollections.items.length === 0}
+					<p class="px-1 py-1 text-sm text-muted-foreground">Not in any collections yet.</p>
+				{:else}
+					<div class="max-h-72 overflow-y-auto">
+						<Item.Group class="gap-1 pr-1">
+							{#each imageCollections.items as c (c.uri)}
+								{@const isOwn = !!auth.user && auth.user.did === c.author?.did}
+								{@const preview = collectionPreview(c)}
+								<Item.Root variant="outline" size="sm" class="relative flex-nowrap">
+									<!-- Stretched link: a click anywhere on the row that isn't the username
+								     link or the favourite toggle (both lifted with z-10) opens the collection. -->
+									<a href={collectionHref(c)} class="absolute inset-0">
+										<span class="sr-only">{c.name}</span>
+									</a>
+									<Item.Media variant="image" class="bg-muted">
+										{#if preview}
+											<img src={preview.url} alt="" class={preview.blur ? 'blur-md' : ''} />
+										{/if}
+									</Item.Media>
+									<Item.Content class="min-w-0">
+										<Item.Title class="w-full truncate">{c.name}</Item.Title>
+										<Item.Description class="flex items-center gap-1">
+											<a
+												href={`/profile/${c.author?.handle}`}
+												class="relative z-10 min-w-0 truncate no-underline!"
+											>
+												{c.author?.displayName || c.author?.handle}
+											</a>
+											{#if (c.favouriteCount ?? 0) > 0}
+												<span aria-hidden="true">·</span>
+												<Star class="size-3 shrink-0 fill-current" />
+												<span>{c.favouriteCount}</span>
+											{/if}
+										</Item.Description>
+									</Item.Content>
+									<Item.Actions class="shrink-0">
+										{#if isOwn}
+											<Badge variant="secondary">Yours</Badge>
+										{:else if auth.user}
+											<div class="relative z-10">
+												<FavouriteToggle collection={c} labelFrom="never" />
+											</div>
+										{/if}
+									</Item.Actions>
+								</Item.Root>
+							{/each}
+						</Item.Group>
+					</div>
+					{#if imageCollections.hasMore}
+						<div class="mt-2 flex justify-center">
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={() => imageCollections.loadMore()}
+								disabled={imageCollections.loading}
+							>
+								{#if imageCollections.loading}<Spinner />{:else}Show more{/if}
+							</Button>
+						</div>
+					{/if}
+				{/if}
+			</Accordion.Content>
+		</Accordion.Item>
+	</Accordion.Root>
+{/snippet}
+
 {#snippet saveControl(variant: 'popover' | 'drawer')}
 	{#if auth.user && collections.loaded}
-		<CollectionSelector item={currentSave} {variant} onSavesChange={handleSavesChange} />
+		<CollectionSelector
+			item={currentSave}
+			{variant}
+			triggerVariant="secondary"
+			onSavesChange={handleSavesChange}
+		/>
 	{:else if auth.checked}
 		<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
 	{/if}
@@ -337,18 +530,11 @@
 	</div>
 {/snippet}
 
-<div class="hidden h-screen md:flex">
-	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6">
-		<div class="flex items-center justify-between gap-2">
-			<Button variant="ghost" size="sm" onclick={goBack}>
-				<ArrowLeft class="size-4" />
-				Back
-			</Button>
-			<div class="w-auto min-w-32">
-				{@render saveControl('popover')}
-			</div>
-		</div>
+<div bind:this={desktopHero} class="hidden h-screen md:flex">
+	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6 pt-20">
+		{@render saveControl('popover')}
 		{@render info(true)}
+		{@render imageCollectionsSection()}
 		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
 			<p>Scroll down to view related images</p>
 			<ArrowDown class="size-4" />
@@ -379,28 +565,30 @@
 	</div>
 </div>
 
-<div class="flex flex-col gap-4 p-2 md:hidden">
-	<div class="flex items-center justify-between gap-2">
-		<Button variant="ghost" size="sm" onclick={goBack}>
+<div
+	class="flex flex-col gap-4 p-2 md:hidden"
+	style="padding-top: calc(env(safe-area-inset-top) + 1rem)"
+>
+	<div bind:this={topControls} class="flex items-center justify-between gap-2">
+		<Button variant="ghost" size="icon-sm" onclick={goBack} aria-label="Go back">
 			<ArrowLeft class="size-4" />
-			Back
 		</Button>
 		{@render reportButton('')}
 	</div>
 	{#if hiddenByPrefs}
 		{@render hiddenState()}
 	{:else if image}
-		<LabeledMedia labels={currentSave.labels}>
+		<LabeledMedia labels={currentSave.labels} class="flex justify-center">
 			<img
 				src={image.imageUrl}
 				alt={image.alt ?? currentSave.text ?? ''}
-				class="w-full"
+				class="max-h-[65vh] w-auto max-w-full object-contain"
 				style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
 			/>
 		</LabeledMedia>
 	{:else}
 		<div
-			class="flex items-center justify-center bg-muted text-sm text-muted-foreground"
+			class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
 			style="aspect-ratio: 3 / 4;"
 		>
 			Unsupported content
@@ -408,7 +596,71 @@
 	{/if}
 	{@render saveControl('drawer')}
 	{@render info(false)}
+	{@render imageCollectionsSection()}
 </div>
+
+<!-- Mobile floating home button: full wordmark, pinned at top center. -->
+<a
+	href={resolve('/')}
+	aria-label="Go to home"
+	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-lg backdrop-blur-sm md:hidden"
+	style="top: calc(env(safe-area-inset-top) + 2rem)"
+>
+	<span class="block h-5">
+		<Logo />
+	</span>
+</a>
+
+<!-- Desktop floating controls: back (icon) + home pill, pinned top-left. -->
+<div class="fixed top-3 left-6 z-50 hidden items-center gap-2 md:flex">
+	<Button
+		variant="glass"
+		size="icon-lg"
+		class="size-11 rounded-full"
+		onclick={goBack}
+		aria-label="Go back"
+	>
+		<ArrowLeft class="size-5" />
+	</Button>
+	<a
+		href={resolve('/')}
+		aria-label="Go to home"
+		class="flex h-11 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-lg backdrop-blur-sm"
+	>
+		<span class="block h-5">
+			<Logo />
+		</span>
+	</a>
+</div>
+
+<!-- Floating actions: revealed once the primary view scrolls out of sight. -->
+{#if scrolledPastTop}
+	<div
+		class="fixed left-2 z-50 md:hidden"
+		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
+	>
+		<Button variant="glass" size="lg" class="rounded-full" onclick={goBack} aria-label="Go back">
+			<ArrowLeft />
+			Back
+		</Button>
+	</div>
+	<div
+		class="fixed right-2 z-50 md:right-6"
+		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
+	>
+		<Button
+			variant="glass"
+			size="icon-lg"
+			class="rounded-full md:size-11"
+			onclick={scrollToTop}
+			aria-label="Scroll to top"
+		>
+			<ChevronUp class="size-4 md:size-5" />
+		</Button>
+	</div>
+{/if}
 
 {#if related.items.length > 0 || related.loading}
 	<section class="flex flex-col gap-4 p-2 md:p-6">

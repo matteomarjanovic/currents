@@ -29,6 +29,7 @@ const (
 	collectionNSID = "is.currents.feed.collection"
 	saveNSID       = "is.currents.feed.save"
 	followNSID     = "is.currents.graph.follow"
+	favouriteNSID  = "is.currents.graph.favourite"
 	maxBlobSize    = 19 * 1024 * 1024
 )
 
@@ -1119,6 +1120,89 @@ func (s *Server) DeleteFollow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("deleted follow", "rkey", rkey)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) CreateFavourite(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	var body struct {
+		SubjectURI string `json:"subjectUri"`
+		SubjectCID string `json:"subjectCid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SubjectURI == "" || body.SubjectCID == "" {
+		http.Error(w, "subjectUri and subjectCid are required", http.StatusBadRequest)
+		return
+	}
+	subjectURI, err := syntax.ParseATURI(body.SubjectURI)
+	if err != nil {
+		http.Error(w, "invalid subject URI", http.StatusBadRequest)
+		return
+	}
+	// You favourite other people's collections, not your own.
+	if subjectURI.Authority().String() == did.String() {
+		http.Error(w, "cannot favourite your own collection", http.StatusBadRequest)
+		return
+	}
+
+	out, err := comatproto.RepoCreateRecord(r.Context(), c, &comatproto.RepoCreateRecord_Input{
+		Collection: favouriteNSID,
+		Repo:       did.String(),
+		Record: map[string]any{
+			"$type": favouriteNSID,
+			"subject": map[string]any{
+				"uri": body.SubjectURI,
+				"cid": body.SubjectCID,
+			},
+			"createdAt": syntax.DatetimeNow().String(),
+		},
+	})
+	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		if strings.Contains(err.Error(), "ScopeMissingError") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "ScopeMissing"})
+			return
+		}
+		slog.Error("creating favourite", "err", err, "subject", body.SubjectURI, "viewer", did.String())
+		http.Error(w, fmt.Sprintf("creating favourite: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("created favourite", "uri", out.Uri)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"uri":%q}`, out.Uri)
+}
+
+func (s *Server) DeleteFavourite(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	rkey := r.PathValue("rkey")
+
+	if err := c.Post(r.Context(), "com.atproto.repo.deleteRecord", map[string]any{
+		"repo":       did.String(),
+		"collection": favouriteNSID,
+		"rkey":       rkey,
+	}, nil); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		http.Error(w, fmt.Sprintf("deleting favourite: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info("deleted favourite", "rkey", rkey)
 	w.WriteHeader(http.StatusNoContent)
 }
 

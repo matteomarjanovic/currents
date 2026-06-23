@@ -8,6 +8,9 @@
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import Tag from '@lucide/svelte/icons/tag';
 	import type { CollectionView } from '$lib/types';
+	import Star from '@lucide/svelte/icons/star';
+	import FavouriteToggle from './favourite-toggle.svelte';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	interface Props {
 		collection: CollectionView;
@@ -21,6 +24,14 @@
 	}
 
 	let { collection, isOwner, onEdit, onDelete, onCreateSection, onBulkLabel }: Props = $props();
+
+	// You can favourite only other people's collections, and only when signed in.
+	// The count is shown here and updated optimistically by the toggle's onChange.
+	const loggedIn = $derived(!!auth.user);
+	let favouriteCount = $state(0);
+	$effect(() => {
+		favouriteCount = collection.favouriteCount ?? 0;
+	});
 </script>
 
 <section class="mb-6">
@@ -41,8 +52,14 @@
 					{collection.saveCount === 1 ? 'save' : 'saves'}
 				</span>
 			{/if}
-			{#if collection.description}
-				<p class="mt-3 text-sm whitespace-pre-wrap text-foreground">{collection.description}</p>
+			{#if favouriteCount > 0}
+				<span
+					class="ml-2 inline-flex items-center gap-1 align-middle text-sm text-muted-foreground"
+					title={`${favouriteCount} ${favouriteCount === 1 ? 'favourite' : 'favourites'}`}
+				>
+					<Star class="size-3.5 fill-current" />
+					{favouriteCount}
+				</span>
 			{/if}
 		</div>
 
@@ -78,8 +95,17 @@
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
+		{:else if loggedIn}
+			<FavouriteToggle
+				{collection}
+				onChange={(fav) => (favouriteCount = Math.max(0, favouriteCount + (fav ? 1 : -1)))}
+			/>
 		{/if}
 	</div>
+
+	{#if collection.description}
+		<p class="mt-3 px-1 text-sm whitespace-pre-wrap text-foreground">{collection.description}</p>
+	{/if}
 
 	<Separator class="mt-6" />
 </section>

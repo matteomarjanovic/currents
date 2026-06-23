@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as Avatar from '$lib/components/ui/avatar';
+	import * as Item from '$lib/components/ui/item';
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import UserIcon from '@lucide/svelte/icons/user';
@@ -70,12 +71,21 @@
 
 <div bind:this={scrollEl} class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3">
 	{#each social.items as item (item.did)}
-		<div class="flex items-center gap-3 rounded-lg p-2 {item.isNew ? 'bg-accent/40' : ''}">
+		<Item.Root
+			variant="default"
+			size="sm"
+			class="relative flex-nowrap overflow-hidden {item.isNew ? 'bg-accent/40' : ''}"
+		>
+			<!-- Stretched link: clicking the row (anywhere but the follow button) opens the
+			     profile. The button is lifted with z-10 so it captures its own click. -->
 			<a
 				href={resolve('/(with-navbar)/profile/[handle]', { handle: item.handle })}
 				onclick={onNavigate}
-				class="flex min-w-0 flex-1 items-center gap-3"
+				class="absolute inset-0"
 			>
+				<span class="sr-only">{item.displayName ?? item.handle}</span>
+			</a>
+			<Item.Media class="self-center">
 				<Avatar.Root class="size-11 shrink-0">
 					{#if item.avatar}
 						<Avatar.Image src={item.avatar} alt={item.displayName ?? item.handle} />
@@ -84,36 +94,23 @@
 						<UserIcon class="size-5" />
 					</Avatar.Fallback>
 				</Avatar.Root>
-				<div class="flex min-w-0 flex-col items-start justify-center gap-2">
-					<div class="truncate text-sm">
-						<span class="font-medium text-foreground">{item.displayName ?? item.handle}</span>
-						<span class="text-muted-foreground">
-							followed you&ensp;•&ensp;{timeAgo(item.followedAt)}</span
-						>
-					</div>
-					<Button
-						size="sm"
-						variant={item.youFollow ? 'secondary' : 'default'}
-						class="shrink-0 rounded-full"
-						onclick={() => toggleFollow(item)}
-						disabled={busyDid === item.did}
-					>
-						{item.youFollow ? 'Following' : '+ Follow back'}
-					</Button>
-					<!-- <div class="truncate text-xs text-muted-foreground">{timeAgo(item.followedAt)}</div> -->
-				</div>
-			</a>
-			<!-- <Button
-				size="sm"
-				variant={item.youFollow ? 'secondary' : 'default'}
-				class="shrink-0 rounded-full"
-				onclick={() => toggleFollow(item)}
-				disabled={busyDid === item.did}
-			>
-				{item.youFollow ? 'Following' : 'Follow back'}
-			</Button> -->
-			<!-- <div class="truncate text-xs text-muted-foreground">{timeAgo(item.followedAt)}</div> -->
-		</div>
+			</Item.Media>
+			<Item.Content class="min-w-0">
+				<Item.Title class="w-full truncate">{item.displayName ?? item.handle}</Item.Title>
+				<Item.Description>followed you&ensp;•&ensp;{timeAgo(item.followedAt)}</Item.Description>
+			</Item.Content>
+			<Item.Actions class="relative z-10 shrink-0">
+				<Button
+					size="sm"
+					variant={item.youFollow ? 'secondary' : 'default'}
+					class="rounded-full"
+					onclick={() => toggleFollow(item)}
+					disabled={busyDid === item.did}
+				>
+					{item.youFollow ? 'Following' : '+ Follow back'}
+				</Button>
+			</Item.Actions>
+		</Item.Root>
 	{/each}
 
 	{#if social.loading && social.items.length === 0}

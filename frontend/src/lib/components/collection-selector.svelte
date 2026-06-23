@@ -11,7 +11,7 @@
 	} from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
-	import { Button } from '$lib/components/ui/button';
+	import { Button, type ButtonVariant } from '$lib/components/ui/button';
 	import { Toggle } from '$lib/components/ui/toggle';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Drawer from '$lib/components/ui/drawer';
@@ -28,6 +28,10 @@
 	interface Props {
 		item?: SaveView;
 		variant?: 'popover' | 'drawer';
+		// Style of the popover trigger button. Defaults to the translucent `glass`
+		// (good over imagery, e.g. card tiles); pass a solid variant on plain
+		// backgrounds where glass would blend in (e.g. the save-detail sidebar).
+		triggerVariant?: ButtonVariant;
 		onOpenChange?: (open: boolean) => void;
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
@@ -37,6 +41,7 @@
 	let {
 		item,
 		variant = 'popover',
+		triggerVariant = 'glass',
 		onOpenChange,
 		selectedUri,
 		onSelect,
@@ -389,8 +394,8 @@
 				{#snippet child({ props })}
 					<Button
 						{...props}
-						variant="secondary"
-						size="sm"
+						variant={triggerVariant}
+						size="default"
 						class="min-w-0 flex-1 justify-between truncate"
 					>
 						<span class="truncate">{selectedName}</span>
@@ -408,7 +413,7 @@
 
 		{#if !pickerMode}
 			<Toggle
-				size="sm"
+				size="default"
 				pressed={!!isSavedInSelected()}
 				onPressedChange={handleButtonClick}
 				class="border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
@@ -431,7 +436,7 @@
 						{...props}
 						variant={anySaved ? 'secondary' : 'default'}
 						size="lg"
-						class="w-full text-lg"
+						class="w-full rounded-full"
 					>
 						{anySaved ? 'Saved' : 'Save'}
 					</Button>

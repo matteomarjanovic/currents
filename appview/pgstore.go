@@ -341,17 +341,18 @@ func (m *PgStore) UpsertCollection(ctx context.Context, uri, cid, authorDID, nam
 }
 
 type CollectionRow struct {
-	URI          string
-	CID          string
-	AuthorDID    string // populated by search; empty for single-actor listings
-	Name         string
-	Description  string
-	ParentURI    string // empty for root collections
-	CreatedAt    *time.Time
-	LastSavedAt  *time.Time // newest save in this collection or its sub-collections
-	SaveCount    int
-	PreviewBlobs []string // up to 4; each is "did,cid"
-	Starred      *bool    // nil when unauthenticated
+	URI            string
+	CID            string
+	AuthorDID      string // populated by search; empty for single-actor listings
+	Name           string
+	Description    string
+	ParentURI      string // empty for root collections
+	CreatedAt      *time.Time
+	LastSavedAt    *time.Time // newest save in this collection or its sub-collections
+	SaveCount      int
+	PreviewBlobs   []string // up to 4; each is "did,cid"
+	FavouriteCount int      // total favourites of this collection across the network
+	FavouriteURI   *string  // AT-URI of the viewer's favourite record; nil if not favourited / unauthenticated
 }
 
 func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limit int, cursor string) ([]CollectionRow, string, error) {
@@ -492,10 +493,11 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
-			CASE WHEN $3 != '' THEN (sc.viewer_did IS NOT NULL) END AS starred
+			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			fc.uri AS favourite_uri
 		FROM collection c
-		LEFT JOIN starred_collection sc
-			ON sc.collection_uri = c.uri AND sc.viewer_did = NULLIF($3, '')
+		LEFT JOIN favourite_collection fc
+			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($3, '')
 		WHERE c.author_did = $1
 		  AND c.cid IS NOT NULL
 		  %s
@@ -513,7 +515,7 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 	var result []CollectionRow
 	for rows.Next() {
 		var row CollectionRow
-		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred); err != nil {
+		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -530,6 +532,94 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			ts = last.CreatedAt.UTC().Format(time.RFC3339Nano)
 		}
 		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(ts + "|" + last.URI))
+	}
+	return result, nextCursor, nil
+}
+
+// GetFavouriteCollectionsPage returns collections that actorDID has favourited,
+// most recently favourited first. viewerDID is the requesting account, used to
+// hydrate each collection's FavouriteURI (may be empty when unauthenticated).
+// AuthorDID is populated since favourited collections span many authors.
+func (m *PgStore) GetFavouriteCollectionsPage(ctx context.Context, actorDID, viewerDID string, limit int, cursor string) ([]CollectionRow, string, error) {
+	args := []any{actorDID, viewerDID}
+	cursorClause := ""
+	if cursor != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(cursor); err == nil {
+			parts := strings.SplitN(string(raw), "|", 2)
+			if len(parts) == 2 {
+				if ts, err := time.Parse(time.RFC3339Nano, parts[0]); err == nil {
+					args = append(args, ts.UTC(), parts[1])
+					cursorClause = fmt.Sprintf(" AND (ofc.created_at < $%d OR (ofc.created_at = $%d AND c.uri > $%d))", len(args)-1, len(args)-1, len(args))
+				}
+			}
+		}
+	}
+	args = append(args, limit)
+	limitParam := len(args)
+
+	query := fmt.Sprintf(`
+		SELECT
+			c.uri,
+			c.cid,
+			c.author_did,
+			c.name,
+			COALESCE(c.description, ''),
+			COALESCE(c.parent_uri, ''),
+			c.created_at,
+			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
+			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
+			ARRAY(
+				SELECT s2.author_did || ',' || s2.pds_blob_cid
+				FROM save s2
+				WHERE (s2.collection_uri = c.uri
+				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
+				  AND s2.content_nsid = 'is.currents.content.image'
+				  AND s2.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
+				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
+				LIMIT 4
+			) AS preview_blobs,
+			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			vfc.uri AS favourite_uri,
+			ofc.created_at AS favourited_at
+		FROM favourite_collection ofc
+		JOIN collection c ON c.uri = ofc.collection_uri
+		LEFT JOIN favourite_collection vfc
+			ON vfc.collection_uri = c.uri AND vfc.viewer_did = NULLIF($2, '')
+		WHERE ofc.viewer_did = $1
+		  AND c.cid IS NOT NULL
+		  %s
+		ORDER BY ofc.created_at DESC NULLS LAST, c.uri ASC
+		LIMIT $%d
+	`, cursorClause, limitParam)
+
+	rows, err := m.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var result []CollectionRow
+	var lastFavAt time.Time
+	for rows.Next() {
+		var row CollectionRow
+		var favAt time.Time
+		if err := rows.Scan(&row.URI, &row.CID, &row.AuthorDID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI, &favAt); err != nil {
+			return nil, "", err
+		}
+		result = append(result, row)
+		lastFavAt = favAt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var nextCursor string
+	if len(result) == limit {
+		last := result[len(result)-1]
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(lastFavAt.UTC().Format(time.RFC3339Nano) + "|" + last.URI))
 	}
 	return result, nextCursor, nil
 }
@@ -562,10 +652,11 @@ func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, li
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
-			CASE WHEN $2 != '' THEN (sc.viewer_did IS NOT NULL) END AS starred
+			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			fc.uri AS favourite_uri
 		FROM collection c
-		LEFT JOIN starred_collection sc
-			ON sc.collection_uri = c.uri AND sc.viewer_did = NULLIF($2, '')
+		LEFT JOIN favourite_collection fc
+			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($2, '')
 		WHERE c.cid IS NOT NULL
 		  AND c.name ILIKE '%' || $1 || '%'
 		ORDER BY save_count DESC, c.created_at DESC NULLS LAST, c.uri ASC
@@ -579,7 +670,74 @@ func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, li
 	var result []CollectionRow
 	for rows.Next() {
 		var row CollectionRow
-		if err := rows.Scan(&row.URI, &row.CID, &row.AuthorDID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred); err != nil {
+		if err := rows.Scan(&row.URI, &row.CID, &row.AuthorDID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// GetImageCollectionsPage returns the distinct collections that contain a save
+// of the same image (exact pds_blob_cid) as the given save URI, ordered by
+// favourite count descending. Unsorted saves (collection_uri = ”) and blocked
+// blobs are excluded. viewerDID hydrates each collection's FavouriteURI;
+// AuthorDID is populated so the caller can flag the viewer's own collections.
+// Offset-based pagination.
+func (m *PgStore) GetImageCollectionsPage(ctx context.Context, saveURI, viewerDID string, limit, offset int) ([]CollectionRow, error) {
+	rows, err := m.pool.Query(ctx, `
+		WITH target AS (
+			SELECT pds_blob_cid FROM save WHERE uri = $1 LIMIT 1
+		)
+		SELECT
+			c.uri,
+			c.cid,
+			c.author_did,
+			c.name,
+			COALESCE(c.description, ''),
+			COALESCE(c.parent_uri, ''),
+			c.created_at,
+			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
+			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
+			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
+			ARRAY(
+				SELECT s2.author_did || ',' || s2.pds_blob_cid
+				FROM save s2
+				WHERE (s2.collection_uri = c.uri
+				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
+				  AND s2.content_nsid = 'is.currents.content.image'
+				  AND s2.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
+				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
+				LIMIT 4
+			) AS preview_blobs,
+			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			fc.uri AS favourite_uri
+		FROM collection c
+		LEFT JOIN favourite_collection fc
+			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($2, '')
+		WHERE c.cid IS NOT NULL
+		  AND c.uri IN (
+			SELECT DISTINCT s.collection_uri
+			FROM save s, target t
+			WHERE s.pds_blob_cid = t.pds_blob_cid
+			  AND s.pds_blob_cid <> ''
+			  AND s.collection_uri <> ''
+			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  )
+		ORDER BY favourite_count DESC, c.created_at DESC NULLS LAST, c.uri ASC
+		LIMIT $3 OFFSET $4
+	`, saveURI, viewerDID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CollectionRow
+	for rows.Next() {
+		var row CollectionRow
+		if err := rows.Scan(&row.URI, &row.CID, &row.AuthorDID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -743,16 +901,17 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
 				LIMIT 4
 			) AS preview_blobs,
-			CASE WHEN $2 != '' THEN (sc.viewer_did IS NOT NULL) END AS starred
+			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			fc.uri AS favourite_uri
 		FROM collection c
-		LEFT JOIN starred_collection sc
-			ON sc.collection_uri = c.uri AND sc.viewer_did = NULLIF($2, '')
+		LEFT JOIN favourite_collection fc
+			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($2, '')
 		WHERE c.uri = $1
 		  AND c.cid IS NOT NULL
 	`
 	var row CollectionRow
 	err := m.pool.QueryRow(ctx, query, collectionURI, viewerDID).
-		Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs, &row.Starred)
+		Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.SaveCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -985,7 +1144,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 }
 
 // GetUnsortedSavesPage returns an actor's saves that belong to no collection
-// (collection_uri = ''), newest first. Mirrors GetSavesPage but scopes by author
+// (collection_uri = ”), newest first. Mirrors GetSavesPage but scopes by author
 // instead of collection. Blocked blobs are excluded.
 func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID string, limit int, cursor string) ([]SaveRow, string, error) {
 	args := []any{authorDID, limit, viewerDID}
@@ -3209,6 +3368,20 @@ func (m *PgStore) UpsertFollow(ctx context.Context, uri, followerDID, subjectDID
 
 func (m *PgStore) DeleteFollow(ctx context.Context, uri string) error {
 	_, err := m.pool.Exec(ctx, `DELETE FROM follow WHERE uri = $1`, uri)
+	return err
+}
+
+func (m *PgStore) UpsertFavourite(ctx context.Context, uri, viewerDID, collectionURI string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO favourite_collection (uri, viewer_did, collection_uri)
+		VALUES ($1, $2, $3)
+		ON CONFLICT DO NOTHING
+	`, uri, viewerDID, collectionURI)
+	return err
+}
+
+func (m *PgStore) DeleteFavourite(ctx context.Context, uri string) error {
+	_, err := m.pool.Exec(ctx, `DELETE FROM favourite_collection WHERE uri = $1`, uri)
 	return err
 }
 

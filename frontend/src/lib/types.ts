@@ -18,10 +18,12 @@ export interface CollectionView {
 	description?: string;
 	parentUri?: string;
 	saveCount?: number;
+	favouriteCount?: number;
 	previews?: PreviewItem[];
 	createdAt?: string;
 	lastSavedAt?: string;
-	viewer?: { starred?: boolean };
+	// `favourite` is the AT-URI of the viewer's favourite record (present iff favourited).
+	viewer?: { favourite?: string };
 }
 
 export interface ActorProfileView {

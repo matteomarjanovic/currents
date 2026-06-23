@@ -39,6 +39,10 @@
           "type": "integer",
           "description": "Number of saves currently in the collection."
         },
+        "favouriteCount": {
+          "type": "integer",
+          "description": "Number of accounts that have favourited this collection."
+        },
         "previews": {
           "type": "array",
           "maxLength": 4,
@@ -84,9 +88,10 @@
       "type": "object",
       "description": "Metadata about the requesting account's relationship with this collection. Only present when the request is authenticated.",
       "properties": {
-        "starred": {
-          "type": "boolean",
-          "description": "Whether the authenticated user has starred this collection."
+        "favourite": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "AT-URI of the viewer's favourite record for this collection, present only when the viewer has favourited it."
         }
       }
     },

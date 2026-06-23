@@ -4,7 +4,10 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { auth } from '$lib/stores/auth.svelte';
 
-	let { open = $bindable(false) }: { open?: boolean } = $props();
+	let {
+		open = $bindable(false),
+		description = "To follow users, Currents needs permission to create follow records on your AT Protocol account. You'll be redirected to re-authorize — it only takes a moment."
+	}: { open?: boolean; description?: string } = $props();
 
 	function reauthorize() {
 		const form = document.createElement('form');
@@ -27,8 +30,7 @@
 		<Dialog.Header>
 			<Dialog.Title>New permission required</Dialog.Title>
 			<Dialog.Description>
-				To follow users, Currents needs permission to create follow records on your AT Protocol
-				account. You'll be redirected to re-authorize — it only takes a moment.
+				{description}
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
