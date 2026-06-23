@@ -411,6 +411,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/import/active-session", srv.APIGetActiveImportSession)
 	http.HandleFunc("GET /api/import/sessions/{id}", srv.APIGetImportSession)
 	http.HandleFunc("GET /api/blob/alt", srv.APIGetBlobAlt)
+	http.HandleFunc("POST /api/extract-images", srv.APIExtractImages)
 	http.HandleFunc("GET /api/features/seen", srv.APIGetSeenFeatures)
 	http.HandleFunc("POST /api/features/seen/{key}", srv.APIMarkFeatureSeen)
 	http.HandleFunc("GET /api/moderation/prefs", srv.APIGetModerationPrefs)

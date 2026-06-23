@@ -14,6 +14,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.7
 	github.com/whyrusleeping/cbor-gen v0.2.1-0.20241030202151-b7a6831be65e
 	golang.org/x/image v0.38.0
+	golang.org/x/net v0.47.0
 )
 
 require (

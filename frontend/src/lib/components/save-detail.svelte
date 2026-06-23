@@ -49,6 +49,18 @@
 	let currentSave = $derived(hydratedSave ?? save);
 	let image = $derived(getImageContent(currentSave));
 	let hiddenByPrefs = $derived(shouldHide(currentSave.labels));
+	// Render the source only as an http(s) link — guards a "javascript:"/"data:"
+	// originUrl (defense in depth; the appview validates the scheme on write).
+	let sourceLink = $derived.by(() => {
+		const u = currentSave.originUrl;
+		if (!u) return null;
+		try {
+			const p = new URL(u);
+			return p.protocol === 'http:' || p.protocol === 'https:' ? p : null;
+		} catch {
+			return null;
+		}
+	});
 	let attributionDialogOpen = $state(false);
 	let reportDialogOpen = $state(false);
 
@@ -348,16 +360,16 @@
 		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
 
-	{#if currentSave.originUrl}
+	{#if sourceLink}
 		<div class="inline-flex items-center gap-1 text-sm text-muted-foreground">
 			<span>Source:</span>
 			<a
-				href={currentSave.originUrl}
+				href={sourceLink.href}
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center gap-1 hover:text-foreground"
 			>
-				<span class="truncate">{new URL(currentSave.originUrl).hostname}</span>
+				<span class="truncate">{sourceLink.hostname}</span>
 				<ExternalLink class="size-3.5" />
 			</a>
 		</div>

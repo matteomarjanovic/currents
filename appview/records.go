@@ -470,22 +470,29 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 	selfLabelVals := parseSelfLabels(r.PostFormValue("labels"))
 
-	// Require image
-	file, header, fileErr := r.FormFile("image")
-	if fileErr != nil {
-		http.Error(w, "image is required", http.StatusBadRequest)
+	// Image bytes come from either an uploaded file or a remote URL (paste-from-URL).
+	var imageBytes []byte
+	var contentType string
+	if file, header, fileErr := r.FormFile("image"); fileErr == nil {
+		defer file.Close()
+		contentType = header.Header.Get("Content-Type")
+		imageBytes, err = io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "reading image file", http.StatusInternalServerError)
+			return
+		}
+	} else if imageURL := strings.TrimSpace(r.PostFormValue("imageUrl")); imageURL != "" {
+		imageBytes, contentType, err = fetchRemoteImage(r.Context(), imageURL)
+		if err != nil {
+			http.Error(w, "could not fetch image from URL", http.StatusBadGateway)
+			return
+		}
+	} else {
+		http.Error(w, "image or imageUrl is required", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
-
-	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
-	}
-	imageBytes, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, "reading image file", http.StatusInternalServerError)
-		return
 	}
 	if len(imageBytes) > maxBlobSize {
 		prepared, preparedCT, err := prepareImageForUpload(r.Context(), s.Inference, imageBytes, contentType)
@@ -531,8 +538,8 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	if labels := buildSelfLabelsRecord(selfLabelVals); labels != nil {
 		record["labels"] = labels
 	}
-	if url != "" {
-		record["originUrl"] = url
+	if safe := safeOriginURL(url); safe != "" {
+		record["originUrl"] = safe
 	}
 	if title != "" {
 		record["text"] = title
@@ -657,11 +664,12 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		"createdAt":  existingVal.CreatedAt,
 	}
 
-	// Use form value if provided, otherwise preserve existing
-	if url != "" {
-		record["originUrl"] = url
-	} else if existingVal.OriginURL != "" {
-		record["originUrl"] = existingVal.OriginURL
+	// Use form value if provided, otherwise preserve existing. Validate the
+	// scheme either way so a non-http(s) originUrl can never reach the client.
+	if safe := safeOriginURL(url); safe != "" {
+		record["originUrl"] = safe
+	} else if safe := safeOriginURL(existingVal.OriginURL); safe != "" {
+		record["originUrl"] = safe
 	}
 	if title != "" {
 		record["text"] = title

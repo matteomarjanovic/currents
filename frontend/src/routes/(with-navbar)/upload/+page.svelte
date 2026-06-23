@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Popover from '$lib/components/ui/popover';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
@@ -20,12 +21,14 @@
 	type StagedStatus = 'pending' | 'uploading' | 'done' | 'error';
 	type Staged = {
 		id: string;
-		file: File;
-		url: string;
+		url: string; // preview src: object URL for local files, remote URL for pasted images
 		status: StagedStatus;
 		error?: string;
 		alt?: string;
 		altSuggested?: boolean;
+		file?: File; // present for local uploads
+		imageUrl?: string; // paste-from-URL: the appview downloads this server-side
+		pageUrl?: string; // source page, saved as the record's originUrl
 	};
 
 	let staged = $state<Staged[]>([]);
@@ -39,6 +42,8 @@
 	let dragActive = $state(false);
 	let dragDepth = 0;
 	let fileInputEl: HTMLInputElement | undefined = $state();
+	let sourceUrl = $state('');
+	let fetching = $state(false);
 
 	const SELF_LABEL_OPTIONS: { val: string; label: string }[] = [
 		{ val: 'porn', label: 'Porn' },
@@ -72,7 +77,7 @@
 			status: 'pending'
 		}));
 		staged = [...staged, ...mapped];
-		for (const item of mapped) void prefillAlt(item.id, item.file);
+		for (const item of mapped) if (item.file) void prefillAlt(item.id, item.file);
 	}
 
 	// If this exact image already has alt text somewhere in the network, pre-fill
@@ -95,9 +100,65 @@
 		}
 	}
 
+	// Paste-from-URL: ask the appview to scrape a page (it fetches server-side to
+	// avoid CORS), then stage the images directly, as if uploaded from disk.
+	async function fetchFromUrl() {
+		const u = sourceUrl.trim();
+		if (!u || fetching) return;
+		// Client-side check is UX only — the appview re-validates the scheme and
+		// blocks internal addresses, since a direct caller can bypass this.
+		try {
+			const proto = new URL(u).protocol;
+			if (proto !== 'http:' && proto !== 'https:') throw new Error();
+		} catch {
+			toast.error('Enter a valid http(s) URL (including https://).');
+			return;
+		}
+		fetching = true;
+		try {
+			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/extract-images`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ url: u })
+			});
+			if (res.status === 401) {
+				auth.user = null;
+				promptLogin();
+				return;
+			}
+			if (!res.ok) {
+				toast.error('Could not fetch images from that URL.');
+				return;
+			}
+			const data: { images?: string[] } = await res.json();
+			const imgs = data.images ?? [];
+			if (imgs.length === 0) {
+				toast.error('No images found at that URL.');
+				return;
+			}
+			// Stage them directly. Unreachable previews auto-remove (the staged
+			// grid's onerror), which also filters scraped junk like dead links.
+			const mapped: Staged[] = imgs.map((imageUrl) => ({
+				id: `url-${imageUrl}-${Math.random()}`,
+				url: imageUrl,
+				imageUrl,
+				pageUrl: u,
+				status: 'pending'
+			}));
+			staged = [...staged, ...mapped];
+			sourceUrl = '';
+			toast.success(`Added ${mapped.length} image${mapped.length === 1 ? '' : 's'} from the page.`);
+		} catch {
+			toast.error('Could not fetch images from that URL.');
+		} finally {
+			fetching = false;
+		}
+	}
+
 	function removeStaged(id: string) {
 		const item = staged.find((s) => s.id === id);
-		if (item) URL.revokeObjectURL(item.url);
+		if (item?.file) URL.revokeObjectURL(item.url);
 		staged = staged.filter((s) => s.id !== id);
 	}
 
@@ -131,7 +192,12 @@
 		item.status = 'uploading';
 		try {
 			const form = new FormData();
-			form.append('image', item.file, item.file.name);
+			if (item.file) {
+				form.append('image', item.file, item.file.name);
+			} else if (item.imageUrl) {
+				form.append('imageUrl', item.imageUrl);
+				if (item.pageUrl) form.append('url', item.pageUrl);
+			}
 			form.append('collection', selectedCollectionUri ?? '');
 			if (item.alt?.trim()) {
 				form.append('alt', item.alt.trim());
@@ -210,7 +276,7 @@
 	}
 
 	onDestroy(() => {
-		for (const s of staged) URL.revokeObjectURL(s.url);
+		for (const s of staged) if (s.file) URL.revokeObjectURL(s.url);
 	});
 </script>
 
@@ -295,11 +361,40 @@
 		{/if}
 	</div>
 
+	<div class="flex items-center gap-2">
+		<Input
+			type="url"
+			placeholder="…or paste a page or image URL"
+			bind:value={sourceUrl}
+			disabled={fetching || uploading}
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					fetchFromUrl();
+				}
+			}}
+		/>
+		<Button
+			variant="secondary"
+			onclick={fetchFromUrl}
+			disabled={!sourceUrl.trim() || fetching || uploading}
+		>
+			{fetching ? 'Fetching…' : 'Fetch'}
+		</Button>
+	</div>
+
 	{#if staged.length > 0}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
 			{#each staged as item (item.id)}
 				<div class="group relative aspect-square overflow-hidden rounded-xl bg-muted">
-					<img src={item.url} alt="" class="size-full object-cover" />
+					<img
+						src={item.url}
+						alt=""
+						class="size-full object-cover"
+						onerror={() => {
+							if (item.imageUrl) removeStaged(item.id);
+						}}
+					/>
 					{#if item.status === 'uploading'}
 						<div
 							class="absolute inset-0 flex items-center justify-center bg-black/40 text-xs font-medium text-white"
