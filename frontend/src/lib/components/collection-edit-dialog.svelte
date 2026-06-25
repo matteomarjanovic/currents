@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -40,9 +40,8 @@
 		submitting = true;
 		error = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/collection/${rkey}`, {
+			const res = await apiFetch(`/collection/${rkey}`, {
 				method: 'PUT',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: trimmedName, description: description.trim() })
 			});

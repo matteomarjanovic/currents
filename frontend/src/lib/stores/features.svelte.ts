@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 import { SvelteSet } from 'svelte/reactivity';
 
 // Server-backed, per-user "seen feature" flags driving one-time "new feature"
@@ -20,7 +20,7 @@ export const features = $state({
 
 export async function loadSeenFeatures() {
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/features/seen`, { credentials: 'include' });
+		const res = await apiFetch(`/api/features/seen`);
 		if (!res.ok) return;
 		const data = (await res.json()) as { seen?: string[] };
 		// Union (flags are append-only) so an optimistic markFeatureSeen() done
@@ -46,9 +46,8 @@ export async function markFeatureSeen(key: string) {
 	if (features.seen.has(key)) return;
 	features.seen.add(key); // optimistic
 	try {
-		await fetch(`${PUBLIC_APPVIEW_URL}/api/features/seen/${encodeURIComponent(key)}`, {
-			method: 'POST',
-			credentials: 'include'
+		await apiFetch(`/api/features/seen/${encodeURIComponent(key)}`, {
+			method: 'POST'
 		});
 	} catch {
 		// best-effort; will resync on next load

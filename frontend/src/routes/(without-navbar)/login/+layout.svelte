@@ -3,11 +3,11 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { apiFetch } from '$lib/api';
 
 	let { children } = $props();
 
@@ -17,7 +17,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me`, { credentials: 'include' });
+			const res = await apiFetch('/api/me');
 			if (res.ok) {
 				user = await res.json();
 			}

@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 
 // Shared follow/unfollow calls against the appview, used by the profile header
 // and the Activity notifications tab. `scope-missing` means the user's OAuth
@@ -10,9 +10,8 @@ export type FollowOutcome =
 
 export async function followUser(subject: string): Promise<FollowOutcome> {
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/follow`, {
+		const res = await apiFetch(`/follow`, {
 			method: 'POST',
-			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ subject })
 		});
@@ -33,9 +32,8 @@ export async function followUser(subject: string): Promise<FollowOutcome> {
 export async function unfollowUser(followUri: string): Promise<boolean> {
 	const rkey = followUri.split('/').at(-1);
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/follow/${rkey}`, {
-			method: 'DELETE',
-			credentials: 'include'
+		const res = await apiFetch(`/follow/${rkey}`, {
+			method: 'DELETE'
 		});
 		return res.ok;
 	} catch {

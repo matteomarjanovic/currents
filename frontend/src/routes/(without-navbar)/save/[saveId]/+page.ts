@@ -1,17 +1,16 @@
 import { redirect } from '@sveltejs/kit';
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ params, fetch }) => {
+export const load: PageLoad = async ({ params }) => {
 	const uri = decodeURIComponent(params.saveId);
 	const parts = uri.split('/');
 	const authority = parts[2] ?? '';
 	const rkey = parts[4] ?? '';
 
 	let handle = authority;
-	const res = await fetch(
-		`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(authority)}`,
-		{ credentials: 'include' }
+	const res = await apiFetch(
+		`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(authority)}`
 	);
 	if (res.ok) {
 		const profile = await res.json();

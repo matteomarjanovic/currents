@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 
 export type AttestationItem = {
 	id: number;
@@ -40,9 +40,7 @@ export async function refreshNotifications() {
 	notifications.loading = true;
 	notifications.error = null;
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/attestations`, {
-			credentials: 'include'
-		});
+		const res = await apiFetch(`/api/me/attestations`);
 		if (res.status === 401) {
 			notifications.items = [];
 			return;

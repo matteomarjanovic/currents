@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 
@@ -69,9 +69,7 @@
 		params.set('limit', String(limit));
 		params.set('offset', String(off));
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/admin/queue?${params}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/admin/queue?${params}`);
 			if (!res.ok) {
 				error = `Failed to load queue (${res.status})`;
 				items = [];

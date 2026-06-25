@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Avatar from '$lib/components/ui/avatar';
@@ -10,7 +10,11 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Label } from '$lib/components/ui/label';
 	import UserIcon from '@lucide/svelte/icons/user';
+	import Images from '@lucide/svelte/icons/images';
+	import { isNative } from '$lib/platform';
 	import type { ActorProfileView } from '$lib/types';
+
+	const native = isNative();
 
 	interface RepoBlobRef {
 		$type?: string;
@@ -54,8 +58,9 @@
 	let bannerInput: HTMLInputElement | null = $state(null);
 	let avatarObjectUrl: string | null = $state(null);
 	let bannerObjectUrl: string | null = $state(null);
-	let avatarFiles = $state<FileList | undefined>(undefined);
-	let bannerFiles = $state<FileList | undefined>(undefined);
+	// The chosen image as a single File (from the web file input or the native gallery picker).
+	let avatarFile = $state<File | undefined>(undefined);
+	let bannerFile = $state<File | undefined>(undefined);
 
 	const initials = $derived(
 		(displayName || profile.displayName || profile.handle || '?').trim().charAt(0).toUpperCase()
@@ -88,15 +93,21 @@
 		bannerBlob = '';
 		removeAvatar = false;
 		removeBanner = false;
-		avatarFiles = undefined;
-		bannerFiles = undefined;
+		avatarFile = undefined;
+		bannerFile = undefined;
 		if (avatarInput) avatarInput.value = '';
 		if (bannerInput) bannerInput.value = '';
 		error = null;
 	}
 
+	// Only re-populate the form when the dialog opens — untrack so the reads inside resetForm
+	// (e.g. avatarObjectUrl via the revoke helpers) don't make this effect re-run and wipe a
+	// freshly-picked image the moment its object URL is created.
+	// Only re-populate the form when the dialog opens — untrack so the reads inside resetForm
+	// (e.g. avatarObjectUrl via the revoke helpers) don't make this effect re-run and wipe a
+	// freshly-picked image the moment its object URL is created.
 	$effect(() => {
-		if (open) resetForm();
+		if (open) untrack(() => resetForm());
 	});
 
 	function applyImportedImage(
@@ -106,7 +117,7 @@
 	) {
 		if (kind === 'avatar') {
 			revokeAvatarObjectUrl();
-			avatarFiles = undefined;
+			avatarFile = undefined;
 			if (avatarInput) avatarInput.value = '';
 			avatarPreview = preview ?? '';
 			avatarBlob = blob ? JSON.stringify(blob) : '';
@@ -114,36 +125,73 @@
 			return;
 		}
 		revokeBannerObjectUrl();
-		bannerFiles = undefined;
+		bannerFile = undefined;
 		if (bannerInput) bannerInput.value = '';
 		bannerPreview = preview ?? '';
 		bannerBlob = blob ? JSON.stringify(blob) : '';
 		removeBanner = !blob;
 	}
 
-	function onAvatarChange() {
-		const file = avatarFiles?.[0];
-		if (!file) return;
+	function setAvatarFile(file: File) {
 		revokeAvatarObjectUrl();
+		avatarFile = file;
 		avatarObjectUrl = URL.createObjectURL(file);
 		avatarPreview = avatarObjectUrl;
 		avatarBlob = '';
 		removeAvatar = false;
 	}
 
-	function onBannerChange() {
-		const file = bannerFiles?.[0];
-		if (!file) return;
+	function setBannerFile(file: File) {
 		revokeBannerObjectUrl();
+		bannerFile = file;
 		bannerObjectUrl = URL.createObjectURL(file);
 		bannerPreview = bannerObjectUrl;
 		bannerBlob = '';
 		removeBanner = false;
 	}
 
+	function onAvatarInput(e: Event) {
+		const file = (e.currentTarget as HTMLInputElement).files?.[0];
+		if (file) setAvatarFile(file);
+	}
+
+	function onBannerInput(e: Event) {
+		const file = (e.currentTarget as HTMLInputElement).files?.[0];
+		if (file) setBannerFile(file);
+	}
+
+	// Native uses the gallery picker (the web file input returns a content:// File the
+	// Android WebView can't read), mirroring the image-upload page.
+	async function pickProfileImage(kind: 'avatar' | 'banner') {
+		try {
+			const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+			const photo = await Camera.getPhoto({
+				resultType: CameraResultType.Uri,
+				source: CameraSource.Photos,
+				quality: 90,
+				correctOrientation: true,
+				allowEditing: false
+			});
+			if (!photo.webPath) return;
+			const blob = await (await fetch(photo.webPath)).blob();
+			const ext = (photo.format ?? 'jpeg').toLowerCase();
+			const file = new File([blob], `${kind}-${Date.now()}.${ext}`, {
+				type: blob.type || `image/${ext}`,
+				lastModified: Date.now()
+			});
+			if (kind === 'avatar') setAvatarFile(file);
+			else setBannerFile(file);
+		} catch (err) {
+			// `cancelled` is the user dismissing the picker — not an error worth surfacing.
+			const msg = err instanceof Error ? err.message : String(err);
+			console.warn('[profile-pick] error', msg);
+			if (!/cancel/i.test(msg)) toast.error('Could not load the selected image.');
+		}
+	}
+
 	function clearAvatar() {
 		revokeAvatarObjectUrl();
-		avatarFiles = undefined;
+		avatarFile = undefined;
 		if (avatarInput) avatarInput.value = '';
 		avatarPreview = '';
 		avatarBlob = '';
@@ -152,7 +200,7 @@
 
 	function clearBanner() {
 		revokeBannerObjectUrl();
-		bannerFiles = undefined;
+		bannerFile = undefined;
 		if (bannerInput) bannerInput.value = '';
 		bannerPreview = '';
 		bannerBlob = '';
@@ -163,9 +211,7 @@
 		importing = true;
 		error = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/profile/import-bluesky`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/profile/import-bluesky`);
 			if (!res.ok) {
 				error = (await res.text()).trim() || `Failed to import (${res.status}).`;
 				return;
@@ -196,13 +242,12 @@
 			if (removeBanner) form.set('removeBanner', 'true');
 			if (avatarBlob) form.set('avatarBlob', avatarBlob);
 			if (bannerBlob) form.set('bannerBlob', bannerBlob);
-			if (avatarFiles?.[0]) form.set('avatar', avatarFiles[0], avatarFiles[0].name);
-			if (bannerFiles?.[0]) form.set('banner', bannerFiles[0], bannerFiles[0].name);
+			if (avatarFile) form.set('avatar', avatarFile, avatarFile.name);
+			if (bannerFile) form.set('banner', bannerFile, bannerFile.name);
 
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/profile`, {
+			const res = await apiFetch(`/api/profile`, {
 				method: 'PUT',
-				body: form,
-				credentials: 'include'
+				body: form
 			});
 			if (!res.ok) {
 				if (res.status === 401) auth.user = null;
@@ -262,45 +307,51 @@
 
 			<div class="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 				<div class="space-y-3 rounded-3xl border border-border/70 p-4">
-					<div class="space-y-2">
-						<Label>Avatar</Label>
-						<div class="flex items-center gap-4">
-							<Avatar.Root class="size-20">
-								{#if avatarPreview}
-									<Avatar.Image src={avatarPreview} alt={displayName || profile.handle} />
-								{/if}
-								<Avatar.Fallback class="text-xl">
-									{#if initials && initials !== '?'}
-										{initials}
-									{:else}
-										<UserIcon class="size-6" />
-									{/if}
-								</Avatar.Fallback>
-							</Avatar.Root>
-							<div class="min-w-0 flex-1 space-y-2">
-								<Input
-									id="profile-avatar"
-									type="file"
-									accept="image/png,image/jpeg"
-									bind:ref={avatarInput}
-									bind:files={avatarFiles}
-									onchange={onAvatarChange}
-									disabled={submitting || importing}
-								/>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									onclick={clearAvatar}
-									disabled={submitting ||
-										importing ||
-										(!avatarPreview && !avatarFiles?.[0] && !avatarBlob)}
-								>
-									Remove avatar
-								</Button>
-							</div>
-						</div>
-					</div>
+					<Label>Avatar</Label>
+					<Avatar.Root class="size-20">
+						{#if avatarPreview}
+							<Avatar.Image src={avatarPreview} alt={displayName || profile.handle} />
+						{/if}
+						<Avatar.Fallback class="text-xl">
+							{#if initials && initials !== '?'}
+								{initials}
+							{:else}
+								<UserIcon class="size-6" />
+							{/if}
+						</Avatar.Fallback>
+					</Avatar.Root>
+					{#if native}
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							class="w-full"
+							onclick={() => pickProfileImage('avatar')}
+							disabled={submitting || importing}
+						>
+							<Images class="size-4" />
+							Choose from gallery
+						</Button>
+					{:else}
+						<Input
+							id="profile-avatar"
+							type="file"
+							accept="image/png,image/jpeg"
+							bind:ref={avatarInput}
+							onchange={onAvatarInput}
+							disabled={submitting || importing}
+						/>
+					{/if}
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						class="w-full"
+						onclick={clearAvatar}
+						disabled={submitting || importing || (!avatarPreview && !avatarFile && !avatarBlob)}
+					>
+						Remove avatar
+					</Button>
 				</div>
 
 				<div class="space-y-3 rounded-3xl border border-border/70 p-4">
@@ -319,23 +370,34 @@
 								</div>
 							{/if}
 						</div>
-						<Input
-							id="profile-banner"
-							type="file"
-							accept="image/png,image/jpeg"
-							bind:ref={bannerInput}
-							bind:files={bannerFiles}
-							onchange={onBannerChange}
-							disabled={submitting || importing}
-						/>
+						{#if native}
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								class="w-full"
+								onclick={() => pickProfileImage('banner')}
+								disabled={submitting || importing}
+							>
+								<Images class="size-4" />
+								Choose from gallery
+							</Button>
+						{:else}
+							<Input
+								id="profile-banner"
+								type="file"
+								accept="image/png,image/jpeg"
+								bind:ref={bannerInput}
+								onchange={onBannerInput}
+								disabled={submitting || importing}
+							/>
+						{/if}
 						<Button
 							type="button"
 							variant="ghost"
 							size="sm"
 							onclick={clearBanner}
-							disabled={submitting ||
-								importing ||
-								(!bannerPreview && !bannerFiles?.[0] && !bannerBlob)}
+							disabled={submitting || importing || (!bannerPreview && !bannerFile && !bannerBlob)}
 						>
 							Remove banner
 						</Button>

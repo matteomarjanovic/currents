@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 import { auth } from '$lib/stores/auth.svelte';
 import type { LabelView } from '$lib/types';
 
@@ -54,9 +54,7 @@ export const modPrefsLoaded = $state({ value: false });
 
 export async function loadModerationPrefs() {
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/moderation/prefs`, {
-			credentials: 'include'
-		});
+		const res = await apiFetch(`/api/moderation/prefs`);
 		if (!res.ok) return;
 		const data = (await res.json()) as Partial<Prefs>;
 		if (isAdult(data.porn)) modPrefs.porn = data.porn;
@@ -72,9 +70,8 @@ export async function loadModerationPrefs() {
 
 async function persist() {
 	try {
-		await fetch(`${PUBLIC_APPVIEW_URL}/api/moderation/prefs`, {
+		await apiFetch(`/api/moderation/prefs`, {
 			method: 'PUT',
-			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				porn: modPrefs.porn,

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -57,9 +57,8 @@
 					cid: ''
 				}
 			};
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/com.atproto.moderation.createReport`, {
+			const res = await apiFetch(`/xrpc/com.atproto.moderation.createReport`, {
 				method: 'POST',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(body)
 			});

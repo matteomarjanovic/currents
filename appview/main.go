@@ -149,6 +149,17 @@ func main() {
 				EnvVars: []string{"FRONTEND_URL"},
 			},
 			&cli.StringFlag{
+				Name:    "mobile-origins",
+				Usage:   "comma-separated additional CORS-allowed origins for native clients (capacitor://localhost and https://localhost are always allowed)",
+				EnvVars: []string{"MOBILE_ORIGINS"},
+			},
+			&cli.StringFlag{
+				Name:    "mobile-redirect-schemes",
+				Usage:   "comma-separated allowed return_to URL prefixes for native deep links",
+				Value:   "currents://",
+				EnvVars: []string{"MOBILE_REDIRECT_SCHEMES"},
+			},
+			&cli.StringFlag{
 				Name:    "hidden-dids",
 				Usage:   "comma-separated author DIDs to hide from feed/search results",
 				EnvVars: []string{"HIDDEN_DIDS"},
@@ -324,12 +335,14 @@ func runServer(cctx *cli.Context) error {
 			Audience: serviceDID,
 			Dir:      dir,
 		},
-		Inference:    inferenceClient,
-		FrontendURL:  cctx.String("frontend-url"),
-		ProcessMode:  mode,
-		ImportWorker: importWorker,
-		Labeler:      labelerIssuer,
-		LabelerHost:  labelerHost,
+		Inference:             inferenceClient,
+		FrontendURL:           cctx.String("frontend-url"),
+		ProcessMode:           mode,
+		ImportWorker:          importWorker,
+		Labeler:               labelerIssuer,
+		LabelerHost:           labelerHost,
+		MobileOrigins:         splitCSV(cctx.String("mobile-origins")),
+		MobileRedirectSchemes: splitCSV(cctx.String("mobile-redirect-schemes")),
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -362,6 +375,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/me/bluesky-follows", srv.APIMeBlueskyFollows)
 
 	http.HandleFunc("POST /oauth/login", srv.OAuthLogin)
+	// GET path is for native clients running OAuth inside @capacitor/browser (requires ?username=).
+	http.HandleFunc("GET /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)
 
 	http.HandleFunc("POST /collection", srv.CreateCollection)
@@ -426,9 +441,9 @@ func runServer(cctx *cli.Context) error {
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)
-	if srv.FrontendURL != "" {
-		handler = srv.corsMiddleware(handler)
-	}
+	// Always enabled: native clients send an Origin (capacitor://localhost / https://localhost)
+	// that must be allowed even when no web frontend URL is configured.
+	handler = srv.corsMiddleware(handler)
 
 	httpServer := &http.Server{
 		Addr:              bind,

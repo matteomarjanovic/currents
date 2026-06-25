@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { deletedCollectionUris } from '$lib/stores/collections.svelte';
+	import { onSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ProfileHeader from '$lib/components/profile-header.svelte';
 	import ProfileEditDialog from '$lib/components/profile-edit-dialog.svelte';
@@ -49,14 +51,19 @@
 		const handle = page.params.handle ?? '';
 		const params = new URLSearchParams({ actor: handle, limit: '50' });
 		if (cursor) params.set('cursor', cursor);
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getUnsortedSaves?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getUnsortedSaves?${params}`);
 		if (!res.ok) return { items: [], cursor: undefined };
 		const data = await res.json();
 		return { items: data.saves ?? [], cursor: data.cursor };
 	});
+
+	// Drop an unsorted save from the grid when it's unsaved from the profile elsewhere
+	// (UNSORTED_URI is the empty-string sentinel). Matches by the deleted record's uri.
+	onMount(() =>
+		onSaveRemoved(({ saveUri, collectionUri }) => {
+			if (collectionUri === '') unsorted.removeItem(saveUri);
+		})
+	);
 
 	// Collections this user has favourited (public, like GitHub stars). Fetched
 	// lazily the first time the Favourites tab is opened.
@@ -64,10 +71,7 @@
 		const handle = page.params.handle ?? '';
 		const params = new URLSearchParams({ actor: handle, limit: '30' });
 		if (cursor) params.set('cursor', cursor);
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.graph.getFavouriteCollections?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await apiFetch(`/xrpc/is.currents.graph.getFavouriteCollections?${params}`);
 		if (!res.ok) return { items: [], cursor: undefined };
 		const data = await res.json();
 		return { items: data.collections ?? [], cursor: data.cursor };
@@ -84,13 +88,9 @@
 		favourites.reset();
 
 		Promise.all([
-			fetch(
-				`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`,
-				{ credentials: 'include' }
-			),
-			fetch(
-				`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=100`,
-				{ credentials: 'include' }
+			apiFetch(`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`),
+			apiFetch(
+				`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=100`
 			)
 		])
 			.then(async ([pRes, cRes]) => {
@@ -121,9 +121,7 @@
 		}
 		void (async () => {
 			try {
-				const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/active-session`, {
-					credentials: 'include'
-				});
+				const res = await apiFetch(`/api/import/active-session`);
 				if (!res.ok) return;
 				const data = await res.json();
 				activeImport = !!data.sessionId;

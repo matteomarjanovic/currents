@@ -3,7 +3,6 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
@@ -11,8 +10,13 @@
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
+	import { apiFetch } from '$lib/api';
+	import { isNative } from '$lib/platform';
+	import { lockBodyScroll } from '$lib/scroll-lock';
 
 	let { children } = $props();
+
+	const native = isNative();
 
 	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null =
 		$state(null);
@@ -20,7 +24,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me`, { credentials: 'include' });
+			const res = await apiFetch('/api/me');
 			if (res.ok) {
 				user = await res.json();
 			}
@@ -50,38 +54,12 @@
 			!isExplorePage &&
 			!isSavePage
 		) {
-			goto('/login');
+			goto(native ? '/' : '/login');
 		}
 	});
 
 	$effect(() => {
-		if (page.state.save) {
-			const y = window.scrollY;
-			const body = document.body;
-			const prev = {
-				position: body.style.position,
-				top: body.style.top,
-				left: body.style.left,
-				right: body.style.right,
-				width: body.style.width,
-				overflow: body.style.overflow
-			};
-			body.style.position = 'fixed';
-			body.style.top = `-${y}px`;
-			body.style.left = '0';
-			body.style.right = '0';
-			body.style.width = '100%';
-			body.style.overflow = 'hidden';
-			return () => {
-				body.style.position = prev.position;
-				body.style.top = prev.top;
-				body.style.left = prev.left;
-				body.style.right = prev.right;
-				body.style.width = prev.width;
-				body.style.overflow = prev.overflow;
-				window.scrollTo(0, y);
-			};
-		}
+		if (page.state.save) return lockBodyScroll();
 	});
 
 	let overlayEl: HTMLDivElement | undefined = $state();

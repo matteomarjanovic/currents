@@ -5,7 +5,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import UserIcon from '@lucide/svelte/icons/user';
 	import { resolve } from '$app/paths';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { followUser } from '$lib/follow';
 	import FollowScopeDialog from './follow-scope-dialog.svelte';
 
@@ -32,9 +32,7 @@
 		loading = true;
 		error = false;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/bluesky-follows`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/me/bluesky-follows`);
 			if (!res.ok) throw new Error('request failed');
 			const data = await res.json();
 			candidates = (data.actors ?? []).map((a: Omit<Candidate, 'following' | 'busy'>) => ({

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import {
@@ -10,6 +10,7 @@
 		addCollection
 	} from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
+	import { emitSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
 	import { Button, type ButtonVariant } from '$lib/components/ui/button';
 	import { Toggle } from '$lib/components/ui/toggle';
@@ -163,11 +164,10 @@
 		onSavesChange?.(localSaves);
 		if (collectionUri !== UNSORTED_URI) setLastUsedCollection(collectionUri);
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/resave`, {
+			const res = await apiFetch(`/resave`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ saveUri: item.uri, collectionUri }),
-				credentials: 'include'
+				body: JSON.stringify({ saveUri: item.uri, collectionUri })
 			});
 			if (!res.ok) {
 				if (res.status === 401) {
@@ -210,9 +210,8 @@
 		onSavesChange?.(localSaves);
 		try {
 			const rkey = saveUri.split('/').pop()!;
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}`, {
-				method: 'DELETE',
-				credentials: 'include'
+			const res = await apiFetch(`/save/${rkey}`, {
+				method: 'DELETE'
 			});
 			if (!res.ok) {
 				if (res.status === 401) {
@@ -226,6 +225,8 @@
 					? 'your profile'
 					: (collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection');
 			toast.success(`Removed from ${collectionName}`);
+			// Let an open collection / unsorted grid drop this image without a refetch.
+			emitSaveRemoved({ saveUri, collectionUri });
 		} catch (e) {
 			console.error('unsave failed', e);
 			localSaves = prev;

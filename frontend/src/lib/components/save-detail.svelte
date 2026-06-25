@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import Logo from '$lib/assets/logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Avatar from '$lib/components/ui/avatar';
@@ -96,9 +96,7 @@
 		void (async () => {
 			try {
 				const params = new URLSearchParams({ uris: uri });
-				const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`, {
-					credentials: 'include'
-				});
+				const res = await apiFetch(`/xrpc/is.currents.feed.getSaves?${params}`);
 				if (!res.ok) return;
 				const data = (await res.json()) as { saves?: SaveView[] };
 				const fetchedSave = data.saves?.[0];
@@ -130,12 +128,7 @@
 				if (cancelled) return;
 				try {
 					const params = new URLSearchParams({ uris: uri });
-					const res = await fetch(
-						`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getSaves?${params}`,
-						{
-							credentials: 'include'
-						}
-					);
+					const res = await apiFetch(`/xrpc/is.currents.feed.getSaves?${params}`);
 					if (!res.ok) continue;
 					const data = (await res.json()) as { saves?: SaveView[] };
 					const fetched = data.saves?.[0];
@@ -223,10 +216,7 @@
 	const related = useInfiniteScroll(async (cursor) => {
 		const params = new URLSearchParams({ uri: currentSave.uri, limit: '50' });
 		if (cursor) params.set('cursor', cursor);
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getRelatedSaves?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getRelatedSaves?${params}`);
 		const data = await res.json();
 		return { items: data.saves ?? [], cursor: data.cursor };
 	});
@@ -260,10 +250,7 @@
 	const imageCollections = useInfiniteScroll<CollectionView>(async (cursor) => {
 		const params = new URLSearchParams({ uri: currentSave.uri, limit: '50' });
 		if (cursor) params.set('cursor', cursor);
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getImageCollections?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getImageCollections?${params}`);
 		if (!res.ok) return { items: [], cursor: undefined };
 		const data = await res.json();
 		return { items: data.collections ?? [], cursor: data.cursor };

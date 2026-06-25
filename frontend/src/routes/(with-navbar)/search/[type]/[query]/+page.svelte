@@ -3,7 +3,7 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
@@ -39,9 +39,7 @@
 			if (fetchedType === 'saves') params.set('excludeSaved', 'true');
 			if (cursor) params.set('cursor', cursor);
 
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/${cfg.path}?${params}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/xrpc/${cfg.path}?${params}`);
 			const data = await res.json();
 			loadedType = fetchedType;
 			return { items: data[cfg.key] ?? [], cursor: data.cursor };

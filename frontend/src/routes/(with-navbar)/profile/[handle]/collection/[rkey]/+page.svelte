@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { untrack, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { removeCollection } from '$lib/stores/collections.svelte';
+	import { onSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import SelectableSaveGrid from '$lib/components/selectable-save-grid.svelte';
@@ -48,9 +49,8 @@
 			childrenLoaded = true;
 			return;
 		}
-		fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&parent=${encodeURIComponent(uri)}&limit=100`,
-			{ credentials: 'include' }
+		apiFetch(
+			`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&parent=${encodeURIComponent(uri)}&limit=100`
 		)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((d) => {
@@ -70,9 +70,8 @@
 			parent = null;
 		});
 		if (!pUri) return;
-		fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getCollectionSaves?collection=${encodeURIComponent(pUri)}&limit=1`,
-			{ credentials: 'include' }
+		apiFetch(
+			`/xrpc/is.currents.feed.getCollectionSaves?collection=${encodeURIComponent(pUri)}&limit=1`
 		)
 			.then((r) => (r.ok ? r.json() : null))
 			.then((d) => {
@@ -91,10 +90,7 @@
 			limit: '50'
 		});
 		if (cursor) params.set('cursor', cursor);
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/xrpc/is.currents.feed.getCollectionSaves?${params}`,
-			{ credentials: 'include' }
-		);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getCollectionSaves?${params}`);
 		if (res.status === 404) {
 			notFound = true;
 			return { items: [], cursor: undefined };
@@ -118,6 +114,14 @@
 			scroll.loadMore();
 		});
 	});
+
+	// When an image is unsaved from this collection (e.g. via the save-detail overlay), drop it
+	// from the grid immediately instead of leaving a stale entry until the next refetch.
+	onMount(() =>
+		onSaveRemoved(({ saveUri, collectionUri: removedFrom }) => {
+			if (removedFrom === collectionUri) scroll.removeItem(saveUri);
+		})
+	);
 
 	let sentinel: HTMLDivElement = $state(undefined!);
 	$effect(() => {
@@ -156,9 +160,8 @@
 		if (!rkey) return;
 		deleting = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/collection/${rkey}`, {
-				method: 'DELETE',
-				credentials: 'include'
+			const res = await apiFetch(`/collection/${rkey}`, {
+				method: 'DELETE'
 			});
 			if (!res.ok) {
 				deleting = false;
@@ -231,9 +234,8 @@
 		applying = true;
 		bulkResult = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/labels/bulk`, {
+			const res = await apiFetch(`/save/labels/bulk`, {
 				method: 'PUT',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ rkeys, labels })
 			});

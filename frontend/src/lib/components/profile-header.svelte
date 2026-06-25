@@ -207,7 +207,9 @@
 				</span>
 			{/if}
 			{#if profile.description}
-				<p class="text-sm whitespace-pre-wrap text-foreground">{profile.description}</p>
+				<p class="text-sm break-words whitespace-pre-wrap text-foreground">
+					{profile.description}
+				</p>
 			{/if}
 			{#if profile.website}
 				<Button

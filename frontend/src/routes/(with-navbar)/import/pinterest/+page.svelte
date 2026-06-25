@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { onDestroy, onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Button } from '$lib/components/ui/button';
@@ -70,9 +70,7 @@
 		if (!auth.user?.did) return;
 		restored = true;
 		void (async () => {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/active-session`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/import/active-session`);
 			if (!res.ok) return;
 			const data = (await res.json()) as {
 				sessionId?: string;
@@ -124,10 +122,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(
-				`${PUBLIC_APPVIEW_URL}/api/import/pinterest/boards?username=${encodeURIComponent(u)}`,
-				{ credentials: 'include' }
-			);
+			const res = await apiFetch(`/api/import/pinterest/boards?username=${encodeURIComponent(u)}`);
 			if (!res.ok) {
 				if (res.status === 401) {
 					auth.user = null;
@@ -169,9 +164,8 @@
 		description: string,
 		parent?: string
 	): Promise<string> {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/collection`, {
+		const res = await apiFetch(`/collection`, {
 			method: 'POST',
-			credentials: 'include',
 			headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
 			body: new URLSearchParams({ name, description, ...(parent ? { parent } : {}) }).toString()
 		});
@@ -184,9 +178,8 @@
 	}
 
 	async function queueJob(payload: Record<string, unknown>) {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/pinterest/jobs`, {
+		const res = await apiFetch(`/api/import/pinterest/jobs`, {
 			method: 'POST',
-			credentials: 'include',
 			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
 			body: JSON.stringify(payload)
 		});
@@ -197,9 +190,8 @@
 	}
 
 	async function fetchSections(board: Board): Promise<Section[]> {
-		const res = await fetch(
-			`${PUBLIC_APPVIEW_URL}/api/import/pinterest/sections?boardId=${encodeURIComponent(board.id)}&boardUrl=${encodeURIComponent(board.url)}`,
-			{ credentials: 'include' }
+		const res = await apiFetch(
+			`/api/import/pinterest/sections?boardId=${encodeURIComponent(board.id)}&boardUrl=${encodeURIComponent(board.url)}`
 		);
 		if (!res.ok) {
 			if (res.status === 401) throw new Unauthorized();
@@ -281,9 +273,7 @@
 		if (!session || polling) return;
 		polling = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/import/sessions/${session.sessionId}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/import/sessions/${session.sessionId}`);
 			if (!res.ok) {
 				if (res.status === 401) {
 					auth.user = null;

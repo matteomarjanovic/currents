@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -79,7 +79,10 @@
 	>('porn');
 	let submitting = $state(false);
 
-	const APPLY_LABEL_OPTIONS: { val: 'porn' | 'sexual' | 'nudity' | 'graphic-media' | 'currents-ai-generated'; label: string }[] = [
+	const APPLY_LABEL_OPTIONS: {
+		val: 'porn' | 'sexual' | 'nudity' | 'graphic-media' | 'currents-ai-generated';
+		label: string;
+	}[] = [
 		{ val: 'porn', label: 'porn — sexually explicit' },
 		{ val: 'sexual', label: 'sexual — suggestive' },
 		{ val: 'nudity', label: 'nudity — non-sexual' },
@@ -103,9 +106,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/admin/queue/${id}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/admin/queue/${id}`);
 			if (!res.ok) {
 				error = res.status === 404 ? 'Not found' : `Load failed (${res.status})`;
 				detail = null;
@@ -129,9 +130,8 @@
 		if (!detail) return;
 		submitting = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/admin/queue/${id}/${action}`, {
+			const res = await apiFetch(`/api/admin/queue/${id}/${action}`, {
 				method: 'POST',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: body ? JSON.stringify(body) : undefined
 			});
@@ -189,7 +189,9 @@
 	{#if loading}
 		<div class="py-10 text-center text-sm text-muted-foreground">Loading…</div>
 	{:else if error}
-		<div class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+		>
 			{error}
 		</div>
 	{:else if detail}
@@ -198,11 +200,7 @@
 			<!-- Preview -->
 			<div class="overflow-hidden rounded-lg border border-border bg-card">
 				{#if item.previewUrl}
-					<img
-						src={item.previewUrl}
-						alt=""
-						class="max-h-[70vh] w-full object-contain"
-					/>
+					<img src={item.previewUrl} alt="" class="max-h-[70vh] w-full object-contain" />
 				{:else}
 					<div class="flex h-64 items-center justify-center text-sm text-muted-foreground">
 						No preview available
@@ -229,11 +227,7 @@
 						>
 							Take down
 						</Button>
-						<Button
-							variant="outline"
-							onclick={() => postAction('dismiss')}
-							disabled={submitting}
-						>
+						<Button variant="outline" onclick={() => postAction('dismiss')} disabled={submitting}>
 							Dismiss
 						</Button>
 					{/if}
@@ -295,11 +289,11 @@
 							Disputed {new Date(item.disputedAt).toLocaleString()}
 						</div>
 					{/if}
-					<div class="break-all font-mono text-muted-foreground" title={item.subjectUri}>
+					<div class="font-mono break-all text-muted-foreground" title={item.subjectUri}>
 						{item.subjectUri}
 					</div>
 					{#if item.blobCid}
-						<div class="break-all font-mono text-muted-foreground">
+						<div class="font-mono break-all text-muted-foreground">
 							blob: {item.blobCid}
 						</div>
 					{/if}
@@ -372,7 +366,9 @@
 				</h2>
 				<ul class="flex flex-col gap-1 text-xs">
 					{#each detail.saves as s (s.uri)}
-						<li class="flex items-center justify-between gap-2 truncate font-mono text-muted-foreground">
+						<li
+							class="flex items-center justify-between gap-2 truncate font-mono text-muted-foreground"
+						>
 							<span class="truncate" title={s.uri}>{shortUri(s.uri)}</span>
 						</li>
 					{/each}
@@ -426,7 +422,7 @@
 			<AlertDialog.Action
 				onclick={() => postAction('takedown', { notes: takedownNotes })}
 				disabled={submitting}
-				class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+				class="text-destructive-foreground bg-destructive hover:bg-destructive/90"
 			>
 				Take down
 			</AlertDialog.Action>

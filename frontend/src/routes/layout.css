@@ -1,7 +1,7 @@
 @import 'tailwindcss';
-@import "tw-animate-css";
-@import "shadcn-svelte/tailwind.css";
-@import "@fontsource-variable/instrument-sans";
+@import 'tw-animate-css';
+@import 'shadcn-svelte/tailwind.css';
+@import '@fontsource-variable/instrument-sans';
 
 @custom-variant dark (&:is(.dark *));
 @plugin '@tailwindcss/typography';
@@ -127,6 +127,17 @@
 			color-mix(in oklch, var(--muted) 40%, transparent),
 			color-mix(in oklch, var(--muted) 40%, transparent)
 		);
+	}
+	/* Background scroll-lock for full-screen overlays. Applied as a class (not inline styles)
+	   so vaul-svelte's body cssText snapshot/restore can't re-apply it after a nested drawer
+	   closes. See src/lib/scroll-lock.ts. */
+	body.scroll-locked {
+		position: fixed;
+		top: var(--scroll-lock-top, 0px);
+		left: 0;
+		right: 0;
+		width: 100%;
+		overflow: hidden;
 	}
 	html {
 		@apply font-sans;

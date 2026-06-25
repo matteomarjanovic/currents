@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 
 export type FollowerNotification = {
 	did: string;
@@ -42,9 +42,7 @@ type SocialPage = { items: FollowerNotification[]; unseenCount: number; cursor?:
 async function fetchPage(cursor?: string): Promise<SocialPage | null> {
 	const params = new URLSearchParams({ limit: '30' });
 	if (cursor) params.set('cursor', cursor);
-	const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/social?${params}`, {
-		credentials: 'include'
-	});
+	const res = await apiFetch(`/api/me/social?${params}`);
 	if (res.status === 401) return null;
 	if (!res.ok) throw new Error(`Failed to load (${res.status})`);
 	return res.json();
@@ -93,9 +91,8 @@ export async function loadMoreSocial() {
 export async function markSocialSeen() {
 	social.unseenCount = 0;
 	try {
-		await fetch(`${PUBLIC_APPVIEW_URL}/api/me/social/seen`, {
-			method: 'POST',
-			credentials: 'include'
+		await apiFetch(`/api/me/social/seen`, {
+			method: 'POST'
 		});
 	} catch {
 		// best-effort; the dot reappears on next load if this failed

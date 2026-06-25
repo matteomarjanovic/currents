@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -60,9 +60,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/admin/blob/${cid}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/admin/blob/${cid}`);
 			if (!res.ok) {
 				error = res.status === 404 ? 'Not found' : `Load failed (${res.status})`;
 				detail = null;
@@ -83,9 +81,8 @@
 		if (!detail) return;
 		submitting = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/admin/labels/apply`, {
+			const res = await apiFetch(`/api/admin/labels/apply`, {
 				method: 'POST',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ blobCid: detail.blobCid, val })
 			});
@@ -94,7 +91,9 @@
 				return;
 			}
 			const data = (await res.json()) as { applied_to?: number };
-			toast.success(`Applied ${val} to ${data.applied_to ?? 0} save${data.applied_to === 1 ? '' : 's'}`);
+			toast.success(
+				`Applied ${val} to ${data.applied_to ?? 0} save${data.applied_to === 1 ? '' : 's'}`
+			);
 			await load();
 		} catch (e) {
 			toast.error(String(e));
@@ -107,9 +106,8 @@
 		if (!detail || !detail.saves?.length) return;
 		submitting = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/admin/labels/negate`, {
+			const res = await apiFetch(`/api/admin/labels/negate`, {
 				method: 'POST',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ uri: detail.saves[0].uri, val, blobCid: detail.blobCid })
 			});
@@ -159,7 +157,9 @@
 	{#if loading}
 		<div class="py-10 text-center text-sm text-muted-foreground">Loading…</div>
 	{:else if error}
-		<div class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+		>
 			{error}
 		</div>
 	{:else if detail}
@@ -205,11 +205,7 @@
 									Negate
 								</Button>
 							{:else}
-								<Button
-									size="sm"
-									disabled={submitting || !canAct}
-									onclick={() => apply(val)}
-								>
+								<Button size="sm" disabled={submitting || !canAct} onclick={() => apply(val)}>
 									Apply
 								</Button>
 							{/if}
@@ -228,7 +224,7 @@
 							<span class="text-muted-foreground">No active labels</span>
 						{/if}
 					</div>
-					<div class="mt-1 break-all font-mono text-muted-foreground">
+					<div class="mt-1 font-mono break-all text-muted-foreground">
 						blob: {detail.blobCid}
 					</div>
 				</div>
@@ -288,7 +284,9 @@
 				</h2>
 				<ul class="flex flex-col gap-1 text-xs">
 					{#each detail.saves as s (s.uri)}
-						<li class="flex items-center justify-between gap-2 truncate font-mono text-muted-foreground">
+						<li
+							class="flex items-center justify-between gap-2 truncate font-mono text-muted-foreground"
+						>
 							<span class="truncate" title={s.uri}>{shortUri(s.uri)}</span>
 						</li>
 					{/each}

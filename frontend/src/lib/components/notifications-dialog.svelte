@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Button } from '$lib/components/ui/button';
@@ -64,9 +64,8 @@
 	async function confirm(item: AttestationItem) {
 		busyId = item.id;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/attestations/${item.id}/confirm`, {
-				method: 'POST',
-				credentials: 'include'
+			const res = await apiFetch(`/api/me/attestations/${item.id}/confirm`, {
+				method: 'POST'
 			});
 			if (!res.ok) {
 				const text = await res.text();
@@ -85,9 +84,8 @@
 	async function ignore(item: AttestationItem) {
 		busyId = item.id;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/attestations/${item.id}/ignore`, {
-				method: 'POST',
-				credentials: 'include'
+			const res = await apiFetch(`/api/me/attestations/${item.id}/ignore`, {
+				method: 'POST'
 			});
 			if (!res.ok) {
 				const text = await res.text();
@@ -106,9 +104,8 @@
 	async function dispute(item: AttestationItem) {
 		busyId = item.id;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/attestations/${item.id}/dispute`, {
-				method: 'POST',
-				credentials: 'include'
+			const res = await apiFetch(`/api/me/attestations/${item.id}/dispute`, {
+				method: 'POST'
 			});
 			if (!res.ok) {
 				const text = await res.text();

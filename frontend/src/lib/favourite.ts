@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { apiFetch } from '$lib/api';
 
 // Shared favourite/unfavourite calls against the appview, used by the collection
 // header. `scope-missing` means the user's OAuth session predates the favourite
@@ -13,9 +13,8 @@ export async function favouriteCollection(
 	subjectCid: string
 ): Promise<FavouriteOutcome> {
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/favourite`, {
+		const res = await apiFetch(`/favourite`, {
 			method: 'POST',
-			credentials: 'include',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ subjectUri, subjectCid })
 		});
@@ -36,9 +35,8 @@ export async function favouriteCollection(
 export async function unfavouriteCollection(favouriteUri: string): Promise<boolean> {
 	const rkey = favouriteUri.split('/').at(-1);
 	try {
-		const res = await fetch(`${PUBLIC_APPVIEW_URL}/favourite/${rkey}`, {
-			method: 'DELETE',
-			credentials: 'include'
+		const res = await apiFetch(`/favourite/${rkey}`, {
+			method: 'DELETE'
 		});
 		return res.ok;
 	} catch {

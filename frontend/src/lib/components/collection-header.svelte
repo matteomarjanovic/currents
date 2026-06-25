@@ -104,7 +104,9 @@
 	</div>
 
 	{#if collection.description}
-		<p class="mt-3 px-1 text-sm whitespace-pre-wrap text-foreground">{collection.description}</p>
+		<p class="mt-3 px-1 text-sm break-words whitespace-pre-wrap text-foreground">
+			{collection.description}
+		</p>
 	{/if}
 
 	<Separator class="mt-6" />

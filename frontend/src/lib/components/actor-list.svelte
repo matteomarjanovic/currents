@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -26,9 +26,7 @@
 		async (cursor) => {
 			const params = new URLSearchParams({ actor: did, limit: '50' });
 			if (cursor) params.set('cursor', cursor);
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/xrpc/${endpoint}?${params}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/xrpc/${endpoint}?${params}`);
 			const data = await res.json();
 			return { items: data[listKey] ?? [], cursor: data.cursor };
 		},

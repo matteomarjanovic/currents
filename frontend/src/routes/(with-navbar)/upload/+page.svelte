@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
@@ -11,12 +11,15 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import Camera from '@lucide/svelte/icons/camera';
+	import Images from '@lucide/svelte/icons/images';
 	import X from '@lucide/svelte/icons/x';
 	import Check from '@lucide/svelte/icons/check';
 	import TriangleAlert from '@lucide/svelte/icons/alert-triangle';
 	import { toast } from 'svelte-sonner';
 	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
 	import { blobCidFromBytes } from '$lib/blob-cid';
+	import { isNative } from '$lib/platform';
 
 	type StagedStatus = 'pending' | 'uploading' | 'done' | 'error';
 	type Staged = {
@@ -80,14 +83,45 @@
 		for (const item of mapped) if (item.file) void prefillAlt(item.id, item.file);
 	}
 
+	const native = isNative();
+
+	// On Android the web <input type="file"> hands back a content:// File the WebView can't
+	// preview or upload, so native uses the Camera plugin's picker, which returns a webPath we
+	// fetch into a real File.
+	async function pickFromNative(source: 'camera' | 'gallery') {
+		const {
+			Camera: NativeCamera,
+			CameraResultType,
+			CameraSource
+		} = await import('@capacitor/camera');
+		try {
+			const photo = await NativeCamera.getPhoto({
+				resultType: CameraResultType.Uri,
+				source: source === 'camera' ? CameraSource.Camera : CameraSource.Photos,
+				quality: 90,
+				correctOrientation: true,
+				allowEditing: false
+			});
+			if (!photo.webPath) return;
+			const blob = await (await fetch(photo.webPath)).blob();
+			const ext = (photo.format ?? 'jpeg').toLowerCase();
+			const file = new File([blob], `capture-${Date.now()}.${ext}`, {
+				type: blob.type || `image/${ext}`,
+				lastModified: Date.now()
+			});
+			addFiles([file]);
+		} catch (err) {
+			// user cancelled or plugin error
+			console.warn('native picker', err);
+		}
+	}
+
 	// If this exact image already has alt text somewhere in the network, pre-fill
 	// the field with it as a suggestion (best-effort; never overwrites typed text).
 	async function prefillAlt(id: string, file: File) {
 		try {
 			const cid = await blobCidFromBytes(await file.arrayBuffer());
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/blob/alt?cid=${encodeURIComponent(cid)}`, {
-				credentials: 'include'
-			});
+			const res = await apiFetch(`/api/blob/alt?cid=${encodeURIComponent(cid)}`);
 			if (!res.ok) return;
 			const data: { alt?: string } = await res.json();
 			const item = staged.find((s) => s.id === id);
@@ -116,9 +150,8 @@
 		}
 		fetching = true;
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/extract-images`, {
+			const res = await apiFetch(`/api/extract-images`, {
 				method: 'POST',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ url: u })
 			});
@@ -205,10 +238,9 @@
 			if (selectedSelfLabels.size > 0) {
 				form.append('labels', Array.from(selectedSelfLabels).join(','));
 			}
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save`, {
+			const res = await apiFetch(`/save`, {
 				method: 'POST',
 				body: form,
-				credentials: 'include',
 				headers: { Accept: 'application/json' }
 			});
 			if (!res.ok) {
@@ -338,13 +370,24 @@
 		{/each}
 	</div>
 
-	<div class="flex items-center gap-3">
-		<Button variant="secondary" onclick={() => fileInputEl?.click()}>
-			<ImagePlus class="size-4" />
-			Add files
-		</Button>
-		{#if total === 0}
-			<span> ... or drag and drop them in the page </span>
+	<div class="flex flex-wrap items-center gap-3">
+		{#if native}
+			<Button variant="secondary" onclick={() => pickFromNative('gallery')}>
+				<Images class="size-4" />
+				Choose from gallery
+			</Button>
+			<Button variant="secondary" onclick={() => pickFromNative('camera')}>
+				<Camera class="size-4" />
+				Take photo
+			</Button>
+		{:else}
+			<Button variant="secondary" onclick={() => fileInputEl?.click()}>
+				<ImagePlus class="size-4" />
+				Add files
+			</Button>
+			{#if total === 0}
+				<span> ... or drag and drop them in the page </span>
+			{/if}
 		{/if}
 		<input
 			bind:this={fileInputEl}

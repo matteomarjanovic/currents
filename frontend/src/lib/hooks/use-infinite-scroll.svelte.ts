@@ -37,6 +37,10 @@ export function useInfiniteScroll<T = SaveView>(
 		loading = false;
 	}
 
+	function removeItem(key: string) {
+		items = items.filter((i) => getKey(i) !== key);
+	}
+
 	return {
 		get items() {
 			return items;
@@ -48,6 +52,7 @@ export function useInfiniteScroll<T = SaveView>(
 			return hasMore;
 		},
 		loadMore,
-		reset
+		reset,
+		removeItem
 	};
 }

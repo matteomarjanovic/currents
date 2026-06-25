@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -48,9 +48,8 @@
 		const added = [...pendingAdds];
 		try {
 			const rkey = save.uri.split('/').pop() ?? '';
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/save/${rkey}/labels`, {
+			const res = await apiFetch(`/save/${rkey}/labels`, {
 				method: 'PUT',
-				credentials: 'include',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body: new URLSearchParams({ labels: added.join(',') })
 			});

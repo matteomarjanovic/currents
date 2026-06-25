@@ -2,6 +2,10 @@
 	import { resolve } from '$app/paths';
 	import LogoMerged from '$lib/assets/logo.svelte';
 	import LoginForm from '$lib/components/login-form.svelte';
+	import LoginFormMobile from '$lib/components/login-form-mobile.svelte';
+	import { isNative } from '$lib/platform';
+
+	const native = isNative();
 </script>
 
 <svelte:head>
@@ -13,6 +17,10 @@
 		<a href={resolve('/')} class="flex h-5 items-center gap-2 self-center font-medium">
 			<LogoMerged />
 		</a>
-		<LoginForm />
+		{#if native}
+			<LoginFormMobile />
+		{:else}
+			<LoginForm />
+		{/if}
 	</div>
 </div>

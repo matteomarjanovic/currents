@@ -4,6 +4,10 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
+	import { clearAuthToken } from '$lib/auth-storage';
+	import { isNative } from '$lib/platform';
+	import { auth } from '$lib/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as InputGroup from '$lib/components/ui/input-group';
 	import * as Select from '$lib/components/ui/select';
@@ -105,6 +109,24 @@
 		toast.success(`Collection "${collection.name}" created`);
 	}
 
+	const native = isNative();
+
+	async function handleLogout() {
+		if (native) {
+			try {
+				await apiFetch('/oauth/logout');
+			} catch {
+				// best effort; even if the server call fails we still clear local state
+			}
+			await clearAuthToken();
+			auth.user = null;
+			auth.checked = true;
+			goto('/');
+		} else {
+			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
+		}
+	}
+
 	function handleBrowserExtension() {
 		const browser = detectBrowser();
 		if (browser === 'firefox') {
@@ -144,9 +166,11 @@
 	}
 </script>
 
-{#snippet searchBar(autofocus: boolean)}
+{#snippet searchBar(autofocus: boolean, compact: boolean)}
 	<InputGroup.Root
-		class="{landing ? 'bg-accent/50 backdrop-blur-sm' : ''} h-11 w-full rounded-full"
+		class="{landing ? 'bg-accent/50 backdrop-blur-sm' : ''} {compact
+			? 'h-9'
+			: 'h-11'} w-full rounded-full"
 	>
 		<InputGroup.Addon align="inline-start">
 			<InputGroup.Button
@@ -192,7 +216,7 @@
 	<header
 		class="{landing
 			? 'fixed bg-transparent'
-			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex h-15 w-full items-center gap-3 px-2 py-3 md:px-4"
+			: 'sticky app-muted-wash backdrop-blur-sm'} relative top-0 z-10 flex min-h-15 w-full items-center gap-3 px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
 	>
 		{#if !searchOpen}
 			<div in:fade={{ duration: 250, easing: cubicOut }} class="flex shrink-0 items-center gap-2">
@@ -214,7 +238,7 @@
 			class="absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center justify-center md:flex md:max-w-sm lg:max-w-md"
 		>
 			<form {onsubmit} class="w-full md:max-w-xs lg:max-w-sm">
-				{@render searchBar(false)}
+				{@render searchBar(false, false)}
 			</form>
 		</div>
 
@@ -232,12 +256,14 @@
 		{/if}
 
 		{#if searchOpen}
+			<!-- Flow content (not absolute) so the header grows to fit the input and inherits the
+			     header's safe-area top padding + bottom padding, instead of overflowing its box. -->
 			<div
 				transition:fade={{ duration: 250, easing: cubicOut }}
-				class="absolute inset-0 flex items-center gap-2 px-2 md:hidden"
+				class="flex flex-1 items-center gap-2 md:hidden"
 			>
 				<form {onsubmit} class="flex-1">
-					{@render searchBar(true)}
+					{@render searchBar(true, true)}
 				</form>
 				<Button
 					variant="outline"
@@ -322,19 +348,17 @@
 								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
 							{/if}
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={handleBrowserExtension}>
-							<Puzzle class="size-4" />
-							Browser extension
-						</DropdownMenu.Item>
+						{#if !native}
+							<DropdownMenu.Item onclick={handleBrowserExtension}>
+								<Puzzle class="size-4" />
+								Browser extension
+							</DropdownMenu.Item>
+						{/if}
 						<DropdownMenu.Item onclick={() => goto('/settings')}>
 							<Settings class="size-4" />
 							Settings
 						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							onclick={() => {
-								window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
-							}}
-						>
+						<DropdownMenu.Item onclick={handleLogout}>
 							<LogOut class="size-4" />
 							Log out
 						</DropdownMenu.Item>

@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { apiFetch } from '$lib/api';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from '$lib/components/ui/sonner';
 
@@ -14,7 +14,7 @@
 
 	onMount(async () => {
 		try {
-			const res = await fetch(`${PUBLIC_APPVIEW_URL}/api/me/role`, { credentials: 'include' });
+			const res = await apiFetch(`/api/me/role`);
 			if (res.ok) {
 				const data = (await res.json()) as { role: string | null };
 				role = data.role;
