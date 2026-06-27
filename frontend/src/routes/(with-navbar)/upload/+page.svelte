@@ -196,9 +196,27 @@
 		staged = staged.filter((s) => s.id !== id);
 	}
 
-	function onFilePick(e: Event) {
+	// Copy each pick into an in-memory File before resetting the input. On Android Chrome a File
+	// from a file input is backed by a content:// reference that's released the moment the input's
+	// selection is cleared, so the lazy reads behind the preview's object URL (and the upload)
+	// raced input.value='' and randomly came back broken. Read sequentially while the input still
+	// holds the selection; in-memory copies are stable.
+	async function onFilePick(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		if (input.files) addFiles(input.files);
+		const picked = input.files
+			? Array.from(input.files).filter((f) => f.type.startsWith('image/'))
+			: [];
+		for (const f of picked) {
+			try {
+				const copy = new File([await f.arrayBuffer()], f.name, {
+					type: f.type,
+					lastModified: f.lastModified
+				});
+				addFiles([copy]);
+			} catch {
+				// Unreadable pick (e.g. a cloud file that never finished downloading) — skip it.
+			}
+		}
 		input.value = '';
 	}
 
@@ -444,9 +462,14 @@
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
 			{#each staged as item (item.id)}
 				<div class="group relative aspect-square overflow-hidden rounded-xl bg-muted">
+					<!-- lazy + async decode so staging many full-res phone photos doesn't decode
+					     them all at once: mobile browsers cap image memory and drop decodes
+					     (random "broken" thumbnails) when the whole grid renders eagerly. -->
 					<img
 						src={item.url}
 						alt=""
+						loading="lazy"
+						decoding="async"
 						class="size-full object-cover"
 						onerror={() => {
 							if (item.imageUrl) removeStaged(item.id);
