@@ -21,6 +21,7 @@
 		"dev:ios": "vite build && cap sync && cap run ios"
 	},
 	"devDependencies": {
+		"@capacitor/assets": "^3.0.5",
 		"@eslint/compat": "^2.0.3",
 		"@eslint/js": "^10.0.1",
 		"@fontsource-variable/instrument-sans": "^5.2.8",
@@ -63,11 +64,13 @@
 		"@capacitor/camera": "^8.0.0",
 		"@capacitor/cli": "^8.0.0",
 		"@capacitor/core": "^8.0.0",
+		"@capacitor/filesystem": "^8.1.2",
 		"@capacitor/ios": "^8.0.0",
 		"@capacitor/splash-screen": "^8.0.0",
 		"@capacitor/status-bar": "^8.0.0",
 		"@capawesome-team/capacitor-secure-preferences": "^0.3.2",
 		"@masonry-grid/svelte": "^1.1.1",
-		"mode-watcher": "^1.1.0"
+		"mode-watcher": "^1.1.0",
+		"send-intent": "^7.0.0"
 	}
 }

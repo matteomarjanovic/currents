@@ -24,6 +24,18 @@ allprojects {
     }
 }
 
+// Some plugins (e.g. send-intent) hardcode an older compileSdk; force every module to the root
+// compileSdk so AAR-metadata checks pass (androidx.core 1.17 / activity 1.11 require API 36).
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                compileSdkVersion rootProject.ext.compileSdkVersion
+            }
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

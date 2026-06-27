@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light-theme splash background (matches the welcome page secondary color). -->
+    <color name="splash_background">#F1F3F3</color>
+</resources>

@@ -20,6 +20,7 @@
 	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
 	import { blobCidFromBytes } from '$lib/blob-cid';
 	import { isNative } from '$lib/platform';
+	import { share } from '$lib/stores/share.svelte';
 
 	type StagedStatus = 'pending' | 'uploading' | 'done' | 'error';
 	type Staged = {
@@ -200,6 +201,19 @@
 		if (input.files) addFiles(input.files);
 		input.value = '';
 	}
+
+	// Consume an image/link shared to the app from the OS share sheet (src/lib/share-target.ts).
+	$effect(() => {
+		const p = share.pending;
+		if (!p) return;
+		share.pending = null;
+		if (p.type === 'image') {
+			addFiles([p.file]);
+		} else {
+			sourceUrl = p.url;
+			void fetchFromUrl();
+		}
+	});
 
 	function onDragEnter(e: DragEvent) {
 		if (!e.dataTransfer?.types.includes('Files')) return;

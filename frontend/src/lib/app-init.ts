@@ -1,6 +1,7 @@
 import { isNative } from './platform';
 import { setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
+import { initShareTarget } from './share-target';
 
 let initialized = false;
 
@@ -23,18 +24,8 @@ export async function initApp(): Promise<void> {
 	if (!isNative()) return;
 
 	const { App } = await import('@capacitor/app');
-	try {
-		const { StatusBar, Style } = await import('@capacitor/status-bar');
-		StatusBar.setStyle({ style: Style.Default }).catch(() => {});
-	} catch {
-		// status-bar plugin not available
-	}
-	try {
-		const { SplashScreen } = await import('@capacitor/splash-screen');
-		SplashScreen.hide().catch(() => {});
-	} catch {
-		// splash-screen plugin not available
-	}
+	// Status-bar icon color is handled reactively from the app theme in the root +layout.svelte
+	// (via @capacitor-community/safe-area). The splash is hidden from there too, once content paints.
 
 	App.addListener('appUrlOpen', async (event) => {
 		try {
@@ -59,4 +50,7 @@ export async function initApp(): Promise<void> {
 			console.warn('appUrlOpen handler error', err);
 		}
 	});
+
+	// Receive images/links shared to the app from the OS share sheet.
+	initShareTarget();
 }

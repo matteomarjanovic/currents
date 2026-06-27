@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid brand-color splash (the Android 12+ system splash draws the icon on top; older
+     Androids see just this color). Theme-aware via @color/splash_background + values-night. -->
+<color xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/splash_background" />
