@@ -207,7 +207,7 @@
 				</span>
 			{/if}
 			{#if profile.description}
-				<p class="text-sm break-words whitespace-pre-wrap text-foreground">
+				<p class="text-sm wrap-anywhere whitespace-pre-wrap text-foreground">
 					{profile.description}
 				</p>
 			{/if}

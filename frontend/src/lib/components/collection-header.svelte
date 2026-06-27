@@ -104,7 +104,7 @@
 	</div>
 
 	{#if collection.description}
-		<p class="mt-3 px-1 text-sm break-words whitespace-pre-wrap text-foreground">
+		<p class="mt-3 px-1 text-sm wrap-anywhere whitespace-pre-wrap text-foreground">
 			{collection.description}
 		</p>
 	{/if}
