@@ -2,3 +2,13 @@
   base = "frontend"
   command = "npm run build"
   publish = "build"
+
+# SPA fallback: the SvelteKit static build (ssr=false, prerender=false) emits a
+# single index.html. Serve it for any path that doesn't match a real file so a
+# refresh / deep-link on a client-side route doesn't 404. Existing assets
+# (JS/CSS/images/prerendered pages) still take precedence — status 200 rewrites
+# don't shadow real files unless forced.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
