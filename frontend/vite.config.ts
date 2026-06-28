@@ -50,8 +50,10 @@ export default defineConfig({
 							// Receive images/links shared to the installed PWA from the OS share sheet.
 							// Files require POST/multipart; the static site has no server, so the service
 							// worker intercepts this POST (see static/share-target-sw.js).
+							// NOTE: `action` must be an ABSOLUTE URL — Android's WebAPK minter silently
+							// fails to register the share intent-filter for a relative action path.
 							share_target: {
-								action: '/share-target',
+								action: 'https://currents.is/share-target',
 								method: 'POST',
 								enctype: 'multipart/form-data',
 								params: {
