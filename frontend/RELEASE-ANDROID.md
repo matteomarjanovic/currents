@@ -39,18 +39,22 @@ keytool -genkey -v -keystore currents-release.keystore \
 - **If you lose this keystore you can never update the app on the Play Store.** Back it up.
 - Do **not** commit it (see §5 gitignore).
 
-## 3. Wire the signing config into Gradle
+## 3. Signing config (already wired — you only create keystore.properties)
 
-Create `frontend/android/keystore.properties` (gitignored):
+The Gradle signing config and `.gitignore` entries are **already in this repo** (`app/build.gradle`
++ `android/.gitignore`). You only need to create the secrets file.
+
+Create `frontend/android/keystore.properties` (gitignored). `storeFile` is resolved relative to
+`frontend/android/` (where the keystore typically lives) — so just use its filename, or an absolute path:
 
 ```properties
-storeFile=/absolute/path/to/currents-release.keystore
+storeFile=currents-release.keystore
 storePassword=********
 keyAlias=currents
 keyPassword=********
 ```
 
-In `frontend/android/app/build.gradle`, above `android {`:
+For reference, this is the config already present in `app/build.gradle` (above `android {`):
 
 ```gradle
 def keystoreProps = new Properties()
@@ -60,13 +64,14 @@ if (keystorePropsFile.exists()) {
 }
 ```
 
-Inside `android { ... }`:
+and inside `android { ... }` (note `rootProject.file` so the relative `storeFile` resolves against
+`android/`, and the signingConfig is only applied when `keystore.properties` exists):
 
 ```gradle
     signingConfigs {
         release {
             if (keystorePropsFile.exists()) {
-                storeFile file(keystoreProps['storeFile'])
+                storeFile rootProject.file(keystoreProps['storeFile'])
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
@@ -75,16 +80,18 @@ Inside `android { ... }`:
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 ```
 
-> Capacitor ships sane default ProGuard rules. If R8 strips something a plugin needs (rare),
-> add keep rules to `app/proguard-rules.pro`. Test the release build before shipping.
+> R8 minification is **off** (safest with Capacitor plugins, which use reflection). To shrink the
+> AAB later, set `minifyEnabled true` + `shrinkResources true` and switch to
+> `proguard-android-optimize.txt` — then runtime-test the release build before shipping.
 
 ## 4. Version + build the AAB
 

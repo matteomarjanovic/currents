@@ -17,8 +17,8 @@
 		"cap:sync": "cap sync",
 		"cap:open:android": "cap open android",
 		"cap:open:ios": "cap open ios",
-		"dev:android": "vite build && cap sync && cap run android",
-		"dev:ios": "vite build && cap sync && cap run ios"
+		"dev:android": "vite build --mode development && cap sync && cap run android",
+		"dev:ios": "vite build --mode development && cap sync && cap run ios"
 	},
 	"devDependencies": {
 		"@capacitor/assets": "^3.0.5",

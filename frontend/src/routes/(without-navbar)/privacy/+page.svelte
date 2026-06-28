@@ -8,7 +8,7 @@
 	<title>Privacy Policy · Currents</title>
 	<meta
 		name="description"
-		content="Privacy Policy for the hosted Currents web app, browser extension, APIs, and related services."
+		content="Privacy Policy for the hosted Currents web app, mobile apps, browser extension, APIs, and related services."
 	/>
 </svelte:head>
 
@@ -29,18 +29,18 @@
 			<Card.Header class="gap-3">
 				<Card.Title class="text-3xl leading-tight">Privacy Policy</Card.Title>
 				<Card.Description>
-					Last updated April 22, 2026. This policy explains how the hosted Currents service
-					collects, uses, and shares information.
+					Last updated June 28, 2026. This policy explains how the hosted Currents service collects,
+					uses, and shares information.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-8 text-sm leading-6 text-foreground/90 md:text-[15px]">
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">1. Scope</h2>
 					<p>
-						This policy applies to the hosted Currents web app, browser extension, APIs, appview,
-						and related search and inference infrastructure that we operate. It does not cover
-						self-hosted forks or third-party services such as your PDS, Bluesky, Eurosky, or sites
-						you visit through links saved in Currents.
+						This policy applies to the hosted Currents web app, mobile apps (including Android),
+						browser extension, APIs, appview, and related search and inference infrastructure that
+						we operate. It does not cover self-hosted forks or third-party services such as your
+						PDS, Bluesky, Eurosky, or sites you visit through links saved in Currents.
 					</p>
 				</section>
 
@@ -64,7 +64,8 @@
 						</li>
 						<li>
 							Authentication data needed to keep you signed in, including a signed
-							<code>currents-session</code> cookie in the browser and server-side OAuth session records.
+							<code>currents-session</code> cookie in the browser, an equivalent session token kept in
+							your device's secure storage in the mobile apps, and server-side OAuth session records.
 						</li>
 						<li>
 							Search and interaction data you submit to the service, such as text queries for
@@ -79,6 +80,16 @@
 							If you use the browser extension, it may access the current page URL, page title,
 							selected image URL or bytes, and Currents session cookie so it can create a save only
 							when you invoke the extension.
+						</li>
+						<li>
+							In the mobile apps, the images you choose to save: pictures you pick from your photo
+							library or capture with your camera. Camera and photo access are used only when you
+							actively select or take an image to save, never in the background.
+						</li>
+						<li>
+							Content shared to the mobile app from other apps (an image or link you send to
+							Currents through the system share sheet), used only to pre-fill a save you choose to
+							create.
 						</li>
 					</ul>
 				</section>
@@ -161,7 +172,10 @@
 						<li>
 							Review or change your public profile and records through your AT Protocol account.
 						</li>
-						<li>Log out to clear the active Currents session cookie from the hosted web app.</li>
+						<li>
+							Log out to clear the active Currents session: the cookie on the web, or the stored
+							session token on mobile.
+						</li>
 						<li>Clear local browser storage in your browser settings.</li>
 						<li>Avoid posting private, sensitive, or confidential material to Currents.</li>
 						<li>
@@ -192,8 +206,12 @@
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">10. Contact</h2>
 					<p>
-						For privacy questions or requests related to the hosted Currents service, open an issue
-						at
+						For privacy questions or requests related to the hosted Currents service, including data
+						deletion requests, email
+						<a class="underline underline-offset-4" href="mailto:privacy@currents.is"
+							>privacy@currents.is</a
+						>
+						or open an issue at
 						<a
 							class="underline underline-offset-4"
 							href="https://github.com/matteomarjanovic/currents/issues"

@@ -8,7 +8,7 @@
 	<title>Terms of Service · Currents</title>
 	<meta
 		name="description"
-		content="Terms of Service for the hosted Currents web app, browser extension, APIs, and related services."
+		content="Terms of Service for the hosted Currents web app, mobile apps, browser extension, APIs, and related services."
 	/>
 </svelte:head>
 
@@ -29,8 +29,8 @@
 			<Card.Header class="gap-3">
 				<Card.Title class="text-3xl leading-tight">Terms of Service</Card.Title>
 				<Card.Description>
-					Last updated April 22, 2026. These Terms apply to the hosted Currents service, including
-					the web app, browser extension, APIs, appview, and related infrastructure.
+					Last updated June 28, 2026. These Terms apply to the hosted Currents service, including
+					the web app, mobile apps, browser extension, APIs, appview, and related infrastructure.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-8 text-sm leading-6 text-foreground/90 md:text-[15px]">
@@ -182,7 +182,11 @@
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">11. Contact</h2>
 					<p>
-						For questions about these Terms or the hosted Currents service, open an issue at
+						For questions about these Terms or the hosted Currents service, email
+						<a class="underline underline-offset-4" href="mailto:privacy@currents.is"
+							>privacy@currents.is</a
+						>
+						or open an issue at
 						<a
 							class="underline underline-offset-4"
 							href="https://github.com/matteomarjanovic/currents/issues"

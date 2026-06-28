@@ -17,6 +17,10 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.test
+# Per-mode backend URLs are public (baked into the client), so they're committed.
+# Secrets (CAPAWESOME_TOKEN) stay in the gitignored .env / .env.local.
+!.env.development
+!.env.production
 
 # Vite
 vite.config.js.timestamp-*
@@ -27,3 +31,7 @@ vite.config.ts.timestamp-*
 /playwright-report
 /blob-report
 /playwright/.cache
+
+# Store assets: keep the listing copy + icon + feature graphic, but not the heavy,
+# frequently-regenerated screenshots (~15MB).
+/store-assets/screenshots/
