@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { dev } from '$app/environment';
 	import { mode } from 'mode-watcher';
 	import { initApp } from '$lib/app-init';
 	import { isNative } from '$lib/platform';
@@ -9,6 +10,12 @@
 
 	onMount(() => {
 		initApp().catch((err) => console.warn('initApp failed', err));
+		// Register the PWA service worker in production web builds only. The same build is reused
+		// by Capacitor, where a worker is unwanted (guard: isNative); and under `vite dev` the
+		// worker is served on a different path, so we skip it there (test it via build/preview).
+		if (!dev && !isNative() && 'serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/sw.js').catch(() => {});
+		}
 	});
 
 	// Hide the native splash only once the first content is ready (the route layouts gate rendering
