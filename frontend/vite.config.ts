@@ -2,6 +2,8 @@ import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import { defineConfig } from 'vite';
+import browserslist from 'browserslist';
+import { browserslistToTargets } from 'lightningcss';
 
 // The static build is reused by Capacitor (capacitor.config.ts webDir: 'build'). A
 // service worker is unwanted inside the native webview (it causes stale-cache bugs),
@@ -9,7 +11,7 @@ import { defineConfig } from 'vite';
 // CAPACITOR=1 to skip it.
 const isCapacitor = !!process.env.CAPACITOR;
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	plugins: [
 		tailwindcss(),
 		sveltekit(),
@@ -77,5 +79,26 @@ export default defineConfig({
 					})
 				])
 	],
-	ssr: { noExternal: ['@masonry-grid/svelte', '@masonry-grid/core'] }
-});
+	ssr: { noExternal: ['@masonry-grid/svelte', '@masonry-grid/core'] },
+	// Tailwind v4 emits oklch() throughout (its whole palette + our theme tokens), which
+	// Chromium <111 (e.g. Brave from 2022) can't parse and drops, breaking the styling. Run
+	// the CSS through Lightning CSS targeting older browsers so it adds a hex fallback ahead
+	// of each modern color (progressive enhancement — modern browsers still use oklch/lab).
+	// Build-only: dev is always a modern browser, and the dev pipeline doesn't preserve the
+	// dual declaration, so running it there would needlessly downgrade local colors.
+	// (color-mix() with var() args — a few cosmetic washes in layout.css — can't be statically
+	// downleveled and degrade to a flat background on old browsers.)
+	...(command === 'build'
+		? {
+				css: {
+					transformer: 'lightningcss' as const,
+					lightningcss: {
+						targets: browserslistToTargets(
+							browserslist('Chrome >= 99, Firefox >= 99, Safari >= 15, iOS >= 15')
+						)
+					}
+				},
+				build: { cssMinify: 'lightningcss' as const }
+			}
+		: {})
+}));
