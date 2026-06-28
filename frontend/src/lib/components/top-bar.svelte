@@ -6,7 +6,8 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { apiFetch } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
-	import { isNative } from '$lib/platform';
+	import { isNative, isMobileWeb, isStandalonePwa } from '$lib/platform';
+	import { pwaInstall, promptInstall } from '$lib/stores/pwa-install.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as InputGroup from '$lib/components/ui/input-group';
@@ -28,6 +29,7 @@
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
+	import Smartphone from '@lucide/svelte/icons/smartphone';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Bell from '@lucide/svelte/icons/bell';
 	import Logo from '$lib/assets/logo.svelte';
@@ -35,6 +37,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
+	import InstallAppDialog from '$lib/components/install-app-dialog.svelte';
 	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
 	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
@@ -74,6 +77,7 @@
 	let searchOpen = $state(false);
 	let createCollectionOpen = $state(false);
 	let browserExtensionDialogOpen = $state(false);
+	let installAppDialogOpen = $state(false);
 	let notificationsOpen = $state(false);
 
 	// Only items the user hasn't acted on yet count toward the unread indicator —
@@ -110,6 +114,12 @@
 	}
 
 	const native = isNative();
+	// On mobile web, offer "Install app" (PWA) instead of the browser-extension item, which is
+	// desktop-only. Hide both inside the native shell and once running as an installed PWA.
+	const mobileWeb = !native && isMobileWeb();
+	const standalone = isStandalonePwa();
+	const showExtension = !native && !mobileWeb;
+	let showInstall = $derived(mobileWeb && !standalone && !pwaInstall.installed);
 
 	async function handleLogout() {
 		if (native) {
@@ -124,6 +134,16 @@
 			goto('/');
 		} else {
 			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
+		}
+	}
+
+	async function handleInstallApp() {
+		// Chromium gives us a deferred prompt to fire directly; otherwise (iOS, or no prompt
+		// captured yet) fall back to platform instructions.
+		if (pwaInstall.canPrompt) {
+			await promptInstall();
+		} else {
+			installAppDialogOpen = true;
 		}
 	}
 
@@ -348,7 +368,12 @@
 								<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
 							{/if}
 						</DropdownMenu.Item>
-						{#if !native}
+						{#if showInstall}
+							<DropdownMenu.Item onclick={handleInstallApp}>
+								<Smartphone class="size-4" />
+								Install app
+							</DropdownMenu.Item>
+						{:else if showExtension}
 							<DropdownMenu.Item onclick={handleBrowserExtension}>
 								<Puzzle class="size-4" />
 								Browser extension
@@ -409,5 +434,6 @@
 {#if user}
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
 	<BrowserExtensionDialog bind:open={browserExtensionDialogOpen} />
+	<InstallAppDialog bind:open={installAppDialogOpen} />
 	<NotificationsDialog bind:open={notificationsOpen} />
 {/if}

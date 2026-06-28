@@ -5,6 +5,9 @@
 	import { initApp } from '$lib/app-init';
 	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
+	// Side-effect import: registers the beforeinstallprompt listener on every page so the
+	// one-shot event is captured even before the top bar (which offers "Install app") mounts.
+	import '$lib/stores/pwa-install.svelte';
 
 	let { children } = $props();
 
