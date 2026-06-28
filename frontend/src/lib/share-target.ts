@@ -70,3 +70,37 @@ export function initShareTarget(): void {
 	// A share received while the app is already running.
 	window.addEventListener('sendIntentReceived', () => void handleSharedIntent());
 }
+
+// Web counterpart of handleSharedIntent: the installed PWA's service worker (static/
+// share-target-sw.js) handles the OS share POST and redirects to /share-target with the
+// shared data; this consumes it into share.pending and forwards to /upload, mirroring native.
+// Keep SHARE_CACHE / SHARE_KEY in sync with static/share-target-sw.js.
+const SHARE_CACHE = 'share-target';
+const SHARE_KEY = '/__shared-image';
+
+export async function consumeWebShare(): Promise<void> {
+	const params = new URLSearchParams(window.location.search);
+	try {
+		if (params.get('shared') === 'image') {
+			const cache = await caches.open(SHARE_CACHE);
+			const res = await cache.match(SHARE_KEY);
+			if (res) {
+				await cache.delete(SHARE_KEY);
+				const blob = await res.blob();
+				const name = res.headers.get('x-filename') || `shared-${Date.now()}.jpg`;
+				const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
+				share.pending = { type: 'image', file };
+			}
+		} else {
+			const url = firstUrl(
+				params.get('url') ?? undefined,
+				params.get('text') ?? undefined,
+				params.get('title') ?? undefined
+			);
+			if (url) share.pending = { type: 'url', url };
+		}
+	} catch (err) {
+		console.warn('share-target: failed to process web share', err);
+	}
+	await goto('/upload', { replaceState: true });
+}

@@ -17,7 +17,9 @@
 		// by Capacitor, where a worker is unwanted (guard: isNative); and under `vite dev` the
 		// worker is served on a different path, so we skip it there (test it via build/preview).
 		if (!dev && !isNative() && 'serviceWorker' in navigator) {
-			navigator.serviceWorker.register('/sw.js').catch(() => {});
+			// updateViaCache 'none' keeps sw.js AND its importScripts (share-target-sw.js) fresh
+			// on update checks instead of being served from the HTTP cache.
+			navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
 		}
 	});
 

@@ -46,10 +46,26 @@ export default defineConfig({
 									type: 'image/png',
 									purpose: 'maskable'
 								}
-							]
+							],
+							// Receive images/links shared to the installed PWA from the OS share sheet.
+							// Files require POST/multipart; the static site has no server, so the service
+							// worker intercepts this POST (see static/share-target-sw.js).
+							share_target: {
+								action: '/share-target',
+								method: 'POST',
+								enctype: 'multipart/form-data',
+								params: {
+									title: 'title',
+									text: 'text',
+									url: 'url',
+									files: [{ name: 'image', accept: ['image/*'] }]
+								}
+							}
 						},
 						workbox: {
-							globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}']
+							globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}'],
+							// Layer our Web Share Target POST handler onto the generated Workbox SW.
+							importScripts: ['/share-target-sw.js']
 						},
 						// Serve the manifest + a dev service worker under `vite dev` too, so the PWA
 						// (and the /manifest.webmanifest link in app.html) works without a full build.
