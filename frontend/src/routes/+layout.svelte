@@ -46,6 +46,18 @@
 			)
 			.catch(() => {});
 	});
+
+	// Web/installed-PWA counterpart: match the browser/status-bar tint to the app's --background
+	// per theme. A single dynamic meta (not prefers-color-scheme media tags) is required because
+	// the theme can be manually overridden (light/dark/system) independent of the OS. Hex values
+	// mirror --background in src/routes/layout.css.
+	$effect(() => {
+		const m = mode.current;
+		if (isNative() || m === undefined) return;
+		document
+			.querySelector('meta[name="theme-color"]')
+			?.setAttribute('content', m === 'dark' ? '#090b0c' : '#ffffff');
+	});
 </script>
 
 {@render children()}
