@@ -74,7 +74,7 @@
 		<Item.Root
 			variant="default"
 			size="sm"
-			class="relative flex-nowrap overflow-hidden {item.isNew ? 'bg-accent/40' : ''}"
+			class="relative shrink-0 flex-nowrap overflow-hidden {item.isNew ? 'bg-accent/40' : ''}"
 		>
 			<!-- Stretched link: clicking the row (anywhere but the follow button) opens the
 			     profile. The button is lifted with z-10 so it captures its own click. -->
