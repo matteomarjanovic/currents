@@ -470,7 +470,45 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 		}
 	}
 
+	// Correlated subqueries per collection (save_count / last_saved / previews, each with
+	// an OR-rollup into sections) are O(collections × save-scans) and collapse on users
+	// with many collections. Instead: page the collections first, map each collection and
+	// its sections to the page collection it feeds ("scope"), then aggregate saves once.
 	query := fmt.Sprintf(`
+		WITH cols AS (
+			SELECT c.uri, c.cid, c.name, c.description, c.parent_uri, c.created_at
+			FROM collection c
+			WHERE c.author_did = $1
+			  AND c.cid IS NOT NULL
+			  %s
+			  %s
+			ORDER BY c.created_at DESC NULLS LAST, c.uri ASC
+			LIMIT $2
+		),
+		scope AS (
+			SELECT uri AS curi, uri AS root FROM cols
+			UNION ALL
+			SELECT ch.uri, ch.parent_uri FROM collection ch WHERE ch.parent_uri IN (SELECT uri FROM cols)
+		),
+		save_stats AS (
+			SELECT sc.root, count(*)::int AS cnt, max(s.created_at) AS last_saved
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			GROUP BY sc.root
+		),
+		preview AS (
+			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+				ROW_NUMBER() OVER (
+					PARTITION BY sc.root
+					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
+				) AS rn
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			WHERE s.content_nsid = 'is.currents.content.image'
+			  AND s.pds_blob_cid <> ''
+			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		),
+		preview_agg AS (
+			SELECT root, array_agg(blob ORDER BY rn) AS blobs FROM preview WHERE rn <= 4 GROUP BY root
+		)
 		SELECT
 			c.uri,
 			c.cid,
@@ -478,32 +516,16 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			COALESCE(c.description, ''),
 			COALESCE(c.parent_uri, ''),
 			c.created_at,
-			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
-			ARRAY(
-				SELECT s2.author_did || ',' || s2.pds_blob_cid
-				FROM save s2
-				WHERE (s2.collection_uri = c.uri
-				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
-				  AND s2.content_nsid = 'is.currents.content.image'
-				  AND s2.pds_blob_cid <> ''
-				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
-				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
-				LIMIT 4
-			) AS preview_blobs,
+			ss.last_saved AS last_saved_at,
+			COALESCE(ss.cnt, 0) AS save_count,
+			COALESCE(pa.blobs, ARRAY[]::text[]) AS preview_blobs,
 			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
 			fc.uri AS favourite_uri
-		FROM collection c
-		LEFT JOIN favourite_collection fc
-			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($3, '')
-		WHERE c.author_did = $1
-		  AND c.cid IS NOT NULL
-		  %s
-		  %s
+		FROM cols c
+		LEFT JOIN save_stats ss ON ss.root = c.uri
+		LEFT JOIN preview_agg pa ON pa.root = c.uri
+		LEFT JOIN favourite_collection fc ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($3, '')
 		ORDER BY c.created_at DESC NULLS LAST, c.uri ASC
-		LIMIT $2
 	`, parentClause, cursorClause)
 
 	rows, err := m.pool.Query(ctx, query, args...)
@@ -557,7 +579,45 @@ func (m *PgStore) GetFavouriteCollectionsPage(ctx context.Context, actorDID, vie
 	args = append(args, limit)
 	limitParam := len(args)
 
+	// Same aggregate-once rewrite as GetActorCollectionsPage (avoids per-collection
+	// correlated save subqueries): page the favourited collections, map them + their
+	// sections to a scope, then aggregate saves in one pass.
 	query := fmt.Sprintf(`
+		WITH cols AS (
+			SELECT c.uri, c.cid, c.author_did, c.name, c.description, c.parent_uri, c.created_at,
+				ofc.created_at AS favourited_at
+			FROM favourite_collection ofc
+			JOIN collection c ON c.uri = ofc.collection_uri
+			WHERE ofc.viewer_did = $1
+			  AND c.cid IS NOT NULL
+			  %s
+			ORDER BY ofc.created_at DESC NULLS LAST, c.uri ASC
+			LIMIT $%d
+		),
+		scope AS (
+			SELECT uri AS curi, uri AS root FROM cols
+			UNION ALL
+			SELECT ch.uri, ch.parent_uri FROM collection ch WHERE ch.parent_uri IN (SELECT uri FROM cols)
+		),
+		save_stats AS (
+			SELECT sc.root, count(*)::int AS cnt, max(s.created_at) AS last_saved
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			GROUP BY sc.root
+		),
+		preview AS (
+			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+				ROW_NUMBER() OVER (
+					PARTITION BY sc.root
+					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
+				) AS rn
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			WHERE s.content_nsid = 'is.currents.content.image'
+			  AND s.pds_blob_cid <> ''
+			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		),
+		preview_agg AS (
+			SELECT root, array_agg(blob ORDER BY rn) AS blobs FROM preview WHERE rn <= 4 GROUP BY root
+		)
 		SELECT
 			c.uri,
 			c.cid,
@@ -566,33 +626,17 @@ func (m *PgStore) GetFavouriteCollectionsPage(ctx context.Context, actorDID, vie
 			COALESCE(c.description, ''),
 			COALESCE(c.parent_uri, ''),
 			c.created_at,
-			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
-			ARRAY(
-				SELECT s2.author_did || ',' || s2.pds_blob_cid
-				FROM save s2
-				WHERE (s2.collection_uri = c.uri
-				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
-				  AND s2.content_nsid = 'is.currents.content.image'
-				  AND s2.pds_blob_cid <> ''
-				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
-				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
-				LIMIT 4
-			) AS preview_blobs,
+			ss.last_saved AS last_saved_at,
+			COALESCE(ss.cnt, 0) AS save_count,
+			COALESCE(pa.blobs, ARRAY[]::text[]) AS preview_blobs,
 			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
 			vfc.uri AS favourite_uri,
-			ofc.created_at AS favourited_at
-		FROM favourite_collection ofc
-		JOIN collection c ON c.uri = ofc.collection_uri
-		LEFT JOIN favourite_collection vfc
-			ON vfc.collection_uri = c.uri AND vfc.viewer_did = NULLIF($2, '')
-		WHERE ofc.viewer_did = $1
-		  AND c.cid IS NOT NULL
-		  %s
-		ORDER BY ofc.created_at DESC NULLS LAST, c.uri ASC
-		LIMIT $%d
+			c.favourited_at
+		FROM cols c
+		LEFT JOIN save_stats ss ON ss.root = c.uri
+		LEFT JOIN preview_agg pa ON pa.root = c.uri
+		LEFT JOIN favourite_collection vfc ON vfc.collection_uri = c.uri AND vfc.viewer_did = NULLIF($2, '')
+		ORDER BY c.favourited_at DESC NULLS LAST, c.uri ASC
 	`, cursorClause, limitParam)
 
 	rows, err := m.pool.Query(ctx, query, args...)
@@ -1239,6 +1283,116 @@ func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID
 	return result, nextCursor, nil
 }
 
+// GetLibrarySavesPage lists all of the author's saved images across every collection
+// (and unsorted), deduplicated by blob CID so an image saved in multiple collections
+// appears once (its most recent save). Ordered by created_at desc; keyset pagination.
+func (m *PgStore) GetLibrarySavesPage(ctx context.Context, authorDID, viewerDID string, limit int, cursor string) ([]SaveRow, string, error) {
+	args := []any{authorDID, limit, viewerDID}
+
+	cursorClause := ""
+	if cursor != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err == nil {
+			parts := strings.SplitN(string(raw), "|", 2)
+			if len(parts) == 2 {
+				ts, err := time.Parse(time.RFC3339Nano, parts[0])
+				if err == nil {
+					args = append(args, ts.UTC(), parts[1])
+					cursorClause = fmt.Sprintf(" AND (d.created_at < $%d OR (d.created_at = $%d AND d.uri > $%d))", len(args)-1, len(args)-1, len(args))
+				}
+			}
+		}
+	}
+
+	// Dedup + paginate on lean columns first (`page`), then compute the heavy per-row
+	// viewer JSON only for that page — otherwise the JSON subqueries run for every
+	// distinct image in the library on each request.
+	query := fmt.Sprintf(`
+		WITH page AS (
+			SELECT d.uri, d.created_at
+			FROM (
+				SELECT DISTINCT ON (s.pds_blob_cid) s.uri, s.created_at
+				FROM save s
+				WHERE s.author_did = $1
+				  AND s.content_nsid = 'is.currents.content.image'
+				  AND s.pds_blob_cid <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+				ORDER BY s.pds_blob_cid, s.created_at DESC NULLS LAST, s.uri
+			) d
+			WHERE TRUE %s
+			ORDER BY d.created_at DESC NULLS LAST, d.uri ASC
+			LIMIT $2
+		)
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			s.content_nsid,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(s.resave_of_cid, ''),
+			s.created_at,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
+			s.width,
+			s.height,
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
+		FROM save s
+		JOIN page p ON p.uri = s.uri
+		ORDER BY s.created_at DESC NULLS LAST, s.uri ASC
+	`, cursorClause)
+
+	rows, err := m.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var result []SaveRow
+	for rows.Next() {
+		var row SaveRow
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+			return nil, "", err
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var nextCursor string
+	if len(result) == limit {
+		last := result[len(result)-1]
+		ts := ""
+		if last.CreatedAt != nil {
+			ts = last.CreatedAt.UTC().Format(time.RFC3339Nano)
+		}
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(ts + "|" + last.URI))
+	}
+	return result, nextCursor, nil
+}
+
 type UpsertSaveParams struct {
 	URI                string
 	AuthorDID          string
@@ -1772,6 +1926,68 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 	return m.queryANNSavePage(ctx, query, []any{vec, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset)
 }
 
+// SearchLibrarySavesPageByEmbedding searches the viewer's own saved images (or, when
+// collectionURIs is non-empty, the saves within those specific collections) ranked by
+// cosine distance to the query embedding. Offset-based pagination.
+func (m *PgStore) SearchLibrarySavesPageByEmbedding(ctx context.Context, embedding []float32, viewerDID string, collectionURIs []string, limit, offset int) (annSavePage, error) {
+	vec := pgvector.NewVector(embedding)
+	fetchLimit := limit + 1
+	// Scope: specific collections (own or favourited) if given, else the whole library.
+	scopeClause := "AND s.author_did = $3"
+	args := []any{vec, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}
+	if len(collectionURIs) > 0 {
+		scopeClause = "AND s.collection_uri = ANY($6)"
+		args = append(args, collectionURIs)
+	}
+	query := `
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			s.content_nsid,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(s.resave_of_cid, ''),
+			s.created_at,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
+			s.width,
+			s.height,
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
+		FROM save s
+		JOIN visual_identity vi ON vi.id = s.visual_identity_id
+		WHERE vi.embedding IS NOT NULL
+		  AND s.content_nsid = 'is.currents.content.image'
+		  AND s.author_did <> ALL($5)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  ` + scopeClause + `
+		ORDER BY vi.embedding <=> $1
+		LIMIT $2 OFFSET $4
+	`
+	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset)
+}
+
 func searchSavesEFSearch(offset, fetchLimit int) int {
 	depth := offset + fetchLimit
 	if depth < 100 {
@@ -1849,6 +2065,73 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 		LIMIT $2 OFFSET $4
 	`
 	return m.queryANNSavePage(ctx, query, []any{uri, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset)
+}
+
+// FindSimilarLibrarySavesPageByURI returns the viewer's own saves (or, when collectionURIs
+// is non-empty, saves within those collections) visually closest to the source save's image,
+// excluding the source's own visual identity. Offset-based pagination.
+func (m *PgStore) FindSimilarLibrarySavesPageByURI(ctx context.Context, uri, viewerDID string, collectionURIs []string, limit, offset int) (annSavePage, error) {
+	fetchLimit := limit + 1
+	scopeClause := "AND s.author_did = $3"
+	args := []any{uri, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}
+	if len(collectionURIs) > 0 {
+		scopeClause = "AND s.collection_uri = ANY($6)"
+		args = append(args, collectionURIs)
+	}
+	query := `
+		WITH src AS (
+			SELECT vi.id AS vi_id, vi.embedding
+			FROM save s
+			JOIN visual_identity vi ON vi.id = s.visual_identity_id
+			WHERE s.uri = $1 AND vi.embedding IS NOT NULL
+		)
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			s.content_nsid,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(s.resave_of_cid, ''),
+			s.created_at,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
+			s.width,
+			s.height,
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
+		FROM save s
+		JOIN visual_identity vi ON vi.id = s.visual_identity_id
+		WHERE vi.embedding IS NOT NULL
+		  AND s.content_nsid = 'is.currents.content.image'
+		  AND vi.id != (SELECT vi_id FROM src)
+		  AND s.author_did <> ALL($5)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  ` + scopeClause + `
+		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
+		LIMIT $2 OFFSET $4
+	`
+	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset)
 }
 
 // ── Feed methods ─────────────────────────────────────────────────────────────
@@ -3355,6 +3638,38 @@ func (m *PgStore) IsModerator(ctx context.Context, did string) (string, error) {
 		return "", err
 	}
 	return role, nil
+}
+
+// RegistrationBucket is one UTC-day bucket of new user registrations.
+type RegistrationBucket struct {
+	Date  time.Time
+	Count int
+}
+
+// RegistrationsByDay returns the count of users first indexed on each UTC day,
+// ordered oldest-first. Only days with at least one registration appear; the
+// caller (or the client) fills gaps and re-buckets to coarser granularities.
+func (m *PgStore) RegistrationsByDay(ctx context.Context) ([]RegistrationBucket, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT date_trunc('day', created_at AT TIME ZONE 'UTC') AS day, count(*)
+		FROM "user"
+		GROUP BY day
+		ORDER BY day
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var buckets []RegistrationBucket
+	for rows.Next() {
+		var b RegistrationBucket
+		if err := rows.Scan(&b.Date, &b.Count); err != nil {
+			return nil, err
+		}
+		buckets = append(buckets, b)
+	}
+	return buckets, rows.Err()
 }
 
 func (m *PgStore) UpsertFollow(ctx context.Context, uri, followerDID, subjectDID string) error {

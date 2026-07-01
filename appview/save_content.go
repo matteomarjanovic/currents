@@ -43,6 +43,7 @@ type imageView struct {
 	Width         int              `json:"width,omitempty"`
 	Height        int              `json:"height,omitempty"`
 	DominantColor string           `json:"dominantColor,omitempty"`
+	Palette       []string         `json:"palette,omitempty"`
 	Alt           string           `json:"alt,omitempty"`
 	Attribution   *saveAttribution `json:"attribution,omitempty"`
 }
@@ -407,5 +408,6 @@ func buildSaveContentView(row SaveRow, cdnBaseURL string) any {
 		view.Height = *row.Height
 	}
 	view.DominantColor = firstHex(row.DominantColors)
+	view.Palette = paletteHexes(row.DominantColors)
 	return view
 }

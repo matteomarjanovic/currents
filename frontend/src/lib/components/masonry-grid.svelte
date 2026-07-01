@@ -8,9 +8,11 @@
 	interface Props {
 		items: SaveView[];
 		loading: boolean;
+		// Forwarded to each ImageCard; false makes tiles non-clickable.
+		linkToDetail?: boolean;
 	}
 
-	let { items, loading }: Props = $props();
+	let { items, loading, linkToDetail = true }: Props = $props();
 
 	// Drop saves the viewer has set to "hide" before the grid sees them: no
 	// card is rendered, no Frame reserved, and the <img> is never fetched.
@@ -26,9 +28,24 @@
 	);
 
 	const skeletonShapes: Array<[number, number]> = [
-		[3, 4], [2, 3], [4, 5], [1, 1], [3, 5], [4, 3],
-		[3, 4], [5, 7], [2, 3], [4, 5], [1, 1], [3, 4],
-		[3, 5], [4, 3], [2, 3], [3, 4], [4, 5], [3, 4]
+		[3, 4],
+		[2, 3],
+		[4, 5],
+		[1, 1],
+		[3, 5],
+		[4, 3],
+		[3, 4],
+		[5, 7],
+		[2, 3],
+		[4, 5],
+		[1, 1],
+		[3, 4],
+		[3, 5],
+		[4, 3],
+		[2, 3],
+		[3, 4],
+		[4, 5],
+		[3, 4]
 	];
 
 	let skeletonCount = $derived.by(() => {
@@ -44,24 +61,24 @@
 
 <div bind:clientWidth={containerWidth}>
 	<BalancedMasonryGrid {frameWidth} {gap}>
-	{#each visibleItems as item (item.uri)}
-		<Frame width={getImageContent(item)?.width ?? 3} height={getImageContent(item)?.height ?? 4}>
-			<ImageCard {item} />
-		</Frame>
-	{/each}
-	{#if loading && items.length === 0}
-		{#each skeletonShapes.slice(0, skeletonCount) as [w, h], i (i)}
-			<Frame width={w} height={h}>
-				<Skeleton class="h-full w-full rounded-lg" />
+		{#each visibleItems as item (item.uri)}
+			<Frame width={getImageContent(item)?.width ?? 3} height={getImageContent(item)?.height ?? 4}>
+				<ImageCard {item} {linkToDetail} />
 			</Frame>
 		{/each}
-	{:else if loading}
-		<Frame width={3} height={4}>
-			<Skeleton class="h-full w-full rounded-lg" />
-		</Frame>
-		<Frame width={2} height={3}>
-			<Skeleton class="h-full w-full rounded-lg" />
-		</Frame>
-	{/if}
+		{#if loading && items.length === 0}
+			{#each skeletonShapes.slice(0, skeletonCount) as [w, h], i (i)}
+				<Frame width={w} height={h}>
+					<Skeleton class="h-full w-full rounded-lg" />
+				</Frame>
+			{/each}
+		{:else if loading}
+			<Frame width={3} height={4}>
+				<Skeleton class="h-full w-full rounded-lg" />
+			</Frame>
+			<Frame width={2} height={3}>
+				<Skeleton class="h-full w-full rounded-lg" />
+			</Frame>
+		{/if}
 	</BalancedMasonryGrid>
 </div>

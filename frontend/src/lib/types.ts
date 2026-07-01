@@ -54,6 +54,7 @@ export interface ImageContentView {
 	width?: number;
 	height?: number;
 	dominantColor?: string;
+	palette?: string[];
 	alt?: string;
 	attribution?: SaveAttribution;
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { apiFetch } from '$lib/api';
 	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
@@ -28,11 +28,16 @@
 
 	interface Props {
 		item?: SaveView;
-		variant?: 'popover' | 'drawer';
+		// `inline` renders only the collection list (no trigger/wrapper) — for embedding
+		// in a context-menu submenu or a custom drawer.
+		variant?: 'popover' | 'drawer' | 'inline';
 		// Style of the popover trigger button. Defaults to the translucent `glass`
 		// (good over imagery, e.g. card tiles); pass a solid variant on plain
 		// backgrounds where glass would blend in (e.g. the save-detail sidebar).
 		triggerVariant?: ButtonVariant;
+		// Custom trigger, replacing the default button (+ Save toggle). Receives the
+		// popover/drawer trigger props to spread onto a focusable element.
+		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 		onOpenChange?: (open: boolean) => void;
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
@@ -43,6 +48,7 @@
 		item,
 		variant = 'popover',
 		triggerVariant = 'glass',
+		trigger,
 		onOpenChange,
 		selectedUri,
 		onSelect,
@@ -393,15 +399,19 @@
 		<Popover.Root bind:open>
 			<Popover.Trigger>
 				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant={triggerVariant}
-						size="default"
-						class="min-w-0 flex-1 justify-between truncate"
-					>
-						<span class="truncate">{selectedName}</span>
-						<ChevronDown class="ml-1 size-3 shrink-0" />
-					</Button>
+					{#if trigger}
+						{@render trigger({ props })}
+					{:else}
+						<Button
+							{...props}
+							variant={triggerVariant}
+							size="default"
+							class="min-w-0 flex-1 justify-between truncate"
+						>
+							<span class="truncate">{selectedName}</span>
+							<ChevronDown class="ml-1 size-3 shrink-0" />
+						</Button>
+					{/if}
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content
@@ -412,7 +422,7 @@
 			</Popover.Content>
 		</Popover.Root>
 
-		{#if !pickerMode}
+		{#if !pickerMode && !trigger}
 			<Toggle
 				size="default"
 				pressed={!!isSavedInSelected()}
@@ -423,11 +433,15 @@
 			</Toggle>
 		{/if}
 	</div>
+{:else if variant === 'inline'}
+	{@render collectionList()}
 {:else}
 	<Drawer.Root bind:open>
 		<Drawer.Trigger>
 			{#snippet child({ props })}
-				{#if pickerMode}
+				{#if trigger}
+					{@render trigger({ props })}
+				{:else if pickerMode}
 					<Button {...props} variant="secondary" class="w-full justify-between">
 						<span class="truncate">{selectedName}</span>
 						<ChevronDown class="ml-1 size-3 shrink-0" />

@@ -412,6 +412,15 @@ func (s *Server) ImageProxy(w http.ResponseWriter, r *http.Request) {
 	did := r.PathValue("did")
 	cid := r.PathValue("cid")
 
+	// Public images: allow any origin to fetch() them (used by the organize context
+	// menu's copy/download). Overrides the credentialed CORS the global middleware sets
+	// so the ACAO is a plain "*" — valid without credentials and cacheable as one entry
+	// for every caller (the response is Cache-Control: immutable). No Origin echo, so an
+	// <img> load that fills the cache and a later fetch() share the same permissive ACAO.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Del("Access-Control-Allow-Credentials")
+	w.Header().Del("Vary")
+
 	data, mimeType, err := fetchBlobFromPDS(r.Context(), s.Store, s.Dir, did, cid)
 	if err != nil {
 		slog.Error("image proxy failed", "did", did, "cid", cid, "err", err)

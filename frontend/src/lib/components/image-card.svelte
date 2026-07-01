@@ -10,9 +10,12 @@
 
 	interface Props {
 		item: SaveView;
+		// When false, the image isn't a link to the detail view (clicking does nothing);
+		// the hover overlay / collection selector still work. Defaults to true.
+		linkToDetail?: boolean;
 	}
 
-	let { item }: Props = $props();
+	let { item, linkToDetail = true }: Props = $props();
 
 	let dropdownOpen = $state(false);
 	let href = $derived.by(() => {
@@ -35,31 +38,37 @@
 	}
 </script>
 
+{#snippet media()}
+	{#if image}
+		<img
+			src={image.imageUrl}
+			alt={image.alt ?? item.text ?? ''}
+			loading="lazy"
+			class="w-full"
+			style={image.width && image.height
+				? `aspect-ratio: ${image.width} / ${image.height}`
+				: undefined}
+		/>
+	{:else}
+		<div
+			class="flex items-center justify-center bg-muted text-sm text-muted-foreground"
+			style="aspect-ratio: 3 / 4;"
+		>
+			Unsupported content
+		</div>
+	{/if}
+{/snippet}
+
 <div
 	class="group relative overflow-hidden rounded-lg"
 	style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 >
 	<LabeledMedia labels={item.labels}>
-		<a {href} class="block" onclick={handleClick}>
-			{#if image}
-				<img
-					src={image.imageUrl}
-					alt={image.alt ?? item.text ?? ''}
-					loading="lazy"
-					class="w-full"
-					style={image.width && image.height
-						? `aspect-ratio: ${image.width} / ${image.height}`
-						: undefined}
-				/>
-			{:else}
-				<div
-					class="flex items-center justify-center bg-muted text-sm text-muted-foreground"
-					style="aspect-ratio: 3 / 4;"
-				>
-					Unsupported content
-				</div>
-			{/if}
-		</a>
+		{#if linkToDetail}
+			<a {href} class="block" onclick={handleClick}>{@render media()}</a>
+		{:else}
+			<div class="block">{@render media()}</div>
+		{/if}
 		{#snippet overlay()}
 			{#if auth.user && collections.loaded}
 				<div
@@ -72,7 +81,7 @@
 							? 'pointer-events-auto translate-y-0'
 							: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
 					>
-							<CollectionSelector
+						<CollectionSelector
 							{item}
 							variant="popover"
 							onOpenChange={(o) => (dropdownOpen = o)}

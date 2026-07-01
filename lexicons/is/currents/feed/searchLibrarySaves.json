@@ -1,0 +1,61 @@
+{
+  "lexicon": 1,
+  "id": "is.currents.feed.searchLibrarySaves",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Search the authenticated viewer's own saved images by text query, optionally scoped to specific collections. Requires authentication.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "q"
+        ],
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Text query, embedded and matched against image embeddings.",
+            "maxLength": 2048
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "at-uri"
+            },
+            "description": "AT-URIs of collections to narrow the search to. If omitted, searches the viewer's entire library."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "saves"
+          ],
+          "properties": {
+            "cursor": {
+              "type": "string"
+            },
+            "saves": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "is.currents.feed.defs#saveView"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
