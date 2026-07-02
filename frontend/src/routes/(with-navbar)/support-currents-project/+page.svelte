@@ -15,6 +15,7 @@
 		PADDLE_PRICE_MONTHLY,
 		PADDLE_PRICE_YEARLY
 	} from '$lib/paddle';
+	import SiteFooter from '$lib/components/site-footer.svelte';
 	import Check from '@lucide/svelte/icons/check';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Heart from '@lucide/svelte/icons/heart';
@@ -186,34 +187,46 @@
 
 		<section class="flex flex-col gap-4">
 			<h3 class="text-lg font-semibold text-foreground">Roadmap</h3>
-			<!-- Vertical stepper: dots joined by a line; the filled first dot marks
-				     what's being worked on now. -->
+			<!-- Vertical stepper. Each marker column stacks a line segment above the
+			     dot (h-2 puts the dot's center on the first text line of leading-7
+			     text) and one below filling to the item's edge, so consecutive
+			     segments touch and the line reads as continuous. The filled first
+			     dot marks what's being worked on now. -->
 			<ol class="flex flex-col">
 				<li class="flex gap-4">
-					<div class="flex flex-col items-center">
-						<span class="mt-1.5 size-3 shrink-0 rounded-full bg-foreground"></span>
+					<div class="flex w-3 flex-col items-center">
+						<span class="h-2 w-px shrink-0"></span>
+						<span class="size-3 shrink-0 rounded-full bg-foreground"></span>
 						<span class="w-px flex-1 bg-border"></span>
 					</div>
 					<div class="pb-6">Improve the <em>Organize mode</em></div>
 				</li>
 				<li class="flex gap-4">
-					<div class="flex flex-col items-center">
-						<span class="mt-1.5 size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"
-						></span>
+					<div class="flex w-3 flex-col items-center">
+						<span class="h-2 w-px shrink-0 bg-border"></span>
+						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
 						<span class="w-px flex-1 bg-border"></span>
 					</div>
 					<div class="pb-6">Release mobile apps (Android and iOS)</div>
 				</li>
 				<li class="flex gap-4">
-					<div class="flex flex-col items-center">
-						<span class="mt-1.5 size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"
-						></span>
+					<div class="flex w-3 flex-col items-center">
+						<span class="h-2 w-px shrink-0 bg-border"></span>
+						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
+						<span class="w-px flex-1 bg-border"></span>
 					</div>
-					<div>Create a <em>Following</em> feed</div>
+					<div class="pb-6">Create a <em>Following</em> feed</div>
+				</li>
+				<li class="flex gap-4">
+					<div class="flex w-3 flex-col items-center">
+						<span class="h-2 w-px shrink-0 bg-border"></span>
+						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
+					</div>
+					<div>Much more to come...</div>
 				</li>
 			</ol>
 			<p>
-				... and much more! For further insights, or for providing suggestions or feedback, visit
+				For further insights, or for providing suggestions or feedback, visit
 				<a class="underline underline-offset-4" href="https://currents.is/feedback"
 					>https://currents.is/feedback</a
 				>
@@ -338,3 +351,7 @@
 		</section>
 	</article>
 </div>
+
+<!-- Negative margins cancel the with-navbar layout's main padding so the
+     footer runs edge to edge, like on the landing page. -->
+<SiteFooter class="-mx-2 mt-10 -mb-2 md:-mx-4 md:-mb-4" />
