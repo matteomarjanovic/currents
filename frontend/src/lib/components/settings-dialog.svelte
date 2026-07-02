@@ -19,6 +19,7 @@
 		type AiVisibility
 	} from '$lib/stores/moderation-prefs.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
+	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import ShieldIcon from '@lucide/svelte/icons/shield';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
@@ -249,7 +250,10 @@
 									class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4"
 								>
 									<div class="flex flex-col gap-0.5">
-										<span class="text-sm font-medium">You're a supporter</span>
+										<span class="flex items-center gap-2 text-sm font-medium">
+											<SupporterBadge class="size-5" />
+											You're a supporter
+										</span>
 										<span class="text-xs text-muted-foreground">
 											Thank you for keeping Currents running.
 										</span>

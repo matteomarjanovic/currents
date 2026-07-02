@@ -16,6 +16,7 @@
 		PADDLE_PRICE_YEARLY
 	} from '$lib/paddle';
 	import SiteFooter from '$lib/components/site-footer.svelte';
+	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import Check from '@lucide/svelte/icons/check';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Heart from '@lucide/svelte/icons/heart';
@@ -82,13 +83,13 @@
 				visual inspiration and manage their library of references in a seamless way.
 			</p>
 			<p>
-				One aspect is not negotiable: this shouldn't sell users data. That would be the easy path
-				for financial success, that's why the main alternatives pack their UIs with ads. But the web
-				doesn't have to be that way: it can be of the people.
+				One aspect is not negotiable: it shouldn't sell users data. That would be the easy path for
+				financial success, that's why the main alternatives pack their UIs with ads. But the web
+				doesn't have to be that way: it can be of the <i>people</i>.
 			</p>
 			<p>
-				This means that this project depends entirely on the people who find it useful, believe in
-				its values and decide to support it financially. And this means also that it's our
+				This is why this project depends entirely on the people who find it useful, believe in its
+				values and decide to support it financially. And this means also that it's our
 				responsibility to provide the best product we can, since that's the single thing our users
 				want and would support us for.
 			</p>
@@ -111,7 +112,10 @@
 			</Card.Content>
 			<Card.Footer class="flex-col items-stretch gap-3">
 				{#if supporter.subscribed}
-					<p class="text-sm font-medium">You're already a supporter — thank you.</p>
+					<p class="flex items-center gap-2 text-sm font-medium">
+						<SupporterBadge class="size-5" />
+						You're already a supporter — thank you.
+					</p>
 					<p class="text-xs text-muted-foreground">
 						You can manage your subscription anytime from Settings → Subscription.
 					</p>
