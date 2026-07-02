@@ -101,6 +101,34 @@ func (s *Server) APISupporterPortal(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"url": portalURL})
 }
 
+// APISupporterStats returns the public transparency numbers for the support
+// page: total indexed users and active supporter counts per price id. No auth
+// — publishing these openly is the point.
+func (s *Server) APISupporterStats(w http.ResponseWriter, r *http.Request) {
+	users, err := s.Store.CountUsers(r.Context())
+	if err != nil {
+		slog.Error("CountUsers", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	byPrice, err := s.Store.CountSupportersByPrice(r.Context())
+	if err != nil {
+		slog.Error("CountSupportersByPrice", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	supporters := 0
+	for _, n := range byPrice {
+		supporters += n
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"totalUsers": users,
+		"supporters": supporters,
+		"byPrice":    byPrice,
+	})
+}
+
 var paddleHTTP = &http.Client{Timeout: 10 * time.Second}
 
 // createPaddlePortalSession calls the Paddle REST API. The environment is

@@ -137,6 +137,12 @@
 				>
 					<a
 						class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+						href={resolve('/support-currents-project')}
+					>
+						Support the project
+					</a>
+					<a
+						class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
 						href={resolve('/terms')}
 					>
 						Terms of Service

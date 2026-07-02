@@ -906,6 +906,38 @@ func (m *PgStore) GetPaddleCustomerID(ctx context.Context, did string) (string, 
 	return id, err
 }
 
+// CountUsers returns the total number of indexed Currents users.
+func (m *PgStore) CountUsers(ctx context.Context) (int, error) {
+	var n int
+	err := m.pool.QueryRow(ctx, `SELECT count(*) FROM "user"`).Scan(&n)
+	return n, err
+}
+
+// CountSupportersByPrice returns the number of access-granting subscriptions
+// per Paddle price id — the public transparency numbers on the support page.
+// The client maps price ids to dollar amounts (it knows the configured ids).
+func (m *PgStore) CountSupportersByPrice(ctx context.Context) (map[string]int, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT price_id, count(*) FROM paddle_subscription
+		WHERE status IN ('active', 'trialing', 'past_due')
+		GROUP BY price_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var price string
+		var n int
+		if err := rows.Scan(&price, &n); err != nil {
+			return nil, err
+		}
+		counts[price] = n
+	}
+	return counts, rows.Err()
+}
+
 // --- Moderation preferences (per-user, server-backed) ---
 
 // GetModerationPrefs returns the user's stored preferences, or the defaults when
