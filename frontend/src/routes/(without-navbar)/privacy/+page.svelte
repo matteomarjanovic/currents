@@ -21,6 +21,7 @@
 			<div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
 				<a class="underline underline-offset-4" href={resolve('/terms')}>Terms</a>
 				<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy</a>
+				<a class="underline underline-offset-4" href={resolve('/refunds')}>Refunds</a>
 				<a class="underline underline-offset-4" href={resolve('/login')}>Log in</a>
 			</div>
 		</div>
@@ -29,7 +30,7 @@
 			<Card.Header class="gap-3">
 				<Card.Title class="text-3xl leading-tight">Privacy Policy</Card.Title>
 				<Card.Description>
-					Last updated June 28, 2026. This policy explains how the hosted Currents service collects,
+					Last updated July 2, 2026. This policy explains how the hosted Currents service collects,
 					uses, and shares information.
 				</Card.Description>
 			</Card.Header>
@@ -91,6 +92,20 @@
 							Currents through the system share sheet), used only to pre-fill a save you choose to
 							create.
 						</li>
+						<li>
+							Subscription and billing data if you become a Supporter. Checkout and billing are
+							handled by Paddle, our merchant of record, which collects your billing email, payment
+							method, and country, and may set its own cookies inside the checkout window. Currents
+							itself stores only your subscription status, plan, and Paddle customer and
+							subscription identifiers linked to your account — we never see your full payment card
+							details.
+						</li>
+						<li>
+							Aggregate usage statistics collected with Umami, a privacy-focused, cookieless
+							analytics tool. It records anonymous page views without cookies, device
+							fingerprinting, or cross-site tracking, and the data cannot be tied back to individual
+							users.
+						</li>
 					</ul>
 				</section>
 
@@ -133,6 +148,16 @@
 							image proxy, and inference systems on our behalf.
 						</li>
 						<li>
+							With Paddle, our payments provider and merchant of record, when you purchase or manage
+							a Supporter subscription. Paddle processes your billing details under its own
+							<a
+								class="underline underline-offset-4"
+								href="https://www.paddle.com/legal/privacy"
+								target="_blank"
+								rel="noreferrer">privacy policy</a
+							>.
+						</li>
+						<li>
 							With other users and the public when the information is part of public AT Protocol
 							content.
 						</li>
@@ -163,6 +188,11 @@
 					<p>
 						Browser local storage remains on your device until you clear it or the app overwrites
 						it.
+					</p>
+					<p>
+						Subscription records (status, plan, and Paddle identifiers) are kept for as long as you
+						have a subscription and afterwards for as long as needed for accounting, tax, and
+						dispute-handling purposes.
 					</p>
 				</section>
 

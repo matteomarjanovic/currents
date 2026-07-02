@@ -38,7 +38,10 @@
 
 		const isLoginPage = page.url.pathname.startsWith('/login');
 		const isRegisterPage = page.url.pathname.startsWith('/register');
-		const isLegalPage = page.url.pathname === '/terms' || page.url.pathname === '/privacy';
+		const isLegalPage =
+			page.url.pathname === '/terms' ||
+			page.url.pathname === '/privacy' ||
+			page.url.pathname === '/refunds';
 		const isRootPage = page.url.pathname === '/';
 		const isExplorePage = page.url.pathname === '/explore';
 		// Single-image (save-detail) pages are public — viewing an image must never
