@@ -21,6 +21,7 @@
 			<div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
 				<a class="underline underline-offset-4" href={resolve('/terms')}>Terms</a>
 				<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy</a>
+				<a class="underline underline-offset-4" href={resolve('/refunds')}>Refunds</a>
 				<a class="underline underline-offset-4" href={resolve('/login')}>Log in</a>
 			</div>
 		</div>
@@ -29,8 +30,8 @@
 			<Card.Header class="gap-3">
 				<Card.Title class="text-3xl leading-tight">Terms of Service</Card.Title>
 				<Card.Description>
-					Last updated June 28, 2026. These Terms apply to the hosted Currents service, including
-					the web app, mobile apps, browser extension, APIs, appview, and related infrastructure.
+					Last updated July 2, 2026. These Terms apply to the hosted Currents service, including the
+					web app, mobile apps, browser extension, APIs, appview, and related infrastructure.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-8 text-sm leading-6 text-foreground/90 md:text-[15px]">
@@ -148,7 +149,72 @@
 
 				<section class="space-y-3">
 					<h2 class="text-lg font-semibold text-foreground">
-						9. Suspension, termination, and changes
+						9. Supporter subscriptions and billing
+					</h2>
+					<p>
+						Currents offers an optional paid tier called <strong>Supporter</strong>. It unlocks
+						additional features — currently semantic text search across your library and visual
+						similar-image search within your library — and helps keep the service running. The core
+						saving and collecting experience remains free.
+					</p>
+					<p>
+						The Supporter tier costs <strong>$7 per month</strong> or <strong>$70 per year</strong>.
+						The exact amount, including any applicable taxes, is shown at checkout before you pay.
+					</p>
+					<p>
+						Payments are processed by
+						<a
+							class="underline underline-offset-4"
+							href="https://www.paddle.com"
+							target="_blank"
+							rel="noreferrer">Paddle</a
+						>, our merchant of record. Paddle handles checkout, billing, taxes, receipts, and
+						payment data; the charge on your statement will appear from Paddle. Purchases are also
+						subject to
+						<a
+							class="underline underline-offset-4"
+							href="https://www.paddle.com/legal/checkout-buyer-terms"
+							target="_blank"
+							rel="noreferrer">Paddle's buyer terms</a
+						>.
+					</p>
+					<p>
+						Subscriptions <strong>renew automatically</strong> at the end of each billing period
+						(monthly or yearly) until canceled. You can cancel anytime from
+						<em>Settings → Subscription → Manage</em>, which opens your Paddle billing portal — the
+						same place to update your payment method and download invoices. Cancellation takes
+						effect at the end of the current paid period, and you keep Supporter features until
+						then.
+					</p>
+					<p>
+						We may change Supporter pricing or adjust which features are included. For existing
+						subscribers, price changes take effect no earlier than the next billing period, with
+						advance notice.
+					</p>
+				</section>
+
+				<section class="space-y-3">
+					<h2 class="text-lg font-semibold text-foreground">10. Refunds</h2>
+					<p>
+						We offer a full refund of your <strong>first payment within 14 days</strong> of the
+						initial purchase, and renewal charges can be refunded if you contact us within
+						<strong>14 days</strong> of the charge. The full policy, including how to request a
+						refund, is our
+						<a class="underline underline-offset-4" href={resolve('/refunds')}>Refund Policy</a>.
+					</p>
+					<p>
+						To request a refund, email
+						<a class="underline underline-offset-4" href="mailto:refunds@currents.is"
+							>refunds@currents.is</a
+						>
+						or reply to the Paddle receipt email. Nothing in this section limits any non-waivable statutory
+						rights you have under the consumer-protection laws of your country.
+					</p>
+				</section>
+
+				<section class="space-y-3">
+					<h2 class="text-lg font-semibold text-foreground">
+						11. Suspension, termination, and changes
 					</h2>
 					<p>
 						We may suspend, restrict, or terminate access to the hosted service if you violate these
@@ -167,7 +233,7 @@
 				</section>
 
 				<section class="space-y-3">
-					<h2 class="text-lg font-semibold text-foreground">10. Disclaimers</h2>
+					<h2 class="text-lg font-semibold text-foreground">12. Disclaimers</h2>
 					<p>
 						To the maximum extent permitted by law, Currents is provided on an as-is and
 						as-available basis. We do not promise uninterrupted availability, permanent retention,
@@ -180,11 +246,11 @@
 				</section>
 
 				<section class="space-y-3">
-					<h2 class="text-lg font-semibold text-foreground">11. Contact</h2>
+					<h2 class="text-lg font-semibold text-foreground">13. Contact</h2>
 					<p>
 						For questions about these Terms or the hosted Currents service, email
-						<a class="underline underline-offset-4" href="mailto:privacy@currents.is"
-							>privacy@currents.is</a
+						<a class="underline underline-offset-4" href="mailto:support@currents.is"
+							>support@currents.is</a
 						>
 						or open an issue at
 						<a

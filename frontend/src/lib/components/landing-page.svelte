@@ -29,7 +29,7 @@
 	>
 		<video
 			bind:this={video}
-			class="absolute inset-0 -z-20 h-full w-full object-cover pointer-events-none"
+			class="pointer-events-none absolute inset-0 -z-20 h-full w-full object-cover"
 			autoplay
 			muted
 			loop
@@ -146,6 +146,12 @@
 						href={resolve('/privacy')}
 					>
 						Privacy Policy
+					</a>
+					<a
+						class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+						href={resolve('/refunds')}
+					>
+						Refund Policy
 					</a>
 				</div>
 			</div>
