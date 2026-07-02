@@ -17,7 +17,7 @@
 	} from '$lib/paddle';
 	import SiteFooter from '$lib/components/site-footer.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
-	import Check from '@lucide/svelte/icons/check';
+	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Heart from '@lucide/svelte/icons/heart';
 
@@ -93,28 +93,7 @@
 				<Card.Description>One tier, everything included. Cancel anytime.</Card.Description>
 			</Card.Header>
 			<Card.Content>
-				<ul class="flex flex-col gap-2.5">
-					<li class="flex items-start gap-2.5">
-						<Check class="mt-1 size-4 shrink-0 text-foreground" />
-						<span>Semantic search in your library</span>
-					</li>
-					<li class="flex items-start gap-2.5">
-						<Check class="mt-1 size-4 shrink-0 text-foreground" />
-						<span>Image search in your library ("find similar")</span>
-					</li>
-					<li class="flex items-start gap-2.5">
-						<Check class="mt-1 size-4 shrink-0 text-foreground" />
-						<span>Both filterable by collection</span>
-					</li>
-					<li class="flex items-start gap-2.5">
-						<Check class="mt-1 size-4 shrink-0 text-foreground" />
-						<span>The <SupporterBadge class="mx-0.5 mb-0.5 size-4" /> supporter badge</span>
-					</li>
-					<li class="flex items-start gap-2.5">
-						<Check class="mt-1 size-4 shrink-0 text-foreground" />
-						<span>Much more to come</span>
-					</li>
-				</ul>
+				<SupporterPerks />
 			</Card.Content>
 			<Card.Footer class="flex-col items-stretch gap-3">
 				{#if supporter.subscribed}

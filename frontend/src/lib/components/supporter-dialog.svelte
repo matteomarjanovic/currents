@@ -1,8 +1,10 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { supporter } from '$lib/stores/supporter.svelte';
+	import SupporterBadge from '$lib/components/supporter-badge.svelte';
+	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
-	import Sparkles from '@lucide/svelte/icons/sparkles';
 
 	// Shown when a non-supporter reaches a supporter-tier feature (library
 	// search, find similar in library). Subscribing opens the Paddle overlay
@@ -20,15 +22,24 @@
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
-				<Sparkles class="size-4" />
+				<SupporterBadge class="size-5" />
 				Support Currents
 			</Dialog.Title>
 			<Dialog.Description>
-				Searching your library by meaning and finding visually similar images run on Currents' AI
-				infrastructure. They're reserved for supporters — a subscription that keeps Currents running
-				and independent.
+				Currents is an independent, ad-free project: it's funded by the people who use it, not by
+				ads or your data. This feature is part of the supporter tier, which unlocks:
 			</Dialog.Description>
 		</Dialog.Header>
+		<SupporterPerks class="text-sm" />
 		<SupporterPlans onCheckoutOpen={() => (open = false)} />
+		<p class="text-xs text-muted-foreground">
+			<a
+				class="underline underline-offset-4 hover:text-foreground"
+				href={resolve('/support-currents-project')}
+				onclick={() => (open = false)}
+			>
+				Learn more about supporting the project</a
+			>.
+		</p>
 	</Dialog.Content>
 </Dialog.Root>

@@ -20,8 +20,9 @@
 	} from '$lib/stores/moderation-prefs.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
+	import { resolve } from '$app/paths';
 	import ShieldIcon from '@lucide/svelte/icons/shield';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import CreditCardIcon from '@lucide/svelte/icons/credit-card';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 
 	// Settings live in a dialog (not a page) so they open from every mode —
@@ -31,7 +32,7 @@
 
 	const NAV: { key: SettingsSection; name: string; icon: typeof ShieldIcon }[] = [
 		{ key: 'moderation', name: 'Moderation', icon: ShieldIcon },
-		{ key: 'subscription', name: 'Subscription', icon: SparklesIcon }
+		{ key: 'subscription', name: 'Subscription', icon: CreditCardIcon }
 	];
 	// While the preview gate is on, the subscription section is moderator-only.
 	let nav = $derived(canSeePreviewFeatures() ? NAV : NAV.filter((n) => n.key !== 'subscription'));
@@ -240,8 +241,16 @@
 					{:else}
 						<section class="flex flex-col gap-4">
 							<p class="text-sm text-muted-foreground">
-								Supporters unlock semantic search and visual similarity search in their library —
-								and keep Currents running and independent.
+								Currents is an independent, ad-free project: it's funded by its supporters, not by
+								your data. Supporting it also unlocks a set of extra perks, like semantic and visual
+								search in your library.
+								<a
+									class="underline underline-offset-4 hover:text-foreground"
+									href={resolve('/support-currents-project')}
+									onclick={() => (settingsDialog.open = false)}
+								>
+									Learn more about supporting the project</a
+								>.
 							</p>
 							{#if !supporter.loaded}
 								<p class="text-sm text-muted-foreground">Loading…</p>
