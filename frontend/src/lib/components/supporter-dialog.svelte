@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { supporter } from '$lib/stores/supporter.svelte';
+	import { supporter, supporterFlow } from '$lib/stores/supporter.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
@@ -16,9 +16,19 @@
 	$effect(() => {
 		if (open && supporter.active) open = false;
 	});
+
+	// If the paywall is dismissed without starting a checkout, the interrupted
+	// action is stale — drop it so a later, unrelated checkout doesn't replay it.
+	let startedCheckout = false;
+	$effect(() => {
+		if (open) startedCheckout = false;
+	});
+	function handleOpenChange(o: boolean) {
+		if (!o && !startedCheckout) supporterFlow.pending = null;
+	}
 </script>
 
-<Dialog.Root bind:open>
+<Dialog.Root bind:open onOpenChange={handleOpenChange}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
@@ -31,7 +41,12 @@
 			</Dialog.Description>
 		</Dialog.Header>
 		<SupporterPerks class="text-sm" />
-		<SupporterPlans onCheckoutOpen={() => (open = false)} />
+		<SupporterPlans
+			onCheckoutOpen={() => {
+				startedCheckout = true;
+				open = false;
+			}}
+		/>
 		<p class="text-xs text-muted-foreground">
 			<a
 				class="underline underline-offset-4 hover:text-foreground"

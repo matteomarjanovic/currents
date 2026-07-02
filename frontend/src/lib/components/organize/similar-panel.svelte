@@ -5,6 +5,7 @@
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import ImageOff from '@lucide/svelte/icons/image-off';
 
 	let { save }: { save: SaveView } = $props();
@@ -15,7 +16,7 @@
 		const params = new URLSearchParams({ uri: save.uri, limit: '50' });
 		if (cursor) params.set('cursor', cursor);
 		const res = await apiFetch(`/xrpc/is.currents.feed.getRelatedSaves?${params}`);
-		if (!res.ok) return { items: [], cursor: undefined };
+		if (!res.ok) throw new Error(`request failed: ${res.status}`);
 		const data = await res.json();
 		return { items: data.saves ?? [], cursor: data.cursor };
 	});
@@ -48,7 +49,17 @@
 </script>
 
 <div bind:this={scrollEl} class="h-full overflow-y-auto p-3 [overflow-anchor:none]">
-	{#if visible.length === 0 && !related.loading}
+	{#if related.error && visible.length === 0}
+		<div
+			class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
+		>
+			<ImageOff class="size-6" />
+			<p>Couldn't load related images.</p>
+			<Button variant="outline" size="sm" class="mt-1" onclick={() => related.retry()}>
+				Try again
+			</Button>
+		</div>
+	{:else if visible.length === 0 && !related.loading}
 		<div
 			class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
 		>

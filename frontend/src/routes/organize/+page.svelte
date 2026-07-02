@@ -15,9 +15,10 @@
 	import OrganizeSearchCommand from '$lib/components/organize/search-command.svelte';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
 	import SupporterDialog from '$lib/components/supporter-dialog.svelte';
+	import { Kbd } from '$lib/components/ui/kbd';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
-	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
+	import { supporter, supporterFlow, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -95,21 +96,34 @@
 
 	// Library search and find-similar are supporter-tier features (enforced
 	// server-side too). This gate resolves whether to proceed, opening the
-	// upgrade dialog instead when the viewer isn't a supporter.
+	// upgrade dialog instead when the viewer isn't a supporter. `pending` is
+	// stashed on the supporter flow so the post-checkout thank-you dialog can
+	// resume the interrupted action.
 	let supporterDialogOpen = $state(false);
-	async function requireSupporter(): Promise<boolean> {
+	async function requireSupporter(pending?: () => void): Promise<boolean> {
 		if (!supporter.loaded) await loadSupporterStatus();
 		if (supporter.active) return true;
+		supporterFlow.pending = pending ?? null;
 		supporterDialogOpen = true;
 		return false;
 	}
 
 	async function findSimilar(s: SaveView) {
-		if (!(await requireSupporter())) return;
+		if (!(await requireSupporter(() => void findSimilar(s)))) return;
 		searchQuery = null;
 		similarSource = s;
 		goto(simHref(s.uri));
 	}
+
+	// ⌘K / Ctrl+K opens the library search from anywhere in organize mode.
+	function onWindowKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			searchOpen = true;
+		}
+	}
+	const isMac =
+		typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '');
 
 	// The image detail panel opens on tile click. The selection is scoped to the
 	// collection it was made in, so switching collections closes the panel for free
@@ -119,6 +133,8 @@
 		selection && selection.collectionUri === selectedUri ? selection.save : null
 	);
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <!-- Bound the shell to the viewport (the wrapper is min-h-svh by default) so the
      central canvas and right panel scroll internally instead of the whole page. -->
@@ -251,6 +267,9 @@
 				>
 					<SearchIcon class="size-4 shrink-0" />
 					<span class="truncate">{search ? search.query : 'Search your library…'}</span>
+					{#if !search}
+						<Kbd class="ml-auto hidden shrink-0 md:inline-flex">{isMac ? '⌘' : 'Ctrl'} K</Kbd>
+					{/if}
 				</button>
 				{#if search}
 					<button
@@ -291,7 +310,7 @@
 		collections={collections.items}
 		favourites={favouriteCollections.items}
 		initial={selectedUri ? [selectedUri] : []}
-		canSearch={requireSupporter}
+		canSearch={() => requireSupporter(() => (searchOpen = true))}
 		onSearch={(q, cols) => {
 			if (similarUri) goto(hrefFor(selectedUri));
 			searchScope.clear();

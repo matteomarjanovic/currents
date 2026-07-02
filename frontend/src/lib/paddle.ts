@@ -6,7 +6,7 @@ import {
 } from '$env/static/public';
 import { CheckoutEventNames, initializePaddle, type Paddle } from '@paddle/paddle-js';
 import { mode } from 'mode-watcher';
-import { loadSupporterStatus, supporter } from '$lib/stores/supporter.svelte';
+import { loadSupporterStatus, supporter, supporterFlow } from '$lib/stores/supporter.svelte';
 
 export const PADDLE_PRICE_MONTHLY = PUBLIC_PADDLE_PRICE_MONTHLY;
 export const PADDLE_PRICE_YEARLY = PUBLIC_PADDLE_PRICE_YEARLY;
@@ -26,10 +26,17 @@ function getPaddle() {
 			// Provisioning happens via the appview's Paddle webhook; the completed
 			// event just tells us to poll until the mirror catches up (usually the
 			// first attempt) so the UI unlocks while the overlay is still open.
-			if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) void refreshUntilActive();
+			if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) void celebrate();
 		}
 	});
 	return paddlePromise;
+}
+
+// After a completed checkout: wait for the webhook mirror to grant access,
+// then open the thank-you dialog (whose close resumes any pending action).
+async function celebrate() {
+	await refreshUntilActive();
+	supporterFlow.thanksOpen = true;
 }
 
 async function refreshUntilActive() {

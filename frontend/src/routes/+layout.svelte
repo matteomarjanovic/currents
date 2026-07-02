@@ -6,6 +6,7 @@
 	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import SettingsDialog from '$lib/components/settings-dialog.svelte';
+	import SupporterThanksDialog from '$lib/components/supporter-thanks-dialog.svelte';
 	// Side-effect import: registers the beforeinstallprompt listener on every page so the
 	// one-shot event is captured even before the top bar (which offers "Install app") mounts.
 	import '$lib/stores/pwa-install.svelte';
@@ -71,3 +72,7 @@
 <!-- Mounted once at the root so every mode (explore, organize, save pages) can
      open it via the settingsDialog store. -->
 <SettingsDialog />
+
+<!-- Post-checkout thank-you, opened from $lib/paddle.ts wherever the checkout
+     was started (paywall dialog, settings, support page). -->
+<SupporterThanksDialog />

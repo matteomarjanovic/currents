@@ -13,9 +13,13 @@ export function useInfiniteScroll<T = SaveView>(
 	let cursor: string | undefined = $state(undefined);
 	let loading = $state(false);
 	let hasMore = $state(true);
+	// The error thrown by the last failed fetch (fetchers that swallow failures
+	// and return an empty page never set it). While set, loadMore() is a no-op —
+	// the scroll sentinel would otherwise retry in a loop — until retry()/reset().
+	let error = $state<unknown>(null);
 
 	async function loadMore() {
-		if (loading || !hasMore) return;
+		if (loading || !hasMore || error) return;
 		loading = true;
 		try {
 			const result = await fetchFn(cursor);
@@ -24,10 +28,15 @@ export function useInfiniteScroll<T = SaveView>(
 			items = [...items, ...fresh];
 			cursor = result.cursor;
 			hasMore = !!result.cursor;
-		} catch {
-			hasMore = false;
+		} catch (e) {
+			error = e;
 		}
 		loading = false;
+	}
+
+	function retry() {
+		error = null;
+		void loadMore();
 	}
 
 	function reset() {
@@ -35,6 +44,7 @@ export function useInfiniteScroll<T = SaveView>(
 		cursor = undefined;
 		hasMore = true;
 		loading = false;
+		error = null;
 	}
 
 	function removeItem(key: string) {
@@ -51,7 +61,11 @@ export function useInfiniteScroll<T = SaveView>(
 		get hasMore() {
 			return hasMore;
 		},
+		get error() {
+			return error;
+		},
 		loadMore,
+		retry,
 		reset,
 		removeItem
 	};

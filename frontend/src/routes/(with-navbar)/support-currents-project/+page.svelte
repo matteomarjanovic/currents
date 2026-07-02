@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
 	import { apiFetch } from '$lib/api';
+	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
@@ -43,6 +44,10 @@
 		const yearly = stats.byPrice[PADDLE_PRICE_YEARLY] ?? 0;
 		return Math.round(monthly * 7 + (yearly * 70) / 12);
 	});
+
+	// App Store rules forbid selling digital goods in-app through an external
+	// processor, so the native apps never show purchase buttons.
+	const native = isNative();
 
 	function subscribe(priceId: string) {
 		if (!auth.user) {
@@ -103,6 +108,10 @@
 					</p>
 					<p class="text-xs text-muted-foreground">
 						You can manage your subscription anytime from Settings → Subscription.
+					</p>
+				{:else if native}
+					<p class="text-sm text-muted-foreground">
+						Supporter subscriptions aren't available in the app.
 					</p>
 				{:else}
 					<div class="flex flex-col gap-2 sm:flex-row">

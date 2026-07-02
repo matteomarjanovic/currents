@@ -12,6 +12,15 @@ export const supporter = $state({
 	loaded: false
 });
 
+// Post-checkout flow: `pending` holds the supporter-tier action the paywall
+// interrupted (set by the gate, cleared when it runs or the paywall is
+// dismissed without buying); `thanksOpen` drives the thank-you dialog shown
+// after a completed checkout, whose close resumes the pending action.
+export const supporterFlow = $state({
+	thanksOpen: false,
+	pending: null as (() => void) | null
+});
+
 export async function loadSupporterStatus() {
 	try {
 		const res = await apiFetch('/api/supporter/status');

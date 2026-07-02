@@ -7,6 +7,8 @@ Currents is an open-source Pinterest alternative on the AT Protocol. Users save 
 - **`appview/`** — Go HTTP server, AT Protocol OAuth (indigo SDK), PostgreSQL + pgvector
 - **`inference/`** — Python FastAPI server, image/text embeddings via SigLIP2 (`google/siglip2-base-patch16-naflex`)
 
+Deferred-but-planned features live in `BACKLOG.md` — check it before proposing new work, and delete entries when they ship.
+
 ## Coding philosophy
 
 Code minimalism is a core pillar of this project. Write the least code that correctly solves the problem. No abstractions for their own sake, no extra configurability, no defensive handling of cases that can't happen. If something can be deleted without breaking behavior, delete it (always ask before doing it).

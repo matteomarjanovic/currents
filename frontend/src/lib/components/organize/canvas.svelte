@@ -17,6 +17,7 @@
 	import { copyLink, copyImage, downloadImage } from '$lib/save-actions';
 	import { toast } from 'svelte-sonner';
 	import ImageOff from '@lucide/svelte/icons/image-off';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Scan from '@lucide/svelte/icons/scan';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -48,41 +49,45 @@
 	// namespace so each item wires up to its own parent menu.
 	const dropdownMenu = DropdownMenu as unknown as typeof ContextMenu;
 
+	// Non-OK responses throw (status attached) so real failures surface as an
+	// error state instead of a fake empty grid — a paid search answering "no
+	// results" because the backend hiccupped would just look broken.
+	async function fetchSavesPage(path: string): Promise<{ items: SaveView[]; cursor?: string }> {
+		const res = await apiFetch(path);
+		if (!res.ok) {
+			const err = new Error(`request failed: ${res.status}`) as Error & { status?: number };
+			err.status = res.status;
+			throw err;
+		}
+		const data = await res.json();
+		return { items: data.saves ?? [], cursor: data.cursor };
+	}
+
 	const feed = useInfiniteScroll<SaveView>(async (cursor) => {
 		if (similar) {
 			const params = new URLSearchParams({ uri: similar.uri, limit: '50' });
 			for (const uri of similar.collections) params.append('collections', uri);
 			if (cursor) params.set('cursor', cursor);
-			const res = await apiFetch(`/xrpc/is.currents.feed.findSimilarInLibrary?${params}`);
-			if (!res.ok) return { items: [], cursor: undefined };
-			const data = await res.json();
-			return { items: data.saves ?? [], cursor: data.cursor };
+			return fetchSavesPage(`/xrpc/is.currents.feed.findSimilarInLibrary?${params}`);
 		}
 		if (search) {
 			const params = new URLSearchParams({ q: search.query, limit: '50' });
 			for (const uri of search.collections) params.append('collections', uri);
 			if (cursor) params.set('cursor', cursor);
-			const res = await apiFetch(`/xrpc/is.currents.feed.searchLibrarySaves?${params}`);
-			if (!res.ok) return { items: [], cursor: undefined };
-			const data = await res.json();
-			return { items: data.saves ?? [], cursor: data.cursor };
+			return fetchSavesPage(`/xrpc/is.currents.feed.searchLibrarySaves?${params}`);
 		}
 		if (selectedUri) {
 			const params = new URLSearchParams({ collection: selectedUri, limit: '50' });
 			if (cursor) params.set('cursor', cursor);
-			const res = await apiFetch(`/xrpc/is.currents.feed.getCollectionSaves?${params}`);
-			if (!res.ok) return { items: [], cursor: undefined };
-			const data = await res.json();
-			return { items: data.saves ?? [], cursor: data.cursor };
+			return fetchSavesPage(`/xrpc/is.currents.feed.getCollectionSaves?${params}`);
 		}
 		// No collection selected: the whole library — every saved image, deduplicated.
 		const params = new URLSearchParams({ limit: '50' });
 		if (cursor) params.set('cursor', cursor);
-		const res = await apiFetch(`/xrpc/is.currents.feed.getLibrarySaves?${params}`);
-		if (!res.ok) return { items: [], cursor: undefined };
-		const data = await res.json();
-		return { items: data.saves ?? [], cursor: data.cursor };
+		return fetchSavesPage(`/xrpc/is.currents.feed.getLibrarySaves?${params}`);
 	});
+
+	let errorStatus = $derived((feed.error as { status?: number } | null)?.status);
 
 	// Reload whenever the collection / search / find-similar source changes; there's
 	// always something to load now (similar / search / collection / library).
@@ -330,7 +335,30 @@
 <!-- overflow-anchor:none disables the browser's native scroll anchoring, which
      misfires on the masonry's transform-based layout; we anchor manually instead. -->
 <div bind:this={scrollEl} class="min-h-0 flex-1 overflow-y-auto p-4 [overflow-anchor:none]">
-	{#if visible.length === 0 && !feed.loading}
+	{#if feed.error && visible.length === 0}
+		<div
+			class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
+		>
+			<TriangleAlert class="size-6" />
+			{#if errorStatus === 401}
+				<p>Your session has expired.</p>
+				<Button href="/login" variant="outline" size="sm" class="mt-1">Log in again</Button>
+			{:else}
+				<p>
+					{#if search}
+						Couldn't run the search.
+					{:else if similar}
+						Couldn't load similar images.
+					{:else}
+						Couldn't load your images.
+					{/if}
+				</p>
+				<Button variant="outline" size="sm" class="mt-1" onclick={() => feed.retry()}>
+					Try again
+				</Button>
+			{/if}
+		</div>
+	{:else if visible.length === 0 && !feed.loading}
 		<div
 			class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
 		>
@@ -346,6 +374,9 @@
 					You haven't saved any images yet.
 				{/if}
 			</p>
+			{#if !similar && !search && !selectedUri}
+				<Button href="/explore" variant="outline" size="sm" class="mt-1">Go to explore mode</Button>
+			{/if}
 		</div>
 	{:else}
 		<div bind:clientWidth={containerWidth}>
@@ -440,7 +471,13 @@
 				{/if}
 			</BalancedMasonryGrid>
 		</div>
-		{#if feed.hasMore}
+		{#if feed.error}
+			<!-- A later page failed while earlier results are showing. -->
+			<div class="flex items-center justify-center gap-3 py-6 text-sm text-muted-foreground">
+				<span>Couldn't load more.</span>
+				<Button variant="outline" size="sm" onclick={() => feed.retry()}>Try again</Button>
+			</div>
+		{:else if feed.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}
 	{/if}
