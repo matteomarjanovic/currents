@@ -688,6 +688,10 @@ func (s *Server) XRPCSearchLibrarySaves(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !s.requireSupporter(w, r, viewerDID.String()) {
+		return
+	}
+
 	q := r.URL.Query().Get("q")
 	if q == "" {
 		http.Error(w, `{"error":"InvalidRequest","message":"q is required"}`, http.StatusBadRequest)
@@ -839,6 +843,10 @@ func (s *Server) XRPCFindSimilarInLibrary(w http.ResponseWriter, r *http.Request
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": "authentication required"})
+		return
+	}
+
+	if !s.requireSupporter(w, r, viewerDID.String()) {
 		return
 	}
 

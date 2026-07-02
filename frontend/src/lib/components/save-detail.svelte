@@ -23,6 +23,7 @@
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
 	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
 	import { shouldHide, effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
+	import { openSettings } from '$lib/stores/settings.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
@@ -506,12 +507,13 @@
 				This image carries a label you've chosen not to see. Adjust your moderation preferences to
 				change what's shown.
 			</p>
-			<a
-				href="/settings"
+			<button
+				type="button"
+				onclick={() => openSettings('moderation')}
 				class="text-xs font-medium text-foreground underline-offset-2 hover:underline"
 			>
 				Open settings
-			</a>
+			</button>
 		{:else}
 			<p class="font-medium text-foreground">Hidden content</p>
 			<p class="max-w-sm text-xs">

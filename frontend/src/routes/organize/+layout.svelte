@@ -7,6 +7,8 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections, loadCollections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections, loadFavouriteCollections } from '$lib/stores/favourites.svelte';
+	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
+	import { role, loadRole, previewGated } from '$lib/stores/role.svelte';
 	import { apiFetch } from '$lib/api';
 	import { isNative } from '$lib/platform';
 
@@ -14,6 +16,7 @@
 
 	// Organize mode lives outside the (with-navbar) group, so it runs its own
 	// auth check (mirroring that layout) and gates rendering on a logged-in user.
+	let allowed = $state(false);
 	onMount(async () => {
 		if (!auth.checked) {
 			try {
@@ -28,13 +31,23 @@
 			goto(isNative() ? '/' : '/login');
 			return;
 		}
+		// Preview gate: organize mode is moderator-only until public launch.
+		if (previewGated) {
+			if (!role.loaded) await loadRole();
+			if (role.value == null) {
+				goto('/');
+				return;
+			}
+		}
+		allowed = true;
 		if (!collections.loaded) void loadCollections(auth.user.did);
 		if (!favouriteCollections.loaded) void loadFavouriteCollections(auth.user.did);
+		if (!supporter.loaded) void loadSupporterStatus();
 	});
 </script>
 
 <ModeWatcher />
-{#if auth.checked && auth.user}
+{#if allowed}
 	{@render children()}
 {/if}
 <Toaster />

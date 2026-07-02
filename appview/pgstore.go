@@ -848,6 +848,64 @@ func (m *PgStore) MarkFeatureSeen(ctx context.Context, viewerDID, featureKey str
 	return err
 }
 
+// --- Paddle subscriptions (supporter tier) ---
+
+type PaddleSubscription struct {
+	SubscriptionID  string
+	DID             string
+	CustomerID      string
+	Status          string
+	PriceID         string
+	ScheduledChange *time.Time
+}
+
+// UpsertPaddleSubscription converges a row on the latest webhook-delivered
+// state. Keyed on the Paddle subscription id so retried and out-of-order
+// deliveries are harmless.
+func (m *PgStore) UpsertPaddleSubscription(ctx context.Context, sub PaddleSubscription) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO paddle_subscription (subscription_id, did, customer_id, status, price_id, scheduled_change)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (subscription_id) DO UPDATE SET
+		   did = EXCLUDED.did,
+		   customer_id = EXCLUDED.customer_id,
+		   status = EXCLUDED.status,
+		   price_id = EXCLUDED.price_id,
+		   scheduled_change = EXCLUDED.scheduled_change,
+		   updated_at = now()`,
+		sub.SubscriptionID, sub.DID, sub.CustomerID, sub.Status, sub.PriceID, sub.ScheduledChange)
+	return err
+}
+
+// HasSupporterSubscription reports whether the DID has a subscription in an
+// access-granting status. past_due keeps access while Paddle retries payment;
+// a mid-period cancel stays `active` (with scheduled_change set) until it
+// takes effect, so it needs no special case.
+func (m *PgStore) HasSupporterSubscription(ctx context.Context, did string) (bool, error) {
+	var ok bool
+	err := m.pool.QueryRow(ctx,
+		`SELECT EXISTS (
+		   SELECT 1 FROM paddle_subscription
+		   WHERE did = $1 AND status IN ('active', 'trialing', 'past_due')
+		 )`, did).Scan(&ok)
+	return ok, err
+}
+
+// GetPaddleCustomerID returns the Paddle customer id from the DID's most
+// recently updated subscription row, or "" if they never subscribed. Canceled
+// rows count — the portal is also where past subscribers see invoices and
+// resubscribe.
+func (m *PgStore) GetPaddleCustomerID(ctx context.Context, did string) (string, error) {
+	var id string
+	err := m.pool.QueryRow(ctx,
+		`SELECT customer_id FROM paddle_subscription
+		 WHERE did = $1 ORDER BY updated_at DESC LIMIT 1`, did).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
 // --- Moderation preferences (per-user, server-backed) ---
 
 // GetModerationPrefs returns the user's stored preferences, or the defaults when

@@ -5,6 +5,7 @@
 	import { initApp } from '$lib/app-init';
 	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
+	import SettingsDialog from '$lib/components/settings-dialog.svelte';
 	// Side-effect import: registers the beforeinstallprompt listener on every page so the
 	// one-shot event is captured even before the top bar (which offers "Install app") mounts.
 	import '$lib/stores/pwa-install.svelte';
@@ -66,3 +67,7 @@
 </script>
 
 {@render children()}
+
+<!-- Mounted once at the root so every mode (explore, organize, save pages) can
+     open it via the settingsDialog store. -->
+<SettingsDialog />

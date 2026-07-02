@@ -6,6 +6,7 @@
 	import { isNative } from '$lib/platform';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { openSettings } from '$lib/stores/settings.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import type { CollectionView } from '$lib/types';
@@ -338,7 +339,7 @@
 								Profile
 							</DropdownMenu.Item>
 						{/if}
-						<DropdownMenu.Item onclick={() => goto('/settings')}>
+						<DropdownMenu.Item onclick={() => openSettings()}>
 							<Settings class="size-4" />
 							Settings
 						</DropdownMenu.Item>

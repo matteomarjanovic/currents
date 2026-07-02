@@ -14,8 +14,10 @@
 	import OrganizeSidebarRight from '$lib/components/organize/sidebar-right.svelte';
 	import OrganizeSearchCommand from '$lib/components/organize/search-command.svelte';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
+	import SupporterDialog from '$lib/components/supporter-dialog.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
+	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -89,6 +91,24 @@
 
 	function hrefFor(uri: string) {
 		return uri ? `/organize?c=${encodeURIComponent(uri)}` : '/organize';
+	}
+
+	// Library search and find-similar are supporter-tier features (enforced
+	// server-side too). This gate resolves whether to proceed, opening the
+	// upgrade dialog instead when the viewer isn't a supporter.
+	let supporterDialogOpen = $state(false);
+	async function requireSupporter(): Promise<boolean> {
+		if (!supporter.loaded) await loadSupporterStatus();
+		if (supporter.active) return true;
+		supporterDialogOpen = true;
+		return false;
+	}
+
+	async function findSimilar(s: SaveView) {
+		if (!(await requireSupporter())) return;
+		searchQuery = null;
+		similarSource = s;
+		goto(simHref(s.uri));
 	}
 
 	// The image detail panel opens on tile click. The selection is scoped to the
@@ -251,11 +271,7 @@
 			{similar}
 			selectedSaveUri={selectedSave?.uri ?? null}
 			onSelectSave={(s) => (selection = { collectionUri: selectedUri, save: s })}
-			onFindSimilar={(s) => {
-				searchQuery = null;
-				similarSource = s;
-				goto(simHref(s.uri));
-			}}
+			onFindSimilar={findSimilar}
 		/>
 	</Sidebar.Inset>
 
@@ -266,11 +282,7 @@
 			onSavesChange={(saves) => {
 				if (selection) selection.save.viewer = { ...(selection.save.viewer ?? {}), saves };
 			}}
-			onFindSimilar={(s) => {
-				searchQuery = null;
-				similarSource = s;
-				goto(simHref(s.uri));
-			}}
+			onFindSimilar={findSimilar}
 		/>
 	{/if}
 
@@ -279,6 +291,7 @@
 		collections={collections.items}
 		favourites={favouriteCollections.items}
 		initial={selectedUri ? [selectedUri] : []}
+		canSearch={requireSupporter}
 		onSearch={(q, cols) => {
 			if (similarUri) goto(hrefFor(selectedUri));
 			searchScope.clear();
@@ -286,4 +299,6 @@
 			searchQuery = q || null;
 		}}
 	/>
+
+	<SupporterDialog bind:open={supporterDialogOpen} />
 </Sidebar.Provider>

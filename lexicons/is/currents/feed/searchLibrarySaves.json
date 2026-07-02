@@ -55,7 +55,13 @@
             }
           }
         }
-      }
+      },
+      "errors": [
+        {
+          "name": "SupporterRequired",
+          "description": "The viewer must have an active supporter subscription to use library search."
+        }
+      ]
     }
   }
 }
