@@ -28,7 +28,7 @@
 		"@eslint/js": "^10.0.1",
 		"@fontsource-variable/instrument-sans": "^5.2.8",
 		"@internationalized/date": "^3.12.0",
-		"@lucide/svelte": "^1.22.0",
+		"@lucide/svelte": "^0.577.0",
 		"@playwright/test": "^1.61.1",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.50.2",
@@ -78,6 +78,7 @@
 		"@capacitor/status-bar": "^8.0.0",
 		"@capawesome-team/capacitor-secure-preferences": "^0.3.2",
 		"@masonry-grid/svelte": "^1.1.1",
+		"@paddle/paddle-js": "^1.6.4",
 		"mode-watcher": "^1.1.0",
 		"send-intent": "^7.0.0"
 	}

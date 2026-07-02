@@ -174,6 +174,16 @@ func main() {
 				Usage:   "multibase-encoded secp256k1 private key for signing labels; if empty, the labeler is disabled",
 				EnvVars: []string{"LABELER_SIGNING_KEY"},
 			},
+			&cli.StringFlag{
+				Name:    "paddle-webhook-secret",
+				Usage:   "secret of the Paddle notification destination; if empty, the supporter gate is disabled",
+				EnvVars: []string{"PADDLE_WEBHOOK_SECRET"},
+			},
+			&cli.StringFlag{
+				Name:    "paddle-api-key",
+				Usage:   "Paddle REST API key for customer-portal sessions; if empty, the portal endpoint is disabled",
+				EnvVars: []string{"PADDLE_API_KEY"},
+			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -343,6 +353,8 @@ func runServer(cctx *cli.Context) error {
 		LabelerHost:           labelerHost,
 		MobileOrigins:         splitCSV(cctx.String("mobile-origins")),
 		MobileRedirectSchemes: splitCSV(cctx.String("mobile-redirect-schemes")),
+		PaddleWebhookSecret:   cctx.String("paddle-webhook-secret"),
+		PaddleAPIKey:          cctx.String("paddle-api-key"),
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -435,6 +447,9 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/features/seen/{key}", srv.APIMarkFeatureSeen)
 	http.HandleFunc("GET /api/moderation/prefs", srv.APIGetModerationPrefs)
 	http.HandleFunc("PUT /api/moderation/prefs", srv.APIPutModerationPrefs)
+	http.HandleFunc("GET /api/supporter/status", srv.APISupporterStatus)
+	http.HandleFunc("POST /api/supporter/portal", srv.APISupporterPortal)
+	http.HandleFunc("POST /api/paddle/webhook", srv.PaddleWebhook)
 
 	tapHandler.CDNBaseURL = cdnURL
 	go runTapListener(ctx, cctx.String("tap-url"), tapHandler)

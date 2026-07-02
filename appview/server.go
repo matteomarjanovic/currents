@@ -29,6 +29,12 @@ type Server struct {
 	MobileOrigins []string
 	// MobileRedirectSchemes are allowed return_to URL prefixes for native deep links (e.g. currents://).
 	MobileRedirectSchemes []string
+	// PaddleWebhookSecret verifies Paddle webhook signatures; when empty the
+	// supporter gate is disabled and every authenticated user is a supporter.
+	PaddleWebhookSecret string
+	// PaddleAPIKey authenticates server-side Paddle REST calls (customer portal
+	// sessions); when empty the portal endpoint answers 503.
+	PaddleAPIKey string
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

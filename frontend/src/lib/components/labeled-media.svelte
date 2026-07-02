@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { LabelView } from '$lib/types';
 	import { effectiveVisibility, visibilityFor } from '$lib/stores/moderation-prefs.svelte';
+	import { openSettings } from '$lib/stores/settings.svelte';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 
@@ -100,12 +101,13 @@
 			>
 				<EyeOff class="size-6" />
 				<p class="text-sm font-medium">{summarize()}</p>
-				<a
-					href="/settings"
+				<button
+					type="button"
+					onclick={() => openSettings('moderation')}
 					class="pb-5 text-xs text-white/80 underline underline-offset-2 transition-colors hover:text-white"
 				>
 					Change visibility settings
-				</a>
+				</button>
 				<button
 					type="button"
 					class="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-white/90"

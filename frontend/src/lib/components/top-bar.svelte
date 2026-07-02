@@ -52,6 +52,7 @@
 		FEATURE_BLUESKY_IMPORT
 	} from '$lib/stores/features.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
+	import { openSettings } from '$lib/stores/settings.svelte';
 	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
@@ -379,7 +380,7 @@
 								Browser extension
 							</DropdownMenu.Item>
 						{/if}
-						<DropdownMenu.Item onclick={() => goto('/settings')}>
+						<DropdownMenu.Item onclick={() => openSettings()}>
 							<Settings class="size-4" />
 							Settings
 						</DropdownMenu.Item>
