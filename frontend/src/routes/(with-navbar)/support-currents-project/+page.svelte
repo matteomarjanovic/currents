@@ -94,7 +94,7 @@
 			</p>
 		</section>
 
-		<Card.Root>
+		<Card.Root class="shadow-none">
 			<Card.Header class="gap-1.5">
 				<Card.Title class="text-xl">Supporter</Card.Title>
 				<Card.Description>One tier, everything included. Cancel anytime.</Card.Description>
