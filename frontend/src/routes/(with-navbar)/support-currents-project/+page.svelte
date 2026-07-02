@@ -80,12 +80,12 @@
 				visual inspiration and manage their library of references in a seamless way.
 			</p>
 			<p>
-				One aspect is not negotiable: it shouldn't sell users data. That would be the easy path for
-				financial success, that's why the main alternatives pack their UIs with ads. But the web
+				One aspect is not negotiable: it shouldn't sell users data. That would be the easiest path
+				for financial success, reason why the main alternatives pack their UIs with ads. But the web
 				doesn't have to be that way: it can be of the <i>people</i>.
 			</p>
 			<p>
-				This is why this project depends entirely on the people who find it useful, believe in its
+				This makes this project depending entirely on the people who find it useful, believe in its
 				values and decide to support it financially. And this means also that it's our
 				responsibility to provide the best product we can, since that's the single thing our users
 				want and would support us for.
@@ -242,15 +242,15 @@
 		<section class="flex flex-col gap-4">
 			<h2 class="text-xl font-semibold text-foreground">We're part of the Atmosphere</h2>
 			<p>
-				Currents is built on a technology called AT Protocol. Don't be scared by the techy-sounding
-				name, it's just a new way to creating social apps that are open and where you're the owner
-				of your data.
+				Currents is built on a technology called AT Protocol. It may sound complicated, but it's
+				just a new way to creating social apps that are open and where you're the sole owner of your
+				data.
 			</p>
 			<p>
-				Common apps store your data on their server, and make migrating to another service almost
-				impossible: if you have used their app for a long time but you don't like anymore how they
-				handle it, you're basically locked-in with them. With this new approach, you choose a
-				provider (like Bluesky, Eurosky, Blacksky) that will store your data on their servers. And
+				Traditional social networks lock your data away on their private servers. If you've used an
+				app for years but grow tired of how they handle your privacy or content, moving to a
+				different platform is nearly impossible. You're trapped. With this new approach, you choose
+				a provider (like Bluesky, Eurosky, Blacksky) that will store your data on their servers. And
 				the nice thing is that you can very easily migrate across them; you could even move your
 				data on a server at your place!
 			</p>
