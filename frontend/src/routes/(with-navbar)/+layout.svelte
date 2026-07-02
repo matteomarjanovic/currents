@@ -42,6 +42,7 @@
 
 		const isPublic =
 			page.url.pathname === '/' ||
+			page.url.pathname === '/support-currents-project' ||
 			page.url.pathname.startsWith('/explore') ||
 			page.url.pathname.startsWith('/login') ||
 			page.url.pathname.startsWith('/register') ||

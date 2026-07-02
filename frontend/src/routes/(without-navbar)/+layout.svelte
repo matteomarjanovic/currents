@@ -41,8 +41,7 @@
 		const isInfoPage =
 			page.url.pathname === '/terms' ||
 			page.url.pathname === '/privacy' ||
-			page.url.pathname === '/refunds' ||
-			page.url.pathname === '/support-currents-project';
+			page.url.pathname === '/refunds';
 		const isRootPage = page.url.pathname === '/';
 		const isExplorePage = page.url.pathname === '/explore';
 		// Single-image (save-detail) pages are public — viewing an image must never
