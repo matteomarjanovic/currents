@@ -13,6 +13,7 @@ export interface CollectionView {
 		handle: string;
 		displayName?: string;
 		avatar?: string;
+		supporter?: boolean;
 	};
 	name: string;
 	description?: string;
@@ -36,6 +37,7 @@ export interface ActorProfileView {
 	avatar?: string;
 	banner?: string;
 	createdAt?: string;
+	supporter?: boolean;
 	followersCount?: number;
 	followsCount?: number;
 	viewer?: { following?: string; followedBy?: string };

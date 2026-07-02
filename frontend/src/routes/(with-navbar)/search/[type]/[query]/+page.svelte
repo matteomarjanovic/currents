@@ -8,6 +8,7 @@
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import * as Avatar from '$lib/components/ui/avatar';
+	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import UserIcon from '@lucide/svelte/icons/user';
 	import type { SaveView, CollectionView, ActorProfileView } from '$lib/types';
 
@@ -113,8 +114,11 @@
 					</Avatar.Fallback>
 				</Avatar.Root>
 				<div class="min-w-0">
-					<div class="truncate font-medium text-foreground">
-						{actor.displayName ?? actor.handle}
+					<div class="flex items-center gap-1.5 font-medium text-foreground">
+						<span class="min-w-0 truncate">{actor.displayName ?? actor.handle}</span>
+						{#if actor.supporter}
+							<SupporterBadge class="size-4 shrink-0 text-foreground" />
+						{/if}
 					</div>
 					<div class="truncate text-sm text-muted-foreground">@{actor.handle}</div>
 					{#if actor.description}

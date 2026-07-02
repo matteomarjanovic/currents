@@ -13,6 +13,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import FavouriteToggle from '$lib/components/favourite-toggle.svelte';
+	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -445,6 +446,9 @@
 											>
 												{c.author?.displayName || c.author?.handle}
 											</a>
+											{#if c.author?.supporter}
+												<SupporterBadge class="size-3.5 shrink-0 text-foreground" />
+											{/if}
 											{#if (c.favouriteCount ?? 0) > 0}
 												<span aria-hidden="true">·</span>
 												<Star class="size-3 shrink-0 fill-current" />

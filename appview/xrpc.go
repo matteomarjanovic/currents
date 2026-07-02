@@ -331,10 +331,14 @@ func (s *Server) XRPCGetActorProfile(w http.ResponseWriter, r *http.Request) {
 		CreatedAt      string              `json:"createdAt,omitempty"`
 		FollowersCount int                 `json:"followersCount"`
 		FollowsCount   int                 `json:"followsCount"`
+		Supporter      bool                `json:"supporter,omitempty"`
 		Viewer         *profileViewerState `json:"viewer,omitempty"`
 	}
 
 	view := profileView{DID: actorDID.String(), Handle: resolvedHandle}
+	if ok, err := s.Store.HasSupporterSubscription(r.Context(), actorDID.String()); err == nil {
+		view.Supporter = ok
+	}
 	if followers, follows, err := s.Store.CountFollows(r.Context(), actorDID.String()); err == nil {
 		view.FollowersCount = followers
 		view.FollowsCount = follows
@@ -1094,6 +1098,7 @@ func (s *Server) XRPCGetImageCollections(w http.ResponseWriter, r *http.Request)
 		Handle      string `json:"handle"`
 		DisplayName string `json:"displayName,omitempty"`
 		Avatar      string `json:"avatar,omitempty"`
+		Supporter   bool   `json:"supporter,omitempty"`
 	}
 	type collectionViewerState struct {
 		Favourite string `json:"favourite,omitempty"`
@@ -1115,20 +1120,31 @@ func (s *Server) XRPCGetImageCollections(w http.ResponseWriter, r *http.Request)
 
 	authorCache := map[string]profileView{}
 	var previewCIDs []string
+	authorDIDSet := map[string]bool{}
 	for _, row := range rows {
 		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
+		authorDIDSet[row.AuthorDID] = true
 	}
 	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
 	if err != nil {
 		slog.Warn("hydrate preview labels", "err", err)
 		labelsByCID = map[string][]string{}
 	}
+	authorDIDs := make([]string, 0, len(authorDIDSet))
+	for did := range authorDIDSet {
+		authorDIDs = append(authorDIDs, did)
+	}
+	supporters, err := s.Store.SupporterDIDs(r.Context(), authorDIDs)
+	if err != nil {
+		slog.Warn("hydrate supporters", "err", err)
+		supporters = map[string]bool{}
+	}
 
 	views := make([]collectionView, 0, len(rows))
 	for _, row := range rows {
 		author, ok := authorCache[row.AuthorDID]
 		if !ok {
-			author = profileView{DID: row.AuthorDID}
+			author = profileView{DID: row.AuthorDID, Supporter: supporters[row.AuthorDID]}
 			if actorRow, err := s.Store.GetActorByDID(r.Context(), row.AuthorDID); err == nil && actorRow != nil {
 				author.Handle = actorRow.Handle
 				author.DisplayName = actorRow.DisplayName
@@ -1208,6 +1224,16 @@ func (s *Server) XRPCSearchActors(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"displayName,omitempty"`
 		Description string `json:"description,omitempty"`
 		Avatar      string `json:"avatar,omitempty"`
+		Supporter   bool   `json:"supporter,omitempty"`
+	}
+	actorDIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		actorDIDs = append(actorDIDs, row.DID)
+	}
+	supporters, err := s.Store.SupporterDIDs(r.Context(), actorDIDs)
+	if err != nil {
+		slog.Warn("hydrate supporters", "err", err)
+		supporters = map[string]bool{}
 	}
 	views := make([]profileView, 0, len(rows))
 	for _, row := range rows {
@@ -1217,6 +1243,7 @@ func (s *Server) XRPCSearchActors(w http.ResponseWriter, r *http.Request) {
 			DisplayName: row.DisplayName,
 			Description: row.Description,
 			Avatar:      row.Avatar,
+			Supporter:   supporters[row.DID],
 		})
 	}
 

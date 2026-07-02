@@ -7,6 +7,7 @@
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import FollowListDialog from './follow-list-dialog.svelte';
+	import SupporterBadge from './supporter-badge.svelte';
 	import FollowScopeDialog from './follow-scope-dialog.svelte';
 	import BlueskyFollowImportDialog from './bluesky-follow-import-dialog.svelte';
 	import { followUser, unfollowUser } from '$lib/follow';
@@ -127,8 +128,11 @@
 			</Avatar.Root>
 
 			<div class="min-w-0 pb-1">
-				<h1 class="truncate text-2xl font-semibold text-foreground">
-					{profile.displayName ?? profile.handle}
+				<h1 class="flex items-center gap-2 text-2xl font-semibold text-foreground">
+					<span class="min-w-0 truncate">{profile.displayName ?? profile.handle}</span>
+					{#if profile.supporter}
+						<SupporterBadge class="mt-0.5 size-5 shrink-0 text-foreground" />
+					{/if}
 				</h1>
 				<div class="truncate text-sm text-muted-foreground">@{profile.handle}</div>
 			</div>

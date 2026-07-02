@@ -906,6 +906,32 @@ func (m *PgStore) GetPaddleCustomerID(ctx context.Context, did string) (string, 
 	return id, err
 }
 
+// SupporterDIDs reports which of the given DIDs have an access-granting
+// subscription — used to hydrate the supporter badge on user-facing views.
+// Absent keys mean "not a supporter".
+func (m *PgStore) SupporterDIDs(ctx context.Context, dids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(dids) == 0 {
+		return out, nil
+	}
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT did FROM paddle_subscription
+		WHERE did = ANY($1) AND status IN ('active', 'trialing', 'past_due')
+	`, dids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var did string
+		if err := rows.Scan(&did); err != nil {
+			return nil, err
+		}
+		out[did] = true
+	}
+	return out, rows.Err()
+}
+
 // CountUsers returns the total number of indexed Currents users.
 func (m *PgStore) CountUsers(ctx context.Context) (int, error) {
 	var n int
