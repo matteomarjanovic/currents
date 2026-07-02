@@ -1459,6 +1459,16 @@ func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind str
 		DisplayName string `json:"displayName,omitempty"`
 		Description string `json:"description,omitempty"`
 		Avatar      string `json:"avatar,omitempty"`
+		Supporter   bool   `json:"supporter,omitempty"`
+	}
+	memberDIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		memberDIDs = append(memberDIDs, row.DID)
+	}
+	supporters, err := s.Store.SupporterDIDs(r.Context(), memberDIDs)
+	if err != nil {
+		slog.Warn("hydrate supporters", "err", err)
+		supporters = map[string]bool{}
 	}
 	views := make([]profileView, 0, len(rows))
 	for _, row := range rows {
@@ -1468,6 +1478,7 @@ func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind str
 			DisplayName: row.DisplayName,
 			Description: row.Description,
 			Avatar:      row.Avatar,
+			Supporter:   supporters[row.DID],
 		})
 	}
 
