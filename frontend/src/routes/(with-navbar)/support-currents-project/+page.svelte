@@ -44,14 +44,6 @@
 		return Math.round(monthly * 7 + (yearly * 70) / 12);
 	});
 
-	const PERKS = [
-		'Semantic search in your library',
-		'Image search in your library ("find similar")',
-		'Both filterable by collection',
-		'A supporter badge',
-		'Much more to come'
-	];
-
 	function subscribe(priceId: string) {
 		if (!auth.user) {
 			promptLogin();
@@ -102,12 +94,26 @@
 			</Card.Header>
 			<Card.Content>
 				<ul class="flex flex-col gap-2.5">
-					{#each PERKS as perk (perk)}
-						<li class="flex items-start gap-2.5">
-							<Check class="mt-1 size-4 shrink-0 text-foreground" />
-							<span>{perk}</span>
-						</li>
-					{/each}
+					<li class="flex items-start gap-2.5">
+						<Check class="mt-1 size-4 shrink-0 text-foreground" />
+						<span>Semantic search in your library</span>
+					</li>
+					<li class="flex items-start gap-2.5">
+						<Check class="mt-1 size-4 shrink-0 text-foreground" />
+						<span>Image search in your library ("find similar")</span>
+					</li>
+					<li class="flex items-start gap-2.5">
+						<Check class="mt-1 size-4 shrink-0 text-foreground" />
+						<span>Both filterable by collection</span>
+					</li>
+					<li class="flex items-start gap-2.5">
+						<Check class="mt-1 size-4 shrink-0 text-foreground" />
+						<span>The <SupporterBadge class="mx-0.5 mb-0.5 size-4" /> supporter badge</span>
+					</li>
+					<li class="flex items-start gap-2.5">
+						<Check class="mt-1 size-4 shrink-0 text-foreground" />
+						<span>Much more to come</span>
+					</li>
 				</ul>
 			</Card.Content>
 			<Card.Footer class="flex-col items-stretch gap-3">
