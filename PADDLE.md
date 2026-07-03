@@ -72,13 +72,15 @@ first; repeat in [live](https://vendors.paddle.com/) when ready.
      and `PADDLE_API_KEY=pdl_..._apikey_...` (enables the billing portal; sandbox vs
      live is inferred from the key prefix).
    - Frontend (committed, none of these are secrets): sandbox values in
-     `frontend/.env.development` (what `npm run dev` uses — it overrides `.env`), live
-     values in `frontend/.env` (what production builds use):
-     `PUBLIC_PADDLE_ENVIRONMENT`, `PUBLIC_PADDLE_CLIENT_TOKEN`,
-     `PUBLIC_PADDLE_PRICE_MONTHLY`, `PUBLIC_PADDLE_PRICE_YEARLY`. The price vars take
-     `pri_...` ids from step 1, not dollar amounts. While the token or price ids are
-     empty the subscribe buttons stay disabled ("Payments aren't configured in this
-     environment yet").
+     `frontend/.env.development` (what `npm run dev` uses), live values in
+     `frontend/.env.production` (what production builds — Netlify — use; env vars set
+     in the Netlify dashboard override the file, and are baked at build time, so any
+     change there needs a redeploy): `PUBLIC_PADDLE_ENVIRONMENT`,
+     `PUBLIC_PADDLE_CLIENT_TOKEN`, `PUBLIC_PADDLE_PRICE_MONTHLY`,
+     `PUBLIC_PADDLE_PRICE_YEARLY`. The price vars take `pri_...` ids from step 1, not
+     dollar amounts. While the token or price ids are empty the subscribe buttons stay
+     disabled. Never point production at the sandbox token/prices — visitors would see
+     working test checkouts.
 
 ## Testing in sandbox
 
