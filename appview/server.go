@@ -35,6 +35,12 @@ type Server struct {
 	// PaddleAPIKey authenticates server-side Paddle REST calls (customer portal
 	// sessions); when empty the portal endpoint answers 503.
 	PaddleAPIKey string
+	// TapAdminURL is the base URL of TAP's admin HTTP API (repo add/remove).
+	TapAdminURL string
+	// TapAdminPassword authenticates TAP admin calls and the event channel
+	// (Basic auth, username "admin"); empty means TAP runs without auth.
+	TapAdminPassword string
+	WipeWorker       *PdsWipeWorker
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

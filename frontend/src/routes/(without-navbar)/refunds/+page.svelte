@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import LogoMerged from '$lib/assets/logo.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import SiteFooter from '$lib/components/site-footer.svelte';
 </script>
 
 <svelte:head>
@@ -114,3 +115,5 @@
 		</Card.Root>
 	</div>
 </div>
+
+<SiteFooter />

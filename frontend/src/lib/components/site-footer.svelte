@@ -25,6 +25,7 @@
 				A calm visual curation app for the open social web.
 			</p>
 			<p class="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} Currents.</p>
+			<p class="text-xs text-muted-foreground">Matteo Marjanovic | VAT: IT05179170237</p>
 		</div>
 
 		<div class="flex flex-col items-center gap-3 sm:items-end">

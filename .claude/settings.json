@@ -1,0 +1,9 @@
+{
+  "enabledPlugins": {
+    "paddle@paddle-agent-skills": true
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
+}

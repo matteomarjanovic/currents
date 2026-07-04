@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"sync"
 	"time"
 
@@ -73,10 +75,16 @@ type TapHandler struct {
 	blobTokens       chan struct{}
 }
 
-func runTapListener(ctx context.Context, tapURL string, handler *TapHandler) {
+func runTapListener(ctx context.Context, tapURL, adminPassword string, handler *TapHandler) {
+	// When TAP runs with an admin password, its auth middleware covers the
+	// event channel too, not just the admin API.
+	var hdr http.Header
+	if adminPassword != "" {
+		hdr = http.Header{"Authorization": {"Basic " + base64.StdEncoding.EncodeToString([]byte("admin:"+adminPassword))}}
+	}
 	for {
 		slog.Info("connecting to TAP", "url", tapURL)
-		conn, _, err := websocket.DefaultDialer.DialContext(ctx, tapURL, nil)
+		conn, _, err := websocket.DefaultDialer.DialContext(ctx, tapURL, hdr)
 		if err != nil {
 			slog.Warn("TAP dial failed", "err", err)
 		} else {

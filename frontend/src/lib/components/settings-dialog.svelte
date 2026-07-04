@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Sidebar from '$lib/components/ui/sidebar';
+	import * as Avatar from '$lib/components/ui/avatar';
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
 	import { apiFetch } from '$lib/api';
+	import { isNative } from '$lib/platform';
+	import { clearAuthToken } from '$lib/auth-storage';
+	import { auth } from '$lib/stores/auth.svelte';
 	import { settingsDialog, type SettingsSection } from '$lib/stores/settings.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { role, loadRole, previewGated, canSeePreviewFeatures } from '$lib/stores/role.svelte';
@@ -24,6 +30,7 @@
 	import ShieldIcon from '@lucide/svelte/icons/shield';
 	import CreditCardIcon from '@lucide/svelte/icons/credit-card';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import UserIcon from '@lucide/svelte/icons/user';
 
 	// Settings live in a dialog (not a page) so they open from every mode —
 	// explore's top bar, organize's sidebar, and the blurred-media overlays.
@@ -31,13 +38,14 @@
 	// the root layout.
 
 	const NAV: { key: SettingsSection; name: string; icon: typeof ShieldIcon }[] = [
-		{ key: 'moderation', name: 'Moderation', icon: ShieldIcon },
-		{ key: 'subscription', name: 'Subscription', icon: CreditCardIcon }
+		{ key: 'account', name: 'Account', icon: UserIcon },
+		{ key: 'subscription', name: 'Subscription', icon: CreditCardIcon },
+		{ key: 'moderation', name: 'Moderation', icon: ShieldIcon }
 	];
 	// While the preview gate is on, the subscription section is moderator-only.
 	let nav = $derived(canSeePreviewFeatures() ? NAV : NAV.filter((n) => n.key !== 'subscription'));
 	let section = $derived(
-		nav.some((n) => n.key === settingsDialog.section) ? settingsDialog.section : 'moderation'
+		nav.some((n) => n.key === settingsDialog.section) ? settingsDialog.section : 'account'
 	);
 	let activeName = $derived(NAV.find((n) => n.key === section)?.name ?? '');
 
@@ -105,6 +113,45 @@
 			toast.error("Couldn't open the billing portal");
 		} finally {
 			portalLoading = false;
+		}
+	}
+
+	let deleteOpen = $state(false);
+	let deletePds = $state(false);
+	let deleting = $state(false);
+
+	async function confirmDeleteAccount() {
+		if (deleting) return;
+		deleting = true;
+		try {
+			const res = await apiFetch('/api/account/delete', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ deletePdsData: deletePds })
+			});
+			if (res.status === 409) {
+				toast.error('Cancel your supporter subscription first.');
+				deleteOpen = false;
+				void loadSupporterStatus();
+				return;
+			}
+			if (!res.ok) throw new Error(`${res.status}`);
+			// The server wiped the account and cleared the session cookie.
+			auth.user = null;
+			if (isNative()) {
+				await clearAuthToken();
+				auth.checked = true;
+				deleteOpen = false;
+				settingsDialog.open = false;
+				await goto('/');
+			} else {
+				// Full reload resets every client store, mirroring the web logout flow.
+				window.location.href = '/';
+			}
+		} catch {
+			toast.error("Couldn't delete your account. Please try again.");
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -238,7 +285,7 @@
 								</div>
 							</div>
 						</section>
-					{:else}
+					{:else if section === 'subscription'}
 						<section class="flex flex-col gap-4">
 							<p class="text-sm text-muted-foreground">
 								Currents is an independent, ad-free project: it's funded by its supporters, not by
@@ -280,9 +327,118 @@
 								<SupporterPlans onCheckoutOpen={() => (settingsDialog.open = false)} />
 							{/if}
 						</section>
+					{:else}
+						<section class="flex flex-col gap-4">
+							<div
+								class="flex items-center gap-3 rounded-lg border border-border bg-card p-4"
+							>
+								<Avatar.Root size="default">
+									{#if auth.user?.avatar}
+										<Avatar.Image
+											src={auth.user.avatar}
+											alt={auth.user.displayName ?? auth.user.handle}
+										/>
+									{/if}
+									<Avatar.Fallback>
+										<UserIcon class="size-4" />
+									</Avatar.Fallback>
+								</Avatar.Root>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-sm font-medium">
+										{auth.user?.displayName || auth.user?.handle}
+									</span>
+									<span class="text-xs text-muted-foreground">@{auth.user?.handle}</span>
+								</div>
+							</div>
+
+							{#if supporter.subscribed}
+								<div
+									class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4"
+								>
+									<div class="flex flex-col gap-0.5">
+										<span class="text-sm font-medium">Active subscription</span>
+										<span class="text-xs text-muted-foreground">
+											Cancel your supporter subscription in the billing portal before deleting your
+											account.
+										</span>
+									</div>
+									<Button variant="outline" size="sm" disabled={portalLoading} onclick={openPortal}>
+										Manage
+										<ExternalLink class="size-3.5" />
+									</Button>
+								</div>
+							{/if}
+
+							<div class="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-card p-4">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-sm font-medium">Delete account</span>
+									<span class="text-xs text-muted-foreground">
+										Removes your profile, collections, and saves from Currents and stops indexing
+										your data. What happens to the records in your AT Protocol repo is up to you.
+									</span>
+								</div>
+								<Button
+									variant="destructive"
+									size="sm"
+									class="self-start"
+									disabled={!supporter.loaded || supporter.subscribed}
+									onclick={() => {
+										deletePds = false;
+										deleteOpen = true;
+									}}
+								>
+									Delete account
+								</Button>
+							</div>
+						</section>
 					{/if}
 				</div>
 			</main>
 		</Sidebar.Provider>
 	</Dialog.Content>
 </Dialog.Root>
+
+<AlertDialog.Root bind:open={deleteOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Delete your account?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This removes your profile, collections, and saves from Currents and stops indexing your
+				data.
+				{#if deletePds}
+					Your AT Protocol repo will be scrubbed too — nothing will be left to restore.
+				{:else}
+					Your records stay in your AT Protocol repo — sign in again anytime to restore them.
+				{/if}
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<label class="flex items-start gap-2 text-sm">
+			<input
+				type="checkbox"
+				bind:checked={deletePds}
+				disabled={deleting}
+				class="mt-0.5 accent-destructive"
+			/>
+			<span>
+				Also permanently delete all Currents records from my AT Protocol repo. This cannot be
+				undone.
+				{#if deletePds}
+					<span class="mt-1 block text-xs text-muted-foreground">
+						Removal happens in the background and can take a while for large accounts (your data
+						server limits deletions per hour).
+					</span>
+				{/if}
+			</span>
+		</label>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={deleting}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={confirmDeleteAccount}
+				disabled={deleting}
+				class="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+			>
+				{deleting ? 'Deleting…' : 'Delete account'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

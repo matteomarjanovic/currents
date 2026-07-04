@@ -33,6 +33,8 @@ services:
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: http://192.168.1.9:5173
       TAP_URL: ws://tap:2480/channel
+      TAP_ADMIN_URL: http://tap:2480
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
       INFERENCE_URL: http://host.docker.internal:8000
       PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
@@ -50,6 +52,7 @@ services:
       TAP_RELAY_URL: https://bsky.network
       TAP_SIGNAL_COLLECTION: is.currents.actor.profile
       TAP_COLLECTION_FILTERS: is.currents.*
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
     ports:
       - "2480:2480"
 

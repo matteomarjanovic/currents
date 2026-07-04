@@ -200,6 +200,17 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A user missing from the DB but logging in is either brand-new or
+	// returning after account deletion — and TAP no longer tracks a deleted
+	// user's repo (the signal collection only fires on new events, not on
+	// their existing profile record). Re-add the repo so backfill restores
+	// their records; harmless for brand-new users, best-effort for both.
+	if existing, err := s.Store.GetActorByDID(ctx, sessData.AccountDID.String()); err == nil && existing == nil {
+		if err := s.tapRepos(ctx, "add", sessData.AccountDID.String()); err != nil {
+			slog.Warn("TAP repos/add on login", "did", sessData.AccountDID.String(), "err", err)
+		}
+	}
+
 	ensureUserProfile(ctx, c, s.Store, sessData.AccountDID.String(), resp.Handle, oauthSess.Data.HostURL, s.CDNBaseURL)
 
 	sess, _ := s.CookieStore.Get(r, "currents-session")

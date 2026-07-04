@@ -27,6 +27,9 @@ services:
       TAP_RELAY_URL: https://bsky.network
       TAP_COLLECTION_FILTERS: is.currents.*
       TAP_NO_REPLAY: "true"
+      # Leave TAP_ADMIN_PASSWORD unset in dev: with it set, TAP's Basic auth also
+      # covers /health and /repos/add, which tap-seed calls unauthenticated.
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
     ports:
       - "2480:2480"
 
@@ -63,6 +66,8 @@ services:
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: ${FRONTEND_URL:-http://192.168.1.221:5173}
       TAP_URL: ws://tap:2480/channel
+      TAP_ADMIN_URL: http://tap:2480
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
       INFERENCE_URL: http://host.docker.internal:8000
       HIDDEN_DIDS: ${HIDDEN_DIDS:-}
       LABELER_DID: ${LABELER_DID:-}

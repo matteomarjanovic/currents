@@ -32,6 +32,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL}
       CDN_URL: https://${DOMAIN}
       TAP_URL: ws://tap:2480/channel
+      TAP_ADMIN_URL: http://tap:2480
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
       INFERENCE_URL: ${INFERENCE_URL:-http://host.docker.internal:8000}
       HIDDEN_DIDS: ${HIDDEN_DIDS:-}
       LABELER_DID: ${LABELER_DID:-}
@@ -47,6 +49,7 @@ services:
       TAP_RELAY_URL: https://bsky.network
       TAP_SIGNAL_COLLECTION: is.currents.actor.profile
       TAP_COLLECTION_FILTERS: is.currents.*
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
 
   nginx:
     image: nginx:alpine

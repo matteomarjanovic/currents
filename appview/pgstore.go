@@ -964,6 +964,134 @@ func (m *PgStore) CountSupportersByPrice(ctx context.Context) (map[string]int, e
 	return counts, rows.Err()
 }
 
+// --- Account deletion ---
+
+type PdsWipeRow struct {
+	DID            string
+	OAuthSessionID string
+}
+
+// CreatePdsWipe queues a background deletion of every is.currents.* record
+// from the user's PDS. Upserts so a retried account deletion points the job
+// at the current session.
+func (m *PgStore) CreatePdsWipe(ctx context.Context, did, sessionID string) error {
+	_, err := m.pool.Exec(ctx, `
+		INSERT INTO pds_wipe (did, oauth_session_id) VALUES ($1, $2)
+		ON CONFLICT (did) DO UPDATE SET oauth_session_id = EXCLUDED.oauth_session_id
+	`, did, sessionID)
+	return err
+}
+
+func (m *PgStore) ListPdsWipes(ctx context.Context) ([]PdsWipeRow, error) {
+	rows, err := m.pool.Query(ctx, `SELECT did, oauth_session_id FROM pds_wipe ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PdsWipeRow
+	for rows.Next() {
+		var r PdsWipeRow
+		if err := rows.Scan(&r.DID, &r.OAuthSessionID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (m *PgStore) DeletePdsWipe(ctx context.Context, did string) error {
+	_, err := m.pool.Exec(ctx, `DELETE FROM pds_wipe WHERE did = $1`, did)
+	return err
+}
+
+// DeleteUserData removes every appview row keyed to the DID. Saves go through
+// DeleteSave one at a time to reuse canonical re-election; the rest is one
+// transaction. Kept on purpose: follows *of* the user and other viewers'
+// favourites of their collections (the followers' own records — hidden by
+// joins while the user is gone, live again if they return), and moderation /
+// audit rows (label, report, moderation_event, blob_moderation_state,
+// review_item). keepSessionID preserves the oauth session a pending PDS wipe
+// job needs; pass "" to delete all sessions.
+func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string) error {
+	rows, err := m.pool.Query(ctx, `SELECT uri FROM save WHERE author_did = $1`, did)
+	if err != nil {
+		return err
+	}
+	var saveURIs []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			rows.Close()
+			return err
+		}
+		saveURIs = append(saveURIs, uri)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, uri := range saveURIs {
+		if err := m.DeleteSave(ctx, uri); err != nil {
+			return fmt.Errorf("deleting save %s: %w", uri, err)
+		}
+	}
+
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	for _, q := range []string{
+		`DELETE FROM collection WHERE author_did = $1`,
+		`DELETE FROM favourite_collection WHERE viewer_did = $1`,
+		`DELETE FROM follow WHERE follower_did = $1`,
+		`DELETE FROM seen_feature WHERE viewer_did = $1`,
+		`DELETE FROM moderation_pref WHERE viewer_did = $1`,
+		`DELETE FROM notification_seen WHERE viewer_did = $1`,
+		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
+		`DELETE FROM paddle_subscription WHERE did = $1`,  // only non-active rows reach here
+		`DELETE FROM moderator WHERE did = $1`,
+	} {
+		if _, err := tx.Exec(ctx, q, did); err != nil {
+			return err
+		}
+	}
+
+	// Pending review items whose blob no longer has any live save are
+	// unreviewable (the preview would 404); rows stay for audit.
+	if _, err := tx.Exec(ctx, `
+		UPDATE review_item SET status = 'dismissed'
+		WHERE status = 'pending'
+		  AND NOT EXISTS (SELECT 1 FROM save s WHERE s.pds_blob_cid = review_item.blob_cid)
+	`); err != nil {
+		return err
+	}
+
+	// Sweep visual identities no save references anymore (ordinary unsaves
+	// leave these behind too). Cluster medoids are skipped — deleting one
+	// would trip the deferred FK at commit; the clustering service replaces
+	// them on its next run.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM visual_identity vi
+		WHERE vi.save_count = 0
+		  AND NOT EXISTS (SELECT 1 FROM cluster c WHERE c.medoid_visual_identity_id = vi.id)
+	`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM oauth_sessions WHERE account_did = $1 AND ($2 = '' OR session_id <> $2)`,
+		did, keepSessionID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM "user" WHERE did = $1`, did); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // --- Moderation preferences (per-user, server-backed) ---
 
 // GetModerationPrefs returns the user's stored preferences, or the defaults when

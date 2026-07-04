@@ -133,6 +133,17 @@ func main() {
 				EnvVars: []string{"TAP_URL"},
 			},
 			&cli.StringFlag{
+				Name:    "tap-admin-url",
+				Usage:   "base URL of the TAP admin HTTP API (repo add/remove)",
+				Value:   "http://localhost:2480",
+				EnvVars: []string{"TAP_ADMIN_URL"},
+			},
+			&cli.StringFlag{
+				Name:    "tap-admin-password",
+				Usage:   "Basic auth password for the TAP admin API and event channel (username admin); empty disables auth",
+				EnvVars: []string{"TAP_ADMIN_PASSWORD"},
+			},
+			&cli.StringFlag{
 				Name:    "inference-url",
 				Usage:   "Base URL of the inference FastAPI server",
 				Value:   "http://localhost:8000",
@@ -294,6 +305,12 @@ func runServer(cctx *cli.Context) error {
 		Inference: inferenceClient,
 		drains:    make(map[string]chan struct{}),
 	}
+	wipeWorker := &PdsWipeWorker{
+		Context: ctx,
+		Store:   store,
+		OAuth:   oauthClient,
+		wake:    make(chan struct{}, 1),
+	}
 
 	if mode == "repair" {
 		report, err := runRepairPass(ctx, tapHandler)
@@ -355,6 +372,9 @@ func runServer(cctx *cli.Context) error {
 		MobileRedirectSchemes: splitCSV(cctx.String("mobile-redirect-schemes")),
 		PaddleWebhookSecret:   cctx.String("paddle-webhook-secret"),
 		PaddleAPIKey:          cctx.String("paddle-api-key"),
+		TapAdminURL:           cctx.String("tap-admin-url"),
+		TapAdminPassword:      cctx.String("tap-admin-password"),
+		WipeWorker:            wipeWorker,
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -451,13 +471,17 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/supporter/stats", srv.APISupporterStats)
 	http.HandleFunc("POST /api/supporter/portal", srv.APISupporterPortal)
 	http.HandleFunc("POST /api/paddle/webhook", srv.PaddleWebhook)
+	http.HandleFunc("POST /api/account/delete", srv.APIAccountDelete)
 
 	tapHandler.CDNBaseURL = cdnURL
-	go runTapListener(ctx, cctx.String("tap-url"), tapHandler)
+	go runTapListener(ctx, cctx.String("tap-url"), cctx.String("tap-admin-password"), tapHandler)
 	slog.Info("TAP listener started", "url", cctx.String("tap-url"))
 
 	go importWorker.Run()
 	slog.Info("import worker started")
+
+	go wipeWorker.Run()
+	slog.Info("pds wipe worker started")
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)
