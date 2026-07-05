@@ -9,7 +9,7 @@
 	<title>Refund Policy · Currents</title>
 	<meta
 		name="description"
-		content="Refund Policy for the Currents Supporter subscription, sold through Paddle as merchant of record."
+		content="Refund Policy for the Currents Supporter subscription, sold through Polar as merchant of record."
 	/>
 </svelte:head>
 
@@ -44,11 +44,11 @@
 						similar-image search within your library. Payments are processed by
 						<a
 							class="underline underline-offset-4"
-							href="https://www.paddle.com"
+							href="https://polar.sh"
 							target="_blank"
-							rel="noreferrer">Paddle</a
-						>, our merchant of record — the charge on your statement appears from Paddle, and
-						refunds are returned by Paddle to your original payment method.
+							rel="noreferrer">Polar</a
+						>, our merchant of record — the charge on your statement appears from Polar, and refunds
+						are returned by Polar to your original payment method.
 					</p>
 					<p>The free saving and collecting experience involves no payments to refund.</p>
 				</section>
@@ -81,10 +81,10 @@
 							>refunds@currents.is</a
 						>
 						from the email address you used at checkout, ideally including the order number from your
-						Paddle receipt. You can also reply directly to the Paddle receipt email.
+						Polar receipt. You can also reply directly to the Polar receipt email.
 					</p>
 					<p>
-						Approved refunds are processed by Paddle back to your original payment method, typically
+						Approved refunds are processed by Polar back to your original payment method, typically
 						within 5–10 business days depending on your bank. When a refund is issued, the
 						subscription ends and Supporter features are disabled.
 					</p>

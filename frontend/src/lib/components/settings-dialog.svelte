@@ -320,7 +320,7 @@
 									</Button>
 								</div>
 								<p class="text-xs text-muted-foreground">
-									Invoices, payment method, plan changes, and cancellation are handled in the Paddle
+									Invoices, payment method, plan changes, and cancellation are handled in the Polar
 									billing portal.
 								</p>
 							{:else}

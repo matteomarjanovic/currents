@@ -9,6 +9,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 
 	"github.com/gorilla/sessions"
+	polargo "github.com/polarsource/polar-go"
 )
 
 type Server struct {
@@ -29,12 +30,13 @@ type Server struct {
 	MobileOrigins []string
 	// MobileRedirectSchemes are allowed return_to URL prefixes for native deep links (e.g. currents://).
 	MobileRedirectSchemes []string
-	// PaddleWebhookSecret verifies Paddle webhook signatures; when empty the
+	// PolarWebhookSecret verifies Polar webhook signatures; when empty the
 	// supporter gate is disabled and every authenticated user is a supporter.
-	PaddleWebhookSecret string
-	// PaddleAPIKey authenticates server-side Paddle REST calls (customer portal
-	// sessions); when empty the portal endpoint answers 503.
-	PaddleAPIKey string
+	PolarWebhookSecret string
+	// Polar is the API client for server-side Polar calls (checkout sessions,
+	// customer portal sessions); nil when POLAR_ACCESS_TOKEN is unset, which
+	// makes the checkout and portal endpoints answer 503.
+	Polar *polargo.Polar
 	// TapAdminURL is the base URL of TAP's admin HTTP API (repo add/remove).
 	TapAdminURL string
 	// TapAdminPassword authenticates TAP admin calls and the event channel

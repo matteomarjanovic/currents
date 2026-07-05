@@ -5,7 +5,7 @@
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 
-	// Shown once a checkout completes (opened from $lib/paddle.ts). Closing it —
+	// Shown once a checkout completes (opened from $lib/polar.ts). Closing it —
 	// via Continue or any other way — resumes the action the paywall
 	// interrupted, if there was one. `resume` nulls the pending action first,
 	// so overlapping close paths (Continue sets the bound state AND may fire

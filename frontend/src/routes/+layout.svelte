@@ -73,6 +73,6 @@
      open it via the settingsDialog store. -->
 <SettingsDialog />
 
-<!-- Post-checkout thank-you, opened from $lib/paddle.ts wherever the checkout
+<!-- Post-checkout thank-you, opened from $lib/polar.ts wherever the checkout
      was started (paywall dialog, settings, support page). -->
 <SupporterThanksDialog />

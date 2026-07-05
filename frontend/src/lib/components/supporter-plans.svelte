@@ -1,13 +1,14 @@
 <script lang="ts">
+	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { isNative } from '$lib/platform';
 	import {
 		openSupporterCheckout,
-		paddleConfigured,
-		PADDLE_PRICE_MONTHLY,
-		PADDLE_PRICE_YEARLY
-	} from '$lib/paddle';
+		polarConfigured,
+		POLAR_PRODUCT_MONTHLY,
+		POLAR_PRODUCT_YEARLY
+	} from '$lib/polar';
 
 	// The two supporter price options, shared by the upgrade dialog and the
 	// settings dialog's subscription section.
@@ -17,15 +18,14 @@
 	// processor, so the native apps never show purchase buttons.
 	const native = isNative();
 
-	let canSubscribe = $derived(paddleConfigured && !!auth.user);
+	let canSubscribe = $derived(polarConfigured && !!auth.user);
 
-	// The Paddle overlay renders above everything, so the host dialog closes
+	// The Polar embed renders above everything, so the host dialog closes
 	// first (via onCheckoutOpen) — otherwise its focus trap fights the iframe.
-	function subscribe(priceId: string) {
-		const did = auth.user?.did;
-		if (!did) return;
+	function subscribe(productId: string) {
+		if (!auth.user) return;
 		onCheckoutOpen?.();
-		void openSupporterCheckout(priceId, did);
+		openSupporterCheckout(productId).catch(() => toast.error("Couldn't open the checkout"));
 	}
 </script>
 
@@ -37,7 +37,7 @@
 			variant="outline"
 			class="h-auto flex-1 flex-col gap-0.5 py-3"
 			disabled={!canSubscribe}
-			onclick={() => subscribe(PADDLE_PRICE_MONTHLY)}
+			onclick={() => subscribe(POLAR_PRODUCT_MONTHLY)}
 		>
 			<span class="text-base font-semibold">$7 / month</span>
 			<span class="text-xs font-normal text-muted-foreground">Billed monthly</span>
@@ -46,15 +46,15 @@
 			variant="outline"
 			class="h-auto flex-1 flex-col gap-0.5 py-3"
 			disabled={!canSubscribe}
-			onclick={() => subscribe(PADDLE_PRICE_YEARLY)}
+			onclick={() => subscribe(POLAR_PRODUCT_YEARLY)}
 		>
 			<span class="text-base font-semibold">$70 / year</span>
 			<span class="text-xs font-normal text-muted-foreground">2 months free</span>
 		</Button>
 	</div>
 	<p class="text-xs text-muted-foreground">
-		{#if paddleConfigured}
-			Payments are handled by Paddle. Cancel anytime.
+		{#if polarConfigured}
+			Payments are handled by Polar. Cancel anytime.
 		{:else}
 			Payments aren't configured in this environment yet.
 		{/if}

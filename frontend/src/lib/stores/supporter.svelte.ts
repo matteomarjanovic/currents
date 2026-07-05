@@ -2,8 +2,8 @@ import { apiFetch } from '$lib/api';
 
 // Supporter-tier entitlement (semantic library search + find-similar in
 // library), mirrored from the server. `active` is what the gate enforces —
-// when the backend has no Paddle configured it reports everyone active, so
-// the client gate stays dormant. `subscribed` is the real Paddle subscription
+// when the backend has no Polar configured it reports everyone active, so
+// the client gate stays dormant. `subscribed` is the real Polar subscription
 // state, driving the settings dialog's subscription section. The server
 // enforces the gate regardless (403 SupporterRequired).
 export const supporter = $state({

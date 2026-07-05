@@ -52,7 +52,7 @@ func (s *Server) tapRepos(ctx context.Context, action, did string) error {
 	return nil
 }
 
-// APIAccountDelete deletes the viewer's account: refuses while a Paddle
+// APIAccountDelete deletes the viewer's account: refuses while a Polar
 // subscription is active, stops TAP sync, wipes the appview DB, and — when
 // requested — queues the background PDS wipe. Every step is idempotent, so a
 // failed request is simply retried.

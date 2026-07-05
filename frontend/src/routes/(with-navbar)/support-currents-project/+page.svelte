@@ -12,10 +12,11 @@
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import {
 		openSupporterCheckout,
-		paddleConfigured,
-		PADDLE_PRICE_MONTHLY,
-		PADDLE_PRICE_YEARLY
-	} from '$lib/paddle';
+		polarConfigured,
+		POLAR_PRODUCT_MONTHLY,
+		POLAR_PRODUCT_YEARLY
+	} from '$lib/polar';
+	import { toast } from 'svelte-sonner';
 	import SiteFooter from '$lib/components/site-footer.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
@@ -23,9 +24,13 @@
 	import Heart from '@lucide/svelte/icons/heart';
 
 	// The transparency numbers, fetched from the public stats endpoint. The
-	// gross is estimated client-side because only the client knows which price
-	// id is the monthly and which the yearly one.
-	type SupporterStats = { totalUsers: number; supporters: number; byPrice: Record<string, number> };
+	// gross is estimated client-side because only the client knows which
+	// product id is the monthly and which the yearly one.
+	type SupporterStats = {
+		totalUsers: number;
+		supporters: number;
+		byProduct: Record<string, number>;
+	};
 	let stats = $state<SupporterStats | null>(null);
 
 	onMount(async () => {
@@ -40,8 +45,8 @@
 
 	let monthlyGross = $derived.by(() => {
 		if (!stats) return null;
-		const monthly = stats.byPrice[PADDLE_PRICE_MONTHLY] ?? 0;
-		const yearly = stats.byPrice[PADDLE_PRICE_YEARLY] ?? 0;
+		const monthly = stats.byProduct[POLAR_PRODUCT_MONTHLY] ?? 0;
+		const yearly = stats.byProduct[POLAR_PRODUCT_YEARLY] ?? 0;
 		return Math.round(monthly * 7 + (yearly * 70) / 12);
 	});
 
@@ -49,12 +54,12 @@
 	// processor, so the native apps never show purchase buttons.
 	const native = isNative();
 
-	function subscribe(priceId: string) {
+	function subscribe(productId: string) {
 		if (!auth.user) {
 			promptLogin();
 			return;
 		}
-		void openSupporterCheckout(priceId, auth.user.did);
+		openSupporterCheckout(productId).catch(() => toast.error("Couldn't open the checkout"));
 	}
 </script>
 
@@ -118,8 +123,8 @@
 						<Button
 							variant="default"
 							class="h-auto flex-1 flex-col gap-0.5 py-3"
-							disabled={!paddleConfigured}
-							onclick={() => subscribe(PADDLE_PRICE_MONTHLY)}
+							disabled={!polarConfigured}
+							onclick={() => subscribe(POLAR_PRODUCT_MONTHLY)}
 						>
 							<span class="text-base font-semibold">$7 / month</span>
 							<span class="text-xs font-normal opacity-80">Billed monthly</span>
@@ -127,16 +132,16 @@
 						<Button
 							variant="outline"
 							class="h-auto flex-1 flex-col gap-0.5 py-3"
-							disabled={!paddleConfigured}
-							onclick={() => subscribe(PADDLE_PRICE_YEARLY)}
+							disabled={!polarConfigured}
+							onclick={() => subscribe(POLAR_PRODUCT_YEARLY)}
 						>
 							<span class="text-base font-semibold">$70 / year</span>
 							<span class="text-xs font-normal text-muted-foreground">2 months free</span>
 						</Button>
 					</div>
 					<p class="text-xs text-muted-foreground">
-						{#if paddleConfigured}
-							Payments are handled by Paddle. Cancel anytime — see the
+						{#if polarConfigured}
+							Payments are handled by Polar. Cancel anytime — see the
 							<a class="underline underline-offset-4" href={resolve('/refunds')}>Refund Policy</a>.
 						{:else}
 							Supporter subscriptions are opening soon.
@@ -340,8 +345,8 @@
 				<Accordion.Item value="payment-safety">
 					<Accordion.Trigger>Is my payment information safe?</Accordion.Trigger>
 					<Accordion.Content>
-						Payments are processed by Paddle, our merchant of record — your card details go to
-						Paddle and never touch Currents' servers.
+						Payments are processed by Polar, our merchant of record — your card details go to Polar
+						and never touch Currents' servers.
 					</Accordion.Content>
 				</Accordion.Item>
 				<Accordion.Item value="free-support">

@@ -166,23 +166,22 @@
 						Payments are processed by
 						<a
 							class="underline underline-offset-4"
-							href="https://www.paddle.com"
+							href="https://polar.sh"
 							target="_blank"
-							rel="noreferrer">Paddle</a
-						>, our merchant of record. Paddle handles checkout, billing, taxes, receipts, and
-						payment data; the charge on your statement will appear from Paddle. Purchases are also
-						subject to
+							rel="noreferrer">Polar</a
+						>, our merchant of record. Polar handles checkout, billing, taxes, receipts, and payment
+						data; the charge on your statement will appear from Polar. Purchases are also subject to
 						<a
 							class="underline underline-offset-4"
-							href="https://www.paddle.com/legal/checkout-buyer-terms"
+							href="https://polar.sh/legal/terms"
 							target="_blank"
-							rel="noreferrer">Paddle's buyer terms</a
+							rel="noreferrer">Polar's terms of service</a
 						>.
 					</p>
 					<p>
 						Subscriptions <strong>renew automatically</strong> at the end of each billing period
 						(monthly or yearly) until canceled. You can cancel anytime from
-						<em>Settings → Subscription → Manage</em>, which opens your Paddle billing portal — the
+						<em>Settings → Subscription → Manage</em>, which opens your Polar billing portal — the
 						same place to update your payment method and download invoices. Cancellation takes
 						effect at the end of the current paid period, and you keep Supporter features until
 						then.
@@ -208,7 +207,7 @@
 						<a class="underline underline-offset-4" href="mailto:refunds@currents.is"
 							>refunds@currents.is</a
 						>
-						or reply to the Paddle receipt email. Nothing in this section limits any non-waivable statutory
+						or reply to the Polar receipt email. Nothing in this section limits any non-waivable statutory
 						rights you have under the consumer-protection laws of your country.
 					</p>
 				</section>

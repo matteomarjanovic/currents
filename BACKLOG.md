@@ -10,9 +10,9 @@ proposing new work; delete an entry when it ships.
   the paid library search and find-similar. Run the repair pass
   (`APPVIEW_MODE=repair`) after deploys/outages so paid search coverage stays
   complete — and consider scheduling it.
-- **Paddle webhook-miss backfill.** If webhooks are missed for longer than the
-  retry window, re-sync `GET /subscriptions` from the Paddle API into
-  `paddle_subscription` (see PADDLE.md "Not built yet").
+- **Polar webhook-miss backfill.** If webhooks are missed for longer than the
+  retry window, re-sync `GET /v1/subscriptions` from the Polar API into
+  `polar_subscription` (see POLAR.md "Not built yet").
 
 ## Organize mode
 

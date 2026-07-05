@@ -36,8 +36,9 @@ services:
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
       INFERENCE_URL: http://host.docker.internal:8000
-      PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
-      PADDLE_API_KEY: ${PADDLE_API_KEY:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_SERVER: ${POLAR_SERVER:-production}
     ports:
       - "8080:8080"
 

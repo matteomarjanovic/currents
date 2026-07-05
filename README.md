@@ -20,11 +20,25 @@ SESSION_SECRET=<random-string> docker compose up --build
 - AppView: http://localhost:8080
 - Inference: run separately (see `inference/`)
 
+## Full local dev stack
+
+`./dev.sh` starts everything — the dev compose stack (db/tap/appview/clustering),
+the inference server, the frontend, and a cloudflared tunnel — each in its own
+tmux window (`docker`, `inference`, `frontend`, `tunnel`).
+
+```bash
+./dev.sh          # build + start everything, attach to tmux
+./dev.sh stop     # stop inference/frontend/tunnel (docker stack keeps running)
+./dev.sh stop --down  # also tear down the docker stack
+./dev.sh attach   # reattach after detaching (Ctrl-b d)
+./dev.sh restart frontend   # bounce a single window
+```
+
 ## Dev TAP stack
 
-For local TAP debugging, use the dev compose file. It tracks only the handles in
-`TAP_DEV_HANDLES`, seeds TAP via `/repos/add`, and starts the full local stack,
-including `clustering`.
+For local TAP debugging, use the dev compose file directly. It tracks only the
+handles in `TAP_DEV_HANDLES`, seeds TAP via `/repos/add`, and starts the full
+local stack, including `clustering`.
 
 ```bash
 TAP_DEV_HANDLES="matteomarjanovic.com,zeroassembly.site" \

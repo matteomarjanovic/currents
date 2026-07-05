@@ -4,27 +4,29 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/polarsource/polar-go/models/components"
+	"github.com/polarsource/polar-go/models/operations"
 )
 
 // Supporter tier: semantic library search and find-similar-in-library are
-// gated behind a Paddle subscription. Paddle POSTs subscription lifecycle
-// events to /api/paddle/webhook, which mirrors them into paddle_subscription;
+// gated behind a Polar subscription. Polar POSTs subscription lifecycle
+// events to /api/polar/webhook, which mirrors them into polar_subscription;
 // the XRPC handlers gate on that mirror. The whole gate is switched on by
-// setting PADDLE_WEBHOOK_SECRET — with it unset (dev, or pre-launch prod)
+// setting POLAR_WEBHOOK_SECRET — with it unset (dev, or pre-launch prod)
 // every authenticated user counts as a supporter.
 
 func (s *Server) isSupporter(ctx context.Context, did string) (bool, error) {
-	if s.PaddleWebhookSecret == "" {
+	if s.PolarWebhookSecret == "" {
 		return true, nil
 	}
 	return s.Store.HasSupporterSubscription(ctx, did)
@@ -49,7 +51,7 @@ func (s *Server) requireSupporter(w http.ResponseWriter, r *http.Request, did st
 }
 
 // APISupporterStatus reports the viewer's entitlement. `subscribed` is the real
-// Paddle subscription state (drives the settings UI); `active` is what the gate
+// Polar subscription state (drives the settings UI); `active` is what the gate
 // enforces (everyone, while the gate is disabled).
 func (s *Server) APISupporterStatus(w http.ResponseWriter, r *http.Request) {
 	did, _, _ := s.currentSessionDID(r)
@@ -63,27 +65,64 @@ func (s *Server) APISupporterStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	active := subscribed || s.PaddleWebhookSecret == ""
+	active := subscribed || s.PolarWebhookSecret == ""
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"active": active, "subscribed": subscribed})
 }
 
-// APISupporterPortal mints a Paddle customer-portal session for the viewer and
-// returns its overview URL — invoices, payment method, plan changes, and
-// cancellation all happen there, so Currents needs no billing UI of its own.
+// APISupporterCheckout creates a Polar checkout session for the requested
+// product and returns its URL for the embedded checkout. external_customer_id
+// carries the viewer's DID, which Polar echoes back on every subscription
+// webhook — that's the whole user ↔ subscription mapping.
+func (s *Server) APISupporterCheckout(w http.ResponseWriter, r *http.Request) {
+	did, _, _ := s.currentSessionDID(r)
+	if did == nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	if s.Polar == nil {
+		http.Error(w, "polar not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Product string `json:"product"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Product == "" {
+		http.Error(w, "missing product", http.StatusBadRequest)
+		return
+	}
+	externalID := did.String()
+	embedOrigin := strings.TrimRight(s.FrontendURL, "/")
+	res, err := s.Polar.Checkouts.Create(r.Context(), components.CheckoutCreate{
+		Products:           []string{body.Product},
+		ExternalCustomerID: &externalID,
+		EmbedOrigin:        &embedOrigin,
+	})
+	if err != nil {
+		slog.Error("polar checkout create", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"url": res.Checkout.URL})
+}
+
+// APISupporterPortal mints a Polar customer-portal session for the viewer and
+// returns its URL — invoices, payment method, plan changes, and cancellation
+// all happen there, so Currents needs no billing UI of its own.
 func (s *Server) APISupporterPortal(w http.ResponseWriter, r *http.Request) {
 	did, _, _ := s.currentSessionDID(r)
 	if did == nil {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	if s.PaddleAPIKey == "" {
-		http.Error(w, "paddle not configured", http.StatusServiceUnavailable)
+	if s.Polar == nil {
+		http.Error(w, "polar not configured", http.StatusServiceUnavailable)
 		return
 	}
-	customerID, err := s.Store.GetPaddleCustomerID(r.Context(), did.String())
+	customerID, err := s.Store.GetPolarCustomerID(r.Context(), did.String())
 	if err != nil {
-		slog.Error("GetPaddleCustomerID", "err", err)
+		slog.Error("GetPolarCustomerID", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -91,19 +130,21 @@ func (s *Server) APISupporterPortal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no subscription", http.StatusNotFound)
 		return
 	}
-	portalURL, err := s.createPaddlePortalSession(r.Context(), customerID)
+	res, err := s.Polar.CustomerSessions.Create(r.Context(),
+		operations.CreateCustomerSessionsCreateCustomerSessionCreateCustomerSessionCustomerIDCreate(
+			components.CustomerSessionCustomerIDCreate{CustomerID: customerID}))
 	if err != nil {
-		slog.Error("createPaddlePortalSession", "err", err)
+		slog.Error("polar customer session create", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"url": portalURL})
+	json.NewEncoder(w).Encode(map[string]string{"url": res.CustomerSession.CustomerPortalURL})
 }
 
 // APISupporterStats returns the public transparency numbers for the support
-// page: total indexed users and active supporter counts per price id. No auth
-// — publishing these openly is the point.
+// page: total indexed users and active supporter counts per product id. No
+// auth — publishing these openly is the point.
 func (s *Server) APISupporterStats(w http.ResponseWriter, r *http.Request) {
 	users, err := s.Store.CountUsers(r.Context())
 	if err != nil {
@@ -111,101 +152,48 @@ func (s *Server) APISupporterStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	byPrice, err := s.Store.CountSupportersByPrice(r.Context())
+	byProduct, err := s.Store.CountSupportersByProduct(r.Context())
 	if err != nil {
-		slog.Error("CountSupportersByPrice", "err", err)
+		slog.Error("CountSupportersByProduct", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	supporters := 0
-	for _, n := range byPrice {
+	for _, n := range byProduct {
 		supporters += n
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"totalUsers": users,
 		"supporters": supporters,
-		"byPrice":    byPrice,
+		"byProduct":  byProduct,
 	})
 }
 
-var paddleHTTP = &http.Client{Timeout: 10 * time.Second}
-
-// createPaddlePortalSession calls the Paddle REST API. The environment is
-// inferred from the API key prefix (pdl_sdbx_... = sandbox), so no separate
-// environment setting exists to drift out of sync.
-func (s *Server) createPaddlePortalSession(ctx context.Context, customerID string) (string, error) {
-	base := "https://api.paddle.com"
-	if strings.HasPrefix(s.PaddleAPIKey, "pdl_sdbx_") {
-		base = "https://sandbox-api.paddle.com"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		base+"/customers/"+url.PathEscape(customerID)+"/portal-sessions", strings.NewReader("{}"))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+s.PaddleAPIKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := paddleHTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("paddle portal session: status %d: %.200s", resp.StatusCode, body)
-	}
-	var out struct {
-		Data struct {
-			URLs struct {
-				General struct {
-					Overview string `json:"overview"`
-				} `json:"general"`
-			} `json:"urls"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return "", err
-	}
-	if out.Data.URLs.General.Overview == "" {
-		return "", fmt.Errorf("paddle portal session: no overview url in response")
-	}
-	return out.Data.URLs.General.Overview, nil
-}
-
-// paddleWebhookEvent is the subset of a Paddle notification we consume. Every
+// polarWebhookEvent is the subset of a Polar webhook we consume. Every
 // subscription.* event carries the full subscription entity, so one shape
-// serves created/updated/canceled/paused/resumed alike. custom_data.did is set
-// by the frontend when it opens checkout and maps the subscription to a user.
-type paddleWebhookEvent struct {
-	EventType string `json:"event_type"`
-	Data      struct {
-		ID         string `json:"id"`
-		Status     string `json:"status"`
-		CustomerID string `json:"customer_id"`
-		CustomData struct {
-			DID string `json:"did"`
-		} `json:"custom_data"`
-		Items []struct {
-			Price struct {
-				ID string `json:"id"`
-			} `json:"price"`
-		} `json:"items"`
-		ScheduledChange *struct {
-			EffectiveAt time.Time `json:"effective_at"`
-		} `json:"scheduled_change"`
+// serves created/updated/active/canceled/uncanceled/revoked alike. The
+// customer's external_id is the viewer's DID, set at checkout creation.
+type polarWebhookEvent struct {
+	Type string `json:"type"`
+	Data struct {
+		ID         string     `json:"id"`
+		Status     string     `json:"status"`
+		CustomerID string     `json:"customer_id"`
+		ProductID  string     `json:"product_id"`
+		EndsAt     *time.Time `json:"ends_at"`
+		Customer   struct {
+			ExternalID string `json:"external_id"`
+		} `json:"customer"`
 	} `json:"data"`
 }
 
-// PaddleWebhook ingests Paddle notifications. Paddle treats any non-2xx as a
-// failed delivery and retries with the same payload for up to ~3 days, so
+// PolarWebhook ingests Polar webhook deliveries. Polar treats any non-2xx as
+// a failed delivery and retries with backoff (up to 10 attempts), so
 // transient failures answer non-2xx and unusable-but-valid events are acked.
-func (s *Server) PaddleWebhook(w http.ResponseWriter, r *http.Request) {
-	if s.PaddleWebhookSecret == "" {
-		http.Error(w, "paddle not configured", http.StatusServiceUnavailable)
+func (s *Server) PolarWebhook(w http.ResponseWriter, r *http.Request) {
+	if s.PolarWebhookSecret == "" {
+		http.Error(w, "polar not configured", http.StatusServiceUnavailable)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -213,65 +201,55 @@ func (s *Server) PaddleWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
 	}
-	if !verifyPaddleSignature(r.Header.Get("Paddle-Signature"), body, s.PaddleWebhookSecret) {
-		// Non-2xx so Paddle retries: a rotated secret then recovers on redeploy,
+	if !verifyPolarSignature(r.Header, body, s.PolarWebhookSecret) {
+		// Non-2xx so Polar retries: a rotated secret then recovers on redeploy,
 		// and a genuinely forged request retrying is harmless.
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
 
-	var ev paddleWebhookEvent
+	var ev polarWebhookEvent
 	if err := json.Unmarshal(body, &ev); err != nil {
 		http.Error(w, "bad payload", http.StatusBadRequest)
 		return
 	}
-	if !strings.HasPrefix(ev.EventType, "subscription.") {
+	if !strings.HasPrefix(ev.Type, "subscription.") {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if ev.Data.CustomData.DID == "" {
+	if ev.Data.Customer.ExternalID == "" {
 		// Nothing to map the subscription to; retrying can't fix that.
-		slog.Warn("paddle subscription without did in custom_data", "subscription", ev.Data.ID, "event", ev.EventType)
+		slog.Warn("polar subscription without external customer id", "subscription", ev.Data.ID, "event", ev.Type)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	sub := PaddleSubscription{
+	sub := PolarSubscription{
 		SubscriptionID: ev.Data.ID,
-		DID:            ev.Data.CustomData.DID,
+		DID:            ev.Data.Customer.ExternalID,
 		CustomerID:     ev.Data.CustomerID,
 		Status:         ev.Data.Status,
+		ProductID:      ev.Data.ProductID,
+		EndsAt:         ev.Data.EndsAt,
 	}
-	if len(ev.Data.Items) > 0 {
-		sub.PriceID = ev.Data.Items[0].Price.ID
-	}
-	if ev.Data.ScheduledChange != nil {
-		sub.ScheduledChange = &ev.Data.ScheduledChange.EffectiveAt
-	}
-	if err := s.Store.UpsertPaddleSubscription(r.Context(), sub); err != nil {
-		slog.Error("UpsertPaddleSubscription", "err", err)
+	if err := s.Store.UpsertPolarSubscription(r.Context(), sub); err != nil {
+		slog.Error("UpsertPolarSubscription", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	slog.Info("paddle subscription synced", "subscription", sub.SubscriptionID, "did", sub.DID, "status", sub.Status)
+	slog.Info("polar subscription synced", "subscription", sub.SubscriptionID, "did", sub.DID, "status", sub.Status)
 	w.WriteHeader(http.StatusOK)
 }
 
-// verifyPaddleSignature checks a Paddle-Signature header ("ts=...;h1=..."):
-// HMAC-SHA256 over "<ts>:<raw body>" keyed with the notification destination
-// secret. Multiple h1 values appear during secret rotation — any match passes.
-// The timestamp bound rejects replayed deliveries.
-func verifyPaddleSignature(header string, body []byte, secret string) bool {
-	var ts string
-	var sigs []string
-	for _, part := range strings.Split(header, ";") {
-		if v, ok := strings.CutPrefix(part, "ts="); ok {
-			ts = v
-		} else if v, ok := strings.CutPrefix(part, "h1="); ok {
-			sigs = append(sigs, v)
-		}
-	}
-	if ts == "" || len(sigs) == 0 {
+// verifyPolarSignature checks a Standard Webhooks signature (what Polar
+// uses): base64 HMAC-SHA256 over "<id>.<timestamp>.<raw body>" keyed with the
+// endpoint secret as configured in the Polar dashboard. The webhook-signature
+// header holds space-separated "v1,<sig>" entries — several during secret
+// rotation, any match passes. The timestamp bound rejects replayed deliveries.
+func verifyPolarSignature(h http.Header, body []byte, secret string) bool {
+	id := h.Get("webhook-id")
+	ts := h.Get("webhook-timestamp")
+	if id == "" || ts == "" {
 		return false
 	}
 	sec, err := strconv.ParseInt(ts, 10, 64)
@@ -282,12 +260,14 @@ func verifyPaddleSignature(header string, body []byte, secret string) bool {
 		return false
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(ts))
-	mac.Write([]byte(":"))
-	mac.Write(body)
+	fmt.Fprintf(mac, "%s.%s.%s", id, ts, body)
 	expected := mac.Sum(nil)
-	for _, s := range sigs {
-		if sig, err := hex.DecodeString(s); err == nil && hmac.Equal(expected, sig) {
+	for _, part := range strings.Split(h.Get("webhook-signature"), " ") {
+		v, ok := strings.CutPrefix(part, "v1,")
+		if !ok {
+			continue
+		}
+		if sig, err := base64.StdEncoding.DecodeString(v); err == nil && hmac.Equal(expected, sig) {
 			return true
 		}
 	}

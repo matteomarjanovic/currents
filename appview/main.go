@@ -19,6 +19,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 
 	"github.com/gorilla/sessions"
+	polargo "github.com/polarsource/polar-go"
 	"github.com/urfave/cli/v2"
 )
 
@@ -186,14 +187,20 @@ func main() {
 				EnvVars: []string{"LABELER_SIGNING_KEY"},
 			},
 			&cli.StringFlag{
-				Name:    "paddle-webhook-secret",
-				Usage:   "secret of the Paddle notification destination; if empty, the supporter gate is disabled",
-				EnvVars: []string{"PADDLE_WEBHOOK_SECRET"},
+				Name:    "polar-webhook-secret",
+				Usage:   "secret of the Polar webhook endpoint; if empty, the supporter gate is disabled",
+				EnvVars: []string{"POLAR_WEBHOOK_SECRET"},
 			},
 			&cli.StringFlag{
-				Name:    "paddle-api-key",
-				Usage:   "Paddle REST API key for customer-portal sessions; if empty, the portal endpoint is disabled",
-				EnvVars: []string{"PADDLE_API_KEY"},
+				Name:    "polar-access-token",
+				Usage:   "Polar organization access token for checkout and customer-portal sessions; if empty, those endpoints are disabled",
+				EnvVars: []string{"POLAR_ACCESS_TOKEN"},
+			},
+			&cli.StringFlag{
+				Name:    "polar-server",
+				Usage:   "Polar environment: production or sandbox",
+				Value:   "production",
+				EnvVars: []string{"POLAR_SERVER"},
 			},
 		},
 	}
@@ -370,11 +377,17 @@ func runServer(cctx *cli.Context) error {
 		LabelerHost:           labelerHost,
 		MobileOrigins:         splitCSV(cctx.String("mobile-origins")),
 		MobileRedirectSchemes: splitCSV(cctx.String("mobile-redirect-schemes")),
-		PaddleWebhookSecret:   cctx.String("paddle-webhook-secret"),
-		PaddleAPIKey:          cctx.String("paddle-api-key"),
+		PolarWebhookSecret:    cctx.String("polar-webhook-secret"),
 		TapAdminURL:           cctx.String("tap-admin-url"),
 		TapAdminPassword:      cctx.String("tap-admin-password"),
 		WipeWorker:            wipeWorker,
+	}
+	if token := cctx.String("polar-access-token"); token != "" {
+		srv.Polar = polargo.New(
+			polargo.WithSecurity(token),
+			polargo.WithServer(cctx.String("polar-server")),
+			polargo.WithClient(&http.Client{Timeout: 30 * time.Second}),
+		)
 	}
 
 	http.HandleFunc("GET /.well-known/did.json", srv.WellKnownDID)
@@ -470,7 +483,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/supporter/status", srv.APISupporterStatus)
 	http.HandleFunc("GET /api/supporter/stats", srv.APISupporterStats)
 	http.HandleFunc("POST /api/supporter/portal", srv.APISupporterPortal)
-	http.HandleFunc("POST /api/paddle/webhook", srv.PaddleWebhook)
+	http.HandleFunc("POST /api/supporter/checkout", srv.APISupporterCheckout)
+	http.HandleFunc("POST /api/polar/webhook", srv.PolarWebhook)
 	http.HandleFunc("POST /api/account/delete", srv.APIAccountDelete)
 
 	tapHandler.CDNBaseURL = cdnURL

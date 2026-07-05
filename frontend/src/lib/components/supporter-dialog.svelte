@@ -7,7 +7,7 @@
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
 
 	// Shown when a non-supporter reaches a supporter-tier feature (library
-	// search, find similar in library). Subscribing opens the Paddle overlay
+	// search, find similar in library). Subscribing opens the Polar embedded
 	// checkout; the webhook-backed status poll unlocks the UI on completion.
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 

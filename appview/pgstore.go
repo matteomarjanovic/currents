@@ -848,57 +848,57 @@ func (m *PgStore) MarkFeatureSeen(ctx context.Context, viewerDID, featureKey str
 	return err
 }
 
-// --- Paddle subscriptions (supporter tier) ---
+// --- Polar subscriptions (supporter tier) ---
 
-type PaddleSubscription struct {
-	SubscriptionID  string
-	DID             string
-	CustomerID      string
-	Status          string
-	PriceID         string
-	ScheduledChange *time.Time
+type PolarSubscription struct {
+	SubscriptionID string
+	DID            string
+	CustomerID     string
+	Status         string
+	ProductID      string
+	EndsAt         *time.Time
 }
 
-// UpsertPaddleSubscription converges a row on the latest webhook-delivered
-// state. Keyed on the Paddle subscription id so retried and out-of-order
+// UpsertPolarSubscription converges a row on the latest webhook-delivered
+// state. Keyed on the Polar subscription id so retried and out-of-order
 // deliveries are harmless.
-func (m *PgStore) UpsertPaddleSubscription(ctx context.Context, sub PaddleSubscription) error {
+func (m *PgStore) UpsertPolarSubscription(ctx context.Context, sub PolarSubscription) error {
 	_, err := m.pool.Exec(ctx,
-		`INSERT INTO paddle_subscription (subscription_id, did, customer_id, status, price_id, scheduled_change)
+		`INSERT INTO polar_subscription (subscription_id, did, customer_id, status, product_id, ends_at)
 		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (subscription_id) DO UPDATE SET
 		   did = EXCLUDED.did,
 		   customer_id = EXCLUDED.customer_id,
 		   status = EXCLUDED.status,
-		   price_id = EXCLUDED.price_id,
-		   scheduled_change = EXCLUDED.scheduled_change,
+		   product_id = EXCLUDED.product_id,
+		   ends_at = EXCLUDED.ends_at,
 		   updated_at = now()`,
-		sub.SubscriptionID, sub.DID, sub.CustomerID, sub.Status, sub.PriceID, sub.ScheduledChange)
+		sub.SubscriptionID, sub.DID, sub.CustomerID, sub.Status, sub.ProductID, sub.EndsAt)
 	return err
 }
 
 // HasSupporterSubscription reports whether the DID has a subscription in an
-// access-granting status. past_due keeps access while Paddle retries payment;
-// a mid-period cancel stays `active` (with scheduled_change set) until it
-// takes effect, so it needs no special case.
+// access-granting status. past_due keeps access while Polar retries payment;
+// a mid-period cancel stays `active` (with ends_at set) until it takes
+// effect, so it needs no special case.
 func (m *PgStore) HasSupporterSubscription(ctx context.Context, did string) (bool, error) {
 	var ok bool
 	err := m.pool.QueryRow(ctx,
 		`SELECT EXISTS (
-		   SELECT 1 FROM paddle_subscription
+		   SELECT 1 FROM polar_subscription
 		   WHERE did = $1 AND status IN ('active', 'trialing', 'past_due')
 		 )`, did).Scan(&ok)
 	return ok, err
 }
 
-// GetPaddleCustomerID returns the Paddle customer id from the DID's most
+// GetPolarCustomerID returns the Polar customer id from the DID's most
 // recently updated subscription row, or "" if they never subscribed. Canceled
 // rows count — the portal is also where past subscribers see invoices and
 // resubscribe.
-func (m *PgStore) GetPaddleCustomerID(ctx context.Context, did string) (string, error) {
+func (m *PgStore) GetPolarCustomerID(ctx context.Context, did string) (string, error) {
 	var id string
 	err := m.pool.QueryRow(ctx,
-		`SELECT customer_id FROM paddle_subscription
+		`SELECT customer_id FROM polar_subscription
 		 WHERE did = $1 ORDER BY updated_at DESC LIMIT 1`, did).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
@@ -915,7 +915,7 @@ func (m *PgStore) SupporterDIDs(ctx context.Context, dids []string) (map[string]
 		return out, nil
 	}
 	rows, err := m.pool.Query(ctx, `
-		SELECT DISTINCT did FROM paddle_subscription
+		SELECT DISTINCT did FROM polar_subscription
 		WHERE did = ANY($1) AND status IN ('active', 'trialing', 'past_due')
 	`, dids)
 	if err != nil {
@@ -939,14 +939,14 @@ func (m *PgStore) CountUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// CountSupportersByPrice returns the number of access-granting subscriptions
-// per Paddle price id — the public transparency numbers on the support page.
-// The client maps price ids to dollar amounts (it knows the configured ids).
-func (m *PgStore) CountSupportersByPrice(ctx context.Context) (map[string]int, error) {
+// CountSupportersByProduct returns the number of access-granting subscriptions
+// per Polar product id — the public transparency numbers on the support page.
+// The client maps product ids to dollar amounts (it knows the configured ids).
+func (m *PgStore) CountSupportersByProduct(ctx context.Context) (map[string]int, error) {
 	rows, err := m.pool.Query(ctx, `
-		SELECT price_id, count(*) FROM paddle_subscription
+		SELECT product_id, count(*) FROM polar_subscription
 		WHERE status IN ('active', 'trialing', 'past_due')
-		GROUP BY price_id
+		GROUP BY product_id
 	`)
 	if err != nil {
 		return nil, err
@@ -954,12 +954,12 @@ func (m *PgStore) CountSupportersByPrice(ctx context.Context) (map[string]int, e
 	defer rows.Close()
 	counts := map[string]int{}
 	for rows.Next() {
-		var price string
+		var product string
 		var n int
-		if err := rows.Scan(&price, &n); err != nil {
+		if err := rows.Scan(&product, &n); err != nil {
 			return nil, err
 		}
-		counts[price] = n
+		counts[product] = n
 	}
 	return counts, rows.Err()
 }
@@ -1050,7 +1050,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 		`DELETE FROM moderation_pref WHERE viewer_did = $1`,
 		`DELETE FROM notification_seen WHERE viewer_did = $1`,
 		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
-		`DELETE FROM paddle_subscription WHERE did = $1`,  // only non-active rows reach here
+		`DELETE FROM polar_subscription WHERE did = $1`,   // only non-active rows reach here
 		`DELETE FROM moderator WHERE did = $1`,
 	} {
 		if _, err := tx.Exec(ctx, q, did); err != nil {

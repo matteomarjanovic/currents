@@ -95,11 +95,10 @@
 						</li>
 						<li>
 							Subscription and billing data if you become a Supporter. Checkout and billing are
-							handled by Paddle, our merchant of record, which collects your billing email, payment
+							handled by Polar, our merchant of record, which collects your billing email, payment
 							method, and country, and may set its own cookies inside the checkout window. Currents
-							itself stores only your subscription status, plan, and Paddle customer and
-							subscription identifiers linked to your account — we never see your full payment card
-							details.
+							itself stores only your subscription status, plan, and Polar customer and subscription
+							identifiers linked to your account — we never see your full payment card details.
 						</li>
 						<li>
 							Aggregate usage statistics collected with Umami, a privacy-focused, cookieless
@@ -149,11 +148,11 @@
 							image proxy, and inference systems on our behalf.
 						</li>
 						<li>
-							With Paddle, our payments provider and merchant of record, when you purchase or manage
-							a Supporter subscription. Paddle processes your billing details under its own
+							With Polar, our payments provider and merchant of record, when you purchase or manage
+							a Supporter subscription. Polar processes your billing details under its own
 							<a
 								class="underline underline-offset-4"
-								href="https://www.paddle.com/legal/privacy"
+								href="https://polar.sh/legal/privacy"
 								target="_blank"
 								rel="noreferrer">privacy policy</a
 							>.
@@ -191,7 +190,7 @@
 						it.
 					</p>
 					<p>
-						Subscription records (status, plan, and Paddle identifiers) are kept for as long as you
+						Subscription records (status, plan, and Polar identifiers) are kept for as long as you
 						have a subscription and afterwards for as long as needed for accounting, tax, and
 						dispute-handling purposes.
 					</p>
