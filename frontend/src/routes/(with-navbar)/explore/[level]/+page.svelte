@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { apiFetch } from '$lib/api';
@@ -44,6 +44,26 @@
 	);
 
 	let sentinel: HTMLDivElement = $state(undefined!);
+
+	// Align the flow-field button with the grid's right border: content padding
+	// plus the root scrollbar's width. Scroll locks (menus, dialogs, the save
+	// overlay) report 0 while they temporarily hide the scrollbar, so the width
+	// only ratchets up — the button must not shift when a menu opens.
+	let scrollbarInset = $state(0);
+	function measureInset() {
+		const w = window.innerWidth - document.documentElement.clientWidth;
+		if (w > 0) scrollbarInset = w;
+	}
+	onMount(() => {
+		window.addEventListener('resize', measureInset);
+		return () => window.removeEventListener('resize', measureInset);
+	});
+	// Re-measure as feed pages land: the scrollbar may only appear once the grid
+	// outgrows the viewport.
+	$effect(() => {
+		void feed.items.length;
+		measureInset();
+	});
 
 	$effect(() => {
 		void level?.value;
@@ -106,6 +126,13 @@
 	{/if}
 {/if}
 
-<div class="fixed right-2 bottom-5 z-20 md:right-4">
+<!-- right = padding + scrollbar width, anchored to the window edge: the
+     `100% - 100vw` term cancels out viewport-width changes when a scroll lock
+     hides the scrollbar, so the button never moves; the latched --sb places it
+     on the grid's border while the scrollbar is showing. -->
+<div
+	class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-20 flex md:right-[calc(1rem+var(--sb)+100%-100vw)]"
+	style="--sb: {scrollbarInset}px"
+>
 	<PersonalizationButton />
 </div>

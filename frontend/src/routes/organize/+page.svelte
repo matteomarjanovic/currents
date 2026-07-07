@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { apiFetch } from '$lib/api';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -20,6 +21,7 @@
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import { supporter, supporterFlow, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
@@ -70,6 +72,30 @@
 	let similarImage = $derived(
 		similarSource && similarSource.uri === similarUri ? getImageContent(similarSource) : null
 	);
+
+	// A hard load into a `?sim=` URL has no stashed source save, which would leave
+	// the header chip without its thumbnail (and nothing to reopen details from) —
+	// refetch it by uri.
+	$effect(() => {
+		const uri = similarUri;
+		if (!uri || similarSource?.uri === uri) return;
+		let stale = false;
+		(async () => {
+			try {
+				const res = await apiFetch(
+					`/xrpc/is.currents.feed.getSaves?uris=${encodeURIComponent(uri)}`
+				);
+				if (!res.ok) return;
+				const save = ((await res.json()).saves ?? [])[0] as SaveView | undefined;
+				if (save && !stale) similarSource = save;
+			} catch {
+				// the thumbnail simply stays hidden
+			}
+		})();
+		return () => {
+			stale = true;
+		};
+	});
 	let similar = $derived(similarUri ? { uri: similarUri, collections: [...similarScope] } : null);
 
 	function simHref(uri: string) {
@@ -112,6 +138,9 @@
 		if (!(await requireSupporter(() => void findSimilar(s)))) return;
 		searchQuery = null;
 		similarSource = s;
+		// On mobile the detail panel is a full-screen overlay that would cover the
+		// results, so close it; the header chip's thumbnail reopens it on demand.
+		if (isMobile.current) selection = null;
 		goto(simHref(s.uri));
 	}
 
@@ -132,6 +161,7 @@
 	let selectedSave = $derived(
 		selection && selection.collectionUri === selectedUri ? selection.save : null
 	);
+	const isMobile = new IsMobile();
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -175,6 +205,16 @@
 							</Command.Root>
 						</Popover.Content>
 					</Popover.Root>
+					<!-- On mobile the search field (and its clear X) collapses to an icon,
+					     so the chip carries the clear control instead. -->
+					<button
+						type="button"
+						onclick={() => (searchQuery = null)}
+						class="rounded p-1 text-muted-foreground hover:bg-muted md:hidden"
+						aria-label="Clear search"
+					>
+						<X class="size-3.5" />
+					</button>
 				</div>
 			{:else if similarUri}
 				<!-- Find-similar overlays the grid with visually similar images; this chip
@@ -182,8 +222,16 @@
 				     a clear button that navigates back to the underlying view. -->
 				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
 					<Sparkles class="size-4 shrink-0 text-muted-foreground" />
-					{#if similarImage}
-						<img src={similarImage.imageUrl} alt="" class="size-6 shrink-0 rounded object-cover" />
+					{#if similarImage && similarSource}
+						{@const source = similarSource}
+						<button
+							type="button"
+							class="shrink-0 rounded transition-opacity hover:opacity-75"
+							onclick={() => (selection = { collectionUri: selectedUri, save: source })}
+							aria-label="Show image details"
+						>
+							<img src={similarImage.imageUrl} alt="" class="size-6 rounded object-cover" />
+						</button>
 					{/if}
 					<span class="truncate">Similar images</span>
 					<Popover.Root>
@@ -255,10 +303,20 @@
 				</Breadcrumb.Root>
 			{/if}
 
-			<!-- Search field: the text area opens the command dialog; the X clears an
+			<!-- Search: icon-only on mobile (the field would crowd the header); on desktop
+			     a field whose text area opens the command dialog and whose X clears an
 			     active search and restores the collection grid. -->
+			<Button
+				variant="ghost"
+				size="icon"
+				class="ml-auto shrink-0 md:hidden"
+				aria-label="Search your library"
+				onclick={() => (searchOpen = true)}
+			>
+				<SearchIcon />
+			</Button>
 			<div
-				class="ml-auto flex h-9 w-full max-w-64 items-center rounded-md border bg-background text-sm"
+				class="ml-auto hidden h-9 w-full max-w-64 items-center rounded-md border bg-background text-sm md:flex"
 			>
 				<button
 					type="button"

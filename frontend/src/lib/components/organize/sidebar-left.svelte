@@ -18,6 +18,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import Logo from '$lib/assets/logo.svelte';
+	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
 	import Folder from '@lucide/svelte/icons/folder';
@@ -29,6 +30,13 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 
 	let { selectedUri = '' }: { selectedUri?: string } = $props();
+
+	// Picking a collection navigates within /organize (no remount), so the mobile
+	// offcanvas sheet would stay open over the result — close it explicitly.
+	const sidebar = Sidebar.useSidebar();
+	function closeMobile() {
+		if (sidebar.isMobile) sidebar.setOpenMobile(false);
+	}
 
 	let query = $state('');
 	let q = $derived(query.trim().toLowerCase());
@@ -126,15 +134,13 @@
 </script>
 
 <Sidebar.Root collapsible="offcanvas" variant="inset" side="left">
-	<Sidebar.Header class="gap-4 pb-1">
-		<div class="flex items-center gap-2 px-1 pt-1">
-			<a href="/organize" class="block h-5 text-foreground" aria-label="Currents">
+	<Sidebar.Header class="gap-3 pb-1">
+		<div class="px-1 pt-1">
+			<a href="/organize" class="block h-5 w-fit text-foreground" aria-label="Currents">
 				<Logo />
 			</a>
-			<span class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
-				>Secret organize mode</span
-			>
 		</div>
+		<ModeSwitcher mode="organize" variant="sidebar" />
 		<div class="flex items-center gap-2">
 			<div class="relative flex-1">
 				<ListFilter
@@ -207,7 +213,7 @@
 									<Sidebar.MenuItem>
 										<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
 											{#snippet child({ props })}
-												<a href={hrefFor(node.root.uri)} {...props}>
+												<a href={hrefFor(node.root.uri)} {...props} onclick={closeMobile}>
 													<Folder />
 													<span>{node.root.name}</span>
 												</a>
@@ -230,6 +236,7 @@
 															<Sidebar.MenuSubButton
 																href={hrefFor(section.uri)}
 																isActive={selectedUri === section.uri}
+																onclick={closeMobile}
 															>
 																<span>{section.name}</span>
 															</Sidebar.MenuSubButton>
@@ -281,7 +288,7 @@
 									<Sidebar.MenuItem>
 										<Sidebar.MenuButton isActive={selectedUri === fav.uri} class="h-8">
 											{#snippet child({ props })}
-												<a href={hrefFor(fav.uri)} {...props}>
+												<a href={hrefFor(fav.uri)} {...props} onclick={closeMobile}>
 													<Star />
 													<span>{fav.name}</span>
 												</a>
@@ -339,7 +346,12 @@
 								Profile
 							</DropdownMenu.Item>
 						{/if}
-						<DropdownMenu.Item onclick={() => openSettings()}>
+						<DropdownMenu.Item
+							onclick={() => {
+								closeMobile();
+								openSettings();
+							}}
+						>
 							<Settings class="size-4" />
 							Settings
 						</DropdownMenu.Item>

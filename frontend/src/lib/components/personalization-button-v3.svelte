@@ -32,15 +32,15 @@
 			<Button
 				{...props}
 				variant="glass"
-				class="h-auto cursor-pointer gap-2 rounded-full py-0.5 pr-0.5 pl-3 transition-transform duration-100 aria-expanded:scale-95"
+				class="h-auto cursor-pointer gap-2 rounded-full p-0.5 transition-transform duration-100 aria-expanded:scale-95 md:pl-3"
 				aria-label="Adjust personalization"
 			>
 				<ChevronUp
-					class="size-4 text-foreground/60 transition-transform duration-200 {open
+					class="hidden size-4 text-foreground/60 transition-transform duration-200 md:block {open
 						? 'rotate-180'
 						: ''}"
 				/>
-				<span class="text-md font-medium whitespace-nowrap text-foreground">
+				<span class="text-md hidden font-medium whitespace-nowrap text-foreground md:inline">
 					{selected.label}
 				</span>
 				<div class="h-11 w-11 overflow-hidden rounded-full">

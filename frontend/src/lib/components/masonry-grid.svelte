@@ -10,9 +10,11 @@
 		loading: boolean;
 		// Forwarded to each ImageCard; false makes tiles non-clickable.
 		linkToDetail?: boolean;
+		// Forwarded to each ImageCard; shows an always-visible Save button on mobile.
+		mobileSave?: boolean;
 	}
 
-	let { items, loading, linkToDetail = true }: Props = $props();
+	let { items, loading, linkToDetail = true, mobileSave = false }: Props = $props();
 
 	// Drop saves the viewer has set to "hide" before the grid sees them: no
 	// card is rendered, no Frame reserved, and the <img> is never fetched.
@@ -63,7 +65,7 @@
 	<BalancedMasonryGrid {frameWidth} {gap}>
 		{#each visibleItems as item (item.uri)}
 			<Frame width={getImageContent(item)?.width ?? 3} height={getImageContent(item)?.height ?? 4}>
-				<ImageCard {item} {linkToDetail} />
+				<ImageCard {item} {linkToDetail} {mobileSave} />
 			</Frame>
 		{/each}
 		{#if loading && items.length === 0}
