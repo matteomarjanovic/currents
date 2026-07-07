@@ -68,8 +68,9 @@
 		</div>
 	{:else}
 		<!-- Same masonry grid as explore mode (hover overlay + collection selector). Tiles
-		     aren't links here — clicking does nothing for now. -->
-		<MasonryGrid items={related.items} loading={related.loading} linkToDetail={false} />
+		     aren't links here — clicking does nothing for now. On mobile there's no hover,
+		     so each tile gets an always-visible Save button instead. -->
+		<MasonryGrid items={related.items} loading={related.loading} linkToDetail={false} mobileSave />
 		{#if related.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}
