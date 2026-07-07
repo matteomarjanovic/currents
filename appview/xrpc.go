@@ -774,6 +774,97 @@ func (s *Server) XRPCSearchLibrarySaves(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Saves: views})
 }
 
+func (s *Server) XRPCSearchSavesByColor(w http.ResponseWriter, r *http.Request) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
+		return
+	}
+	if viewerDID == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": "authentication required"})
+		return
+	}
+
+	if !s.requireSupporter(w, r, viewerDID.String()) {
+		return
+	}
+
+	lab, err := hexToLab(r.URL.Query().Get("color"))
+	if err != nil {
+		http.Error(w, `{"error":"InvalidRequest","message":"color must be a hex color like #e63946"}`, http.StatusBadRequest)
+		return
+	}
+
+	library := r.URL.Query().Get("library") == "true"
+	collections := r.URL.Query()["collections"]
+
+	limit := 25
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil {
+			limit = max(1, min(n, 100))
+		}
+	}
+
+	offset := 0
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		if raw, err := base64.RawURLEncoding.DecodeString(c); err == nil {
+			if n, err := strconv.Atoi(string(raw)); err == nil && n > 0 {
+				offset = n
+			}
+		}
+	}
+
+	page, err := s.Store.SearchSavesByColorPage(r.Context(), lab, viewerDID.String(), library, collections, limit, offset)
+	if err != nil {
+		slog.Error("SearchSavesByColorPage", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	saveRows := page.Rows
+
+	// Hydrate author profiles (deduplicated).
+	authorCache := map[string]profileView{}
+	for _, row := range saveRows {
+		if _, ok := authorCache[row.AuthorDID]; ok {
+			continue
+		}
+		pv := profileView{DID: row.AuthorDID}
+		if actorRow, err := s.Store.GetActorByDID(r.Context(), row.AuthorDID); err == nil && actorRow != nil {
+			pv.Handle = actorRow.Handle
+			pv.DisplayName = actorRow.DisplayName
+			pv.Avatar = actorRow.Avatar
+		}
+		authorCache[row.AuthorDID] = pv
+	}
+
+	views := make([]saveView, 0, len(saveRows))
+	for _, row := range saveRows {
+		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], true, s.CDNBaseURL))
+	}
+	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateLabels", "endpoint", "searchSavesByColor", "err", err)
+	}
+	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
+		slog.Error("hydrateSuspected", "endpoint", "searchSavesByColor", "err", err)
+	}
+
+	var nextCursor string
+	if page.HasMore {
+		nextCursor = base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset + len(saveRows))))
+	}
+
+	type response struct {
+		Cursor string     `json:"cursor,omitempty"`
+		Saves  []saveView `json:"saves"`
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response{Cursor: nextCursor, Saves: views})
+}
+
 func (s *Server) XRPCGetLibrarySaves(w http.ResponseWriter, r *http.Request) {
 	viewerDID, err := s.optionalAuth(r)
 	if err != nil {

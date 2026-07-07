@@ -68,6 +68,33 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:   "backfill-colors",
+				Usage:  "re-extract dominant-color palettes and populate the color-search index (one-shot, resumable)",
+				Action: runBackfillColors,
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "batch-size",
+						Usage: "visual identities per batch",
+						Value: 100,
+					},
+					&cli.DurationFlag{
+						Name:  "interval",
+						Usage: "pause between batches so live TAP enrichment and PDSes aren't hammered",
+						Value: 1 * time.Second,
+					},
+					&cli.IntFlag{
+						Name:  "limit",
+						Usage: "stop after processing this many visual identities (0 = no limit, run to exhaustion)",
+						Value: 0,
+					},
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "log palettes for the first batch and exit without writing",
+						Value: false,
+					},
+				},
+			},
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -444,6 +471,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.getSaves", srv.XRPCGetSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchSaves", srv.XRPCSearchSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchLibrarySaves", srv.XRPCSearchLibrarySaves)
+	http.HandleFunc("GET /xrpc/is.currents.feed.searchSavesByColor", srv.XRPCSearchSavesByColor)
 	http.HandleFunc("GET /xrpc/is.currents.feed.findSimilarInLibrary", srv.XRPCFindSimilarInLibrary)
 	http.HandleFunc("GET /xrpc/is.currents.feed.searchCollections", srv.XRPCSearchCollections)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getImageCollections", srv.XRPCGetImageCollections)

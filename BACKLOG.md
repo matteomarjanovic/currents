@@ -13,6 +13,9 @@ proposing new work; delete an entry when it ships.
 - **Polar webhook-miss backfill.** If webhooks are missed for longer than the
   retry window, re-sync `GET /v1/subscriptions` from the Polar API into
   `polar_subscription` (see POLAR.md "Not built yet").
+- **Colors backfill as a deploy step.** Visual identities enriched before the
+  color-search deploy have no `visual_identity_color` rows and are invisible to
+  search-by-color until `appview backfill-colors` runs (one-shot, resumable).
 
 ## Organize mode
 
@@ -22,8 +25,3 @@ proposing new work; delete an entry when it ships.
 - **Grid virtualization** for very large libraries — the masonry currently
   keeps every loaded tile mounted; fine at hundreds of images, worth
   virtualizing in the thousands.
-
-## Search
-
-- **Search by color** (also listed on the public roadmap at
-  /support-currents-project).

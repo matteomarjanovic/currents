@@ -1930,6 +1930,96 @@ func (m *PgStore) ApplyBlobVisualIdentity(ctx context.Context, pdsBlobCID, viID 
 	return err
 }
 
+// VIColorBackfill identifies a visual identity lacking color-index rows.
+type VIColorBackfill struct {
+	ID      string
+	BlobDID string
+	BlobCID string
+}
+
+func (m *PgStore) CountVIsMissingColors(ctx context.Context) (int64, error) {
+	var n int64
+	err := m.pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM visual_identity vi
+		WHERE vi.canonical_blob_cid IS NOT NULL
+		  AND NOT EXISTS (SELECT 1 FROM visual_identity_color c WHERE c.visual_identity_id = vi.id)
+	`).Scan(&n)
+	return n, err
+}
+
+// ListVIsMissingColorsBatch pages through visual identities without color-index
+// rows. The keyset cursor (afterID) keeps a single run terminating even when
+// some blobs are permanently unreachable; the NOT EXISTS drops done VIs from
+// the pool, so a rerun retries only past failures.
+func (m *PgStore) ListVIsMissingColorsBatch(ctx context.Context, afterID string, n int) ([]VIColorBackfill, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT vi.id, vi.canonical_blob_did, vi.canonical_blob_cid
+		FROM visual_identity vi
+		WHERE vi.id::text > $1
+		  AND vi.canonical_blob_cid IS NOT NULL
+		  AND NOT EXISTS (SELECT 1 FROM visual_identity_color c WHERE c.visual_identity_id = vi.id)
+		ORDER BY vi.id::text
+		LIMIT $2
+	`, afterID, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var batch []VIColorBackfill
+	for rows.Next() {
+		var vi VIColorBackfill
+		if err := rows.Scan(&vi.ID, &vi.BlobDID, &vi.BlobCID); err != nil {
+			return nil, err
+		}
+		batch = append(batch, vi)
+	}
+	return batch, rows.Err()
+}
+
+// SetVIColors replaces the color-index rows for a visual identity with the
+// entries of a dominant_colors palette JSON. Delete+insert in one tx, so it
+// is idempotent.
+func (m *PgStore) SetVIColors(ctx context.Context, viID string, dominantColors json.RawMessage) error {
+	var colors []dominantColor
+	if err := json.Unmarshal(dominantColors, &colors); err != nil {
+		return fmt.Errorf("parsing dominant colors: %w", err)
+	}
+
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM visual_identity_color WHERE visual_identity_id = $1`, viID); err != nil {
+		return err
+	}
+	for i, color := range colors {
+		lab, err := hexToLab(color.Hex)
+		if err != nil {
+			return fmt.Errorf("parsing dominant colors: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO visual_identity_color (visual_identity_id, rank, lab, fraction)
+			VALUES ($1, $2, $3, $4)
+		`, viID, i, pgvector.NewVector(lab[:]), float32(color.Fraction)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// UpdateSaveDominantColorsByCID refreshes the stored palette on every save of a
+// blob — used by the colors backfill so old saves pick up re-extracted palettes.
+func (m *PgStore) UpdateSaveDominantColorsByCID(ctx context.Context, pdsBlobCID string, dominantColors json.RawMessage) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE save SET dominant_colors = $2 WHERE pds_blob_cid = $1
+	`, pdsBlobCID, []byte(dominantColors))
+	return err
+}
+
 func (m *PgStore) GetBackgroundMetrics(ctx context.Context) (BackgroundMetrics, error) {
 	saveMetrics, err := m.getSaveBackfillMetrics(ctx)
 	if err != nil {
@@ -2230,6 +2320,92 @@ func (m *PgStore) SearchLibrarySavesPageByEmbedding(ctx context.Context, embeddi
 		LIMIT $2 OFFSET $4
 	`
 	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset)
+}
+
+const (
+	colorCandidateLimit = 600  // color rows pulled from the ANN scan before per-image dedup
+	colorMaxDeltaE      = 25.0 // ΔE76 beyond which a palette color is not a match
+	colorCoverageWeight = 25.0 // ΔE advantage a full-coverage color earns over a tiny accent
+)
+
+// SearchSavesByColorPage returns saves whose palette contains a color close to
+// the query Lab color, ranked by ΔE discounted by pixel coverage, so a dominant
+// near-match outranks an accent-only exact match. Global scope searches
+// canonical saves network-wide; library scope the viewer's own saves, optionally
+// narrowed to collections. Offset-based pagination.
+func (m *PgStore) SearchSavesByColorPage(ctx context.Context, lab [3]float32, viewerDID string, library bool, collectionURIs []string, limit, offset int) (annSavePage, error) {
+	joinClause := `JOIN visual_identity vi ON vi.id = b.visual_identity_id
+		JOIN save s ON s.uri = vi.canonical_save_uri`
+	scopeClause := ""
+	args := []any{pgvector.NewVector(lab[:]), limit + 1, viewerDID, offset, m.cfg.HiddenDIDs, colorCandidateLimit, colorMaxDeltaE, colorCoverageWeight}
+	if library || len(collectionURIs) > 0 {
+		joinClause = `JOIN save s ON s.visual_identity_id = b.visual_identity_id`
+		scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.author_did = $3`
+		if len(collectionURIs) > 0 {
+			scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.collection_uri = ANY($9)`
+			args = append(args, collectionURIs)
+		}
+	}
+	query := `
+		WITH candidate AS (
+			SELECT visual_identity_id, lab <-> $1 AS de, fraction
+			FROM visual_identity_color
+			ORDER BY lab <-> $1
+			LIMIT $6
+		), best AS (
+			SELECT DISTINCT ON (visual_identity_id)
+				visual_identity_id, de - $8 * fraction AS score
+			FROM candidate
+			WHERE de <= $7
+			ORDER BY visual_identity_id, de - $8 * fraction
+		)
+		SELECT
+			s.uri,
+			s.pds_blob_cid,
+			s.author_did,
+			s.content_nsid,
+			COALESCE(s.text, ''),
+			COALESCE(s.origin_url, ''),
+			COALESCE(s.attribution_url, ''),
+			COALESCE(s.attribution_license, ''),
+			COALESCE(s.attribution_credit, ''),
+			COALESCE(s.resave_of_uri, ''),
+			COALESCE(s.resave_of_cid, ''),
+			s.created_at,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+			) END AS viewer_saves,
+			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+				SELECT json_build_object(
+					'url', COALESCE(rv.attribution_url, ''),
+					'license', COALESCE(rv.attribution_license, ''),
+					'credit', COALESCE(rv.attribution_credit, '')
+				)
+				FROM save rv
+				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+				  AND (COALESCE(rv.attribution_url, '') <> ''
+				       OR COALESCE(rv.attribution_license, '') <> ''
+				       OR COALESCE(rv.attribution_credit, '') <> '')
+				ORDER BY rv.created_at DESC NULLS LAST
+				LIMIT 1
+			) END AS viewer_attribution,
+			s.width,
+			s.height,
+			s.dominant_colors,
+			COALESCE(s.alt_text, '')
+		FROM best b
+		` + joinClause + `
+		WHERE s.author_did <> ALL($5)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state bm WHERE bm.blob_cid = s.pds_blob_cid AND bm.harm_state = 'blocked')
+		  ` + scopeClause + `
+		ORDER BY b.score
+		LIMIT $2 OFFSET $4
+	`
+	// The ANN scan depth is the inner candidate LIMIT regardless of page offset
+	// (OFFSET applies after dedup/re-rank), so size ef_search from
+	// colorCandidateLimit with offset 0.
+	return m.queryANNSavePage(ctx, query, args, limit, colorCandidateLimit, 0)
 }
 
 func searchSavesEFSearch(offset, fetchLimit int) int {

@@ -485,6 +485,9 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 		if err := handler.Store.ApplyBlobVisualIdentity(ctx, blobCID, newVI, quality, inferResult.Width, inferResult.Height, inferResult.DominantColors); err != nil {
 			return err
 		}
+		if err := handler.Store.SetVIColors(ctx, newVI, inferResult.DominantColors); err != nil {
+			return err
+		}
 		if err := handler.Store.SetVICanonicalSave(ctx, newVI, source.URI); err != nil {
 			return err
 		}

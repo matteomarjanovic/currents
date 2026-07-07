@@ -1,7 +1,8 @@
 # Polar — Supporter tier
 
-Semantic library search (`is.currents.feed.searchLibrarySaves`) and find-similar-in-library
-(`is.currents.feed.findSimilarInLibrary`) are gated behind a supporter subscription
+Semantic library search (`is.currents.feed.searchLibrarySaves`), find-similar-in-library
+(`is.currents.feed.findSimilarInLibrary`), and search-by-color
+(`is.currents.feed.searchSavesByColor`) are gated behind a supporter subscription
 ($7/month or $70/year), sold through Polar (merchant of record).
 
 ## How it works

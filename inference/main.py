@@ -35,9 +35,13 @@ IMAGE_QUEUE_SIZE    = int(os.environ.get("IMAGE_QUEUE_SIZE", "64"))
 PREPARE_MAX_STEPS   = 10
 PREPARE_SCALE       = 0.85
 PREPARE_QUALITY     = 85
-PALETTE_K           = 5
-PALETTE_ITERS       = 10
-PALETTE_THUMB_SIZE  = 64
+PALETTE_SIZE          = 5      # colors in the output palette
+PALETTE_K             = 12     # over-clustering k, merged/filtered down to PALETTE_SIZE
+PALETTE_ITERS         = 12
+PALETTE_THUMB_SIZE    = 128
+PALETTE_MERGE_DE      = 10.0   # ΔE76 below which clusters merge
+PALETTE_MIN_FRACTION  = 0.004  # noise floor (~66 px at 128×128)
+PALETTE_CHROMA_WEIGHT = 2.0    # saturation boost when selecting palette colors
 
 MODELS_DIR = os.environ.get("MODELS_DIR", "./models")
 UMAP_PATH  = os.path.join(MODELS_DIR, "umap_model.joblib")
@@ -206,6 +210,23 @@ def _clamp_channel(value: float) -> int:
     return int(value)
 
 
+def _srgb_to_lab(rgb: np.ndarray) -> np.ndarray:
+    c = rgb / 255.0
+    c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    xyz = c @ np.array([
+        [0.4124564, 0.2126729, 0.0193339],
+        [0.3575761, 0.7151522, 0.1191920],
+        [0.1804375, 0.0721750, 0.9503041],
+    ])
+    xyz /= np.array([0.95047, 1.0, 1.08883])  # D65 white point
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), xyz * 7.787 + 16.0 / 116.0)
+    lab = np.empty_like(xyz)
+    lab[:, 0] = 116.0 * f[:, 1] - 16.0
+    lab[:, 1] = 500.0 * (f[:, 0] - f[:, 1])
+    lab[:, 2] = 200.0 * (f[:, 1] - f[:, 2])
+    return lab
+
+
 def _kmeans(pixels: np.ndarray, k: int, iters: int) -> np.ndarray:
     step = max(1, len(pixels) // k)
     rng = np.random.default_rng()
@@ -232,24 +253,63 @@ def _kmeans(pixels: np.ndarray, k: int, iters: int) -> np.ndarray:
 
 
 def _dominant_colors(image: Image.Image) -> list[dict[str, float | str]]:
+    # NEAREST keeps exact pixel colors, so small accents survive the resize.
     thumb = image.resize((PALETTE_THUMB_SIZE, PALETTE_THUMB_SIZE), RESAMPLE_NEAREST)
-    pixels = np.asarray(thumb, dtype=np.float64).reshape(-1, 3)
-    palette = _kmeans(pixels, PALETTE_K, PALETTE_ITERS)
+    pixels_rgb = np.asarray(thumb, dtype=np.float64).reshape(-1, 3)
+    pixels_lab = _srgb_to_lab(pixels_rgb)
 
-    distances = np.sum((pixels[:, None, :] - palette[None, :, :]) ** 2, axis=2)
+    centroids = _kmeans(pixels_lab, PALETTE_K, PALETTE_ITERS)
+    distances = np.sum((pixels_lab[:, None, :] - centroids[None, :, :]) ** 2, axis=2)
     assignments = np.argmin(distances, axis=1)
-    counts = np.bincount(assignments, minlength=len(palette))
 
-    total = float(len(pixels))
+    # The hex output is the mean RGB of each cluster's actual member pixels,
+    # so no inverse Lab→sRGB transform is needed.
+    clusters = []
+    for idx in range(len(centroids)):
+        members = assignments == idx
+        count = int(members.sum())
+        if count == 0:
+            continue
+        clusters.append({
+            "count": count,
+            "lab": pixels_lab[members].mean(axis=0),
+            "rgb": pixels_rgb[members].mean(axis=0),
+        })
+
+    # Merge perceptually-close clusters, largest first; every survivor ends up
+    # at least PALETTE_MERGE_DE from the others.
+    clusters.sort(key=lambda c: c["count"], reverse=True)
+    merged = []
+    for cluster in clusters:
+        for kept in merged:
+            if np.linalg.norm(cluster["lab"] - kept["lab"]) < PALETTE_MERGE_DE:
+                total = kept["count"] + cluster["count"]
+                kept["lab"] = (kept["lab"] * kept["count"] + cluster["lab"] * cluster["count"]) / total
+                kept["rgb"] = (kept["rgb"] * kept["count"] + cluster["rgb"] * cluster["count"]) / total
+                kept["count"] = total
+                break
+        else:
+            merged.append(cluster)
+
+    # sqrt compresses area dominance and the chroma boost keeps small
+    # saturated accents ahead of yet another shade of the background.
+    total_pixels = float(len(pixels_lab))
+    candidates = [c for c in merged if c["count"] / total_pixels >= PALETTE_MIN_FRACTION]
+    candidates.sort(
+        key=lambda c: math.sqrt(c["count"] / total_pixels)
+        * (1.0 + PALETTE_CHROMA_WEIGHT * math.hypot(c["lab"][1], c["lab"][2]) / 100.0),
+        reverse=True,
+    )
+
     colors = []
-    for centroid, count in zip(palette, counts, strict=True):
+    for cluster in candidates[:PALETTE_SIZE]:
         colors.append({
             "hex": "#{:02x}{:02x}{:02x}".format(
-                _clamp_channel(centroid[0]),
-                _clamp_channel(centroid[1]),
-                _clamp_channel(centroid[2]),
+                _clamp_channel(cluster["rgb"][0]),
+                _clamp_channel(cluster["rgb"][1]),
+                _clamp_channel(cluster["rgb"][2]),
             ),
-            "fraction": _fraction(float(count) / total),
+            "fraction": _fraction(cluster["count"] / total_pixels),
         })
 
     colors.sort(key=lambda color: color["fraction"], reverse=True)
@@ -435,6 +495,19 @@ async def embed_image(file: UploadFile = File(...)):
         dominant_colors=dominant_colors,
         safety_scores=SafetyScores(**scores) if scores is not None else None,
     )
+
+
+class PaletteResponse(BaseModel):
+    dominant_colors: list[DominantColor]
+
+
+@app.post("/palette", response_model=PaletteResponse)
+async def palette(file: UploadFile = File(...)):
+    raw = await file.read()
+    image, _ = _decode_image(raw)
+    loop = asyncio.get_running_loop()
+    dominant_colors = await loop.run_in_executor(None, _dominant_colors, image)
+    return PaletteResponse(dominant_colors=dominant_colors)
 
 
 def _encode_jpeg(image: Image.Image, quality: int) -> bytes:

@@ -5,13 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"math"
-	"math/rand/v2"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -22,8 +17,6 @@ import (
 
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
-	_ "github.com/gen2brain/avif"
-	_ "golang.org/x/image/webp"
 )
 
 var blobHTTPClient = &http.Client{Timeout: 30 * time.Second}
@@ -106,6 +99,29 @@ func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mim
 		return ImageEmbedding{}, fmt.Errorf("decoding inference response: %w", err)
 	}
 	return result, nil
+}
+
+// Palette extracts the dominant-color palette without running the embedding
+// model — used by the colors backfill.
+func (c *InferenceClient) Palette(ctx context.Context, imageBytes []byte, mimeType string) (json.RawMessage, error) {
+	resp, err := c.doImageRequest(ctx, "/palette", imageBytes, mimeType, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		DominantColors json.RawMessage `json:"dominant_colors"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding inference response: %w", err)
+	}
+	return result.DominantColors, nil
 }
 
 func (c *InferenceClient) TranscodeImage(ctx context.Context, imageBytes []byte, mimeType string) ([]byte, string, error) {
@@ -221,131 +237,53 @@ func (c *InferenceClient) EmbedText(ctx context.Context, text string) ([]float32
 	return result.Embedding, nil
 }
 
-// ── Local image analysis ──────────────────────────────────────────────────────
+// ── Colors ────────────────────────────────────────────────────────────────────
 
 type dominantColor struct {
 	Hex      string  `json:"hex"`
 	Fraction float64 `json:"fraction"`
 }
 
-// analyzeImageLocally decodes image bytes and returns the dominant color palette,
-// image width, and image height. Palette extraction uses k-means (k=5) on a
-// 64×64 thumbnail, matching the Python inference server's previous behavior.
-func analyzeImageLocally(imageBytes []byte) (json.RawMessage, int, int, error) {
-	img, _, err := image.Decode(bytes.NewReader(imageBytes))
+// hexToLab converts a #rrggbb color to CIELab (D65). It is the single
+// definition of the color space behind visual_identity_color: both stored
+// palettes and query colors go through it, so ΔE comparisons are consistent.
+func hexToLab(hex string) ([3]float32, error) {
+	if len(hex) == 7 && hex[0] == '#' {
+		hex = hex[1:]
+	}
+	if len(hex) != 6 {
+		return [3]float32{}, fmt.Errorf("invalid hex color %q", hex)
+	}
+	v, err := strconv.ParseUint(hex, 16, 32)
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("decoding image: %w", err)
+		return [3]float32{}, fmt.Errorf("invalid hex color %q", hex)
 	}
 
-	bounds := img.Bounds()
-	width := bounds.Max.X - bounds.Min.X
-	height := bounds.Max.Y - bounds.Min.Y
-
-	// Sample pixels into a 64×64 grid using nearest-neighbor.
-	const thumbSize = 64
-	pixels := make([][3]float64, 0, thumbSize*thumbSize)
-	for y := 0; y < thumbSize; y++ {
-		for x := 0; x < thumbSize; x++ {
-			srcX := bounds.Min.X + x*width/thumbSize
-			srcY := bounds.Min.Y + y*height/thumbSize
-			r, g, b, _ := img.At(srcX, srcY).RGBA()
-			pixels = append(pixels, [3]float64{
-				float64(r >> 8),
-				float64(g >> 8),
-				float64(b >> 8),
-			})
+	var lin [3]float64
+	for i, ch := range [3]uint64{v >> 16 & 0xff, v >> 8 & 0xff, v & 0xff} {
+		c := float64(ch) / 255.0
+		if c <= 0.04045 {
+			lin[i] = c / 12.92
+		} else {
+			lin[i] = math.Pow((c+0.055)/1.055, 2.4)
 		}
 	}
+	x := (0.4124564*lin[0] + 0.3575761*lin[1] + 0.1804375*lin[2]) / 0.95047
+	y := 0.2126729*lin[0] + 0.7151522*lin[1] + 0.0721750*lin[2]
+	z := (0.0193339*lin[0] + 0.1191920*lin[1] + 0.9503041*lin[2]) / 1.08883
 
-	palette := kmeans(pixels, 5, 10)
-
-	// Count each pixel's nearest centroid.
-	counts := make([]int, len(palette))
-	for _, px := range pixels {
-		counts[nearest(px, palette)]++
-	}
-
-	total := float64(len(pixels))
-	colors := make([]dominantColor, len(palette))
-	for i, c := range palette {
-		colors[i] = dominantColor{
-			Hex: fmt.Sprintf("#%02x%02x%02x",
-				clamp(c[0]), clamp(c[1]), clamp(c[2])),
-			Fraction: math.Round(float64(counts[i])/total*10000) / 10000,
+	f := func(t float64) float64 {
+		if t > 0.008856 {
+			return math.Cbrt(t)
 		}
+		return t*7.787 + 16.0/116.0
 	}
-	// Sort descending by fraction.
-	for i := 1; i < len(colors); i++ {
-		for j := i; j > 0 && colors[j].Fraction > colors[j-1].Fraction; j-- {
-			colors[j], colors[j-1] = colors[j-1], colors[j]
-		}
-	}
-
-	raw, err := json.Marshal(colors)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	return raw, width, height, nil
-}
-
-func kmeans(pixels [][3]float64, k, iters int) [][3]float64 {
-	// Seed centroids from evenly spaced pixels.
-	centroids := make([][3]float64, k)
-	step := len(pixels) / k
-	for i := range centroids {
-		centroids[i] = pixels[rand.IntN(step)+i*step]
-	}
-
-	assign := make([]int, len(pixels))
-	for iter := 0; iter < iters; iter++ {
-		// Assignment step.
-		for i, px := range pixels {
-			assign[i] = nearest(px, centroids)
-		}
-		// Update step.
-		sums := make([][3]float64, k)
-		counts := make([]int, k)
-		for i, px := range pixels {
-			c := assign[i]
-			sums[c][0] += px[0]
-			sums[c][1] += px[1]
-			sums[c][2] += px[2]
-			counts[c]++
-		}
-		for i := range centroids {
-			if counts[i] == 0 {
-				centroids[i] = pixels[rand.IntN(len(pixels))]
-				continue
-			}
-			n := float64(counts[i])
-			centroids[i] = [3]float64{sums[i][0] / n, sums[i][1] / n, sums[i][2] / n}
-		}
-	}
-	return centroids
-}
-
-func nearest(px [3]float64, centroids [][3]float64) int {
-	best, bestDist := 0, math.MaxFloat64
-	for i, c := range centroids {
-		d := (px[0]-c[0])*(px[0]-c[0]) +
-			(px[1]-c[1])*(px[1]-c[1]) +
-			(px[2]-c[2])*(px[2]-c[2])
-		if d < bestDist {
-			bestDist = d
-			best = i
-		}
-	}
-	return best
-}
-
-func clamp(v float64) uint8 {
-	if v < 0 {
-		return 0
-	}
-	if v > 255 {
-		return 255
-	}
-	return uint8(v)
+	fx, fy, fz := f(x), f(y), f(z)
+	return [3]float32{
+		float32(116.0*fy - 16.0),
+		float32(500.0 * (fx - fy)),
+		float32(200.0 * (fy - fz)),
+	}, nil
 }
 
 // ── Image fetching ────────────────────────────────────────────────────────────
