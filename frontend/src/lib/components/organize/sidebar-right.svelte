@@ -8,6 +8,7 @@
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SimilarPanel from '$lib/components/organize/similar-panel.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
+	import ColorMenu from '$lib/components/color-menu.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
@@ -24,12 +25,14 @@
 		save,
 		onClose,
 		onSavesChange,
-		onFindSimilar
+		onFindSimilar,
+		onColorSearch
 	}: {
 		save: SaveView;
 		onClose: () => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
 		onFindSimilar: (save: SaveView) => void;
+		onColorSearch?: (hex: string, where: 'explore' | 'library') => void;
 	} = $props();
 
 	const sidebar = Sidebar.useSidebar();
@@ -177,7 +180,12 @@
 						</h3>
 						<div class="flex h-9 overflow-hidden rounded-md ring-1 ring-border">
 							{#each palette as hex (hex)}
-								<div class="flex-1" style="background-color: {hex}" title={hex}></div>
+								<ColorMenu
+									{hex}
+									class="h-full flex-1 cursor-pointer transition-[filter] hover:brightness-95 dark:hover:brightness-110"
+									onExplore={(h) => onColorSearch?.(h, 'explore')}
+									onLibrary={(h) => onColorSearch?.(h, 'library')}
+								/>
 							{/each}
 						</div>
 					</section>

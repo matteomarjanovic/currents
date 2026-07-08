@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { apiFetch } from '$lib/api';
+	import { requireSupporter } from '$lib/stores/supporter.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
@@ -12,18 +13,22 @@
 	import UserIcon from '@lucide/svelte/icons/user';
 	import type { SaveView, CollectionView, ActorProfileView } from '$lib/types';
 
-	type SearchType = 'saves' | 'collections' | 'users';
+	type SearchType = 'saves' | 'collections' | 'users' | 'color';
 	type Result = SaveView | CollectionView | ActorProfileView;
 
 	const ENDPOINTS: Record<SearchType, { path: string; key: string }> = {
 		saves: { path: 'is.currents.feed.searchSaves', key: 'saves' },
 		collections: { path: 'is.currents.feed.searchCollections', key: 'collections' },
-		users: { path: 'is.currents.actor.searchActors', key: 'actors' }
+		users: { path: 'is.currents.actor.searchActors', key: 'actors' },
+		color: { path: 'is.currents.feed.searchSavesByColor', key: 'saves' }
 	};
 
 	let searchType = $derived<SearchType>(
 		(page.params.type as SearchType) in ENDPOINTS ? (page.params.type as SearchType) : 'saves'
 	);
+
+	// For color search the [query] param is the bare hex (no '#').
+	let colorHex = $derived('#' + (page.params.query ?? ''));
 
 	// Which type the items currently in `search` belong to. The selector can flip
 	// `searchType` (and thus the render branch) a frame before the list is reset and
@@ -36,11 +41,20 @@
 			const fetchedType = searchType;
 			const q = page.params.query ?? '';
 			const cfg = ENDPOINTS[fetchedType];
-			const params = new SvelteURLSearchParams({ q, limit: '50' });
+			const params = new SvelteURLSearchParams({ limit: '50' });
+			if (fetchedType === 'color') params.set('color', '#' + q);
+			else params.set('q', q);
 			if (fetchedType === 'saves') params.set('excludeSaved', 'true');
 			if (cursor) params.set('cursor', cursor);
 
 			const res = await apiFetch(`/xrpc/${cfg.path}?${params}`);
+			if (!res.ok) {
+				// Deep-linked non-supporter (or logged-out) hitting the gated color
+				// endpoint: raise the paywall, show nothing.
+				if (res.status === 403) void requireSupporter();
+				loadedType = fetchedType;
+				return { items: [], cursor: undefined };
+			}
 			const data = await res.json();
 			loadedType = fetchedType;
 			return { items: data[cfg.key] ?? [], cursor: data.cursor };
@@ -48,13 +62,21 @@
 		(i) => ('did' in i ? i.did : i.uri)
 	);
 
-	let saves = $derived(loadedType === 'saves' ? (search.items as SaveView[]) : []);
+	let saves = $derived(
+		loadedType === 'saves' || loadedType === 'color' ? (search.items as SaveView[]) : []
+	);
 	let collections = $derived(
 		loadedType === 'collections' ? (search.items as CollectionView[]) : []
 	);
 	let actors = $derived(loadedType === 'users' ? (search.items as ActorProfileView[]) : []);
 
-	const pageTitle = $derived(page.params.query ? page.params.query + ' · Search' : 'Search');
+	const pageTitle = $derived(
+		searchType === 'color'
+			? colorHex + ' · Color search'
+			: page.params.query
+				? page.params.query + ' · Search'
+				: 'Search'
+	);
 
 	let sentinel: HTMLDivElement = $state(undefined!);
 
@@ -87,7 +109,16 @@
 	<title>{pageTitle} · Currents</title>
 </svelte:head>
 
-{#if searchType === 'saves'}
+{#if searchType === 'color'}
+	<div class="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+		<span class="size-5 rounded-full border shadow-sm" style:background-color={colorHex}></span>
+		<span class="font-mono uppercase">{colorHex}</span>
+	</div>
+	<MasonryGrid items={saves} loading={search.loading} />
+	{#if !search.loading && loadedType === 'color' && saves.length === 0}
+		<p class="mt-10 text-center text-sm text-muted-foreground">No images found for this color.</p>
+	{/if}
+{:else if searchType === 'saves'}
 	<MasonryGrid items={saves} loading={search.loading} />
 {:else if searchType === 'collections'}
 	<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">

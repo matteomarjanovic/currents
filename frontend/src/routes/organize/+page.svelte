@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { apiFetch } from '$lib/api';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -15,11 +16,10 @@
 	import OrganizeSidebarRight from '$lib/components/organize/sidebar-right.svelte';
 	import OrganizeSearchCommand from '$lib/components/organize/search-command.svelte';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
-	import SupporterDialog from '$lib/components/supporter-dialog.svelte';
 	import { Kbd } from '$lib/components/ui/kbd';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
-	import { supporter, supporterFlow, loadSupporterStatus } from '$lib/stores/supporter.svelte';
+	import { requireSupporter } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -109,6 +109,37 @@
 		else similarScope.add(uri);
 	}
 
+	// Color search in the library lives in the URL (`?color=<hex>`, no leading #) so
+	// it gets its own history entry — back returns to the prior view. It's mutually
+	// exclusive with text search and find-similar, and mirrors find-similar's chip
+	// (a swatch, a collection filter, and a clear button). The collection scope is
+	// ephemeral and resets whenever the color changes.
+	let colorParam = $derived(page.url.searchParams.get('color') ?? '');
+	let colorScope = new SvelteSet<string>();
+	let prevColorParam = '';
+	$effect(() => {
+		void colorParam;
+		untrack(() => {
+			if (colorParam !== prevColorParam) {
+				colorScope.clear();
+				prevColorParam = colorParam;
+			}
+		});
+	});
+	let colorSearch = $derived(
+		colorParam ? { hex: '#' + colorParam, collections: [...colorScope] } : null
+	);
+	function toggleColorScope(uri: string) {
+		if (colorScope.has(uri)) colorScope.delete(uri);
+		else colorScope.add(uri);
+	}
+	function colorHref(hex: string) {
+		const p = new URLSearchParams();
+		if (selectedUri) p.set('c', selectedUri);
+		p.set('color', hex.replace('#', '').toLowerCase());
+		return `/organize?${p}`;
+	}
+
 	// Resolve against own + favourited collections (a selection can be either).
 	let known = $derived([...collections.items, ...favouriteCollections.items]);
 	let selected = $derived(known.find((c) => c.uri === selectedUri) ?? null);
@@ -121,19 +152,8 @@
 	}
 
 	// Library search and find-similar are supporter-tier features (enforced
-	// server-side too). This gate resolves whether to proceed, opening the
-	// upgrade dialog instead when the viewer isn't a supporter. `pending` is
-	// stashed on the supporter flow so the post-checkout thank-you dialog can
-	// resume the interrupted action.
-	let supporterDialogOpen = $state(false);
-	async function requireSupporter(pending?: () => void): Promise<boolean> {
-		if (!supporter.loaded) await loadSupporterStatus();
-		if (supporter.active) return true;
-		supporterFlow.pending = pending ?? null;
-		supporterDialogOpen = true;
-		return false;
-	}
-
+	// server-side too); requireSupporter opens the shared paywall for
+	// non-supporters. The paywall itself is mounted once in the root layout.
 	async function findSimilar(s: SaveView) {
 		if (!(await requireSupporter(() => void findSimilar(s)))) return;
 		searchQuery = null;
@@ -141,7 +161,25 @@
 		// On mobile the detail panel is a full-screen overlay that would cover the
 		// results, so close it; the header chip's thumbnail reopens it on demand.
 		if (isMobile.current) selection = null;
+		// simHref carries no ?color, so navigating here also clears any color search.
 		goto(simHref(s.uri));
+	}
+
+	// Color search from a palette swatch or the library search bar. Explore hands
+	// off to the discovery color-results page; library navigates to a `?color=` URL
+	// (dropping any find-similar) and runs it here.
+	async function searchByColorInLibrary(hex: string) {
+		if (!(await requireSupporter(() => void searchByColorInLibrary(hex)))) return;
+		searchQuery = null;
+		if (isMobile.current) selection = null;
+		goto(colorHref(hex));
+	}
+	async function onColorSearch(hex: string, where: 'explore' | 'library') {
+		if (where === 'library') return searchByColorInLibrary(hex);
+		const q = hex.replace('#', '').toLowerCase();
+		const go = () =>
+			goto(resolve('/(with-navbar)/search/[type]/[query]', { type: 'color', query: q }));
+		if (await requireSupporter(go)) go();
 	}
 
 	// ⌘K / Ctrl+K opens the library search from anywhere in organize mode.
@@ -167,8 +205,12 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <!-- Bound the shell to the viewport (the wrapper is min-h-svh by default) so the
-     central canvas and right panel scroll internally instead of the whole page. -->
-<Sidebar.Provider class="h-svh overflow-hidden">
+     central canvas and right panel scroll internally instead of the whole page.
+     Use dvh, not svh: with internal scrolling the mobile URL bar stays retracted,
+     so an svh shell falls short of the visible viewport and leaks a strip of body
+     background at the bottom. dvh tracks the live viewport (and can't jitter here,
+     since the page itself never scrolls). -->
+<Sidebar.Provider class="h-dvh overflow-hidden">
 	<OrganizeSidebarLeft {selectedUri} />
 	<Sidebar.Inset class="overflow-hidden">
 		<header class="flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -277,6 +319,63 @@
 						<X class="size-3.5" />
 					</button>
 				</div>
+			{:else if colorSearch}
+				<!-- Color search overlays the grid with library images matching a color;
+				     this chip shows the color (click to adjust it), a collection filter,
+				     and a clear button. -->
+				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+					<button
+						type="button"
+						onclick={() => (searchOpen = true)}
+						class="size-4 shrink-0 rounded-full border transition-transform hover:scale-110"
+						style="background-color: {colorSearch.hex}"
+						aria-label="Change color"
+						title="Change color"
+					></button>
+					<span class="truncate">Color search</span>
+					<Popover.Root>
+						<Popover.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="ghost"
+									size="icon-sm"
+									class="relative"
+									aria-label="Filter by collection"
+								>
+									<ListFilter />
+									{#if colorScope.size > 0}
+										<span
+											class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
+										>
+											{colorScope.size}
+										</span>
+									{/if}
+								</Button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content align="start" class="w-64 p-0">
+							<Command.Root shouldFilter={false} class="bg-transparent">
+								<Command.List>
+									<CollectionFilterItems
+										collections={collections.items}
+										favourites={favouriteCollections.items}
+										selected={colorScope}
+										onToggle={toggleColorScope}
+									/>
+								</Command.List>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
+					<button
+						type="button"
+						onclick={() => goto(hrefFor(selectedUri))}
+						class="rounded p-1 text-muted-foreground hover:bg-muted"
+						aria-label="Clear color search"
+					>
+						<X class="size-3.5" />
+					</button>
+				</div>
 			{:else}
 				<Breadcrumb.Root>
 					<Breadcrumb.List>
@@ -346,6 +445,7 @@
 			{selectedUri}
 			{search}
 			{similar}
+			color={colorSearch}
 			selectedSaveUri={selectedSave?.uri ?? null}
 			onSelectSave={(s) => (selection = { collectionUri: selectedUri, save: s })}
 			onFindSimilar={findSimilar}
@@ -360,6 +460,7 @@
 				if (selection) selection.save.viewer = { ...(selection.save.viewer ?? {}), saves };
 			}}
 			onFindSimilar={findSimilar}
+			{onColorSearch}
 		/>
 	{/if}
 
@@ -370,12 +471,12 @@
 		initial={selectedUri ? [selectedUri] : []}
 		canSearch={() => requireSupporter(() => (searchOpen = true))}
 		onSearch={(q, cols) => {
-			if (similarUri) goto(hrefFor(selectedUri));
+			// Text search is ephemeral; drop any find-similar or color search from the URL.
+			if (similarUri || colorParam) goto(hrefFor(selectedUri));
 			searchScope.clear();
 			if (q) for (const c of cols) searchScope.add(c);
 			searchQuery = q || null;
 		}}
+		onColorSearch={(hex) => searchByColorInLibrary(hex)}
 	/>
-
-	<SupporterDialog bind:open={supporterDialogOpen} />
 </Sidebar.Provider>

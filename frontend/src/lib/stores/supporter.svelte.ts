@@ -21,6 +21,22 @@ export const supporterFlow = $state({
 	pending: null as (() => void) | null
 });
 
+// Open state for the paywall dialog, mounted once in the root layout so any
+// surface (explore color search, organize library search/find-similar) can
+// raise it via requireSupporter.
+export const supporterGate = $state({ open: false });
+
+// Gate a supporter-tier action. Resolves true when the viewer is entitled;
+// otherwise stashes `pending` on the supporter flow (resumed by the
+// post-checkout thank-you dialog), opens the paywall, and resolves false.
+export async function requireSupporter(pending?: () => void): Promise<boolean> {
+	if (!supporter.loaded) await loadSupporterStatus();
+	if (supporter.active) return true;
+	supporterFlow.pending = pending ?? null;
+	supporterGate.open = true;
+	return false;
+}
+
 export async function loadSupporterStatus() {
 	try {
 		const res = await apiFetch('/api/supporter/status');

@@ -33,7 +33,8 @@
 		onSelectSave,
 		onFindSimilar,
 		search = null,
-		similar = null
+		similar = null,
+		color = null
 	}: {
 		selectedUri?: string;
 		selectedSaveUri?: string | null;
@@ -41,6 +42,7 @@
 		onFindSimilar: (save: SaveView) => void;
 		search?: { query: string; collections: string[] } | null;
 		similar?: { uri: string; collections: string[] } | null;
+		color?: { hex: string; collections: string[] } | null;
 	} = $props();
 
 	// The tile menu is shared between the right-click context menu and the options
@@ -64,6 +66,12 @@
 	}
 
 	const feed = useInfiniteScroll<SaveView>(async (cursor) => {
+		if (color) {
+			const params = new URLSearchParams({ color: color.hex, library: 'true', limit: '50' });
+			for (const uri of color.collections) params.append('collections', uri);
+			if (cursor) params.set('cursor', cursor);
+			return fetchSavesPage(`/xrpc/is.currents.feed.searchSavesByColor?${params}`);
+		}
 		if (similar) {
 			const params = new URLSearchParams({ uri: similar.uri, limit: '50' });
 			for (const uri of similar.collections) params.append('collections', uri);
@@ -95,6 +103,7 @@
 		void selectedUri;
 		void search;
 		void similar;
+		void color;
 		untrack(() => {
 			feed.reset();
 			feed.loadMore();
@@ -323,7 +332,7 @@
 		<Download />
 		Download
 	</Menu.Item>
-	{#if selectedUri && !search}
+	{#if selectedUri && !search && !color}
 		<Menu.Separator />
 		<Menu.Item variant="destructive" onSelect={() => removeFromCollection(item)}>
 			<Trash2 />
@@ -345,7 +354,7 @@
 				<Button href="/login" variant="outline" size="sm" class="mt-1">Log in again</Button>
 			{:else}
 				<p>
-					{#if search}
+					{#if search || color}
 						Couldn't run the search.
 					{:else if similar}
 						Couldn't load similar images.
@@ -364,7 +373,9 @@
 		>
 			<ImageOff class="size-6" />
 			<p>
-				{#if similar}
+				{#if color}
+					No images matching this color in your library.
+				{:else if similar}
 					No similar images in your library.
 				{:else if search}
 					No results for “{search.query}”.
@@ -374,7 +385,7 @@
 					You haven't saved any images yet.
 				{/if}
 			</p>
-			{#if !similar && !search && !selectedUri}
+			{#if !similar && !search && !color && !selectedUri}
 				<Button href="/explore" variant="outline" size="sm" class="mt-1">Go to explore mode</Button>
 			{/if}
 		</div>
