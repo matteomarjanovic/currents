@@ -2,10 +2,11 @@
 	import LogoIcon from '$lib/assets/logo-icon.svelte';
 	import { cn } from '$lib/utils.js';
 
-	// Supporter badge: the Currents wave curves clipped by a heart shape, with
-	// the clipping heart traced as a thin outline so the silhouette stays
-	// legible at username sizes. Sized like an icon via width/height classes
-	// (defaults to size-4); pink in both themes.
+	// Supporter badge: a "negative" heart — the Currents wave mark carved inside
+	// a heart outline, with the wave curves and the heart border painted pink and
+	// the interior transparent. Sized like an icon via width/height classes
+	// (defaults to size-4); pink in both themes and independent of the
+	// surrounding text color (pinned via fill/stroke utilities).
 	let { class: className = '' }: { class?: string } = $props();
 
 	// Material Symbols "favorite" heart geometry (Apache 2.0), 960-unit grid.
@@ -15,36 +16,25 @@
 </script>
 
 <span
-	class={cn('relative inline-block size-4 shrink-0 align-middle text-pink-500', className)}
+	class={cn('inline-block size-4 shrink-0 align-middle', className)}
 	role="img"
 	aria-label="Currents supporter badge"
 	title="Currents supporter"
 >
-	<svg width="0" height="0" class="absolute" aria-hidden="true">
+	<svg viewBox="0 -960 960 960" class="h-full w-full overflow-visible" aria-hidden="true">
 		<defs>
-			<clipPath id="supporter-heart-{uid}" clipPathUnits="objectBoundingBox">
-				<path transform="scale(0.00104167) translate(0 960)" d={HEART} />
-			</clipPath>
+			<!-- White wave marks the pink stripes; everything else stays masked out.
+			     The wave is oversized to 135% of the box (centered on the heart's
+			     optical center) so bolder segments carve the shape. -->
+			<mask id="supporter-wave-{uid}">
+				<svg x="-155" y="-1147" width="1270" height="1296" style="color: white">
+					<LogoIcon />
+				</svg>
+			</mask>
 		</defs>
-	</svg>
-	<!-- The wave mark oversized to 135% of the box (centered on the heart's
-	     optical center) so bolder curve segments fill the clipped area. -->
-	<span class="absolute inset-0" style="clip-path: url(#supporter-heart-{uid})">
-		<span
-			class="absolute flex items-center justify-center"
-			style="left: -17.5%; top: -19.5%; width: 135%; height: 135%;"
-		>
-			<LogoIcon />
-		</span>
-	</span>
-	<svg
-		viewBox="0 -960 960 960"
-		class="absolute inset-0 h-full w-full overflow-visible"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="40"
-		aria-hidden="true"
-	>
-		<path d={HEART} />
+		<!-- Pink wave stripes, bounded to the heart by painting the heart shape. -->
+		<path d={HEART} class="fill-pink-500" mask="url(#supporter-wave-{uid})" />
+		<!-- Pink heart outline so the silhouette reads at username sizes. -->
+		<path d={HEART} fill="none" class="stroke-pink-500" stroke-width="40" />
 	</svg>
 </span>

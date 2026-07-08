@@ -117,7 +117,7 @@
 					<div class="flex items-center gap-1.5 font-medium text-foreground">
 						<span class="min-w-0 truncate">{actor.displayName ?? actor.handle}</span>
 						{#if actor.supporter}
-							<SupporterBadge class="size-4 shrink-0 text-foreground" />
+							<SupporterBadge class="size-4 shrink-0" />
 						{/if}
 					</div>
 					<div class="truncate text-sm text-muted-foreground">@{actor.handle}</div>

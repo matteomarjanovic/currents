@@ -25,6 +25,7 @@
 		type AiVisibility
 	} from '$lib/stores/moderation-prefs.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
+	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import { resolve } from '$app/paths';
 	import ShieldIcon from '@lucide/svelte/icons/shield';
@@ -292,8 +293,7 @@
 						<section class="flex flex-col gap-4">
 							<p class="text-sm text-muted-foreground">
 								Currents is an independent, ad-free project: it's funded by its supporters, not by
-								your data. Supporting it also unlocks a set of extra perks, like semantic and visual
-								search in your library.
+								its users data. Supporting it also unlocks a set of extra perks.
 								<a
 									class="underline underline-offset-4 hover:text-foreground"
 									href={resolve('/support-currents-project')}
@@ -327,6 +327,8 @@
 									billing portal.
 								</p>
 							{:else}
+								<p class="text-sm">What you unlock as a supporter:</p>
+								<SupporterPerks class="text-sm" />
 								<SupporterPlans onCheckoutOpen={() => (settingsDialog.open = false)} />
 							{/if}
 						</section>

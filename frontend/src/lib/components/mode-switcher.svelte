@@ -2,6 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import {
+		features,
+		isFeatureSeen,
+		markFeatureSeen,
+		FEATURE_ORGANIZE_MODE
+	} from '$lib/stores/features.svelte';
 	import Compass from '@lucide/svelte/icons/compass';
 	import Folders from '@lucide/svelte/icons/folders';
 	import Check from '@lucide/svelte/icons/check';
@@ -40,6 +47,16 @@
 	] as const;
 
 	let current = $derived(MODES.find((m) => m.value === mode) ?? MODES[0]);
+
+	// One-time "new" announcement for organize mode: a red dot on the explore
+	// switcher and a "New" badge on the Organize row, cleared once the user
+	// reaches organize mode by any route (this component renders in the organize
+	// sidebar, so the effect fires there).
+	let showOrganizeNew = $derived(features.loaded && !isFeatureSeen(FEATURE_ORGANIZE_MODE));
+	let showOrganizeDot = $derived(mode === 'explore' && showOrganizeNew);
+	$effect(() => {
+		if (mode === 'organize') void markFeatureSeen(FEATURE_ORGANIZE_MODE);
+	});
 </script>
 
 <DropdownMenu.Root>
@@ -50,19 +67,31 @@
 					{...props}
 					type="button"
 					aria-label="Switch mode"
-					class="flex size-9 shrink-0 items-center justify-center rounded-full text-foreground transition-colors outline-none select-none hover:bg-muted aria-expanded:bg-muted {className}"
+					class="relative flex size-9 shrink-0 items-center justify-center rounded-full text-foreground transition-colors outline-none select-none hover:bg-muted aria-expanded:bg-muted {className}"
 				>
 					<current.icon class="size-4" />
+					{#if showOrganizeDot}
+						<span
+							class="absolute -top-0.5 -right-0.5 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+							aria-label="New feature available"
+						></span>
+					{/if}
 				</button>
 			{:else if variant === 'floating'}
 				<button
 					{...props}
 					type="button"
-					class="flex h-11 shrink-0 items-center gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3.5 text-sm font-medium text-foreground shadow-lg backdrop-blur-sm transition-colors outline-none select-none hover:bg-primary-foreground aria-expanded:bg-primary-foreground {className}"
+					class="relative flex h-11 shrink-0 items-center gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3.5 text-sm font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors outline-none select-none hover:bg-primary-foreground aria-expanded:bg-primary-foreground {className}"
 				>
 					<current.icon class="size-4" />
 					{current.label}
 					<ChevronsUpDown class="size-3.5 text-muted-foreground" />
+					{#if showOrganizeDot}
+						<span
+							class="absolute top-0 right-0.5 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+							aria-label="New feature available"
+						></span>
+					{/if}
 				</button>
 			{:else}
 				<button
@@ -99,6 +128,8 @@
 				</span>
 				{#if m.value === mode}
 					<Check class="ml-auto size-4" />
+				{:else if m.value === 'organize' && showOrganizeNew}
+					<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
 				{/if}
 			</DropdownMenu.Item>
 		{/each}

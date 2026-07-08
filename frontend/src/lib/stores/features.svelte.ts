@@ -8,10 +8,17 @@ import { SvelteSet } from 'svelte/reactivity';
 
 export const FEATURE_PINTEREST_IMPORT = 'pinterest-import';
 export const FEATURE_BLUESKY_IMPORT = 'bluesky-import';
+export const FEATURE_BECOME_SUPPORTER = 'become-supporter';
+export const FEATURE_ORGANIZE_MODE = 'organize-mode';
 
 // Features currently surfaced with a "new" indicator. Drop a key here once the
 // feature is no longer newsworthy.
-export const ACTIVE_ANNOUNCEMENTS = [FEATURE_PINTEREST_IMPORT, FEATURE_BLUESKY_IMPORT];
+export const ACTIVE_ANNOUNCEMENTS = [
+	FEATURE_PINTEREST_IMPORT,
+	FEATURE_BLUESKY_IMPORT,
+	FEATURE_BECOME_SUPPORTER,
+	FEATURE_ORGANIZE_MODE
+];
 
 export const features = $state({
 	seen: new SvelteSet<string>(),
