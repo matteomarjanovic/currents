@@ -25,3 +25,13 @@ proposing new work; delete an entry when it ships.
 - **Grid virtualization** for very large libraries — the masonry currently
   keeps every loaded tile mounted; fine at hundreds of images, worth
   virtualizing in the thousands.
+
+## Engineering
+
+- **CI for the test suites.** GitHub Actions workflow running on PRs: appview
+  `go test ./...` twice — plain, and with `TEST_DATABASE_URL` against a
+  `pgvector/pgvector` service container (the suite creates and migrates its own
+  `_test` database); frontend `npm run test:unit` + lint; inference
+  `python -m unittest` (needs the Python deps but no model download); clustering
+  `python -m unittest` via its Docker image. Playwright e2e optional/later
+  (heaviest, needs browsers).
