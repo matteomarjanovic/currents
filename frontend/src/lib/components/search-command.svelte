@@ -46,7 +46,7 @@
 
 	// Reseed from the current search page each time the dialog opens: refining an
 	// active text search starts from its query, and opening on a color-search page
-	// starts already in color mode on that color.
+	// starts already in color mode on that color (with any hybrid text restored).
 	let prevOpen = false;
 	$effect(() => {
 		const isOpen = open;
@@ -54,8 +54,8 @@
 			if (isOpen && !prevOpen) {
 				if (page.params.type === 'color') {
 					colorMode = true;
-					query = '';
 					if (page.params.query) color = '#' + page.params.query;
+					query = page.url.searchParams.get('q') ?? '';
 				} else {
 					colorMode = false;
 					query = page.params.query ?? '';
@@ -76,10 +76,13 @@
 		open = false;
 	}
 
+	// Color mode: color alone → color search; color + text → hybrid (color filters,
+	// text orders), carried as ?q on the color route.
 	async function submitColor() {
 		const hex = color.replace('#', '').toLowerCase();
-		const go = () =>
-			goto(resolve('/(with-navbar)/search/[type]/[query]', { type: 'color', query: hex }));
+		let target = resolve('/(with-navbar)/search/[type]/[query]', { type: 'color', query: hex });
+		if (trimmed) target += '?q=' + encodeURIComponent(trimmed);
+		const go = () => goto(target);
 		open = false;
 		// Gate before navigating; on a completed checkout the paywall resumes `go`.
 		if (await requireSupporter(go)) go();
@@ -94,14 +97,13 @@
 	class={colorMode ? 'top-1/2 -translate-y-1/2' : ''}
 >
 	<div class="p-1 pb-0">
-		<InputGroup.Root class="bg-input/50 h-9">
+		<InputGroup.Root class="h-9 bg-input/50">
 			<CommandPrimitive.Input value={query}>
 				{#snippet child({ props })}
 					<InputGroup.Input
 						{...props}
 						bind:value={query}
-						disabled={colorMode}
-						placeholder={colorMode ? 'Search by color…' : 'Search…'}
+						placeholder={colorMode ? 'Describe it too (optional)…' : 'Search…'}
 					/>
 				{/snippet}
 			</CommandPrimitive.Input>
@@ -113,12 +115,7 @@
 					size="icon-xs"
 					aria-label="Search by color"
 					aria-pressed={colorMode}
-					onclick={() => {
-						colorMode = !colorMode;
-						// Text and color are mutually exclusive for now; drop any typed
-						// query so the disabled input shows the "Search by color…" hint.
-						if (colorMode) query = '';
-					}}
+					onclick={() => (colorMode = !colorMode)}
 				>
 					<ColorPaletteIcon filled={colorMode} />
 				</InputGroup.Button>
@@ -142,7 +139,7 @@
 			</div>
 			<Button class="w-full" onclick={submitColor}>
 				<PaletteIcon />
-				Search this color
+				{trimmed ? `Search “${trimmed}” in this color` : 'Search this color'}
 			</Button>
 		</div>
 	{:else}

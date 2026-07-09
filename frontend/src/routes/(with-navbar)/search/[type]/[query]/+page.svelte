@@ -27,8 +27,10 @@
 		(page.params.type as SearchType) in ENDPOINTS ? (page.params.type as SearchType) : 'saves'
 	);
 
-	// For color search the [query] param is the bare hex (no '#').
+	// For color search the [query] param is the bare hex (no '#'). An optional ?q
+	// turns it into a hybrid search: the color filters, the text orders.
 	let colorHex = $derived('#' + (page.params.query ?? ''));
+	let hybridText = $derived(searchType === 'color' ? (page.url.searchParams.get('q') ?? '') : '');
 
 	// Which type the items currently in `search` belong to. The selector can flip
 	// `searchType` (and thus the render branch) a frame before the list is reset and
@@ -42,8 +44,12 @@
 			const q = page.params.query ?? '';
 			const cfg = ENDPOINTS[fetchedType];
 			const params = new SvelteURLSearchParams({ limit: '50' });
-			if (fetchedType === 'color') params.set('color', '#' + q);
-			else params.set('q', q);
+			if (fetchedType === 'color') {
+				params.set('color', '#' + q);
+				if (hybridText) params.set('q', hybridText);
+			} else {
+				params.set('q', q);
+			}
 			if (fetchedType === 'saves') params.set('excludeSaved', 'true');
 			if (cursor) params.set('cursor', cursor);
 
@@ -72,7 +78,7 @@
 
 	const pageTitle = $derived(
 		searchType === 'color'
-			? colorHex + ' · Color search'
+			? (hybridText ? `${hybridText} · ${colorHex}` : colorHex) + ' · Color search'
 			: page.params.query
 				? page.params.query + ' · Search'
 				: 'Search'
@@ -83,6 +89,7 @@
 	$effect(() => {
 		void page.params.query;
 		void searchType;
+		void hybridText;
 		const timeout = setTimeout(() => {
 			untrack(() => {
 				search.reset();
@@ -113,10 +120,20 @@
 	<div class="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
 		<span class="size-5 rounded-full border shadow-sm" style:background-color={colorHex}></span>
 		<span class="font-mono uppercase">{colorHex}</span>
+		{#if hybridText}
+			<span>·</span>
+			<span class="truncate">“{hybridText}”</span>
+		{/if}
 	</div>
 	<MasonryGrid items={saves} loading={search.loading} />
 	{#if !search.loading && loadedType === 'color' && saves.length === 0}
-		<p class="mt-10 text-center text-sm text-muted-foreground">No images found for this color.</p>
+		<p class="mt-10 text-center text-sm text-muted-foreground">
+			{#if hybridText}
+				No “{hybridText}” images in this color. Try a broader color or drop the text.
+			{:else}
+				No images found for this color.
+			{/if}
+		</p>
 	{/if}
 {:else if searchType === 'saves'}
 	<MasonryGrid items={saves} loading={search.loading} />

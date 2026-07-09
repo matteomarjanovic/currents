@@ -68,6 +68,8 @@
 	const feed = useInfiniteScroll<SaveView>(async (cursor) => {
 		if (color) {
 			const params = new URLSearchParams({ color: color.hex, library: 'true', limit: '50' });
+			// With a text query too it's a hybrid search: the color filters, the text orders.
+			if (search) params.set('q', search.query);
 			for (const uri of color.collections) params.append('collections', uri);
 			if (cursor) params.set('cursor', cursor);
 			return fetchSavesPage(`/xrpc/is.currents.feed.searchSavesByColor?${params}`);
@@ -373,7 +375,9 @@
 		>
 			<ImageOff class="size-6" />
 			<p>
-				{#if color}
+				{#if color && search}
+					No “{search.query}” images in this color. Try a broader color or drop the text.
+				{:else if color}
 					No images matching this color in your library.
 				{:else if similar}
 					No similar images in your library.

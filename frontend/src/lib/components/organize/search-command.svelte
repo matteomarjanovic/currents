@@ -19,6 +19,7 @@
 		collections,
 		favourites,
 		initial = [],
+		initialText = '',
 		canSearch,
 		onSearch,
 		onColorSearch
@@ -27,13 +28,15 @@
 		collections: CollectionView[];
 		favourites: CollectionView[];
 		initial?: string[];
+		// The active text query, so reopening during a hybrid search restores it.
+		initialText?: string;
 		// Supporter gate: resolves whether searching is allowed; the caller shows
 		// its upgrade dialog on a false, so a rejection just closes the command.
 		canSearch?: () => Promise<boolean>;
 		onSearch: (query: string, collections: string[]) => void;
-		// Color search is scoped via the header chip afterwards (like find-similar),
-		// so it doesn't carry the command's collection selection.
-		onColorSearch?: (hex: string) => void;
+		// Color search (optionally with text = hybrid). Scoped via the header chip
+		// afterwards, so it doesn't carry the command's collection selection.
+		onColorSearch?: (hex: string, text?: string) => void;
 	} = $props();
 
 	const PRESETS = [
@@ -73,12 +76,12 @@
 		const isOpen = open;
 		untrack(() => {
 			if (isOpen && !prevOpen) {
-				query = '';
 				// Opening while a color search is active starts in color mode on that
-				// color, so the search button reopens the picker to adjust it.
+				// color (with any hybrid text restored), so the picker reopens to adjust it.
 				const activeColor = page.url.searchParams.get('color');
 				colorMode = !!activeColor;
 				if (activeColor) color = '#' + activeColor;
+				query = activeColor ? initialText : '';
 				gateChecked = false;
 				const key = initial.join(' ');
 				if (key !== prevInitialKey) {
@@ -122,14 +125,15 @@
 	}
 
 	function submitColor() {
-		onColorSearch?.(color);
+		onColorSearch?.(color, query.trim() || undefined);
 		open = false;
 	}
 
 	function onKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !colorMode) {
+		if (e.key === 'Enter') {
 			e.preventDefault();
-			submit();
+			if (colorMode) submitColor();
+			else submit();
 		}
 	}
 </script>
@@ -142,15 +146,14 @@
 	class={colorMode ? 'top-1/2 -translate-y-1/2' : ''}
 >
 	<div class="p-1 pb-0">
-		<InputGroup.Root class="bg-input/50 h-9">
+		<InputGroup.Root class="h-9 bg-input/50">
 			<CommandPrimitive.Input value={query}>
 				{#snippet child({ props })}
 					<InputGroup.Input
 						{...props}
 						bind:value={query}
 						onkeydown={onKeydown}
-						disabled={colorMode}
-						placeholder={colorMode ? 'Search by color…' : 'Search your images…'}
+						placeholder={colorMode ? 'Describe it too (optional)…' : 'Search your images…'}
 					/>
 				{/snippet}
 			</CommandPrimitive.Input>
@@ -162,10 +165,7 @@
 					size="icon-xs"
 					aria-label="Search by color"
 					aria-pressed={colorMode}
-					onclick={() => {
-						colorMode = !colorMode;
-						if (colorMode) query = '';
-					}}
+					onclick={() => (colorMode = !colorMode)}
 				>
 					<ColorPaletteIcon filled={colorMode} />
 				</InputGroup.Button>
@@ -189,7 +189,7 @@
 			</div>
 			<Button class="w-full" onclick={submitColor}>
 				<PaletteIcon />
-				Search this color
+				{query.trim() ? `Search “${query.trim()}” in this color` : 'Search this color'}
 			</Button>
 		</div>
 	{:else}

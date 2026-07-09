@@ -33,26 +33,28 @@
 	let selectedUri = $derived(page.url.searchParams.get('c') ?? '');
 	let similarUri = $derived(page.url.searchParams.get('sim') ?? '');
 
-	// A text search (ephemeral) is mutually exclusive with find-similar. Navigating to a
-	// collection clears the search; find-similar is URL-driven so it clears itself. The
-	// query and a live-editable collection scope combine into `search`; toggling the scope
-	// from the header chip re-runs the search without reopening the command.
+	// Text (ephemeral `searchQuery`) and color (URL `?color=`, below) can combine
+	// into a hybrid search: the color filters, the text orders. They share one
+	// live-editable collection `scope`. Find-similar (`?sim=`) is exclusive with
+	// both. Navigating to a collection clears the text query and scope; the
+	// URL-driven ?color / ?sim clear themselves on navigation.
 	let searchOpen = $state(false);
 	let searchQuery = $state<string | null>(null);
-	let searchScope = new SvelteSet<string>();
-	let search = $derived(searchQuery ? { query: searchQuery, collections: [...searchScope] } : null);
+	let scope = new SvelteSet<string>();
+	let search = $derived(searchQuery ? { query: searchQuery, collections: [...scope] } : null);
 	$effect(() => {
 		void selectedUri;
-		untrack(() => (searchQuery = null));
+		untrack(() => {
+			searchQuery = null;
+			scope.clear();
+		});
 	});
-	function toggleSearchScope(uri: string) {
-		if (searchScope.has(uri)) searchScope.delete(uri);
-		else searchScope.add(uri);
+	function toggleScope(uri: string) {
+		if (scope.has(uri)) scope.delete(uri);
+		else scope.add(uri);
 	}
-	let searchScopeLabel = $derived(
-		searchScope.size === 0
-			? 'Whole library'
-			: `${searchScope.size} collection${searchScope.size === 1 ? '' : 's'}`
+	let scopeLabel = $derived(
+		scope.size === 0 ? 'Whole library' : `${scope.size} collection${scope.size === 1 ? '' : 's'}`
 	);
 
 	// The source save (for the chip thumbnail) and the collection scope for find-similar,
@@ -109,30 +111,13 @@
 		else similarScope.add(uri);
 	}
 
-	// Color search in the library lives in the URL (`?color=<hex>`, no leading #) so
-	// it gets its own history entry — back returns to the prior view. It's mutually
-	// exclusive with text search and find-similar, and mirrors find-similar's chip
-	// (a swatch, a collection filter, and a clear button). The collection scope is
-	// ephemeral and resets whenever the color changes.
+	// Color search lives in the URL (`?color=<hex>`, no leading #) for its own
+	// history entry. It shares `scope` and combines with `searchQuery` into a
+	// hybrid search.
 	let colorParam = $derived(page.url.searchParams.get('color') ?? '');
-	let colorScope = new SvelteSet<string>();
-	let prevColorParam = '';
-	$effect(() => {
-		void colorParam;
-		untrack(() => {
-			if (colorParam !== prevColorParam) {
-				colorScope.clear();
-				prevColorParam = colorParam;
-			}
-		});
-	});
 	let colorSearch = $derived(
-		colorParam ? { hex: '#' + colorParam, collections: [...colorScope] } : null
+		colorParam ? { hex: '#' + colorParam, collections: [...scope] } : null
 	);
-	function toggleColorScope(uri: string) {
-		if (colorScope.has(uri)) colorScope.delete(uri);
-		else colorScope.add(uri);
-	}
 	function colorHref(hex: string) {
 		const p = new URLSearchParams();
 		if (selectedUri) p.set('c', selectedUri);
@@ -157,6 +142,7 @@
 	async function findSimilar(s: SaveView) {
 		if (!(await requireSupporter(() => void findSimilar(s)))) return;
 		searchQuery = null;
+		scope.clear();
 		similarSource = s;
 		// On mobile the detail panel is a full-screen overlay that would cover the
 		// results, so close it; the header chip's thumbnail reopens it on demand.
@@ -165,17 +151,18 @@
 		goto(simHref(s.uri));
 	}
 
-	// Color search from a palette swatch or the library search bar. Explore hands
-	// off to the discovery color-results page; library navigates to a `?color=` URL
-	// (dropping any find-similar) and runs it here.
-	async function searchByColorInLibrary(hex: string) {
-		if (!(await requireSupporter(() => void searchByColorInLibrary(hex)))) return;
-		searchQuery = null;
+	// Color search in the library, optionally with a text query (hybrid: the color
+	// filters, the text orders). Navigates to a `?color=` URL (dropping any
+	// find-similar); the ephemeral text query survives the same-collection nav.
+	async function searchColorInLibrary(hex: string, text?: string) {
+		if (!(await requireSupporter(() => void searchColorInLibrary(hex, text)))) return;
+		searchQuery = text?.trim() ? text.trim() : null;
+		scope.clear();
 		if (isMobile.current) selection = null;
 		goto(colorHref(hex));
 	}
 	async function onColorSearch(hex: string, where: 'explore' | 'library') {
-		if (where === 'library') return searchByColorInLibrary(hex);
+		if (where === 'library') return searchColorInLibrary(hex);
 		const q = hex.replace('#', '').toLowerCase();
 		const go = () =>
 			goto(resolve('/(with-navbar)/search/[type]/[query]', { type: 'color', query: q }));
@@ -204,6 +191,45 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
+<!-- The shared collection-scope filter used by the text, color, and hybrid chips
+     (find-similar keeps its own, on similarScope). -->
+{#snippet scopeFilter()}
+	<Popover.Root>
+		<Popover.Trigger>
+			{#snippet child({ props })}
+				<Button
+					{...props}
+					variant="ghost"
+					size="icon-sm"
+					class="relative"
+					aria-label="Filter by collection"
+				>
+					<ListFilter />
+					{#if scope.size > 0}
+						<span
+							class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
+						>
+							{scope.size}
+						</span>
+					{/if}
+				</Button>
+			{/snippet}
+		</Popover.Trigger>
+		<Popover.Content align="start" class="w-64 p-0">
+			<Command.Root shouldFilter={false} class="bg-transparent">
+				<Command.List>
+					<CollectionFilterItems
+						collections={collections.items}
+						favourites={favouriteCollections.items}
+						selected={scope}
+						onToggle={toggleScope}
+					/>
+				</Command.List>
+			</Command.Root>
+		</Popover.Content>
+	</Popover.Root>
+{/snippet}
+
 <!-- Bound the shell to the viewport (the wrapper is min-h-svh by default) so the
      central canvas and right panel scroll internally instead of the whole page.
      Use dvh, not svh: with internal scrolling the mobile URL bar stays retracted,
@@ -216,7 +242,33 @@
 		<header class="flex h-14 shrink-0 items-center gap-2 border-b px-4">
 			<Sidebar.Trigger class="-ml-1" />
 			<Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
-			{#if search}
+			{#if search && colorSearch}
+				<!-- Hybrid: the color filters, the text orders. The chip shows the color
+				     (click to adjust it), the text, the shared scope filter, and a clear-all. -->
+				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+					<button
+						type="button"
+						onclick={() => (searchOpen = true)}
+						class="size-4 shrink-0 rounded-full border transition-transform hover:scale-110"
+						style="background-color: {colorSearch.hex}"
+						aria-label="Change color"
+						title="Change color"
+					></button>
+					<span class="min-w-0 truncate">“{search.query}”</span>
+					{@render scopeFilter()}
+					<button
+						type="button"
+						onclick={() => {
+							searchQuery = null;
+							goto(hrefFor(selectedUri));
+						}}
+						class="rounded p-1 text-muted-foreground hover:bg-muted"
+						aria-label="Clear search"
+					>
+						<X class="size-3.5" />
+					</button>
+				</div>
+			{:else if search}
 				<!-- A text search replaces the breadcrumb with this chip: it names the mode
 				     and shows the collection scope in words. The scope is live-editable via
 				     the filter (re-running the search without reopening the command); the
@@ -225,7 +277,7 @@
 					<SearchIcon class="size-4 shrink-0 text-muted-foreground" />
 					<span class="truncate">Search results</span>
 					<span class="shrink-0 text-muted-foreground">·</span>
-					<span class="shrink-0 text-muted-foreground">{searchScopeLabel}</span>
+					<span class="shrink-0 text-muted-foreground">{scopeLabel}</span>
 					<Popover.Root>
 						<Popover.Trigger>
 							{#snippet child({ props })}
@@ -240,8 +292,8 @@
 									<CollectionFilterItems
 										collections={collections.items}
 										favourites={favouriteCollections.items}
-										selected={searchScope}
-										onToggle={toggleSearchScope}
+										selected={scope}
+										onToggle={toggleScope}
 									/>
 								</Command.List>
 							</Command.Root>
@@ -344,11 +396,11 @@
 									aria-label="Filter by collection"
 								>
 									<ListFilter />
-									{#if colorScope.size > 0}
+									{#if scope.size > 0}
 										<span
 											class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
 										>
-											{colorScope.size}
+											{scope.size}
 										</span>
 									{/if}
 								</Button>
@@ -360,8 +412,8 @@
 									<CollectionFilterItems
 										collections={collections.items}
 										favourites={favouriteCollections.items}
-										selected={colorScope}
-										onToggle={toggleColorScope}
+										selected={scope}
+										onToggle={toggleScope}
 									/>
 								</Command.List>
 							</Command.Root>
@@ -469,14 +521,15 @@
 		collections={collections.items}
 		favourites={favouriteCollections.items}
 		initial={selectedUri ? [selectedUri] : []}
+		initialText={searchQuery ?? ''}
 		canSearch={() => requireSupporter(() => (searchOpen = true))}
 		onSearch={(q, cols) => {
 			// Text search is ephemeral; drop any find-similar or color search from the URL.
 			if (similarUri || colorParam) goto(hrefFor(selectedUri));
-			searchScope.clear();
-			if (q) for (const c of cols) searchScope.add(c);
+			scope.clear();
+			if (q) for (const c of cols) scope.add(c);
 			searchQuery = q || null;
 		}}
-		onColorSearch={(hex) => searchByColorInLibrary(hex)}
+		onColorSearch={(hex, text) => searchColorInLibrary(hex, text)}
 	/>
 </Sidebar.Provider>
