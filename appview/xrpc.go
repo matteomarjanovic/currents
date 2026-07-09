@@ -818,9 +818,24 @@ func (s *Server) XRPCSearchSavesByColor(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	page, err := s.Store.SearchSavesByColorPage(r.Context(), lab, viewerDID.String(), library, collections, limit, offset)
+	// Optional text query turns this into a hybrid search: the color becomes a
+	// strict palette filter and semantic relevance to the text orders the results.
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	var page annSavePage
+	if q != "" {
+		embedding, embErr := s.Inference.EmbedText(r.Context(), q)
+		if embErr != nil {
+			slog.Error("EmbedText", "err", embErr)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		page, err = s.Store.SearchHybridSavesPage(r.Context(), embedding, lab, viewerDID.String(), library, collections, limit, offset)
+	} else {
+		page, err = s.Store.SearchSavesByColorPage(r.Context(), lab, viewerDID.String(), library, collections, limit, offset)
+	}
 	if err != nil {
-		slog.Error("SearchSavesByColorPage", "err", err)
+		slog.Error("SearchSavesByColorPage", "err", err, "hybrid", q != "")
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

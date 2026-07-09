@@ -672,39 +672,70 @@ func (m *PgStore) GetFavouriteCollectionsPage(ctx context.Context, actorDID, vie
 // substring), ranked by save count. Offset-based pagination. Each row carries its
 // AuthorDID so the caller can hydrate per-collection author profiles.
 func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, limit, offset int) ([]CollectionRow, error) {
+	// Same aggregate-once rewrite as GetActorCollectionsPage. The ordering is by
+	// save count, so save stats are aggregated in one pass over save for every
+	// name match; previews run only for the returned page.
 	rows, err := m.pool.Query(ctx, `
+		WITH matched AS (
+			SELECT c.uri, c.cid, c.author_did, c.name, c.description, c.parent_uri, c.created_at
+			FROM collection c
+			WHERE c.cid IS NOT NULL
+			  AND c.name ILIKE '%' || $1 || '%'
+		),
+		scope AS (
+			SELECT uri AS curi, uri AS root FROM matched
+			UNION ALL
+			SELECT ch.uri, ch.parent_uri FROM collection ch WHERE ch.parent_uri IN (SELECT uri FROM matched)
+		),
+		save_stats AS (
+			SELECT sc.root, count(*)::int AS cnt, max(s.created_at) AS last_saved
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			GROUP BY sc.root
+		),
+		page AS (
+			SELECT m.*, COALESCE(ss.cnt, 0) AS save_count, ss.last_saved
+			FROM matched m
+			LEFT JOIN save_stats ss ON ss.root = m.uri
+			ORDER BY save_count DESC, m.created_at DESC NULLS LAST, m.uri ASC
+			LIMIT $3 OFFSET $4
+		),
+		page_scope AS (
+			SELECT uri AS curi, uri AS root FROM page
+			UNION ALL
+			SELECT ch.uri, ch.parent_uri FROM collection ch WHERE ch.parent_uri IN (SELECT uri FROM page)
+		),
+		preview AS (
+			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+				ROW_NUMBER() OVER (
+					PARTITION BY sc.root
+					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
+				) AS rn
+			FROM save s JOIN page_scope sc ON sc.curi = s.collection_uri
+			WHERE s.content_nsid = 'is.currents.content.image'
+			  AND s.pds_blob_cid <> ''
+			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		),
+		preview_agg AS (
+			SELECT root, array_agg(blob ORDER BY rn) AS blobs FROM preview WHERE rn <= 4 GROUP BY root
+		)
 		SELECT
-			c.uri,
-			c.cid,
-			c.author_did,
-			c.name,
-			COALESCE(c.description, ''),
-			COALESCE(c.parent_uri, ''),
-			c.created_at,
-			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
-			ARRAY(
-				SELECT s2.author_did || ',' || s2.pds_blob_cid
-				FROM save s2
-				WHERE (s2.collection_uri = c.uri
-				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
-				  AND s2.content_nsid = 'is.currents.content.image'
-				  AND s2.pds_blob_cid <> ''
-				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
-				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
-				LIMIT 4
-			) AS preview_blobs,
-			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			p.uri,
+			p.cid,
+			p.author_did,
+			p.name,
+			COALESCE(p.description, ''),
+			COALESCE(p.parent_uri, ''),
+			p.created_at,
+			p.last_saved AS last_saved_at,
+			p.save_count,
+			COALESCE(pa.blobs, ARRAY[]::text[]) AS preview_blobs,
+			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = p.uri)::int AS favourite_count,
 			fc.uri AS favourite_uri
-		FROM collection c
+		FROM page p
+		LEFT JOIN preview_agg pa ON pa.root = p.uri
 		LEFT JOIN favourite_collection fc
-			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($2, '')
-		WHERE c.cid IS NOT NULL
-		  AND c.name ILIKE '%' || $1 || '%'
-		ORDER BY save_count DESC, c.created_at DESC NULLS LAST, c.uri ASC
-		LIMIT $3 OFFSET $4
+			ON fc.collection_uri = p.uri AND fc.viewer_did = NULLIF($2, '')
+		ORDER BY p.save_count DESC, p.created_at DESC NULLS LAST, p.uri ASC
 	`, q, viewerDID, limit, offset)
 	if err != nil {
 		return nil, err
@@ -729,49 +760,72 @@ func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, li
 // AuthorDID is populated so the caller can flag the viewer's own collections.
 // Offset-based pagination.
 func (m *PgStore) GetImageCollectionsPage(ctx context.Context, saveURI, viewerDID string, limit, offset int) ([]CollectionRow, error) {
+	// Same aggregate-once rewrite as GetActorCollectionsPage. The ordering is by
+	// favourite count (cheap per match), so save stats and previews run only for
+	// the returned page.
 	rows, err := m.pool.Query(ctx, `
 		WITH target AS (
 			SELECT pds_blob_cid FROM save WHERE uri = $1 LIMIT 1
+		),
+		page AS (
+			SELECT c.uri, c.cid, c.author_did, c.name, c.description, c.parent_uri, c.created_at,
+				(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count
+			FROM collection c
+			WHERE c.cid IS NOT NULL
+			  AND c.uri IN (
+				SELECT DISTINCT s.collection_uri
+				FROM save s, target t
+				WHERE s.pds_blob_cid = t.pds_blob_cid
+				  AND s.pds_blob_cid <> ''
+				  AND s.collection_uri <> ''
+				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+			  )
+			ORDER BY favourite_count DESC, c.created_at DESC NULLS LAST, c.uri ASC
+			LIMIT $3 OFFSET $4
+		),
+		scope AS (
+			SELECT uri AS curi, uri AS root FROM page
+			UNION ALL
+			SELECT ch.uri, ch.parent_uri FROM collection ch WHERE ch.parent_uri IN (SELECT uri FROM page)
+		),
+		save_stats AS (
+			SELECT sc.root, count(*)::int AS cnt, max(s.created_at) AS last_saved
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			GROUP BY sc.root
+		),
+		preview AS (
+			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+				ROW_NUMBER() OVER (
+					PARTITION BY sc.root
+					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
+				) AS rn
+			FROM save s JOIN scope sc ON sc.curi = s.collection_uri
+			WHERE s.content_nsid = 'is.currents.content.image'
+			  AND s.pds_blob_cid <> ''
+			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		),
+		preview_agg AS (
+			SELECT root, array_agg(blob ORDER BY rn) AS blobs FROM preview WHERE rn <= 4 GROUP BY root
 		)
 		SELECT
-			c.uri,
-			c.cid,
-			c.author_did,
-			c.name,
-			COALESCE(c.description, ''),
-			COALESCE(c.parent_uri, ''),
-			c.created_at,
-			(SELECT MAX(created_at) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri)) AS last_saved_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
-			ARRAY(
-				SELECT s2.author_did || ',' || s2.pds_blob_cid
-				FROM save s2
-				WHERE (s2.collection_uri = c.uri
-				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
-				  AND s2.content_nsid = 'is.currents.content.image'
-				  AND s2.pds_blob_cid <> ''
-				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
-				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
-				LIMIT 4
-			) AS preview_blobs,
-			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
+			p.uri,
+			p.cid,
+			p.author_did,
+			p.name,
+			COALESCE(p.description, ''),
+			COALESCE(p.parent_uri, ''),
+			p.created_at,
+			ss.last_saved AS last_saved_at,
+			COALESCE(ss.cnt, 0) AS save_count,
+			COALESCE(pa.blobs, ARRAY[]::text[]) AS preview_blobs,
+			p.favourite_count,
 			fc.uri AS favourite_uri
-		FROM collection c
+		FROM page p
+		LEFT JOIN save_stats ss ON ss.root = p.uri
+		LEFT JOIN preview_agg pa ON pa.root = p.uri
 		LEFT JOIN favourite_collection fc
-			ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($2, '')
-		WHERE c.cid IS NOT NULL
-		  AND c.uri IN (
-			SELECT DISTINCT s.collection_uri
-			FROM save s, target t
-			WHERE s.pds_blob_cid = t.pds_blob_cid
-			  AND s.pds_blob_cid <> ''
-			  AND s.collection_uri <> ''
-			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
-		  )
-		ORDER BY favourite_count DESC, c.created_at DESC NULLS LAST, c.uri ASC
-		LIMIT $3 OFFSET $4
+			ON fc.collection_uri = p.uri AND fc.viewer_did = NULLIF($2, '')
+		ORDER BY p.favourite_count DESC, p.created_at DESC NULLS LAST, p.uri ASC
 	`, saveURI, viewerDID, limit, offset)
 	if err != nil {
 		return nil, err
@@ -1168,7 +1222,15 @@ func (m *PgStore) GetSaveRkeysInCollection(ctx context.Context, collectionURI, a
 // GetCollectionByURI returns the collection row for the given URI, or nil if not found.
 // viewerDID may be empty for unauthenticated requests.
 func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerDID string) (*CollectionRow, error) {
+	// The collection-or-sections rollup joins an explicit scope CTE instead of
+	// an OR over a subquery: the equi-join reaches save through its
+	// collection_uri index rather than seq-scanning per call.
 	query := `
+		WITH scope AS (
+			SELECT $1::text AS curi
+			UNION ALL
+			SELECT ch.uri FROM collection ch WHERE ch.parent_uri = $1
+		)
 		SELECT
 			c.uri,
 			c.cid,
@@ -1176,14 +1238,12 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 			COALESCE(c.description, ''),
 			COALESCE(c.parent_uri, ''),
 			c.created_at,
-			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
-			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
+			(SELECT count(*) FROM save s JOIN scope sc ON sc.curi = s.collection_uri)::int AS save_count,
 			ARRAY(
 				SELECT s2.author_did || ',' || s2.pds_blob_cid
 				FROM save s2
-				WHERE (s2.collection_uri = c.uri
-				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
-				  AND s2.content_nsid = 'is.currents.content.image'
+				JOIN scope sc ON sc.curi = s2.collection_uri
+				WHERE s2.content_nsid = 'is.currents.content.image'
 				  AND s2.pds_blob_cid <> ''
 				  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s2.pds_blob_cid AND b.harm_state = 'blocked')
 				ORDER BY (s2.collection_uri = c.uri) DESC, s2.quality_score DESC NULLS LAST, s2.uri ASC
@@ -2150,7 +2210,7 @@ func scanSaveRows(rows pgx.Rows) ([]SaveRow, error) {
 	return result, nil
 }
 
-func (m *PgStore) setANNQueryOptions(ctx context.Context, tx pgx.Tx, offset, fetchLimit int) error {
+func (m *PgStore) setANNQueryOptions(ctx context.Context, tx pgx.Tx, offset, fetchLimit int, forceIndexScan bool) error {
 	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.ef_search', $1, true)`, strconv.Itoa(searchSavesEFSearch(offset, fetchLimit))); err != nil {
 		return err
 	}
@@ -2160,17 +2220,26 @@ func (m *PgStore) setANNQueryOptions(ctx context.Context, tx pgx.Tx, offset, fet
 	if _, err := tx.Exec(ctx, `SELECT set_config('hnsw.max_scan_tuples', $1, true)`, strconv.Itoa(searchSavesMaxScanTuples(offset, fetchLimit))); err != nil {
 		return err
 	}
+	// A selective filter over the ANN scan (hybrid's color EXISTS) tips the
+	// planner's cost estimate toward a seq scan + full sort, abandoning the HNSW
+	// index. Disabling seq scans for the query forces the index scan back on; all
+	// other tables in these queries are reached by their own indexes anyway.
+	if forceIndexScan {
+		if _, err := tx.Exec(ctx, `SELECT set_config('enable_seqscan', 'off', true)`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (m *PgStore) queryANNSavePage(ctx context.Context, query string, args []any, limit, fetchLimit, offset int) (annSavePage, error) {
+func (m *PgStore) queryANNSavePage(ctx context.Context, query string, args []any, limit, fetchLimit, offset int, forceIndexScan bool) (annSavePage, error) {
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {
 		return annSavePage{}, err
 	}
 	defer tx.Rollback(ctx)
 
-	if err := m.setANNQueryOptions(ctx, tx, offset, fetchLimit); err != nil {
+	if err := m.setANNQueryOptions(ctx, tx, offset, fetchLimit, forceIndexScan); err != nil {
 		return annSavePage{}, err
 	}
 
@@ -2198,6 +2267,45 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 	return page.Rows, nil
 }
 
+// saveRowProjection is the shared 18-column SELECT list (order matches
+// scanSaveRows / SaveRow) used by every save-search query. It references $3 as
+// the viewer DID for the viewer_saves / viewer_attribution subqueries.
+const saveRowProjection = `
+	s.uri,
+	s.pds_blob_cid,
+	s.author_did,
+	s.content_nsid,
+	COALESCE(s.text, ''),
+	COALESCE(s.origin_url, ''),
+	COALESCE(s.attribution_url, ''),
+	COALESCE(s.attribution_license, ''),
+	COALESCE(s.attribution_credit, ''),
+	COALESCE(s.resave_of_uri, ''),
+	COALESCE(s.resave_of_cid, ''),
+	s.created_at,
+	CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+		SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
+		FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+	) END AS viewer_saves,
+	CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
+		SELECT json_build_object(
+			'url', COALESCE(rv.attribution_url, ''),
+			'license', COALESCE(rv.attribution_license, ''),
+			'credit', COALESCE(rv.attribution_credit, '')
+		)
+		FROM save rv
+		WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
+		  AND (COALESCE(rv.attribution_url, '') <> ''
+		       OR COALESCE(rv.attribution_license, '') <> ''
+		       OR COALESCE(rv.attribution_credit, '') <> '')
+		ORDER BY rv.created_at DESC NULLS LAST
+		LIMIT 1
+	) END AS viewer_attribution,
+	s.width,
+	s.height,
+	s.dominant_colors,
+	COALESCE(s.alt_text, '')`
+
 func (m *PgStore) SearchSavesPageByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) (annSavePage, error) {
 	return m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, limit, searchSavesQueryLimit(limit, excludeViewerSaves), offset)
 }
@@ -2213,41 +2321,7 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 		)`
 	}
 	query := `
-		SELECT
-			s.uri,
-			s.pds_blob_cid,
-			s.author_did,
-			s.content_nsid,
-			COALESCE(s.text, ''),
-			COALESCE(s.origin_url, ''),
-			COALESCE(s.attribution_url, ''),
-			COALESCE(s.attribution_license, ''),
-			COALESCE(s.attribution_credit, ''),
-			COALESCE(s.resave_of_uri, ''),
-			COALESCE(s.resave_of_cid, ''),
-			s.created_at,
-			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
-				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
-				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
-			) END AS viewer_saves,
-			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
-				SELECT json_build_object(
-					'url', COALESCE(rv.attribution_url, ''),
-					'license', COALESCE(rv.attribution_license, ''),
-					'credit', COALESCE(rv.attribution_credit, '')
-				)
-				FROM save rv
-				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
-				  AND (COALESCE(rv.attribution_url, '') <> ''
-				       OR COALESCE(rv.attribution_license, '') <> ''
-				       OR COALESCE(rv.attribution_credit, '') <> '')
-				ORDER BY rv.created_at DESC NULLS LAST
-				LIMIT 1
-			) END AS viewer_attribution,
-			s.width,
-			s.height,
-			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+		SELECT ` + saveRowProjection + `
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE vi.embedding IS NOT NULL
@@ -2257,7 +2331,7 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
 	`
-	return m.queryANNSavePage(ctx, query, []any{vec, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset)
+	return m.queryANNSavePage(ctx, query, []any{vec, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset, false)
 }
 
 // SearchLibrarySavesPageByEmbedding searches the viewer's own saved images (or, when
@@ -2274,41 +2348,7 @@ func (m *PgStore) SearchLibrarySavesPageByEmbedding(ctx context.Context, embeddi
 		args = append(args, collectionURIs)
 	}
 	query := `
-		SELECT
-			s.uri,
-			s.pds_blob_cid,
-			s.author_did,
-			s.content_nsid,
-			COALESCE(s.text, ''),
-			COALESCE(s.origin_url, ''),
-			COALESCE(s.attribution_url, ''),
-			COALESCE(s.attribution_license, ''),
-			COALESCE(s.attribution_credit, ''),
-			COALESCE(s.resave_of_uri, ''),
-			COALESCE(s.resave_of_cid, ''),
-			s.created_at,
-			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
-				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
-				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
-			) END AS viewer_saves,
-			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
-				SELECT json_build_object(
-					'url', COALESCE(rv.attribution_url, ''),
-					'license', COALESCE(rv.attribution_license, ''),
-					'credit', COALESCE(rv.attribution_credit, '')
-				)
-				FROM save rv
-				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
-				  AND (COALESCE(rv.attribution_url, '') <> ''
-				       OR COALESCE(rv.attribution_license, '') <> ''
-				       OR COALESCE(rv.attribution_credit, '') <> '')
-				ORDER BY rv.created_at DESC NULLS LAST
-				LIMIT 1
-			) END AS viewer_attribution,
-			s.width,
-			s.height,
-			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+		SELECT ` + saveRowProjection + `
 		FROM save s
 		JOIN visual_identity vi ON vi.id = s.visual_identity_id
 		WHERE vi.embedding IS NOT NULL
@@ -2319,7 +2359,7 @@ func (m *PgStore) SearchLibrarySavesPageByEmbedding(ctx context.Context, embeddi
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4
 	`
-	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset)
+	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset, false)
 }
 
 const (
@@ -2359,41 +2399,7 @@ func (m *PgStore) SearchSavesByColorPage(ctx context.Context, lab [3]float32, vi
 			WHERE de <= $7
 			ORDER BY visual_identity_id, de - $8 * fraction
 		)
-		SELECT
-			s.uri,
-			s.pds_blob_cid,
-			s.author_did,
-			s.content_nsid,
-			COALESCE(s.text, ''),
-			COALESCE(s.origin_url, ''),
-			COALESCE(s.attribution_url, ''),
-			COALESCE(s.attribution_license, ''),
-			COALESCE(s.attribution_credit, ''),
-			COALESCE(s.resave_of_uri, ''),
-			COALESCE(s.resave_of_cid, ''),
-			s.created_at,
-			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
-				SELECT json_agg(json_build_object('collectionUri', rv.collection_uri, 'saveUri', rv.uri))
-				FROM save rv WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
-			) END AS viewer_saves,
-			CASE WHEN $3 != '' AND s.content_nsid = 'is.currents.content.image' AND s.pds_blob_cid <> '' THEN (
-				SELECT json_build_object(
-					'url', COALESCE(rv.attribution_url, ''),
-					'license', COALESCE(rv.attribution_license, ''),
-					'credit', COALESCE(rv.attribution_credit, '')
-				)
-				FROM save rv
-				WHERE rv.author_did = $3 AND rv.pds_blob_cid = s.pds_blob_cid
-				  AND (COALESCE(rv.attribution_url, '') <> ''
-				       OR COALESCE(rv.attribution_license, '') <> ''
-				       OR COALESCE(rv.attribution_credit, '') <> '')
-				ORDER BY rv.created_at DESC NULLS LAST
-				LIMIT 1
-			) END AS viewer_attribution,
-			s.width,
-			s.height,
-			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+		SELECT ` + saveRowProjection + `
 		FROM best b
 		` + joinClause + `
 		WHERE s.author_did <> ALL($5)
@@ -2405,7 +2411,50 @@ func (m *PgStore) SearchSavesByColorPage(ctx context.Context, lab [3]float32, vi
 	// The ANN scan depth is the inner candidate LIMIT regardless of page offset
 	// (OFFSET applies after dedup/re-rank), so size ef_search from
 	// colorCandidateLimit with offset 0.
-	return m.queryANNSavePage(ctx, query, args, limit, colorCandidateLimit, 0)
+	return m.queryANNSavePage(ctx, query, args, limit, colorCandidateLimit, 0, false)
+}
+
+// hybridScanFloor sizes the embedding index scan (ef_search / max_scan_tuples)
+// for hybrid search. The color EXISTS filter is a post-filter on the semantic
+// scan, so a rare color forces the scan deeper to collect a full page; this
+// floor buys that depth. Raise it if rare colors under-return.
+const hybridScanFloor = 500
+
+// SearchHybridSavesPage ranks images by semantic distance to the text embedding,
+// keeping only those whose palette contains a color within colorMaxDeltaE of the
+// query color. Color is a strict membership filter (not blended into the score);
+// semantic relevance alone orders the results. Global scope searches canonical
+// saves network-wide; library scope the viewer's own saves, optionally narrowed
+// to collections. Offset-based pagination.
+func (m *PgStore) SearchHybridSavesPage(ctx context.Context, embedding []float32, lab [3]float32, viewerDID string, library bool, collectionURIs []string, limit, offset int) (annSavePage, error) {
+	fetchLimit := limit + 1
+	joinClause := `FROM visual_identity vi
+		JOIN save s ON s.uri = vi.canonical_save_uri`
+	scopeClause := ""
+	args := []any{pgvector.NewVector(embedding), fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs, pgvector.NewVector(lab[:]), colorMaxDeltaE}
+	if library || len(collectionURIs) > 0 {
+		joinClause = `FROM save s
+			JOIN visual_identity vi ON vi.id = s.visual_identity_id`
+		scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.author_did = $3`
+		if len(collectionURIs) > 0 {
+			scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.collection_uri = ANY($8)`
+			args = append(args, collectionURIs)
+		}
+	}
+	query := `
+		SELECT ` + saveRowProjection + `
+		` + joinClause + `
+		WHERE vi.embedding IS NOT NULL
+		  AND s.author_did <> ALL($5)
+		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+		  AND EXISTS (SELECT 1 FROM visual_identity_color c WHERE c.visual_identity_id = vi.id AND c.lab <-> $6 <= $7)
+		  ` + scopeClause + `
+		ORDER BY vi.embedding <=> $1
+		LIMIT $2 OFFSET $4
+	`
+	// Pass a deeper options fetchLimit than the SQL LIMIT ($2 = limit+1): the
+	// color post-filter needs the embedding scan to look past the first page.
+	return m.queryANNSavePage(ctx, query, args, limit, max(fetchLimit, hybridScanFloor), offset, true)
 }
 
 func searchSavesEFSearch(offset, fetchLimit int) int {
@@ -2484,7 +2533,7 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
 		LIMIT $2 OFFSET $4
 	`
-	return m.queryANNSavePage(ctx, query, []any{uri, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset)
+	return m.queryANNSavePage(ctx, query, []any{uri, fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs}, limit, fetchLimit, offset, false)
 }
 
 // FindSimilarLibrarySavesPageByURI returns the viewer's own saves (or, when collectionURIs
@@ -2551,7 +2600,7 @@ func (m *PgStore) FindSimilarLibrarySavesPageByURI(ctx context.Context, uri, vie
 		ORDER BY vi.embedding <=> (SELECT embedding FROM src)
 		LIMIT $2 OFFSET $4
 	`
-	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset)
+	return m.queryANNSavePage(ctx, query, args, limit, fetchLimit, offset, false)
 }
 
 // ── Feed methods ─────────────────────────────────────────────────────────────

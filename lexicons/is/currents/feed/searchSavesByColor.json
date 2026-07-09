@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Search saves by dominant color. Matches images whose palette contains a color perceptually close to the query color, ranked by closeness and pixel coverage. Requires authentication and an active supporter subscription.",
+      "description": "Search saves by dominant color. Matches images whose palette contains a color perceptually close to the query color, ranked by closeness and pixel coverage. With an optional text query, becomes a hybrid search: the color is a strict palette filter and semantic relevance to the text orders the results. Requires authentication and an active supporter subscription.",
       "parameters": {
         "type": "params",
         "required": [
@@ -15,6 +15,11 @@
             "type": "string",
             "maxLength": 7,
             "description": "Query color as hex RGB, e.g. #e63946."
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Optional text query. When present, results are the images featuring the color, ordered by semantic relevance to this text."
           },
           "library": {
             "type": "boolean",
