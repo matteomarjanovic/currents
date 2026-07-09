@@ -1867,19 +1867,88 @@ func (m *PgStore) FindNearestVI(ctx context.Context, embedding []float32, thresh
 
 // CreateVI inserts a new visual_identity row and returns its UUID.
 // canonical_save_uri is set separately via SetVICanonicalSave after the save is upserted.
-// umapEmbedding may be nil when the inference server has no UMAP model loaded.
-func (m *PgStore) CreateVI(ctx context.Context, blobDID, blobCID string, embedding []float32, umapEmbedding []float32) (string, error) {
+// umapEmbedding may be nil when the inference server has no UMAP model loaded;
+// junkScore may be nil when no feed junk head is loaded.
+func (m *PgStore) CreateVI(ctx context.Context, blobDID, blobCID string, embedding []float32, umapEmbedding []float32, junkScore *float32) (string, error) {
 	var id string
 	var umapVec interface{}
 	if len(umapEmbedding) > 0 {
 		umapVec = pgvector.NewVector(umapEmbedding)
 	}
 	err := m.pool.QueryRow(ctx, `
-		INSERT INTO visual_identity (canonical_blob_did, canonical_blob_cid, embedding, umap_embedding)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO visual_identity (canonical_blob_did, canonical_blob_cid, embedding, umap_embedding, junk_score)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, blobDID, blobCID, pgvector.NewVector(embedding), umapVec).Scan(&id)
+	`, blobDID, blobCID, pgvector.NewVector(embedding), umapVec, junkScore).Scan(&id)
 	return id, err
+}
+
+// SetVIJunkScoreIfNull fills junk_score on an existing visual identity when a
+// resave's fresh inference pass produced one and the identity predates the
+// junk head. Never overwrites an existing score — embeddings of the same
+// identity are near-identical, so re-scoring is noise.
+func (m *PgStore) SetVIJunkScoreIfNull(ctx context.Context, viID string, score float32) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE visual_identity SET junk_score = $2 WHERE id = $1 AND junk_score IS NULL`,
+		viID, score)
+	return err
+}
+
+// SetVIJunkScore sets junk_score unconditionally — used by the backfill.
+func (m *PgStore) SetVIJunkScore(ctx context.Context, viID string, score float32) error {
+	_, err := m.pool.Exec(ctx,
+		`UPDATE visual_identity SET junk_score = $2 WHERE id = $1`,
+		viID, score)
+	return err
+}
+
+// VIJunkBackfill identifies a visual identity lacking a junk score, paired
+// with its stored embedding so the score comes from /classify/junk/embeddings
+// — no blob refetch, no backbone pass.
+type VIJunkBackfill struct {
+	ID        string
+	Embedding []float32
+}
+
+func (m *PgStore) CountVIsMissingJunkScore(ctx context.Context) (int64, error) {
+	var n int64
+	err := m.pool.QueryRow(ctx, `
+		SELECT count(*) FROM visual_identity
+		WHERE embedding IS NOT NULL AND junk_score IS NULL
+	`).Scan(&n)
+	return n, err
+}
+
+// ListVIsMissingJunkScoreBatch pages through visual identities without a junk
+// score. The keyset cursor (afterID) keeps a single run terminating even when
+// some rows persistently fail to write; scored VIs drop out of the pool, so a
+// rerun retries only past failures.
+func (m *PgStore) ListVIsMissingJunkScoreBatch(ctx context.Context, afterID string, n int) ([]VIJunkBackfill, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT vi.id, vi.embedding
+		FROM visual_identity vi
+		WHERE vi.id::text > $1
+		  AND vi.embedding IS NOT NULL
+		  AND vi.junk_score IS NULL
+		ORDER BY vi.id::text
+		LIMIT $2
+	`, afterID, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var batch []VIJunkBackfill
+	for rows.Next() {
+		var vi VIJunkBackfill
+		var vec pgvector.Vector
+		if err := rows.Scan(&vi.ID, &vec); err != nil {
+			return nil, err
+		}
+		vi.Embedding = vec.Slice()
+		batch = append(batch, vi)
+	}
+	return batch, rows.Err()
 }
 
 // SetVICanonicalSave sets canonical_save_uri on a visual_identity row.
@@ -2824,10 +2893,19 @@ func (m *PgStore) GetNearestClusterMedoid(ctx context.Context, embedding []float
 	return &medoid, nil
 }
 
+// feedJunkScoreMax is the junk-probability ceiling for the global discovery
+// feed: images whose visual identity scores at or above it (feed_junk_head,
+// 1 = junk — QR codes, UI screenshots, documents) are excluded. Unscored
+// images (junk_score IS NULL) pass — the gate only acts on what the head has
+// actually seen. Tuning this needs no re-scoring; scores stay in the DB.
+const feedJunkScoreMax = 0.5
+
 // GetGlobalFeedSaves returns saves from across the network, ranked by a
 // time-decayed popularity score: save_count * exp(-0.01 * age_in_days).
 // No minimum save_count threshold — all images with a visual identity appear,
-// with popular recent images ranked highest.
+// with popular recent images ranked highest. Junk-scored images at or above
+// feedJunkScoreMax are excluded (global feed only — library, search, and
+// profiles never hide anything).
 func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
 	excludeClause := ""
 	if excludeViewerSaves && viewerDID != "" {
@@ -2875,12 +2953,13 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE s.author_did <> ALL($4)
+		  AND (vi.junk_score IS NULL OR vi.junk_score < $5)
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
 		  ` + excludeClause + `
 		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
 		LIMIT $2 OFFSET $3
 	`
-	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset, m.cfg.HiddenDIDs)
+	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset, m.cfg.HiddenDIDs, feedJunkScoreMax)
 	if err != nil {
 		return nil, err
 	}

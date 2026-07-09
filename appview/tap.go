@@ -477,8 +477,13 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 		if err := handler.Store.MaybePromoteCanonical(ctx, *nearestVI, source.AuthorDID, blobCID, source.URI, quality); err != nil {
 			return err
 		}
+		if inferResult.JunkScore != nil {
+			if err := handler.Store.SetVIJunkScoreIfNull(ctx, *nearestVI, *inferResult.JunkScore); err != nil {
+				return err
+			}
+		}
 	} else {
-		newVI, err := handler.Store.CreateVI(ctx, source.AuthorDID, blobCID, inferResult.Embedding, inferResult.UMAPEmbedding)
+		newVI, err := handler.Store.CreateVI(ctx, source.AuthorDID, blobCID, inferResult.Embedding, inferResult.UMAPEmbedding, inferResult.JunkScore)
 		if err != nil {
 			return err
 		}

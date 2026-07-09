@@ -55,6 +55,9 @@ SAFETY_HEAD_ENV = {
     "violence":     "VIOLENCE_HEAD_ONNX",
     "ai_generated": "AIGEN_HEAD_ONNX",
 }
+# Feed junk head (suitable vs junk for the global discovery feed) — same ONNX
+# contract as the safety heads, trained in moderation/04_feed_junk_head.ipynb.
+JUNK_HEAD_ENV = "FEED_JUNK_HEAD_ONNX"
 EMBEDDING_DIM = 768
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -72,6 +75,7 @@ _umap_model_mtime: float  = None
 _umap_lock = threading.Lock()
 
 _safety_heads: dict[str, ort.InferenceSession | None] = {axis: None for axis in SAFETY_HEAD_ENV}
+_junk_head: ort.InferenceSession | None = None
 
 # ── UMAP loading ──────────────────────────────────────────────────────────────
 
@@ -108,6 +112,22 @@ def _load_safety_heads():
             print(f"failed to load {axis} head from {path}: {exc}")
 
 
+def _load_junk_head():
+    """Load the feed junk head. Path resolution order:
+    1. Explicit env var (FEED_JUNK_HEAD_ONNX)
+    2. $MODELS_DIR/feed_junk_head.onnx   (convention-based auto-detect)
+    A missing path leaves the head disabled (junk_score stays None downstream)."""
+    global _junk_head
+    path = os.environ.get(JUNK_HEAD_ENV) or os.path.join(MODELS_DIR, "feed_junk_head.onnx")
+    if not os.path.exists(path):
+        return
+    try:
+        _junk_head = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+        print(f"feed junk head loaded from {path}")
+    except Exception as exc:
+        print(f"failed to load feed junk head from {path}: {exc}")
+
+
 def _any_safety_head_loaded() -> bool:
     return any(sess is not None for sess in _safety_heads.values())
 
@@ -117,6 +137,16 @@ def _l2_normalize(x: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(x, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1.0, norms)
     return x / norms
+
+
+def _score_junk(embeddings_norm: np.ndarray) -> list[float] | None:
+    """Junk probability (1 = unsuitable for the global feed) per row of a batch
+    of L2-normalized 768-d embeddings, or None when no head is loaded."""
+    if _junk_head is None:
+        return None
+    logits = _junk_head.run(None, {"embedding": embeddings_norm})[0]
+    # sigmoid in float64 to avoid overflow at extreme logits
+    return (1.0 / (1.0 + np.exp(-logits.astype(np.float64)))).ravel().tolist()
 
 
 def _classify_safety(embeddings_norm: np.ndarray) -> list[dict[str, float]]:
@@ -160,18 +190,24 @@ def _embed_images(images: list[Image.Image]) -> list[dict]:
         except Exception as e:
             print(f"UMAP transform failed: {e}")
 
-    # Safety heads are tiny MLPs (CPU); cost is negligible per batch but only
-    # run when at least one head is loaded. Heads expect L2-normalized inputs
-    # (per training in moderation/*.ipynb); the response embedding itself
-    # remains un-normalized to preserve pgvector compatibility with rows
-    # written before classification existed.
+    # Classification heads are tiny MLPs (CPU); cost is negligible per batch
+    # but they only run when loaded. Heads expect L2-normalized inputs (per
+    # training in moderation/*.ipynb); the response embedding itself remains
+    # un-normalized to preserve pgvector compatibility with rows written
+    # before classification existed.
     safety_scores = None
-    if _any_safety_head_loaded():
+    junk_scores = None
+    if _any_safety_head_loaded() or _junk_head is not None:
         embeddings_norm = _l2_normalize(embeddings.astype(np.float32))
+        if _any_safety_head_loaded():
+            try:
+                safety_scores = _classify_safety(embeddings_norm)
+            except Exception as e:
+                print(f"safety classification failed: {e}")
         try:
-            safety_scores = _classify_safety(embeddings_norm)
+            junk_scores = _score_junk(embeddings_norm)
         except Exception as e:
-            print(f"safety classification failed: {e}")
+            print(f"junk scoring failed: {e}")
 
     results = []
     for idx, embedding in enumerate(embeddings.tolist()):
@@ -179,6 +215,7 @@ def _embed_images(images: list[Image.Image]) -> list[dict]:
             "embedding": embedding,
             "umap_embedding": None if umap_embeddings is None else umap_embeddings[idx],
             "safety_scores": None if safety_scores is None else safety_scores[idx],
+            "junk_score": None if junk_scores is None else junk_scores[idx],
         })
     return results
 
@@ -424,6 +461,7 @@ async def lifespan(app: FastAPI):
 
     _try_load_umap()
     _load_safety_heads()
+    _load_junk_head()
 
     worker_tasks.clear()
     worker_tasks.extend([
@@ -470,6 +508,7 @@ class ImageEmbeddingResponse(BaseModel):
     height: int
     dominant_colors: list[DominantColor]
     safety_scores: SafetyScores | None = None
+    junk_score: float | None = None
 
 @app.post("/embed/image", response_model=ImageEmbeddingResponse)
 async def embed_image(file: UploadFile = File(...)):
@@ -494,6 +533,7 @@ async def embed_image(file: UploadFile = File(...)):
         height=height,
         dominant_colors=dominant_colors,
         safety_scores=SafetyScores(**scores) if scores is not None else None,
+        junk_score=result["junk_score"],
     )
 
 
@@ -595,6 +635,32 @@ async def classify_safety_embeddings(req: ClassifyEmbeddingsRequest):
     return ClassifyEmbeddingsResponse(results=[SafetyScores(**s) for s in scores])
 
 
+class ClassifyJunkResponse(BaseModel):
+    results: list[float]
+
+
+@app.post("/classify/junk/embeddings", response_model=ClassifyJunkResponse)
+async def classify_junk_embeddings(req: ClassifyEmbeddingsRequest):
+    """Backfill endpoint: junk-score already-computed embeddings without running
+    the SigLIP2 backbone again. Pass raw (un-normalized) 768-d vectors as stored
+    in visual_identity.embedding — the server normalizes before running the head."""
+    if _junk_head is None:
+        raise HTTPException(status_code=503, detail="no feed junk head loaded")
+    if not req.embeddings:
+        return ClassifyJunkResponse(results=[])
+
+    arr = np.asarray(req.embeddings, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[1] != EMBEDDING_DIM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"embeddings must be a 2D array with {EMBEDDING_DIM} columns",
+        )
+    normalized = _l2_normalize(arr)
+    loop = asyncio.get_running_loop()
+    scores = await loop.run_in_executor(None, _score_junk, normalized)
+    return ClassifyJunkResponse(results=scores)
+
+
 @app.get("/health")
 async def health():
     with _umap_lock:
@@ -605,6 +671,7 @@ async def health():
         "model": CHECKPOINT,
         "umap": umap_loaded,
         "safety_heads": {axis: (sess is not None) for axis, sess in _safety_heads.items()},
+        "junk_head": _junk_head is not None,
         "queues": {
             "text": {"pending": text_queue.qsize(), "max": TEXT_QUEUE_SIZE},
             "image": {"pending": image_queue.qsize(), "max": IMAGE_QUEUE_SIZE},

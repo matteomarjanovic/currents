@@ -69,6 +69,33 @@ func main() {
 				},
 			},
 			{
+				Name:   "backfill-feed-junk",
+				Usage:  "score existing visual identities with the feed junk head and fill junk_score (one-shot, resumable, no blob fetches)",
+				Action: runBackfillFeedJunk,
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "batch-size",
+						Usage: "visual identities per inference batch",
+						Value: 512,
+					},
+					&cli.DurationFlag{
+						Name:  "interval",
+						Usage: "pause between batches so live TAP enrichment isn't starved",
+						Value: 1 * time.Second,
+					},
+					&cli.IntFlag{
+						Name:  "limit",
+						Usage: "stop after processing this many visual identities (0 = no limit, run to exhaustion)",
+						Value: 0,
+					},
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "log scores for the first batch and exit without writing",
+						Value: false,
+					},
+				},
+			},
+			{
 				Name:   "backfill-colors",
 				Usage:  "re-extract dominant-color palettes and populate the color-search index (one-shot, resumable)",
 				Action: runBackfillColors,

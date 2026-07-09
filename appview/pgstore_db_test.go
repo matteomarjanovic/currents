@@ -87,6 +87,7 @@ func openTestStore(dsn string) (*PgStore, error) {
 		SessionExpiryDuration:     time.Hour,
 		SessionInactivityDuration: time.Hour,
 		AuthRequestExpiryDuration: time.Hour,
+		HiddenDIDs:                []string{}, // nil would encode as SQL NULL in `<> ALL($n)` filters
 	})
 }
 
@@ -413,7 +414,7 @@ func TestDeleteSaveReelection(t *testing.T) {
 
 	emb := make([]float32, 768)
 	emb[0] = 1
-	viID, err := s.CreateVI(ctx, author, "blob-hi", emb, nil)
+	viID, err := s.CreateVI(ctx, author, "blob-hi", emb, nil, nil)
 	if err != nil {
 		t.Fatalf("CreateVI: %v", err)
 	}
@@ -466,6 +467,91 @@ func TestDeleteSaveReelection(t *testing.T) {
 	count, canonicalURI, _ = viState()
 	if count != 0 || canonicalURI != nil {
 		t.Fatalf("after deleting last save: count=%d canonical=%v, want 0/nil", count, canonicalURI)
+	}
+}
+
+// TestGlobalFeedJunkFilter pins the feed junk gate: identities scoring at or
+// above feedJunkScoreMax are excluded from the global feed, while unscored
+// (NULL) and low-scored identities pass; SetVIJunkScoreIfNull fills gaps but
+// never overwrites an existing score.
+func TestGlobalFeedJunkFilter(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	author := "did:plc:author"
+
+	emb := make([]float32, 768)
+	emb[0] = 1
+	f32 := func(v float32) *float32 { return &v }
+
+	mkImage := func(rkey string, junk *float32) (saveURI, viID string) {
+		t.Helper()
+		saveURI = "at://" + author + "/is.currents.feed.save/" + rkey
+		viID, err := s.CreateVI(ctx, author, "blob-"+rkey, emb, nil, junk)
+		if err != nil {
+			t.Fatalf("CreateVI(%s): %v", rkey, err)
+		}
+		quality := float32(0.5)
+		err = s.UpsertSave(ctx, UpsertSaveParams{
+			URI: saveURI, AuthorDID: author, CollectionURI: "", PdsBlobCID: "blob-" + rkey,
+			ContentNSID: "is.currents.content.image", CreatedAt: &testBase,
+			VisualIdentityID: &viID, QualityScore: &quality,
+		})
+		if err != nil {
+			t.Fatalf("seeding save %s: %v", rkey, err)
+		}
+		if err := s.SetVICanonicalSave(ctx, viID, saveURI); err != nil {
+			t.Fatalf("SetVICanonicalSave(%s): %v", rkey, err)
+		}
+		return saveURI, viID
+	}
+
+	cleanURI, _ := mkImage("clean", f32(0.1))
+	unscoredURI, unscoredVI := mkImage("unscored", nil)
+	junkURI, junkVI := mkImage("junk", f32(0.9))
+
+	feedURIs := func() map[string]bool {
+		t.Helper()
+		rows, err := s.GetGlobalFeedSaves(ctx, "", false, 10, 0)
+		if err != nil {
+			t.Fatalf("GetGlobalFeedSaves: %v", err)
+		}
+		out := map[string]bool{}
+		for _, r := range rows {
+			out[r.URI] = true
+		}
+		return out
+	}
+
+	got := feedURIs()
+	if !got[cleanURI] || !got[unscoredURI] {
+		t.Fatalf("feed %v must contain clean and unscored images", got)
+	}
+	if got[junkURI] {
+		t.Fatalf("feed %v must exclude the junk-scored image", got)
+	}
+
+	// IfNull never overwrites: the junk image stays hidden.
+	if err := s.SetVIJunkScoreIfNull(ctx, junkVI, 0.05); err != nil {
+		t.Fatalf("SetVIJunkScoreIfNull(junk): %v", err)
+	}
+	if got := feedURIs(); got[junkURI] {
+		t.Fatal("SetVIJunkScoreIfNull overwrote an existing score")
+	}
+
+	// IfNull fills gaps: scoring the unscored image as junk hides it.
+	if err := s.SetVIJunkScoreIfNull(ctx, unscoredVI, 0.95); err != nil {
+		t.Fatalf("SetVIJunkScoreIfNull(unscored): %v", err)
+	}
+	if got := feedURIs(); got[unscoredURI] {
+		t.Fatal("junk-scored image still in the feed after SetVIJunkScoreIfNull")
+	}
+
+	// The unconditional setter (backfill path) can bring it back.
+	if err := s.SetVIJunkScore(ctx, unscoredVI, 0.1); err != nil {
+		t.Fatalf("SetVIJunkScore: %v", err)
+	}
+	if got := feedURIs(); !got[unscoredURI] {
+		t.Fatal("re-scored image missing from the feed after SetVIJunkScore")
 	}
 }
 
