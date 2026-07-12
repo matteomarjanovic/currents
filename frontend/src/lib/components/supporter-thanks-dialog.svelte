@@ -29,7 +29,7 @@
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
 				<SupporterBadge class="size-5" />
-				Thank you — sincerely.
+				Thank you, sincerely.
 			</Dialog.Title>
 			<Dialog.Description>
 				Your support is what keeps Currents independent, ad-free, and getting better. It means a lot

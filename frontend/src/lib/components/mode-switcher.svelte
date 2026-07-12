@@ -4,6 +4,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Compass from '@lucide/svelte/icons/compass';
 	import Folders from '@lucide/svelte/icons/folders';
+	import Frame from '@lucide/svelte/icons/frame';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 
@@ -14,7 +15,7 @@
 		anchor,
 		class: className = ''
 	}: {
-		mode: 'explore' | 'organize';
+		mode: 'explore' | 'organize' | 'canvas';
 		variant?: 'floating' | 'sidebar' | 'icon';
 		side?: 'top' | 'bottom';
 		// Anchor the menu to another element (centered) instead of the trigger.
@@ -36,6 +37,13 @@
 			description: 'Curate your library',
 			icon: Folders,
 			open: () => goto(resolve('/organize'))
+		},
+		{
+			value: 'canvas',
+			label: 'Canvas',
+			description: 'Arrange images freely',
+			icon: Frame,
+			open: () => goto(resolve('/canvas'))
 		}
 	] as const;
 
