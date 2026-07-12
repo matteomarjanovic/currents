@@ -26,7 +26,15 @@ const config = {
 			fallback: 'index.html',
 			precompress: false,
 			strict: false
-		})
+		}),
+		prerender: {
+			handleHttpError: ({ path, status, message }) => {
+				// Expected until the standard.site publication record is published and
+				// STANDARD_SITE_PUBLICATION_RKEY is filled in — see frontend/src/lib/standard-site.ts.
+				if (path === '/.well-known/site.standard.publication' && status === 404) return;
+				throw new Error(message);
+			}
+		}
 	},
 	preprocess: [
 		mdsvex({

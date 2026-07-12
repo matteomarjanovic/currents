@@ -4,9 +4,20 @@
 	import LogoMerged from '$lib/assets/logo.svelte';
 	import SiteFooter from '$lib/components/site-footer.svelte';
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
+	import { STANDARD_SITE_DID, STANDARD_SITE_PUBLICATION_RKEY } from '$lib/standard-site';
 
 	let { children } = $props();
 </script>
+
+<svelte:head>
+	{#if STANDARD_SITE_PUBLICATION_RKEY}
+		<!-- Discovery hint only, not verification — see /.well-known/site.standard.publication -->
+		<link
+			rel="site.standard.publication"
+			href="at://{STANDARD_SITE_DID}/site.standard.publication/{STANDARD_SITE_PUBLICATION_RKEY}"
+		/>
+	{/if}
+</svelte:head>
 
 <ModeWatcher />
 

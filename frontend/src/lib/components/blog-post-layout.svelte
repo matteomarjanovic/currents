@@ -1,11 +1,19 @@
 <script lang="ts">
+	import { STANDARD_SITE_DID } from '$lib/standard-site';
+
 	let {
 		title,
 		description,
 		date,
+		standardSiteRkey,
 		children
-	}: { title: string; description: string; date: string; children: import('svelte').Snippet } =
-		$props();
+	}: {
+		title: string;
+		description: string;
+		date: string;
+		standardSiteRkey?: string;
+		children: import('svelte').Snippet;
+	} = $props();
 
 	const dateFormat = new Intl.DateTimeFormat('en-US', { dateStyle: 'long' });
 </script>
@@ -16,6 +24,13 @@
 	<meta property="og:type" content="article" />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
+	{#if standardSiteRkey}
+		<!-- Standard.site verification for this document — https://standard.site/docs/verification -->
+		<link
+			rel="site.standard.document"
+			href="at://{STANDARD_SITE_DID}/site.standard.document/{standardSiteRkey}"
+		/>
+	{/if}
 </svelte:head>
 
 <article class="flex flex-col gap-6">
