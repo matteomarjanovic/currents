@@ -31,6 +31,7 @@
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Smartphone from '@lucide/svelte/icons/smartphone';
+	import Newspaper from '@lucide/svelte/icons/newspaper';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Bell from '@lucide/svelte/icons/bell';
 	import Heart from '@lucide/svelte/icons/heart';
@@ -106,14 +107,16 @@
 	// switcher only shows when the viewer can actually enter it.
 	let canSeeOrganize = $derived(!!user && (!previewGated || role.value != null));
 
-	// "Become a supporter" is a personal CTA in the avatar menu — shown only to
-	// non-supporters, and (while preview-gated) only to those who can reach the
-	// subscription settings it opens.
-	let canBecomeSupporter = $derived(canSeePreviewFeatures() && !supporter.subscribed);
-	// Its one-time "new" indicator — gated on canBecomeSupporter so the avatar dot
-	// only lights when the item is actually visible.
+	// The supporter item in the avatar menu — a "Become a supporter" CTA for
+	// non-supporters, or a "You're a supporter" badge for existing ones. Visible
+	// to everyone (while preview-gated) who can reach the subscription settings.
+	let showSupporterItem = $derived(canSeePreviewFeatures());
+	// The one-time "new" indicator only makes sense for the CTA, not existing supporters.
 	let showSupporterNew = $derived(
-		features.loaded && canBecomeSupporter && !isFeatureSeen(FEATURE_BECOME_SUPPORTER)
+		features.loaded &&
+			showSupporterItem &&
+			!supporter.subscribed &&
+			!isFeatureSeen(FEATURE_BECOME_SUPPORTER)
 	);
 
 	// Each menu carries its own dot: the avatar aggregates notifications + items
@@ -371,15 +374,15 @@
 						</Badge>
 					{/if}
 				</DropdownMenu.Item>
-				{#if canBecomeSupporter}
+				{#if showSupporterItem}
 					<DropdownMenu.Item
 						onclick={() => {
-							markFeatureSeen(FEATURE_BECOME_SUPPORTER);
-							goto(resolve('/support-currents-project'));
+							if (!supporter.subscribed) markFeatureSeen(FEATURE_BECOME_SUPPORTER);
+							goto(resolve('/support-us'));
 						}}
 					>
 						<Heart class="size-4 fill-pink-500 stroke-pink-500" />
-						Become a supporter
+						{supporter.subscribed ? "You're a supporter" : 'Become a supporter'}
 						{#if showSupporterNew}
 							<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
 						{/if}
@@ -414,6 +417,10 @@
 			Get browser extension
 		</DropdownMenu.Item>
 	{/if}
+	<DropdownMenu.Item onclick={() => goto(resolve('/blog'))}>
+		<Newspaper class="size-4" />
+		Blog
+	</DropdownMenu.Item>
 	<DropdownMenu.Item onclick={() => openSettings()}>
 		<Settings class="size-4" />
 		Settings

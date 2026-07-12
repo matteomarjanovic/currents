@@ -50,7 +50,7 @@
 		<p class="text-xs text-muted-foreground">
 			<a
 				class="underline underline-offset-4 hover:text-foreground"
-				href={resolve('/support-currents-project')}
+				href={resolve('/support-us')}
 				onclick={() => (open = false)}
 			>
 				Learn more about supporting the project</a

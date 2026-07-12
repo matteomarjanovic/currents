@@ -1,0 +1,43 @@
+---
+title: Introducing the "organize mode" and the supporter tier
+description:
+    The first issue of the Currents blog, where we introduce the new organize mode and a way to support the project.
+date: '2026-07-12'
+---
+
+
+*Into the currents* is the new blog where we'll publish updates about the development of the app and insights about the direction we're following.
+
+In this first issue, we'll delve into two news: the *organize mode* and the *supporter tier* we're adding to let app users support its development and get reserved features.
+
+## The organize mode
+
+According to our vision, Currents should not only be a place to discover new visual inspiration, but also to seamlessly organize the already collected references in a way that make sense for users.
+
+This is why we decided to create an entirely new usage modality, called *organize mode*, that allows a better view of the personal or preferred collections and of the details of each reference.
+
+IMMAGINE SCREENSHOT / GIF
+
+This is not only a different view of the same data. Power users already have tens of collections and hundreds of references saved in Currents: this mode allows to perform **semantic search** to instantly find images they remember they saved somewhere, but don't remember where. They can also choose an image to find the **most similar** ones in their library, and even **filter** by which collections they want to include in the search.
+
+The "standard" view in Currents, which was the only one available until now, will be called *explore mode* from now on.
+
+This is only the first step towards developing a tool that is actually useful for users that have real need of organizing their visual references, and we can't wait to know what our users think about it and what features they'd like to see in it to make their experience better.
+
+## Become a supporter
+
+Developing an app like Currents takes a lot of effort, and deploying it to reliable infrastructure costs money. Advertising is not something we want to pollute the app with, since it's one of the main complaints by users of app like Pinterest.
+
+The path we decided to follow is allowing to users that find our app actually useful to support us financially, as a way to ensure that a tool they use a lot keeps being curated by us. Supporters will also get **reserved features**: only them will be able to use semantic search and similar images search in their collections, since we suppose these are features that are mainly meaningful to power users, who have a lot of references to organize and who are more prone to pay for something that make their life actually easier. And they'll get also a nice **badge** next to their name in the app.
+
+Since we think people mostly pay for things that really make their life easier, our focus will be on listening to them and implement what they ask at best of our possibilities. To suggest new features or give any feedback, you can post on [our Userinput board](https://userinput.app/#/s/did:plc:jaur46k6ijyfvl4lojza7eic/3mob6zfay3e2d), logging in with the same credentials you use for Currents.
+
+We plan also to be as transparent as we can on how much we're making and how we're using money. You will find this and more information about what it means to be a supporter and our roadmap at [our dedicated page](https://currents.app/support-us).
+
+## Looking ahead
+
+So what's next? We're working on finally publishing the mobile apps, since a lot of users would like to access Currents easily from their smartphones.
+
+One of the actual features currently in development is color (and hybrid text+color) search, which probably will be reserved for supporters too. The logic is to avoid limiting the quantity of content users can save, but make the advanced features reserved to power users that find them so useful that are willing to pay for them.
+
+We believe we can create a tool that could become essential for some people, and we can't wait to know what you think. 

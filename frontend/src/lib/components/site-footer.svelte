@@ -76,7 +76,13 @@
 			>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/support-currents-project')}
+					href={resolve('/blog')}
+				>
+					Blog
+				</a>
+				<a
+					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+					href={resolve('/support-us')}
 				>
 					Support the project
 				</a>

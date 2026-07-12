@@ -296,7 +296,7 @@
 								its users data. Supporting it also unlocks a set of extra perks.
 								<a
 									class="underline underline-offset-4 hover:text-foreground"
-									href={resolve('/support-currents-project')}
+									href={resolve('/support-us')}
 									onclick={() => (settingsDialog.open = false)}
 								>
 									Learn more about supporting the project</a

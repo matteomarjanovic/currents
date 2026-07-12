@@ -3,6 +3,7 @@
 	import LogoMerged from '$lib/assets/logo.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import SiteFooter from '$lib/components/site-footer.svelte';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 </script>
 
 <svelte:head>
@@ -24,6 +25,7 @@
 				<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy</a>
 				<a class="underline underline-offset-4" href={resolve('/refunds')}>Refunds</a>
 				<a class="underline underline-offset-4" href={resolve('/login')}>Log in</a>
+				<ThemeToggle />
 			</div>
 		</div>
 

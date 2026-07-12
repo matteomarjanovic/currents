@@ -1,6 +1,7 @@
 import { PUBLIC_POLAR_PRODUCT_MONTHLY, PUBLIC_POLAR_PRODUCT_YEARLY } from '$env/static/public';
 import { PolarEmbedCheckout } from '@polar-sh/checkout/embed';
 import { mode } from 'mode-watcher';
+import { toast } from 'svelte-sonner';
 import { apiFetch } from '$lib/api';
 import { loadSupporterStatus, supporter, supporterFlow } from '$lib/stores/supporter.svelte';
 
@@ -50,4 +51,22 @@ export async function openSupporterCheckout(productId: string) {
 	if (iframe) iframe.style.colorScheme = theme;
 	const checkout = await checkoutPromise;
 	checkout.addEventListener('success', () => void celebrate());
+}
+
+// Opens the Polar customer portal for an existing supporter to manage/cancel
+// their subscription. Used by the settings dialog and the support page.
+export async function openSupporterPortal() {
+	// Open the tab synchronously with the click so popup blockers allow it,
+	// then point it at the freshly minted portal session.
+	const tab = window.open('about:blank', '_blank');
+	try {
+		const res = await apiFetch('/api/supporter/portal', { method: 'POST' });
+		if (!res.ok) throw new Error(`${res.status}`);
+		const { url } = (await res.json()) as { url: string };
+		if (tab) tab.location.href = url;
+		else window.open(url, '_blank', 'noopener');
+	} catch {
+		tab?.close();
+		toast.error("Couldn't open the billing portal");
+	}
 }

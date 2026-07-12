@@ -12,12 +12,15 @@
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import {
 		openSupporterCheckout,
+		openSupporterPortal,
 		polarConfigured,
 		POLAR_PRODUCT_MONTHLY,
 		POLAR_PRODUCT_YEARLY
 	} from '$lib/polar';
 	import { toast } from 'svelte-sonner';
+	import LogoMerged from '$lib/assets/logo.svelte';
 	import SiteFooter from '$lib/components/site-footer.svelte';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
@@ -33,8 +36,13 @@
 	};
 	let stats = $state<SupporterStats | null>(null);
 
-	onMount(async () => {
+	// auth.user is populated asynchronously by the layout, so react to it rather than
+	// checking once in onMount (which could run before that fetch resolves).
+	$effect(() => {
 		if (auth.user && !supporter.loaded) void loadSupporterStatus();
+	});
+
+	onMount(async () => {
 		try {
 			const res = await apiFetch('/api/supporter/stats');
 			if (res.ok) stats = (await res.json()) as SupporterStats;
@@ -61,17 +69,32 @@
 		}
 		openSupporterCheckout(productId).catch(() => toast.error("Couldn't open the checkout"));
 	}
+
+	let portalLoading = $state(false);
+	async function openPortal() {
+		if (portalLoading) return;
+		portalLoading = true;
+		await openSupporterPortal();
+		portalLoading = false;
+	}
 </script>
 
 <svelte:head>
 	<title>Become a supporter · Currents</title>
 	<meta
 		name="description"
-		content="Support Currents — an independent, ad-free visual discovery app on the AT Protocol, funded by the people who use it."
+		content="Support Currents: an independent, ad-free visual discovery app on the AT Protocol, funded by the people who use it."
 	/>
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl px-2 py-6 md:py-10">
+	<div class="mb-8 flex items-center justify-between">
+		<a href={resolve('/')} class="flex h-5 items-center gap-2 font-medium">
+			<LogoMerged />
+		</a>
+		<ThemeToggle />
+	</div>
+
 	<article class="flex flex-col gap-10 text-[15px] leading-7 text-foreground/90">
 		<section class="flex flex-col gap-4">
 			<h1
@@ -107,12 +130,26 @@
 			</Card.Content>
 			<Card.Footer class="flex-col items-stretch gap-3">
 				{#if supporter.subscribed}
-					<p class="flex items-center gap-2 text-sm font-medium">
-						<SupporterBadge class="size-5" />
-						You're already a supporter — thank you.
-					</p>
+					<div
+						class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4"
+					>
+						<div class="flex flex-col gap-0.5">
+							<span class="flex items-center gap-2 text-sm font-medium">
+								<SupporterBadge class="size-5" />
+								You're a supporter
+							</span>
+							<span class="text-xs text-muted-foreground">
+								Thank you for keeping Currents running.
+							</span>
+						</div>
+						<Button variant="outline" size="sm" disabled={portalLoading} onclick={openPortal}>
+							Manage
+							<ExternalLink class="size-3.5" />
+						</Button>
+					</div>
 					<p class="text-xs text-muted-foreground">
-						You can manage your subscription anytime from Settings → Subscription.
+						Invoices, payment method, plan changes, and cancellation are handled in the Polar
+						billing portal.
 					</p>
 				{:else if native}
 					<p class="text-sm text-muted-foreground">
@@ -363,6 +400,4 @@
 	</article>
 </div>
 
-<!-- Negative margins cancel the with-navbar layout's main padding so the
-     footer runs edge to edge, like on the landing page. -->
-<SiteFooter class="-mx-2 mt-10 -mb-2 md:-mx-4 md:-mb-4" />
+<SiteFooter class="mt-10" />
