@@ -33,7 +33,11 @@ const config = {
 				// STANDARD_SITE_PUBLICATION_RKEY is filled in — see frontend/src/lib/standard-site.ts.
 				if (path === '/.well-known/site.standard.publication' && status === 404) return;
 				throw new Error(message);
-			}
+			},
+			// The site.standard.document <link href="at://..."> in blog-post-layout.svelte is a
+			// valid AT-URI but not a parseable WHATWG URL (colons in the did:plc: authority), so the
+			// prerender crawler can't resolve it as a normal link — this is expected, not a broken link.
+			handleInvalidUrl: 'ignore'
 		}
 	},
 	preprocess: [

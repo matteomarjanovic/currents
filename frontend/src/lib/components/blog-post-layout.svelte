@@ -35,23 +35,36 @@
 	<meta name="twitter:image" content={ogImage} />
 	{#if standardSiteRkey}
 		<!-- Standard.site verification for this document — https://standard.site/docs/verification.
-		     `external` keeps SvelteKit's prerender crawler from resolving the at:// href — see the
-		     matching note in blog/+layout.svelte. -->
+		     Juttu (comments) reads this same tag via an exact `rel="site.standard.document"` selector
+		     to resolve which Bluesky thread to show, so the rel value can't have anything added to
+		     it — svelte.config.js's handleInvalidUrl keeps the prerender crawler from choking on the
+		     at:// href (a valid AT-URI, but not a parseable WHATWG URL) instead.
+		     https://juttu.app/getting-started/installation/ -->
 		<link
-			rel="site.standard.document external"
+			rel="site.standard.document"
 			href="at://{STANDARD_SITE_DID}/site.standard.document/{standardSiteRkey}"
 		/>
+		<script
+			defer
+			// src="https://cdn.jsdelivr.net/npm/juttu@latest/juttu-embed.js"
+			src="https://designed-favourite-endless-longest.trycloudflare.com/embed/juttu-embed.js"
+			data-api-url="https://designed-favourite-endless-longest.trycloudflare.com"
+		></script>
 	{/if}
 </svelte:head>
 
 <article class="flex flex-col gap-6">
 	<header class="flex flex-col gap-2">
 		<a href="/blog" class="text-sm text-muted-foreground underline underline-offset-4">← Blog</a>
-		<h1 class="text-3xl font-semibold leading-tight text-foreground">{title}</h1>
+		<h1 class="text-3xl leading-tight font-semibold text-foreground">{title}</h1>
 		<p class="text-sm text-muted-foreground">{dateFormat.format(new Date(date))}</p>
 	</header>
 
-	<div class="prose prose-neutral dark:prose-invert max-w-none">
+	<div class="prose max-w-none prose-neutral dark:prose-invert">
 		{@render children()}
 	</div>
+
+	{#if standardSiteRkey}
+		<div id="juttu-comments"></div>
+	{/if}
 </article>
