@@ -24,7 +24,7 @@
 				<a class="underline underline-offset-4" href={resolve('/terms')}>Terms</a>
 				<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy</a>
 				<a class="underline underline-offset-4" href={resolve('/refunds')}>Refunds</a>
-				<a class="underline underline-offset-4" href={resolve('/login')}>Log in</a>
+				<a class="underline underline-offset-4" href={resolve('/')}>Go to app</a>
 				<ThemeToggle />
 			</div>
 		</div>

@@ -164,6 +164,10 @@
 	const isMobile = new IsMobile();
 </script>
 
+<svelte:head>
+	<title>{selected ? selected.name + ' · Organize · Currents' : 'Organize · Currents'}</title>
+</svelte:head>
+
 <svelte:window onkeydown={onWindowKeydown} />
 
 <!-- Bound the shell to the viewport (the wrapper is min-h-svh by default) so the

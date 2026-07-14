@@ -46,16 +46,15 @@
 		/>
 		<script
 			defer
-			// src="https://cdn.jsdelivr.net/npm/juttu@latest/juttu-embed.js"
-			src="https://designed-favourite-endless-longest.trycloudflare.com/embed/juttu-embed.js"
-			data-api-url="https://designed-favourite-endless-longest.trycloudflare.com"
+			src="https://cdn.jsdelivr.net/npm/juttu@latest/juttu-embed.js"
+			// src="https://designed-favourite-endless-longest.trycloudflare.com/embed/juttu-embed.js"
+			// data-api-url="https://designed-favourite-endless-longest.trycloudflare.com"
 		></script>
 	{/if}
 </svelte:head>
 
 <article class="flex flex-col gap-6">
 	<header class="flex flex-col gap-2">
-		<a href="/blog" class="text-sm text-muted-foreground underline underline-offset-4">← Blog</a>
 		<h1 class="text-3xl leading-tight font-semibold text-foreground">{title}</h1>
 		<p class="text-sm text-muted-foreground">{dateFormat.format(new Date(date))}</p>
 	</header>
@@ -68,3 +67,41 @@
 		<div id="juttu-comments"></div>
 	{/if}
 </article>
+
+<style>
+	/* Maps Juttu's theming variables (https://juttu.app/getting-started/customization/) onto our
+	   own design tokens, so the widget follows the site's light/dark theme and typography instead
+	   of its own defaults. `:global` is required — Juttu injects `.juttu-comments` itself, so it
+	   never carries Svelte's scoping class.
+	   `!important` is required too: Juttu's own stylesheet sets these same variables again on
+	   `.juttu-comments[data-juttu-theme="dark"/"light"]`, which outranks our plain class selector
+	   regardless of stylesheet order, so a normal declaration here is silently dropped. */
+	:global(.juttu-comments) {
+		--juttu-font-family: var(--font-sans) !important;
+		--juttu-surface: var(--input) !important;
+		--juttu-border-color: var(--border) !important;
+		--juttu-text: var(--foreground) !important;
+		--juttu-text-muted: var(--muted-foreground) !important;
+		--juttu-accent-color: var(--primary) !important;
+		--juttu-link-color: var(--primary) !important;
+		--juttu-radius: var(--radius) !important;
+		--juttu-autocomplete-bg: var(--popover) !important;
+	}
+
+	/* Juttu's filled CTA buttons hardcode `color: #fff` instead of reading a variable, so pairing
+	   `--juttu-accent-color` above with our (theme-inverting) `--primary` would make them unreadable
+	   in dark mode — restyle them directly instead, matching our own Button "default" variant. */
+	.prose :global(img) {
+		border-radius: var(--radius-2xl);
+	}
+
+	:global(.juttu-linking-start-btn),
+	:global(.juttu-linking-continue-btn),
+	:global(.juttu-linking-login-btn),
+	:global(.juttu-submit-btn),
+	:global(.juttu-reply-submit) {
+		background: var(--primary) !important;
+		color: var(--primary-foreground) !important;
+		border-radius: var(--radius-4xl) !important;
+	}
+</style>

@@ -18,9 +18,7 @@
 		POLAR_PRODUCT_YEARLY
 	} from '$lib/polar';
 	import { toast } from 'svelte-sonner';
-	import LogoMerged from '$lib/assets/logo.svelte';
 	import SiteFooter from '$lib/components/site-footer.svelte';
-	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
@@ -88,13 +86,6 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl px-2 py-6 md:py-10">
-	<div class="mb-8 flex items-center justify-between">
-		<a href={resolve('/')} class="flex h-5 items-center gap-2 font-medium">
-			<LogoMerged />
-		</a>
-		<ThemeToggle />
-	</div>
-
 	<article class="flex flex-col gap-10 text-[15px] leading-7 text-foreground/90">
 		<section class="flex flex-col gap-4">
 			<h1
@@ -104,19 +95,17 @@
 				Become a supporter
 			</h1>
 			<p>
-				Currents is a project that was born from a real need: an app that lets users discover new
-				visual inspiration and manage their library of references in a seamless way.
+				Currents was born from a simple need: a calm way to discover visual inspiration and manage a
+				library of references, without the ads and the constant selling of your attention.
 			</p>
 			<p>
-				One aspect is not negotiable: it shouldn't sell users data. That would be the easiest path
-				for financial success, reason why the main alternatives pack their UIs with ads. But the web
-				doesn't have to be that way: it can be of the <i>people</i>.
+				That's not negotiable. Not selling your data is the hardest path, not the easiest. It's the
+				reason the big alternatives are covered in ads, and it's exactly what we're trying to avoid.
 			</p>
 			<p>
-				This makes this project depending entirely on the people who find it useful, believe in its
-				values and decide to support it financially. And this means also that it's our
-				responsibility to provide the best product we can, since that's the single thing our users
-				want and would support us for.
+				Which means this project depends entirely on people who find it useful and believe in it. It
+				also means the only way it keeps existing is by staying worth supporting, there's no other
+				funding behind it.
 			</p>
 		</section>
 
@@ -193,9 +182,8 @@
 		<section class="flex flex-col gap-4">
 			<h2 class="text-xl font-semibold text-foreground">Transparency</h2>
 			<p>
-				One of the values we strongly believe in is transparency. That's why we'll do our best to
-				communicate with our community all the things that are happening behind the scenes, as our
-				estimated revenue allocation.
+				Transparency is fundamental for us. We'll share what's happening behind the scenes,
+				including how revenue gets used, as openly as we can.
 			</p>
 
 			<div class="grid grid-cols-3 gap-3 py-2">
@@ -218,10 +206,23 @@
 					<span class="text-xs text-muted-foreground">Est. monthly gross</span>
 				</div>
 			</div>
+		</section>
 
-			<p>
-				The first supporters will help covering the infrastructure costs we already have. This will
-				ensure higher uptime and reliability of the service.
+		<section class="flex flex-col gap-4">
+			<h3 class="text-lg font-semibold text-foreground">What support goes towards</h3>
+			<ol class="flex list-inside list-decimal flex-col gap-2">
+				<li>Cloud migration (stable hosting, no more single point of failure)</li>
+				<li>Paying the people who are working on the project</li>
+			</ol>
+			<p class="text-sm text-muted-foreground">
+				Note: Right now it's just
+				<a
+					class="underline underline-offset-4"
+					href="https://bsky.app/profile/matteomarjanovic.com"
+					target="_blank"
+					rel="noreferrer">me</a
+				>. The moment support allows it, I want to bring in contractors to help with making this
+				product better. That's what "paying the people working on the project" means.
 			</p>
 		</section>
 
@@ -239,23 +240,7 @@
 						<span class="size-3 shrink-0 rounded-full bg-foreground"></span>
 						<span class="w-px flex-1 bg-border"></span>
 					</div>
-					<div class="pb-6">Improve the <em>Organize mode</em></div>
-				</li>
-				<li class="flex gap-4">
-					<div class="flex w-3 flex-col items-center">
-						<span class="h-2 w-px shrink-0 bg-border"></span>
-						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
-						<span class="w-px flex-1 bg-border"></span>
-					</div>
-					<div class="pb-6">Release mobile apps (Android and iOS)</div>
-				</li>
-				<li class="flex gap-4">
-					<div class="flex w-3 flex-col items-center">
-						<span class="h-2 w-px shrink-0 bg-border"></span>
-						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
-						<span class="w-px flex-1 bg-border"></span>
-					</div>
-					<div class="pb-6">Create a <em>Following</em> feed</div>
+					<div class="pb-6"><em>Organize mode</em></div>
 				</li>
 				<li class="flex gap-4">
 					<div class="flex w-3 flex-col items-center">
@@ -269,6 +254,22 @@
 					<div class="flex w-3 flex-col items-center">
 						<span class="h-2 w-px shrink-0 bg-border"></span>
 						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
+						<span class="w-px flex-1 bg-border"></span>
+					</div>
+					<div class="pb-6">Mobile apps (Android and iOS)</div>
+				</li>
+				<li class="flex gap-4">
+					<div class="flex w-3 flex-col items-center">
+						<span class="h-2 w-px shrink-0 bg-border"></span>
+						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
+						<span class="w-px flex-1 bg-border"></span>
+					</div>
+					<div class="pb-6"><em>Following</em> feed</div>
+				</li>
+				<li class="flex gap-4">
+					<div class="flex w-3 flex-col items-center">
+						<span class="h-2 w-px shrink-0 bg-border"></span>
+						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
 					</div>
 					<div>Much more to come...</div>
 				</li>
@@ -276,7 +277,7 @@
 			<p>
 				For further insights, or for providing suggestions or feedback, visit
 				<a class="underline underline-offset-4" href="https://currents.is/feedback"
-					>https://currents.is/feedback</a
+					>currents.is/feedback</a
 				>
 			</p>
 		</section>
@@ -284,28 +285,32 @@
 		<section class="flex flex-col gap-4">
 			<h2 class="text-xl font-semibold text-foreground">We're part of the Atmosphere</h2>
 			<p>
-				Currents is built on a technology called AT Protocol. It may sound complicated, but it's
-				just a new way to creating social apps that are open and where you're the sole owner of your
-				data.
+				Currents is built on AT Protocol: a way of building social apps where you, not the platform,
+				own your data.
 			</p>
 			<p>
-				Traditional social networks lock your data away on their private servers. If you've used an
-				app for years but grow tired of how they handle your privacy or content, moving to a
-				different platform is nearly impossible. You're trapped. With this new approach, you choose
-				a provider (like Bluesky, Eurosky, Blacksky) that will store your data on their servers. And
-				the nice thing is that you can very easily migrate across them; you could even move your
-				data on a server at your place!
+				Today, if you get tired of how an app treats you, leaving means losing everything you built
+				there. AT Protocol fixes that: your data lives with a provider you choose (Bluesky, Eurosky,
+				Blacksky…), and you can move it, even to your own server, at any time. One account, portable
+				across every app built this way.
 			</p>
 			<p>
-				With this new paradigm, the data of all your social apps that use this technology are in the
-				same place: you only need one account to have access to all of them!
+				This growing ecosystem is called the Atmosphere. It's small, active, and full of people
+				building the same kind of thing for the same reasons.
 			</p>
-			<p>
-				The ecosystem of these new wave of open social apps is called Atmosphere, and it's very
-				active and full of welcoming and enthusiast people. To find out more about this, you can
-				check out these pages:
-			</p>
+			<p class="mt-2 -mb-2">Learn more:</p>
 			<ul class="flex flex-col gap-2">
+				<li>
+					<a
+						class="inline-flex items-center gap-1.5 underline underline-offset-4"
+						href="https://www.youtube.com/watch?v=5YCBWuMoti0&t=12s&pp=ygUMIGRhbiBhYnJhbW92"
+						target="_blank"
+						rel="noreferrer"
+					>
+						youtube.com — About Atproto w/ Dan Abramov
+						<ExternalLink class="size-3.5 shrink-0 text-muted-foreground" />
+					</a>
+				</li>
 				<li>
 					<a
 						class="inline-flex items-center gap-1.5 underline underline-offset-4"
@@ -348,7 +353,7 @@
 				<Accordion.Item value="cancel">
 					<Accordion.Trigger>Can I cancel anytime?</Accordion.Trigger>
 					<Accordion.Content>
-						Yes. Open Settings → Subscription → Manage and cancel in a couple of clicks — you keep
+						Yes. Open Settings → Subscription → Manage and cancel in a couple of clicks. You keep
 						supporter features until the end of the period you've paid for. And if you change your
 						mind right after subscribing, your first payment is fully refundable within 14 days (see
 						the <a class="underline underline-offset-4" href={resolve('/refunds')}>Refund Policy</a
@@ -356,18 +361,18 @@
 					</Accordion.Content>
 				</Accordion.Item>
 				<Accordion.Item value="charity">
-					<Accordion.Trigger>Is this a charity?</Accordion.Trigger>
+					<Accordion.Trigger>Is this charity?</Accordion.Trigger>
 					<Accordion.Content>
-						No — it's a subscription to a product, with receipts and invoices like any other
-						service. Think of it as backing an independent app you actually use: your money pays for
-						the service and keeps it ad-free and independent, instead of your data paying for it.
+						No, it's a subscription to a product, with receipts and invoices like any other service.
+						Think of it as backing an independent app you actually use: your money pays for the
+						service and keeps it ad-free and independent, instead of your data paying for it.
 					</Accordion.Content>
 				</Accordion.Item>
 				<Accordion.Item value="shutdown">
 					<Accordion.Trigger>What happens to my data if Currents shuts down?</Accordion.Trigger>
 					<Accordion.Content>
 						It stays yours. Your collections and saves live on your AT Protocol account (your PDS),
-						not on Currents' servers — so they don't disappear with us, and any other app built on
+						not on Currents' servers, so they don't disappear with us, and any other app built on
 						the protocol can read them. The Currents code is open source too, so the service itself
 						could be run by someone else.
 					</Accordion.Content>
@@ -382,7 +387,7 @@
 				<Accordion.Item value="payment-safety">
 					<Accordion.Trigger>Is my payment information safe?</Accordion.Trigger>
 					<Accordion.Content>
-						Payments are processed by Polar, our merchant of record — your card details go to Polar
+						Payments are processed by Polar, our merchant of record. Your card details go to Polar
 						and never touch Currents' servers.
 					</Accordion.Content>
 				</Accordion.Item>

@@ -36,6 +36,7 @@
 	import Bell from '@lucide/svelte/icons/bell';
 	import Heart from '@lucide/svelte/icons/heart';
 	import Logo from '$lib/assets/logo.svelte';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
@@ -58,6 +59,7 @@
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { role, loadRole, previewGated, canSeePreviewFeatures } from '$lib/stores/role.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
+	import { navHistory } from '$lib/stores/navigation.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
@@ -130,8 +132,18 @@
 		!landing && page.url.pathname !== '/' && !page.url.pathname.startsWith('/explore')
 	);
 	function goBack() {
-		if (typeof history !== 'undefined' && history.length > 1) history.back();
-		else goto(resolve('/'));
+		// Once the app has navigated internally at least once, the previous history entry is
+		// guaranteed to be a Currents page (SvelteKit only pushes state for its own navigations).
+		if (navHistory.hasInternalHistory) {
+			history.back();
+			return;
+		}
+		// Otherwise this is the tab's entry page (e.g. a shared link from search or social) — only
+		// trust the browser back button if it would actually land back on Currents.
+		const cameFromCurrents =
+			!!document.referrer && new URL(document.referrer).hostname === location.hostname;
+		if (cameFromCurrents && history.length > 1) history.back();
+		else goto(resolve('/(with-navbar)/explore'));
 	}
 
 	function openPinterestImport() {
@@ -600,6 +612,11 @@
 			>
 				<SearchIcon class="size-4" />
 			</Button>
+			{#if !landing}
+				<ThemeToggle
+					class="pointer-events-auto h-9 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground"
+				/>
+			{/if}
 			<a href={resolve('/login')} class="pointer-events-auto">
 				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
 			</a>

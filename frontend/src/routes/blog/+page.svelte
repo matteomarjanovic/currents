@@ -11,12 +11,22 @@
 	<meta name="description" content="News and notes from the Currents team." />
 </svelte:head>
 
-<div class="flex flex-col gap-6">
-	<h1 class="text-3xl leading-tight font-semibold text-foreground">Into the currents</h1>
-	<p class="text-md pb-4 text-foreground/90">
-		<i>Into the currents</i> is our blog where we publish updates about the development of the app and
-		insights about the direction we're following.
-	</p>
+<div class="flex flex-col gap-4">
+	<div class="relative overflow-hidden rounded-2xl">
+		<img src="/blog/banner.webp" alt="" width="1400" height="547" class="w-full" />
+		<div
+			class="absolute inset-0 bg-linear-to-t from-black/90 via-black/50 via-70% to-transparent to-85%"
+		></div>
+		<div class="absolute inset-x-0 bottom-0 flex flex-col gap-2 p-6">
+			<h1 class="text-3xl leading-tight font-semibold text-white">Into the currents</h1>
+			<p class="max-w-md text-sm text-white/80">
+				A blog where we publish updates about the development of the app and insights about the
+				direction we're following.
+			</p>
+		</div>
+	</div>
+
+	<h2 class="mt-4 text-2xl font-semibold text-foreground">Articles</h2>
 
 	<ul class="flex flex-col gap-6">
 		{#each data.posts as post (post.slug)}

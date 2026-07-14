@@ -17,8 +17,12 @@
 				<LogoMerged />
 			</a>
 			<div class="flex items-center gap-3">
-				<a href={resolve('/blog')} class="text-sm text-muted-foreground underline underline-offset-4"
-					>Blog</a
+				<a
+					href={resolve('/blog')}
+					class="text-sm text-muted-foreground underline underline-offset-4">Blog</a
+				>
+				<a href={resolve('/')} class="text-sm text-muted-foreground underline underline-offset-4"
+					>Go to app</a
 				>
 				<ThemeToggle />
 			</div>

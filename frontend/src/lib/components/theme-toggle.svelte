@@ -1,24 +1,45 @@
 <script lang="ts">
 	import { setMode, resetMode, userPrefersMode } from 'mode-watcher';
 	import * as Select from '$lib/components/ui/select';
+	import { cn } from '$lib/utils.js';
+	import Sun from '@lucide/svelte/icons/sun';
+	import Moon from '@lucide/svelte/icons/moon';
+	import Monitor from '@lucide/svelte/icons/monitor';
 
-	const LABELS = { light: 'Light', dark: 'Dark', system: 'System' } as const;
+	let { class: className = '' }: { class?: string } = $props();
+
+	const OPTIONS = [
+		{ value: 'light', label: 'Light', Icon: Sun },
+		{ value: 'dark', label: 'Dark', Icon: Moon },
+		{ value: 'system', label: 'System', Icon: Monitor }
+	] as const;
 
 	function onValueChange(value: string) {
 		if (value === 'system') resetMode();
 		else setMode(value as 'light' | 'dark');
 	}
+
+	let current = $derived(
+		OPTIONS.find((o) => o.value === (userPrefersMode.current ?? 'system')) ?? OPTIONS[2]
+	);
 </script>
 
 <Select.Root type="single" value={userPrefersMode.current ?? 'system'} {onValueChange}>
 	<Select.Trigger
-		class="h-8 w-auto gap-1.5 rounded-full px-3 text-sm text-muted-foreground shadow-none hover:bg-accent"
+		class={cn(
+			'h-8 w-auto gap-1.5 rounded-full px-3 text-sm text-muted-foreground shadow-none hover:bg-accent',
+			className
+		)}
+		aria-label="Theme: {current.label}"
 	>
-		{LABELS[userPrefersMode.current ?? 'system']}
+		<current.Icon class="size-4" />
 	</Select.Trigger>
 	<Select.Content align="end">
-		{#each Object.entries(LABELS) as [value, label] (value)}
-			<Select.Item {value} {label}>{label}</Select.Item>
+		{#each OPTIONS as { value, label, Icon } (value)}
+			<Select.Item {value} {label}>
+				<Icon class="size-4" />
+				{label}
+			</Select.Item>
 		{/each}
 	</Select.Content>
 </Select.Root>

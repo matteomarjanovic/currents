@@ -11,22 +11,14 @@
 <ul class={cn('flex flex-col gap-2.5', className)}>
 	<li class="flex items-start gap-2.5">
 		<Check class="mt-1 size-4 shrink-0 text-foreground" />
-		<span>Semantic search in your library</span>
+		<span>Search in your own library (by meaning or by image)</span>
 	</li>
 	<li class="flex items-start gap-2.5">
 		<Check class="mt-1 size-4 shrink-0 text-foreground" />
-		<span>Image search in your library ("find similar")</span>
-	</li>
-	<li class="flex items-start gap-2.5">
-		<Check class="mt-1 size-4 shrink-0 text-foreground" />
-		<span>Both filterable by collection</span>
+		<span>Filter searches by collection</span>
 	</li>
 	<li class="flex items-start gap-2.5">
 		<Check class="mt-1 size-4 shrink-0 text-foreground" />
 		<span>The <SupporterBadge class="mx-0.5 mb-0.5 size-4" /> supporter badge</span>
-	</li>
-	<li class="flex items-start gap-2.5">
-		<Check class="mt-1 size-4 shrink-0 text-foreground" />
-		<span>Much more to come</span>
 	</li>
 </ul>

@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { ModeWatcher } from 'mode-watcher';
 	import { isNative } from '$lib/platform';
 	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
+	import TopBar from '$lib/components/top-bar.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 
 	let { children } = $props();
 
@@ -13,7 +16,7 @@
 	// while it's preview-gated.
 	onMount(async () => {
 		if (isNative()) {
-			goto('/');
+			goto(resolve('/'));
 			return;
 		}
 		// This route lives outside (with-navbar)/(without-navbar), so nothing else populates
@@ -32,4 +35,8 @@
 
 <ModeWatcher />
 
+<TopBar user={auth.user} />
+
 {@render children()}
+
+<Toaster />
