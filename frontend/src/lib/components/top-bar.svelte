@@ -7,6 +7,7 @@
 	import { apiFetch } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { isNative, isMobileWeb, isStandalonePwa } from '$lib/platform';
+	import { shouldOpenExternally, openExternal } from '$lib/external';
 	import { pwaInstall, promptInstall } from '$lib/stores/pwa-install.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -222,6 +223,13 @@
 		}
 	}
 
+	// The blog is prerendered outside the SPA — open it in the system browser from the native
+	// app / PWA, otherwise navigate in-app.
+	function openBlog() {
+		if (shouldOpenExternally()) openExternal('/blog');
+		else goto(resolve('/blog'));
+	}
+
 	$effect(() => {
 		if (page.url.pathname.startsWith('/explore') || page.url.pathname === '/') query = '';
 		else if (page.params.query) query = page.params.query;
@@ -429,7 +437,7 @@
 			Get browser extension
 		</DropdownMenu.Item>
 	{/if}
-	<DropdownMenu.Item onclick={() => goto(resolve('/blog'))}>
+	<DropdownMenu.Item onclick={openBlog}>
 		<Newspaper class="size-4" />
 		Blog
 	</DropdownMenu.Item>
