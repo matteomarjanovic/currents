@@ -179,6 +179,35 @@
 	let desktopHeroVisible = $state(true);
 	let scrolledPastTop = $derived(!mobileTopVisible && !desktopHeroVisible);
 
+	// The scroll-to-top button is fixed (viewport-anchored) but should align with
+	// the content's right edge, which sits a classic-scrollbar width further in on
+	// platforms that render one (Windows). Measure the scroll container's scrollbar
+	// and add it to the offset; with overlay scrollbars this is 0.
+	let toTopEl: HTMLDivElement | undefined = $state();
+	let scrollbarInset = $state(0);
+	function measureScrollbarInset() {
+		let p = toTopEl?.parentElement ?? null;
+		let w = null;
+		while (p) {
+			const o = getComputedStyle(p).overflowY;
+			if (o === 'auto' || o === 'scroll') {
+				w = p.offsetWidth - p.clientWidth;
+				break;
+			}
+			p = p.parentElement;
+		}
+		w ??= window.innerWidth - document.documentElement.clientWidth;
+		// Ratchet: a scroll lock (dialog/drawer) reports 0 while it hides the
+		// scrollbar; don't let a resize during that window zero the offset.
+		if (w > 0) scrollbarInset = w;
+	}
+	$effect(() => {
+		if (!toTopEl) return;
+		measureScrollbarInset();
+		window.addEventListener('resize', measureScrollbarInset);
+		return () => window.removeEventListener('resize', measureScrollbarInset);
+	});
+
 	$effect(() => {
 		if (!topControls) return;
 		const observer = new IntersectionObserver(([entry]) => {
@@ -447,7 +476,7 @@
 												{c.author?.displayName || c.author?.handle}
 											</a>
 											{#if c.author?.supporter}
-												<SupporterBadge class="size-3.5 shrink-0 text-foreground" />
+												<SupporterBadge class="size-3.5 shrink-0" />
 											{/if}
 											{#if (c.favouriteCount ?? 0) > 0}
 												<span aria-hidden="true">·</span>
@@ -608,7 +637,7 @@
 <a
 	href={resolve('/')}
 	aria-label="Go to home"
-	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-lg backdrop-blur-sm md:hidden"
+	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
 	style="top: calc(env(safe-area-inset-top) + 2rem)"
 >
 	<span class="block h-5">
@@ -616,8 +645,9 @@
 	</span>
 </a>
 
-<!-- Desktop floating controls: back (icon) + home pill, pinned top-left. -->
-<div class="fixed top-3 left-6 z-50 hidden items-center gap-2 md:flex">
+<!-- Desktop floating controls: back (icon) + home pill, pinned top-left on the
+     grid's left border (md:p-6), at the explore top-bar's vertical offset. -->
+<div class="fixed top-2 left-6 z-50 hidden items-center gap-2 md:flex">
 	<Button
 		variant="glass"
 		size="icon-lg"
@@ -630,7 +660,7 @@
 	<a
 		href={resolve('/')}
 		aria-label="Go to home"
-		class="flex h-11 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-lg backdrop-blur-sm"
+		class="flex h-11 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-sm backdrop-blur-sm"
 	>
 		<span class="block h-5">
 			<Logo />
@@ -650,9 +680,13 @@
 			Back
 		</Button>
 	</div>
+	<!-- Aligned with the grid's right border: content padding (p-2 / md:p-6) plus
+	     the scroll container's measured scrollbar width. The `100% - 100vw` term
+	     cancels root-viewport changes when a scroll lock hides the scrollbar. -->
 	<div
-		class="fixed right-2 z-50 md:right-6"
-		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+		bind:this={toTopEl}
+		class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:right-[calc(1.5rem+var(--sb)+100%-100vw)]"
+		style="bottom: calc(env(safe-area-inset-bottom) + 1rem); --sb: {scrollbarInset}px"
 		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 	>
 		<Button

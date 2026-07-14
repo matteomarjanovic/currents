@@ -3,6 +3,15 @@
 	import { Button } from '$lib/components/ui/button';
 	import Logo from '$lib/assets/logo.svelte';
 	import { cn } from '$lib/utils.js';
+	import { shouldOpenExternally, openExternal } from '$lib/external';
+
+	// The blog is prerendered outside the SPA — from the native app / PWA open it in the
+	// system browser rather than navigating in-app (a no-op on regular web).
+	function handleBlog(e: MouseEvent) {
+		if (!shouldOpenExternally()) return;
+		e.preventDefault();
+		openExternal('/blog');
+	}
 
 	// The site-wide footer (landing page, support page): logo + tagline,
 	// social links, and the legal/info links.
@@ -76,7 +85,14 @@
 			>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/support-currents-project')}
+					href={resolve('/blog')}
+					onclick={handleBlog}
+				>
+					Blog
+				</a>
+				<a
+					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
+					href={resolve('/support-us')}
 				>
 					Support the project
 				</a>

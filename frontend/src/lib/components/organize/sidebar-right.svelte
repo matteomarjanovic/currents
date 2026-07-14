@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { linear } from 'svelte/easing';
+	import { linear, cubicInOut } from 'svelte/easing';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Badge, badgeVariants } from '$lib/components/ui/badge';
@@ -78,14 +78,14 @@
 
 	// Desktop: animate the outer width while a fixed-width inner panel is clipped, so
 	// the central grid reflows smoothly and the panel slides in from the right edge.
-	// Mobile: the panel is a full-screen fixed overlay, so slide it in via translateX
-	// (matching the left sidebar's offcanvas sheet) without reflowing the grid.
+	// Mobile: the panel is a full-screen fixed overlay; match the left sidebar's
+	// mobile sheet (fade + short slide from the right, ease-in-out).
 	function slidePanel(node: HTMLElement, { duration = 200 } = {}) {
 		if (sidebar.isMobile) {
 			return {
 				duration,
-				easing: linear,
-				css: (t: number) => `transform: translateX(${(1 - t) * 100}%)`
+				easing: cubicInOut,
+				css: (t: number, u: number) => `opacity: ${t}; transform: translateX(${u * 2.5}rem)`
 			};
 		}
 		const width = parseFloat(getComputedStyle(node).width) || 352;

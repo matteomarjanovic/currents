@@ -25,6 +25,7 @@
 		type AiVisibility
 	} from '$lib/stores/moderation-prefs.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
+	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import { resolve } from '$app/paths';
 	import ShieldIcon from '@lucide/svelte/icons/shield';
@@ -158,12 +159,12 @@
 
 <Dialog.Root bind:open={settingsDialog.open}>
 	<Dialog.Content
-		class="overflow-hidden p-0 md:max-h-[500px] md:max-w-[700px] lg:max-w-[800px]"
+		class="h-[calc(100dvh-3rem)] overflow-hidden p-0 md:h-auto md:max-h-[500px] md:max-w-[700px] lg:max-w-[800px]"
 		trapFocus={false}
 	>
 		<Dialog.Title class="sr-only">Settings</Dialog.Title>
 		<Dialog.Description class="sr-only">Manage your Currents settings.</Dialog.Description>
-		<Sidebar.Provider class="items-start">
+		<Sidebar.Provider class="h-full min-h-0 items-start">
 			<Sidebar.Root collapsible="none" class="hidden md:flex">
 				<Sidebar.Content>
 					<Sidebar.Group>
@@ -186,10 +187,13 @@
 					</Sidebar.Group>
 				</Sidebar.Content>
 			</Sidebar.Root>
-			<main class="flex h-[480px] flex-1 flex-col overflow-hidden">
-				<header class="flex h-14 shrink-0 items-center px-4">
+			<main class="flex h-full flex-1 flex-col overflow-hidden md:h-[480px]">
+				<header
+					class="flex shrink-0 flex-col gap-3 px-4 pt-4 pb-1 md:h-14 md:flex-row md:items-center md:py-0"
+				>
+					<h2 class="text-base font-semibold md:hidden">Settings</h2>
 					<!-- The nav sidebar is hidden below md; switch sections here instead. -->
-					<div class="inline-flex rounded-md border border-border p-0.5 md:hidden">
+					<div class="inline-flex self-start rounded-md border border-border p-0.5 md:hidden">
 						{#each nav as item (item.key)}
 							<button
 								type="button"
@@ -289,11 +293,10 @@
 						<section class="flex flex-col gap-4">
 							<p class="text-sm text-muted-foreground">
 								Currents is an independent, ad-free project: it's funded by its supporters, not by
-								your data. Supporting it also unlocks a set of extra perks, like semantic and visual
-								search in your library.
+								its users data. Supporting it also unlocks a set of extra perks.
 								<a
 									class="underline underline-offset-4 hover:text-foreground"
-									href={resolve('/support-currents-project')}
+									href={resolve('/support-us')}
 									onclick={() => (settingsDialog.open = false)}
 								>
 									Learn more about supporting the project</a
@@ -324,14 +327,14 @@
 									billing portal.
 								</p>
 							{:else}
+								<p class="text-sm">What you unlock as a supporter:</p>
+								<SupporterPerks class="text-sm" />
 								<SupporterPlans onCheckoutOpen={() => (settingsDialog.open = false)} />
 							{/if}
 						</section>
 					{:else}
 						<section class="flex flex-col gap-4">
-							<div
-								class="flex items-center gap-3 rounded-lg border border-border bg-card p-4"
-							>
+							<div class="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
 								<Avatar.Root size="default">
 									{#if auth.user?.avatar}
 										<Avatar.Image

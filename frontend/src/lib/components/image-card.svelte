@@ -13,9 +13,12 @@
 		// When false, the image isn't a link to the detail view (clicking does nothing);
 		// the hover overlay / collection selector still work. Defaults to true.
 		linkToDetail?: boolean;
+		// The hover overlay needs a pointer; opt into an always-visible Save button
+		// (bottom-right, opens the collection drawer) on mobile viewports.
+		mobileSave?: boolean;
 	}
 
-	let { item, linkToDetail = true }: Props = $props();
+	let { item, linkToDetail = true, mobileSave = false }: Props = $props();
 
 	let dropdownOpen = $state(false);
 	let href = $derived.by(() => {
@@ -36,6 +39,8 @@
 	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
 		item.viewer = { ...(item.viewer ?? {}), saves };
 	}
+
+	let anySaved = $derived((item.viewer?.saves ?? []).length > 0);
 </script>
 
 {#snippet media()}
@@ -102,4 +107,20 @@
 			{/if}
 		{/snippet}
 	</LabeledMedia>
+	{#if mobileSave && auth.user && collections.loaded}
+		<div class="absolute right-1.5 bottom-1.5 md:hidden">
+			<CollectionSelector {item} variant="drawer" onSavesChange={handleSavesChange}>
+				{#snippet trigger({ props })}
+					<Button
+						{...props}
+						variant={anySaved ? 'secondary' : 'default'}
+						size="sm"
+						class="rounded-full shadow-md"
+					>
+						{anySaved ? 'Saved' : 'Save'}
+					</Button>
+				{/snippet}
+			</CollectionSelector>
+		</div>
+	{/if}
 </div>
