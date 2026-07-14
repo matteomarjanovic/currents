@@ -38,18 +38,15 @@ export async function openSupporterCheckout(productId: string) {
 	});
 	if (!res.ok) throw new Error(`checkout: ${res.status}`);
 	const { url } = (await res.json()) as { url: string };
-	const theme = mode.current === 'dark' ? 'dark' : 'light';
-	const checkoutPromise = PolarEmbedCheckout.create(url, { theme });
-	// The embed stamps `color-scheme: auto` (an invalid value) on its iframe, and
-	// the browser only composites a cross-origin iframe transparently when the
-	// element's color scheme matches the embedding document's — so in dark mode
-	// the checkout gets an opaque background. Set the matching scheme before the
-	// checkout document loads (create() appends the iframe synchronously; after
-	// load it's too late). `theme` tracks the same mode that drives the app's
-	// own color-scheme, so they always agree.
-	const iframe = document.querySelector<HTMLIFrameElement>(`iframe[src^="${url}"]`);
-	if (iframe) iframe.style.colorScheme = theme;
-	const checkout = await checkoutPromise;
+	// Render the embedded checkout in the app's current theme. Do NOT also stamp a
+	// `color-scheme` on the checkout iframe: the embed leaves it at `auto`, which
+	// lets the browser composite the cross-origin iframe transparently so its rgba
+	// backdrop dims the page. Forcing `dark` mismatches Polar's checkout document
+	// (which doesn't declare a dark scheme) and the browser paints an opaque white
+	// backdrop over the whole overlay in dark mode.
+	const checkout = await PolarEmbedCheckout.create(url, {
+		theme: mode.current === 'dark' ? 'dark' : 'light'
+	});
 	checkout.addEventListener('success', () => void celebrate());
 }
 
