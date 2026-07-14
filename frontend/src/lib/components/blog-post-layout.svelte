@@ -104,4 +104,11 @@
 		color: var(--primary-foreground) !important;
 		border-radius: var(--radius-4xl) !important;
 	}
+
+	/* The active sort badge (newest/oldest/top) has the same hardcoded `color: #fff` problem: it
+	   pairs white text with a `--juttu-accent-color` (= our theme-inverting `--primary`) background,
+	   so it's white-on-light and unreadable in dark mode. Use our own foreground token instead. */
+	:global(.juttu-sort-btn--active) {
+		color: var(--primary-foreground) !important;
+	}
 </style>
