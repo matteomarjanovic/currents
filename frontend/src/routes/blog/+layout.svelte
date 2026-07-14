@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '../layout.css';
 	import { resolve } from '$app/paths';
 	import { ModeWatcher } from 'mode-watcher';
 	import LogoMerged from '$lib/assets/logo.svelte';
