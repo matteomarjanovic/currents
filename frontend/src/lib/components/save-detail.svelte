@@ -476,7 +476,7 @@
 												{c.author?.displayName || c.author?.handle}
 											</a>
 											{#if c.author?.supporter}
-												<SupporterBadge class="size-3.5 shrink-0 text-foreground" />
+												<SupporterBadge class="size-3.5 shrink-0" />
 											{/if}
 											{#if (c.favouriteCount ?? 0) > 0}
 												<span aria-hidden="true">·</span>
@@ -637,7 +637,7 @@
 <a
 	href={resolve('/')}
 	aria-label="Go to home"
-	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-lg backdrop-blur-sm md:hidden"
+	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
 	style="top: calc(env(safe-area-inset-top) + 2rem)"
 >
 	<span class="block h-5">
@@ -660,7 +660,7 @@
 	<a
 		href={resolve('/')}
 		aria-label="Go to home"
-		class="flex h-11 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-lg backdrop-blur-sm"
+		class="flex h-11 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-sm backdrop-blur-sm"
 	>
 		<span class="block h-5">
 			<Logo />

@@ -7,6 +7,10 @@
 			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=overlays-content"
 		/>
 		<meta name="text-scale" content="scale" />
+		<!-- Site-wide default; hooks.server.ts strips these on pages that set their own og:image
+		     (e.g. blog posts) — this file can't be templated per-route, and this tag is the only
+		     one most routes get at all, since they're client-only (ssr=false) and never execute
+		     any component's <svelte:head>. -->
 		<meta property="og:image" content="/currents_og_image.png" />
 		<meta name="twitter:card" content="summary_large_image" />
 		<meta name="twitter:image" content="/currents_og_image.png" />

@@ -7,6 +7,7 @@
 	import { apiFetch } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { isNative, isMobileWeb, isStandalonePwa } from '$lib/platform';
+	import { shouldOpenExternally, openExternal } from '$lib/external';
 	import { pwaInstall, promptInstall } from '$lib/stores/pwa-install.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -31,9 +32,12 @@
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Smartphone from '@lucide/svelte/icons/smartphone';
+	import Newspaper from '@lucide/svelte/icons/newspaper';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Bell from '@lucide/svelte/icons/bell';
+	import Heart from '@lucide/svelte/icons/heart';
 	import Logo from '$lib/assets/logo.svelte';
+	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import BrowserExtensionDialog from '$lib/components/browser-extension-dialog.svelte';
@@ -50,10 +54,13 @@
 		markFeatureSeen,
 		isFeatureSeen,
 		FEATURE_PINTEREST_IMPORT,
-		FEATURE_BLUESKY_IMPORT
+		FEATURE_BLUESKY_IMPORT,
+		FEATURE_BECOME_SUPPORTER
 	} from '$lib/stores/features.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
-	import { role, loadRole, previewGated } from '$lib/stores/role.svelte';
+	import { role, loadRole, previewGated, canSeePreviewFeatures } from '$lib/stores/role.svelte';
+	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
+	import { navHistory } from '$lib/stores/navigation.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
@@ -98,14 +105,27 @@
 	// never flash a dot before knowing what the user has already seen.
 	let showPinterestNew = $derived(features.loaded && !isFeatureSeen(FEATURE_PINTEREST_IMPORT));
 	let showBlueskyImportNew = $derived(features.loaded && !isFeatureSeen(FEATURE_BLUESKY_IMPORT));
-	// Each menu carries its own dot: the avatar aggregates notifications + items
-	// inside the profile menu, the burger aggregates its own "new" items.
-	let avatarDot = $derived(unreadCount > 0 || showBlueskyImportNew);
-	let burgerDot = $derived(showPinterestNew);
 
 	// Organize mode is preview-gated to moderators until public launch; the mode
 	// switcher only shows when the viewer can actually enter it.
 	let canSeeOrganize = $derived(!!user && (!previewGated || role.value != null));
+
+	// The supporter item in the avatar menu — a "Become a supporter" CTA for
+	// non-supporters, or a "You're a supporter" badge for existing ones. Visible
+	// to everyone (while preview-gated) who can reach the subscription settings.
+	let showSupporterItem = $derived(canSeePreviewFeatures());
+	// The one-time "new" indicator only makes sense for the CTA, not existing supporters.
+	let showSupporterNew = $derived(
+		features.loaded &&
+			showSupporterItem &&
+			!supporter.subscribed &&
+			!isFeatureSeen(FEATURE_BECOME_SUPPORTER)
+	);
+
+	// Each menu carries its own dot: the avatar aggregates notifications + items
+	// inside the profile menu, the burger aggregates its own "new" items.
+	let avatarDot = $derived(unreadCount > 0 || showBlueskyImportNew || showSupporterNew);
+	let burgerDot = $derived(showPinterestNew);
 
 	// Every page except the explore home gets a floating back button next to the
 	// logo (save-detail has its own and doesn't render the top bar).
@@ -113,8 +133,18 @@
 		!landing && page.url.pathname !== '/' && !page.url.pathname.startsWith('/explore')
 	);
 	function goBack() {
-		if (typeof history !== 'undefined' && history.length > 1) history.back();
-		else goto(resolve('/'));
+		// Once the app has navigated internally at least once, the previous history entry is
+		// guaranteed to be a Currents page (SvelteKit only pushes state for its own navigations).
+		if (navHistory.hasInternalHistory) {
+			history.back();
+			return;
+		}
+		// Otherwise this is the tab's entry page (e.g. a shared link from search or social) — only
+		// trust the browser back button if it would actually land back on Currents.
+		const cameFromCurrents =
+			!!document.referrer && new URL(document.referrer).hostname === location.hostname;
+		if (cameFromCurrents && history.length > 1) history.back();
+		else goto(resolve('/(with-navbar)/explore'));
 	}
 
 	function openPinterestImport() {
@@ -131,6 +161,7 @@
 			if (!features.loaded) void loadSeenFeatures();
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 			if (previewGated && !role.loaded) void loadRole();
+			if (!supporter.loaded) void loadSupporterStatus();
 		}
 	});
 
@@ -192,6 +223,13 @@
 		}
 	}
 
+	// The blog is prerendered outside the SPA — open it in the system browser from the native
+	// app / PWA, otherwise navigate in-app.
+	function openBlog() {
+		if (shouldOpenExternally()) openExternal('/blog');
+		else goto(resolve('/blog'));
+	}
+
 	$effect(() => {
 		if (page.url.pathname.startsWith('/explore') || page.url.pathname === '/') query = '';
 		else if (page.params.query) query = page.params.query;
@@ -213,14 +251,14 @@
 
 	// Shared shell for the floating button clusters (add display per instance).
 	const glassGroup =
-		'pointer-events-auto shrink-0 items-center gap-0.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding p-1 shadow-lg backdrop-blur-sm';
+		'pointer-events-auto shrink-0 items-center gap-0.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding p-1 shadow-sm backdrop-blur-sm';
 </script>
 
 {#snippet searchBar(autofocus: boolean, compact: boolean)}
 	<InputGroup.Root
 		class="{landing
 			? 'bg-accent/50 backdrop-blur-sm'
-			: 'bg-primary-foreground/80 shadow-lg backdrop-blur-sm'} {compact
+			: 'bg-primary-foreground/80 shadow-sm backdrop-blur-sm'} {compact
 			? 'h-9'
 			: 'h-11'} w-full rounded-full"
 	>
@@ -356,6 +394,20 @@
 						</Badge>
 					{/if}
 				</DropdownMenu.Item>
+				{#if showSupporterItem}
+					<DropdownMenu.Item
+						onclick={() => {
+							if (!supporter.subscribed) markFeatureSeen(FEATURE_BECOME_SUPPORTER);
+							goto(resolve('/support-us'));
+						}}
+					>
+						<Heart class="size-4 fill-pink-500 stroke-pink-500" />
+						{supporter.subscribed ? "You're a supporter" : 'Become a supporter'}
+						{#if showSupporterNew}
+							<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
+						{/if}
+					</DropdownMenu.Item>
+				{/if}
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={handleLogout}>
 					<LogOut class="size-4" />
@@ -385,6 +437,10 @@
 			Get browser extension
 		</DropdownMenu.Item>
 	{/if}
+	<DropdownMenu.Item onclick={openBlog}>
+		<Newspaper class="size-4" />
+		Blog
+	</DropdownMenu.Item>
 	<DropdownMenu.Item onclick={() => openSettings()}>
 		<Settings class="size-4" />
 		Settings
@@ -455,7 +511,7 @@
 				<a
 					href={resolve('/')}
 					aria-label="Go to home"
-					class="flex h-11 shrink-0 items-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-lg backdrop-blur-sm"
+					class="flex h-11 shrink-0 items-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-sm backdrop-blur-sm"
 				>
 					<span class="block h-5"><Logo /></span>
 				</a>
@@ -470,7 +526,7 @@
 				in:fade={{ duration: 250, easing: cubicOut }}
 				href={resolve('/')}
 				aria-label="Go to home"
-				class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-lg backdrop-blur-sm md:hidden"
+				class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
 				style="top: calc(env(safe-area-inset-top) + 2rem)"
 			>
 				<span class="block h-5"><Logo /></span>
@@ -512,7 +568,7 @@
 		<div class="flex-1"></div>
 
 		{#if user}
-			<!-- Desktop top-right cluster: search, add, profile, burger. On mobile these
+			<!-- Desktop top-right cluster: search, add, burger, profile. On mobile these
 			     live in the bottom cluster instead. -->
 			<div in:fade={{ duration: 250, easing: cubicOut }} class="{glassGroup} hidden md:flex">
 				<Button
@@ -526,7 +582,6 @@
 					<SearchIcon class="size-4" />
 				</Button>
 				{@render plusMenu('bottom', 'end')}
-				{@render avatarMenu('bottom', 'end')}
 				<DropdownMenu.Root bind:open={burgerOpenDesktop}>
 					<DropdownMenu.Trigger class="shrink-0 outline-none">
 						{#snippet child({ props })}
@@ -552,6 +607,7 @@
 						{@render burgerItems()}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
+				{@render avatarMenu('bottom', 'end')}
 			</div>
 		{:else}
 			<Button
@@ -564,6 +620,11 @@
 			>
 				<SearchIcon class="size-4" />
 			</Button>
+			{#if !landing}
+				<ThemeToggle
+					class="pointer-events-auto h-9 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground"
+				/>
+			{/if}
 			<a href={resolve('/login')} class="pointer-events-auto">
 				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
 			</a>
@@ -592,7 +653,7 @@
 	{/if}
 </header>
 
-<!-- Mobile bottom-center cluster: menu, profile, add, mode switch, search. The extra
+<!-- Mobile bottom-center cluster: profile, menu, add, mode switch, search. The extra
      0.125rem centers the 44px-tall cluster on the 48px explore flow-field button. -->
 {#if user && !landing}
 	<div
@@ -600,6 +661,7 @@
 		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 md:hidden"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1.375rem)"
 	>
+		{@render avatarMenu('top', 'center', bottomBarEl)}
 		<DropdownMenu.Root bind:open={burgerOpenMobile}>
 			<DropdownMenu.Trigger class="shrink-0 outline-none">
 				{#snippet child({ props })}
@@ -630,7 +692,6 @@
 				{@render burgerItems()}
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
-		{@render avatarMenu('top', 'center', bottomBarEl)}
 		{@render plusMenu('top', 'center', bottomBarEl)}
 		{#if canSeeOrganize}
 			<ModeSwitcher mode="explore" variant="icon" side="top" anchor={bottomBarEl} />

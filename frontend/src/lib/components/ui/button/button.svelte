@@ -13,7 +13,7 @@
 				secondary:
 					'bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
 				glass:
-					'bg-primary-foreground/80 text-foreground shadow-lg backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground',
+					'bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground',
 				ghost:
 					'hover:bg-muted hover:text-foreground dark:hover:bg-muted/50 aria-expanded:bg-muted aria-expanded:text-foreground',
 				destructive:

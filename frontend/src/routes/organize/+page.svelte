@@ -189,6 +189,10 @@
 	const isMobile = new IsMobile();
 </script>
 
+<svelte:head>
+	<title>{selected ? selected.name + ' · Organize · Currents' : 'Organize · Currents'}</title>
+</svelte:head>
+
 <svelte:window onkeydown={onWindowKeydown} />
 
 <!-- The shared collection-scope filter used by the text, color, and hybrid chips

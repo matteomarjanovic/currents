@@ -21,7 +21,7 @@
 
 <div class="relative text-foreground" style="--landing-top-bar-height: 3.75rem;">
 	<section
-		class="relative isolate h-screen overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8"
+		class="relative isolate h-[calc(100vh+var(--landing-top-bar-height))] overflow-hidden px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-8"
 		style="margin-top: calc(-1 * var(--landing-top-bar-height));"
 	>
 		<video
