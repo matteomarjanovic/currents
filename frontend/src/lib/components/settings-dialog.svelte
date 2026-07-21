@@ -354,24 +354,6 @@
 								</div>
 							</div>
 
-							{#if supporter.subscribed}
-								<div
-									class="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-4"
-								>
-									<div class="flex flex-col gap-0.5">
-										<span class="text-sm font-medium">Active subscription</span>
-										<span class="text-xs text-muted-foreground">
-											Cancel your supporter subscription in the billing portal before deleting your
-											account.
-										</span>
-									</div>
-									<Button variant="outline" size="sm" disabled={portalLoading} onclick={openPortal}>
-										Manage
-										<ExternalLink class="size-3.5" />
-									</Button>
-								</div>
-							{/if}
-
 							<div class="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-card p-4">
 								<div class="flex flex-col gap-0.5">
 									<span class="text-sm font-medium">Delete account</span>
@@ -380,18 +362,36 @@
 										your data. What happens to the records in your AT Protocol repo is up to you.
 									</span>
 								</div>
-								<Button
-									variant="destructive"
-									size="sm"
-									class="self-start"
-									disabled={!supporter.loaded || supporter.subscribed}
-									onclick={() => {
-										deletePds = false;
-										deleteOpen = true;
-									}}
-								>
-									Delete account
-								</Button>
+								{#if supporter.subscribed}
+									<p class="text-xs text-muted-foreground">
+										You can't delete your account while your supporter subscription is active. Cancel
+										it in the billing portal first.
+									</p>
+								{/if}
+								<div class="flex flex-wrap items-center gap-2">
+									<Button
+										variant="destructive"
+										size="sm"
+										disabled={!supporter.loaded || supporter.subscribed}
+										onclick={() => {
+											deletePds = false;
+											deleteOpen = true;
+										}}
+									>
+										Delete account
+									</Button>
+									{#if supporter.subscribed}
+										<Button
+											variant="outline"
+											size="sm"
+											disabled={portalLoading}
+											onclick={openPortal}
+										>
+											Manage subscription
+											<ExternalLink class="size-3.5" />
+										</Button>
+									{/if}
+								</div>
 							</div>
 						</section>
 					{/if}
