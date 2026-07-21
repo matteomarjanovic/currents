@@ -221,6 +221,9 @@ def _embed_images(images: list[Image.Image]) -> list[dict]:
 
 
 def _embed_texts(texts: list[str]) -> list[list[float]]:
+    # SigLIP text encoder is case-sensitive and trained on lowercased captions;
+    # lowercasing keeps queries on-distribution (e.g. "Home" ≈ "home").
+    texts = [t.lower() for t in texts]
     inputs = processor(
         text=texts,
         max_length=64,
