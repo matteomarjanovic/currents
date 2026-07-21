@@ -32,6 +32,10 @@ const config = {
 				// Expected until the standard.site publication record is published and
 				// STANDARD_SITE_PUBLICATION_RKEY is filled in — see frontend/src/lib/standard-site.ts.
 				if (path === '/.well-known/site.standard.publication' && status === 404) return;
+				// The PWA plugin (which emits /manifest.webmanifest, linked from app.html) is skipped
+				// in the Capacitor build — see the CAPACITOR guard in vite.config.ts — so the crawler
+				// can't resolve the manifest link there. The native webview never loads it anyway.
+				if (path === '/manifest.webmanifest' && status === 404) return;
 				throw new Error(message);
 			},
 			// The site.standard.document <link href="at://..."> in blog-post-layout.svelte is a

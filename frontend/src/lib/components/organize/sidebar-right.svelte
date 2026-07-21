@@ -107,7 +107,7 @@
 		class="h-full {sidebar.isMobile ? 'w-full' : 'w-[22rem]'}"
 	>
 		<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
-			<div class="flex items-center justify-between gap-2 p-3">
+			<div class="flex items-center justify-between gap-2 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
 				<Tabs.List>
 					<Tabs.Trigger value="details">Details</Tabs.Trigger>
 					<Tabs.Trigger value="similar">Related</Tabs.Trigger>

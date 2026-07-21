@@ -175,7 +175,9 @@
 <Sidebar.Provider class="h-svh overflow-hidden">
 	<OrganizeSidebarLeft {selectedUri} />
 	<Sidebar.Inset class="overflow-hidden">
-		<header class="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+		<header
+			class="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b px-4 pt-[env(safe-area-inset-top)]"
+		>
 			<Sidebar.Trigger class="-ml-1" />
 			<Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
 			{#if search}

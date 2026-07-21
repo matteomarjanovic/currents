@@ -15,12 +15,12 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test:e2e": "playwright test",
-		"build:mobile": "CAPACITOR=1 vite build && cap sync",
+		"build:mobile": "CAPACITOR=1 PUBLIC_INTERACTIVE_WIDGET=overlays-content vite build && cap sync",
 		"cap:sync": "cap sync",
 		"cap:open:android": "cap open android",
 		"cap:open:ios": "cap open ios",
-		"dev:android": "CAPACITOR=1 vite build --mode development && cap sync && cap run android",
-		"dev:ios": "CAPACITOR=1 vite build --mode development && cap sync && cap run ios"
+		"dev:android": "CAPACITOR=1 PUBLIC_INTERACTIVE_WIDGET=overlays-content vite build --mode development && cap sync && cap run android",
+		"dev:ios": "CAPACITOR=1 PUBLIC_INTERACTIVE_WIDGET=overlays-content vite build --mode development && cap sync && cap run ios"
 	},
 	"devDependencies": {
 		"@capacitor/assets": "^3.0.5",
