@@ -134,7 +134,7 @@
 </script>
 
 <Sidebar.Root collapsible="offcanvas" variant="inset" side="left">
-	<Sidebar.Header class="gap-3 pb-1">
+	<Sidebar.Header class="gap-3 pb-1 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
 		<div class="px-1 pt-1">
 			<a href="/organize" class="block h-5 w-fit text-foreground" aria-label="Currents">
 				<Logo />

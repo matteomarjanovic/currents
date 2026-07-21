@@ -2,9 +2,14 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<!-- interactive-widget differs per build target (see PUBLIC_INTERACTIVE_WIDGET in the
+		     .env files): the web build uses resizes-visual so the keyboard scrolls the focused
+		     input into view; the Capacitor build scripts override it to overlays-content because
+		     the safe-area plugin resizes the webview natively and Chrome reacting too would
+		     double-count the keyboard (grey band above it). -->
 		<meta
 			name="viewport"
-			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=overlays-content"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=%sveltekit.env.PUBLIC_INTERACTIVE_WIDGET%"
 		/>
 		<meta name="text-scale" content="scale" />
 		<!-- Site-wide default; hooks.server.ts strips these on pages that set their own og:image

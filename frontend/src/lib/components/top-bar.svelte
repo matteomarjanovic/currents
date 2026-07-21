@@ -483,7 +483,7 @@
 <header
 	class="{landing
 		? 'fixed'
-		: 'sticky'} pointer-events-none top-0 z-10 flex min-h-15 w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
+		: 'sticky'} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
 >
 	{#if !searchOpen}
 		{#if landing}
