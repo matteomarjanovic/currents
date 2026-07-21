@@ -2600,8 +2600,12 @@ func (m *PgStore) GetNearestClusterMedoid(ctx context.Context, embedding []float
 }
 
 // GetGlobalFeedSaves returns saves from across the network, ranked by a
-// time-decayed popularity score: save_count * exp(-0.01 * age_in_days).
-// No minimum save_count threshold — all images with a visual identity appear,
+// time-decayed popularity score: saver_count * exp(-0.1 * age_in_days) —
+// distinct savers, so one user saving an image into many collections doesn't
+// inflate it. A ±20% jitter seeded by (uri, current_date) rotates similarly
+// scored items daily; the seed must stay fixed within a day so offset-based
+// pagination doesn't skip or repeat rows between pages.
+// No minimum saver_count threshold — all images with a visual identity appear,
 // with popular recent images ranked highest.
 func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
 	excludeClause := ""
@@ -2650,9 +2654,14 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE s.author_did <> ALL($4)
+		  AND s.created_at IS NOT NULL
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
 		  ` + excludeClause + `
-		ORDER BY (vi.save_count * EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) DESC
+		ORDER BY (
+			vi.saver_count
+			* EXP(-0.1 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)
+			* (0.8 + 0.4 * (hashtext(s.uri || current_date::text) & 2147483647) / 2147483648.0)
+		) DESC
 		LIMIT $2 OFFSET $3
 	`
 	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset, m.cfg.HiddenDIDs)
