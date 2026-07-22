@@ -62,6 +62,16 @@
 	);
 	let syncedItemUri = $state<string | null>(null);
 
+	// Ordering snapshot: the collection URIs the item was already saved in when the
+	// list last opened. Kept separate from the reactive `localSaves` (which drives
+	// live checkmarks) so copying into a new collection doesn't reorder the list
+	// under the cursor; refreshed on the open edge below, and at mount — which is how
+	// the inline submenu/drawer variants reopen (their host unmounts them on close).
+	let savedSnapshot = $state(new Set(untrack(() => localSaves.map((s) => s.collectionUri))));
+	function snapshotSaved() {
+		savedSnapshot = new Set(localSaves.map((s) => s.collectionUri));
+	}
+
 	let userSelectedUri = $state<string | null>(null);
 	let selectedCollectionUri = $derived(
 		pickerMode
@@ -85,8 +95,13 @@
 	let createParent = $state<CollectionView | null>(null);
 	// When set, the list shows this collection's sections instead of the roots.
 	let drillParent = $state<CollectionView | null>(null);
+	let wasOpen = false;
 	$effect(() => {
 		onOpenChange?.(open);
+		// Re-snapshot on the open edge only, so newly-saved collections rise to the top
+		// on reopen but never mid-open. (untrack: don't depend on localSaves here.)
+		if (open && !wasOpen) untrack(snapshotSaved);
+		wasOpen = open;
 	});
 	// Always start back at the top level when the picker reopens.
 	$effect(() => {
@@ -130,9 +145,31 @@
 		}
 		return m;
 	});
-	let rootCollections = $derived(collections.items.filter((c) => !c.parentUri).sort(byRecentSave));
+	// A root counts as "saved" for ordering if the item was in it — or any of its
+	// sections — when the list opened (read from the frozen snapshot, not live state).
+	function inSavedSnapshotTree(root: CollectionView): boolean {
+		if (savedSnapshot.has(root.uri)) return true;
+		return (childrenByParent.get(root.uri) ?? []).some((c) => savedSnapshot.has(c.uri));
+	}
+	// Saved-in collections first, then the rest — each group keeping recent-activity order.
+	function savedFirst(list: CollectionView[], isSaved: (c: CollectionView) => boolean) {
+		const saved: CollectionView[] = [];
+		const rest: CollectionView[] = [];
+		for (const c of list) (isSaved(c) ? saved : rest).push(c);
+		return [...saved, ...rest];
+	}
+	let rootCollections = $derived(
+		savedFirst(
+			collections.items.filter((c) => !c.parentUri).sort(byRecentSave),
+			inSavedSnapshotTree
+		)
+	);
 	let drillSections = $derived(
-		drillParent ? [...(childrenByParent.get(drillParent.uri) ?? [])].sort(byRecentSave) : []
+		drillParent
+			? savedFirst([...(childrenByParent.get(drillParent.uri) ?? [])].sort(byRecentSave), (c) =>
+					savedSnapshot.has(c.uri)
+				)
+			: []
 	);
 
 	function sectionCount(uri: string): number {

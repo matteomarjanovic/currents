@@ -22,6 +22,7 @@
 	import Scan from '@lucide/svelte/icons/scan';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
+	import FolderInput from '@lucide/svelte/icons/folder-input';
 	import Copy from '@lucide/svelte/icons/copy';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import Download from '@lucide/svelte/icons/download';
@@ -115,12 +116,21 @@
 	let visible = $derived(feed.items.filter((i) => !shouldHide(i.labels)));
 
 	// ── Context-menu actions ──────────────────────────────────────────────────
-	// Mobile "Add to collection" opens a shared drawer (desktop uses an inline submenu).
-	let addTarget = $state<SaveView | null>(null);
-	let addOpen = $state(false);
-	function openAddDrawer(item: SaveView) {
-		addTarget = item;
-		addOpen = true;
+	// Mobile "Copy/Move to collection" opens a shared drawer (desktop uses an inline
+	// submenu). Copy shows the multi-select membership list; move shows a destination
+	// picker.
+	let drawerTarget = $state<SaveView | null>(null);
+	let drawerOpen = $state(false);
+	let drawerMode = $state<'copy' | 'move'>('copy');
+	function openCopyDrawer(item: SaveView) {
+		drawerTarget = item;
+		drawerMode = 'copy';
+		drawerOpen = true;
+	}
+	function openMoveDrawer(item: SaveView) {
+		drawerTarget = item;
+		drawerMode = 'move';
+		drawerOpen = true;
 	}
 	function onItemSavesChange(item: SaveView, saves: { collectionUri: string; saveUri: string }[]) {
 		item.viewer = { ...(item.viewer ?? {}), saves };
@@ -141,8 +151,38 @@
 		}
 	}
 
+	// Move relocates this save's record to another collection ('' = unsorted/profile).
+	// It resaves into the destination first — so CreateResave inherits the original
+	// createdAt from the still-present source — then deletes the source. If the image
+	// is already in the destination, a resave would duplicate it, so just drop the
+	// source instead.
+	async function moveToCollection(item: SaveView, collectionUri: string) {
+		if (collectionUri === selectedUri) return; // already here
+		const rkey = item.uri.split('/').pop();
+		const alreadyInDest = item.viewer?.saves?.some((s) => s.collectionUri === collectionUri);
+		feed.removeItem(item.uri); // optimistic: leaves the current collection grid
+		try {
+			if (!alreadyInDest) {
+				const res = await apiFetch(`/resave`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ saveUri: item.uri, collectionUri })
+				});
+				if (!res.ok) throw new Error(`resave: ${res.status}`);
+			}
+			const del = await apiFetch(`/save/${rkey}`, { method: 'DELETE' });
+			if (!del.ok) throw new Error(`delete: ${del.status}`);
+			emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
+			toast.success('Moved');
+		} catch {
+			toast.error('Could not move');
+			feed.reset();
+			feed.loadMore();
+		}
+	}
+
 	// Drop a tile when its save is removed elsewhere (the detail sidebar's selector, or
-	// this menu's inline "Add to collection" toggling the current collection off).
+	// this menu's inline "Copy to collection" toggling the current collection off).
 	$effect(() =>
 		onSaveRemoved((e) => {
 			if (selectedUri && e.collectionUri === selectedUri) feed.removeItem(e.saveUri);
@@ -298,15 +338,15 @@
 	</Menu.Item>
 	<Menu.Separator />
 	{#if sidebar.isMobile}
-		<Menu.Item onSelect={() => openAddDrawer(item)}>
+		<Menu.Item onSelect={() => openCopyDrawer(item)}>
 			<FolderPlus />
-			Add to collection…
+			Copy to collection…
 		</Menu.Item>
 	{:else}
 		<Menu.Sub>
 			<Menu.SubTrigger class="gap-2.5">
 				<FolderPlus />
-				Add to collection
+				Copy to collection
 			</Menu.SubTrigger>
 			<!-- Scroll on an inner div so the SubContent's frosted background (tint +
 			     backdrop-blur) stays fixed and covers every row; scrolling the panel
@@ -322,6 +362,29 @@
 			</Menu.SubContent>
 		</Menu.Sub>
 	{/if}
+	<!-- Move: only when viewing a real collection, where this tile's record
+	     unambiguously belongs to it. Destination picker (no item → pickerMode);
+	     the Profile row selects '' = unsorted. -->
+	{#if selectedUri && !search && !color && !similar}
+		{#if sidebar.isMobile}
+			<Menu.Item onSelect={() => openMoveDrawer(item)}>
+				<FolderInput />
+				Move to collection…
+			</Menu.Item>
+		{:else}
+			<Menu.Sub>
+				<Menu.SubTrigger class="gap-2.5">
+					<FolderInput />
+					Move to collection
+				</Menu.SubTrigger>
+				<Menu.SubContent class="w-64 overflow-hidden p-0">
+					<div class="max-h-[50vh] overflow-y-auto p-1.5">
+						<CollectionSelector variant="inline" onSelect={(uri) => moveToCollection(item, uri)} />
+					</div>
+				</Menu.SubContent>
+			</Menu.Sub>
+		{/if}
+	{/if}
 	<Menu.Item onSelect={() => copyImage(item)}>
 		<Copy />
 		Copy image
@@ -334,7 +397,7 @@
 		<Download />
 		Download
 	</Menu.Item>
-	{#if selectedUri && !search && !color}
+	{#if selectedUri && !search && !color && !similar}
 		<Menu.Separator />
 		<Menu.Item variant="destructive" onSelect={() => removeFromCollection(item)}>
 			<Trash2 />
@@ -443,8 +506,8 @@
 										</button>
 									{/snippet}
 								</ContextMenu.Trigger>
-								<!-- overflow-*-visible so the "Add to collection" submenu (which renders
-								     inside the content and opens to the side) isn't clipped by the
+								<!-- overflow-*-visible so the collection submenus (which render
+								     inside the content and open to the side) aren't clipped by the
 								     menu's default overflow-x-hidden/overflow-y-auto. -->
 								<ContextMenu.Content class="w-56 overflow-x-visible overflow-y-visible">
 									{@render menuItems(ContextMenu, item)}
@@ -498,20 +561,34 @@
 	{/if}
 </div>
 
-<!-- Mobile "Add to collection": a shared bottom drawer (desktop uses the inline submenu). -->
-<Drawer.Root bind:open={addOpen}>
+<!-- Mobile "Copy/Move to collection": a shared bottom drawer (desktop uses the inline submenu). -->
+<Drawer.Root bind:open={drawerOpen}>
 	<Drawer.Content>
 		<Drawer.Header>
-			<Drawer.Title>Save to collection</Drawer.Title>
-			<Drawer.Description>Pick one or more collections.</Drawer.Description>
+			<Drawer.Title
+				>{drawerMode === 'move' ? 'Move to collection' : 'Copy to collection'}</Drawer.Title
+			>
+			<Drawer.Description>
+				{drawerMode === 'move' ? 'Pick a destination collection.' : 'Pick one or more collections.'}
+			</Drawer.Description>
 		</Drawer.Header>
 		<div class="max-h-[60vh] overflow-y-auto p-1.5">
-			{#if addTarget}
-				<CollectionSelector
-					item={addTarget}
-					variant="inline"
-					onSavesChange={(saves) => addTarget && onItemSavesChange(addTarget, saves)}
-				/>
+			{#if drawerTarget}
+				{#if drawerMode === 'move'}
+					<CollectionSelector
+						variant="inline"
+						onSelect={(uri) => {
+							if (drawerTarget) moveToCollection(drawerTarget, uri);
+							drawerOpen = false;
+						}}
+					/>
+				{:else}
+					<CollectionSelector
+						item={drawerTarget}
+						variant="inline"
+						onSavesChange={(saves) => drawerTarget && onItemSavesChange(drawerTarget, saves)}
+					/>
+				{/if}
 			{/if}
 		</div>
 		<Drawer.Footer>

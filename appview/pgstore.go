@@ -1744,6 +1744,23 @@ func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 	return err
 }
 
+// EarliestSaveCreatedAt returns the earliest created_at among an author's own
+// saves of a blob, or nil if they have none. A resave of an image the viewer
+// already has inherits this original time instead of stamping "now", so copying
+// or moving between collections keeps the item's position on time-sorted views
+// instead of reordering it to the top.
+func (m *PgStore) EarliestSaveCreatedAt(ctx context.Context, authorDID, blobCID string) (*time.Time, error) {
+	var t *time.Time
+	err := m.pool.QueryRow(ctx,
+		`SELECT MIN(created_at) FROM save WHERE author_did = $1 AND pds_blob_cid = $2`,
+		authorDID, blobCID,
+	).Scan(&t)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
 // DeleteSave deletes a save and re-elects the canonical blob for its visual identity if needed.
 func (m *PgStore) DeleteSave(ctx context.Context, uri string) error {
 	tx, err := m.pool.Begin(ctx)

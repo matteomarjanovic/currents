@@ -1297,11 +1297,19 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		resolvedAttribution = saveAttributionFromFields(origAttrURL, origAttrLicense, origAttrCredit)
 	}
 
+	// If the viewer already has this image saved (same blob CID), inherit their
+	// original save time so copying/moving it between collections doesn't reorder
+	// it to the top of time-sorted views. Otherwise it's genuinely new to them.
+	createdAt := syntax.DatetimeNow().String()
+	if earliest, err := s.Store.EarliestSaveCreatedAt(r.Context(), did.String(), blobCID); err == nil && earliest != nil {
+		createdAt = earliest.UTC().Format("2006-01-02T15:04:05.000Z")
+	}
+
 	record := map[string]any{
 		"$type":     saveNSID,
 		"content":   buildImageContentRecordWithAttribution(blobAny, resolvedAttribution, origAlt),
 		"resaveOf":  resaveRef,
-		"createdAt": syntax.DatetimeNow().String(),
+		"createdAt": createdAt,
 	}
 	// No collection → an "unsorted" resave that lives on the viewer's profile only.
 	if body.CollectionURI != "" {

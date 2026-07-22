@@ -566,3 +566,42 @@ func equalStrings(got, want []string) bool {
 	}
 	return true
 }
+
+// TestEarliestSaveCreatedAt pins the timestamp a resave inherits: the earliest
+// created_at among the *viewer's own* saves of that blob. Scoped by author so a
+// resave of someone else's image doesn't backdate to their save time, and nil
+// when the viewer has no copy (a genuinely new save stamps "now").
+func TestEarliestSaveCreatedAt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	viewer := "did:plc:viewer"
+	other := "did:plc:other"
+	saveURI := func(did, rkey string) string { return "at://" + did + "/is.currents.feed.save/" + rkey }
+	colA := "at://" + viewer + "/is.currents.feed.collection/a"
+	colB := "at://" + viewer + "/is.currents.feed.collection/b"
+
+	// Viewer has the same image in two collections, saved at different times.
+	first := testBase.Add(1 * time.Hour)
+	second := testBase.Add(5 * time.Hour)
+	seedImageSave(t, s, saveURI(viewer, "v1"), viewer, colA, "blob-shared", 0.5, second)
+	seedImageSave(t, s, saveURI(viewer, "v2"), viewer, colB, "blob-shared", 0.5, first)
+	// Another user saved the same blob even earlier — must not affect the viewer's result.
+	seedImageSave(t, s, saveURI(other, "o1"), other, colA, "blob-shared", 0.5, testBase)
+
+	got, err := s.EarliestSaveCreatedAt(ctx, viewer, "blob-shared")
+	if err != nil {
+		t.Fatalf("EarliestSaveCreatedAt: %v", err)
+	}
+	if got == nil || !got.Equal(first) {
+		t.Fatalf("got %v, want %v (viewer's earliest, ignoring the other user's)", got, first)
+	}
+
+	// A blob the viewer has never saved → nil, so the resave stamps a fresh time.
+	none, err := s.EarliestSaveCreatedAt(ctx, viewer, "blob-unknown")
+	if err != nil {
+		t.Fatalf("EarliestSaveCreatedAt(unknown): %v", err)
+	}
+	if none != nil {
+		t.Fatalf("got %v, want nil for a blob the viewer doesn't have", none)
+	}
+}
