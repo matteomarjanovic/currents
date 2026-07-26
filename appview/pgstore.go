@@ -1102,6 +1102,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 		`DELETE FROM follow WHERE follower_did = $1`,
 		`DELETE FROM seen_feature WHERE viewer_did = $1`,
 		`DELETE FROM moderation_pref WHERE viewer_did = $1`,
+		`DELETE FROM user_pref WHERE viewer_did = $1`,
 		`DELETE FROM notification_seen WHERE viewer_did = $1`,
 		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
 		`DELETE FROM polar_subscription WHERE did = $1`,   // only non-active rows reach here
@@ -1174,6 +1175,32 @@ func (m *PgStore) SetModerationPrefs(ctx context.Context, viewerDID string, p Mo
 		     graphic_media = EXCLUDED.graphic_media, ai_generated = EXCLUDED.ai_generated,
 		     updated_at = now()`,
 		viewerDID, p.Porn, p.Sexual, p.Nudity, p.GraphicMedia, p.AIGenerated)
+	return err
+}
+
+// GetUserPrefs returns the user's general preferences, or the defaults when no
+// row exists yet.
+func (m *PgStore) GetUserPrefs(ctx context.Context, viewerDID string) (UserPrefs, error) {
+	p := defaultUserPrefs
+	err := m.pool.QueryRow(ctx,
+		`SELECT gif_autoplay FROM user_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.GifAutoplay)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return defaultUserPrefs, nil
+	}
+	if err != nil {
+		return UserPrefs{}, err
+	}
+	return p, nil
+}
+
+func (m *PgStore) SetUserPrefs(ctx context.Context, viewerDID string, p UserPrefs) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO user_pref (viewer_did, gif_autoplay, updated_at)
+		 VALUES ($1, $2, now())
+		 ON CONFLICT (viewer_did) DO UPDATE SET
+		     gif_autoplay = EXCLUDED.gif_autoplay, updated_at = now()`,
+		viewerDID, p.GifAutoplay)
 	return err
 }
 
@@ -1288,6 +1315,7 @@ type SaveRow struct {
 	Height             *int
 	DominantColors     json.RawMessage // nil when visual identity not yet resolved
 	AltText            string
+	MimeType           string // blob mime type from the record, e.g. "image/gif"; "" when unknown
 }
 
 func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerDID string) ([]SaveRow, error) {
@@ -1326,7 +1354,8 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM save s
 		WHERE s.uri = ANY($1)
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
@@ -1340,7 +1369,7 @@ func (m *PgStore) GetSavesByURIs(ctx context.Context, saveURIs []string, viewerD
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText, &row.MimeType); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -1452,7 +1481,8 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM save s
 		WHERE s.collection_uri = $1
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
@@ -1470,7 +1500,7 @@ func (m *PgStore) GetSavesPage(ctx context.Context, collectionURI, viewerDID str
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText, &row.MimeType); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -1547,7 +1577,8 @@ func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM save s
 		WHERE s.author_did = $1
 		  AND s.collection_uri = ''
@@ -1566,7 +1597,7 @@ func (m *PgStore) GetUnsortedSavesPage(ctx context.Context, authorDID, viewerDID
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText, &row.MimeType); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -1661,7 +1692,8 @@ func (m *PgStore) GetLibrarySavesPage(ctx context.Context, authorDID, viewerDID 
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM save s
 		JOIN page p ON p.uri = s.uri
 		ORDER BY s.created_at DESC NULLS LAST, s.uri ASC
@@ -1676,7 +1708,7 @@ func (m *PgStore) GetLibrarySavesPage(ctx context.Context, authorDID, viewerDID 
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText, &row.MimeType); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -1717,12 +1749,13 @@ type UpsertSaveParams struct {
 	Height             *int
 	DominantColors     json.RawMessage
 	AltText            string
+	MimeType           string
 }
 
 func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 	_, err := m.pool.Exec(ctx, `
-		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors, alt_text)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors, alt_text, mime_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		ON CONFLICT (uri) DO UPDATE
 			SET collection_uri      = EXCLUDED.collection_uri,
 			    pds_blob_cid        = EXCLUDED.pds_blob_cid,
@@ -1739,8 +1772,9 @@ func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 			    width               = EXCLUDED.width,
 			    height              = EXCLUDED.height,
 			    dominant_colors     = EXCLUDED.dominant_colors,
-			    alt_text            = EXCLUDED.alt_text
-	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors), p.AltText)
+			    alt_text            = EXCLUDED.alt_text,
+			    mime_type           = EXCLUDED.mime_type
+	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors), p.AltText, p.MimeType)
 	return err
 }
 
@@ -2166,6 +2200,66 @@ func (m *PgStore) UpdateSaveDominantColorsByCID(ctx context.Context, pdsBlobCID 
 	return err
 }
 
+// SaveBlobMimeBackfill identifies a distinct image blob whose saves have no
+// stored mime type yet.
+type SaveBlobMimeBackfill struct {
+	BlobDID string
+	BlobCID string
+}
+
+func (m *PgStore) CountSaveBlobsMissingMimeType(ctx context.Context) (int64, error) {
+	var n int64
+	err := m.pool.QueryRow(ctx, `
+		SELECT count(DISTINCT pds_blob_cid)
+		FROM save
+		WHERE mime_type IS NULL
+		  AND content_nsid = 'is.currents.content.image'
+		  AND pds_blob_cid <> ''
+	`).Scan(&n)
+	return n, err
+}
+
+// ListSaveBlobsMissingMimeTypeBatch pages through distinct image blobs whose
+// saves have no mime type yet. The keyset cursor (afterCID) keeps a single run
+// terminating even when some blobs are unreachable; setting mime_type drops a
+// blob from the pool, so a rerun retries only past failures.
+func (m *PgStore) ListSaveBlobsMissingMimeTypeBatch(ctx context.Context, afterCID string, n int) ([]SaveBlobMimeBackfill, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT DISTINCT ON (pds_blob_cid) pds_blob_cid, author_did
+		FROM save
+		WHERE mime_type IS NULL
+		  AND content_nsid = 'is.currents.content.image'
+		  AND pds_blob_cid <> ''
+		  AND pds_blob_cid > $1
+		ORDER BY pds_blob_cid, author_did
+		LIMIT $2
+	`, afterCID, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var batch []SaveBlobMimeBackfill
+	for rows.Next() {
+		var b SaveBlobMimeBackfill
+		if err := rows.Scan(&b.BlobCID, &b.BlobDID); err != nil {
+			return nil, err
+		}
+		batch = append(batch, b)
+	}
+	return batch, rows.Err()
+}
+
+// UpdateSaveMimeTypeByCID stamps the mime type on every save of a blob. Content
+// addressing guarantees identical bytes across saves of the same CID, so one
+// sniffed value is correct for all of them.
+func (m *PgStore) UpdateSaveMimeTypeByCID(ctx context.Context, pdsBlobCID, mimeType string) error {
+	_, err := m.pool.Exec(ctx, `
+		UPDATE save SET mime_type = $2 WHERE pds_blob_cid = $1 AND mime_type IS NULL
+	`, pdsBlobCID, mimeType)
+	return err
+}
+
 func (m *PgStore) GetBackgroundMetrics(ctx context.Context) (BackgroundMetrics, error) {
 	saveMetrics, err := m.getSaveBackfillMetrics(ctx)
 	if err != nil {
@@ -2285,7 +2379,7 @@ func scanSaveRows(rows pgx.Rows) ([]SaveRow, error) {
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText, &row.MimeType); err != nil {
 			return nil, err
 		}
 		result = append(result, row)
@@ -2353,7 +2447,7 @@ func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float3
 	return page.Rows, nil
 }
 
-// saveRowProjection is the shared 18-column SELECT list (order matches
+// saveRowProjection is the shared 19-column SELECT list (order matches
 // scanSaveRows / SaveRow) used by every save-search query. It references $3 as
 // the viewer DID for the viewer_saves / viewer_attribution subqueries.
 const saveRowProjection = `
@@ -2390,7 +2484,8 @@ const saveRowProjection = `
 	s.width,
 	s.height,
 	s.dominant_colors,
-	COALESCE(s.alt_text, '')`
+	COALESCE(s.alt_text, ''),
+	COALESCE(s.mime_type, '')`
 
 func (m *PgStore) SearchSavesPageByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) (annSavePage, error) {
 	return m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, limit, searchSavesQueryLimit(limit, excludeViewerSaves), offset)
@@ -2609,7 +2704,8 @@ func (m *PgStore) getRelatedSavesPageByURI(ctx context.Context, uri string, view
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE vi.embedding IS NOT NULL
@@ -2674,7 +2770,8 @@ func (m *PgStore) FindSimilarLibrarySavesPageByURI(ctx context.Context, uri, vie
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM save s
 		JOIN visual_identity vi ON vi.id = s.visual_identity_id
 		WHERE vi.embedding IS NOT NULL
@@ -2970,7 +3067,8 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			s.width,
 			s.height,
 			s.dominant_colors,
-			COALESCE(s.alt_text, '')
+			COALESCE(s.alt_text, ''),
+			COALESCE(s.mime_type, '')
 		FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE s.author_did <> ALL($4)
@@ -2993,7 +3091,7 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 	var result []SaveRow
 	for rows.Next() {
 		var row SaveRow
-		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText); err != nil {
+		if err := rows.Scan(&row.URI, &row.BlobCID, &row.AuthorDID, &row.ContentNSID, &row.Text, &row.OriginURL, &row.AttributionURL, &row.AttributionLicense, &row.AttributionCredit, &row.ResaveOfURI, &row.ResaveOfCID, &row.CreatedAt, &row.ViewerSaves, &row.ViewerAttribution, &row.Width, &row.Height, &row.DominantColors, &row.AltText, &row.MimeType); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

@@ -45,6 +45,7 @@ type imageView struct {
 	DominantColor string           `json:"dominantColor,omitempty"`
 	Palette       []string         `json:"palette,omitempty"`
 	Alt           string           `json:"alt,omitempty"`
+	MimeType      string           `json:"mimeType,omitempty"`
 	Attribution   *saveAttribution `json:"attribution,omitempty"`
 }
 
@@ -399,6 +400,7 @@ func buildSaveContentView(row SaveRow, cdnBaseURL string) any {
 		BlobCID:     row.BlobCID,
 		ImageURL:    cdnBaseURL + "/img/" + row.AuthorDID + "/" + row.BlobCID,
 		Alt:         row.AltText,
+		MimeType:    row.MimeType,
 		Attribution: saveAttributionFromFields(row.AttributionURL, row.AttributionLicense, row.AttributionCredit),
 	}
 	if row.Width != nil {

@@ -605,3 +605,85 @@ func TestEarliestSaveCreatedAt(t *testing.T) {
 		t.Fatalf("got %v, want nil for a blob the viewer doesn't have", none)
 	}
 }
+
+// TestSaveMimeTypeRoundTrip pins that a save's blob mime type survives the
+// upsert → GetSavesByURIs path (the field the web client reads to freeze GIFs),
+// and that a save whose record omits it reads back as "".
+func TestSaveMimeTypeRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	author := "did:plc:author"
+	createdAt := testBase.Add(time.Hour)
+
+	if err := s.UpsertSave(ctx, UpsertSaveParams{
+		URI:         "at://" + author + "/is.currents.feed.save/gif",
+		AuthorDID:   author,
+		PdsBlobCID:  "blob-gif",
+		ContentNSID: "is.currents.content.image",
+		CreatedAt:   &createdAt,
+		MimeType:    "image/gif",
+	}); err != nil {
+		t.Fatalf("upserting gif save: %v", err)
+	}
+	if err := s.UpsertSave(ctx, UpsertSaveParams{
+		URI:         "at://" + author + "/is.currents.feed.save/jpg",
+		AuthorDID:   author,
+		PdsBlobCID:  "blob-jpg",
+		ContentNSID: "is.currents.content.image",
+		CreatedAt:   &createdAt,
+	}); err != nil {
+		t.Fatalf("upserting jpg save: %v", err)
+	}
+
+	rows, err := s.GetSavesByURIs(ctx,
+		[]string{"at://" + author + "/is.currents.feed.save/gif", "at://" + author + "/is.currents.feed.save/jpg"}, "")
+	if err != nil {
+		t.Fatalf("GetSavesByURIs: %v", err)
+	}
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.BlobCID] = r.MimeType
+	}
+	if got["blob-gif"] != "image/gif" {
+		t.Fatalf("gif mime = %q, want image/gif", got["blob-gif"])
+	}
+	if got["blob-jpg"] != "" {
+		t.Fatalf("jpg mime = %q, want empty (record omitted it)", got["blob-jpg"])
+	}
+}
+
+// TestUserPrefs pins the general-preferences get/set semantics: a user with no
+// row is on the defaults (gifAutoplay on), and a stored value round-trips.
+func TestUserPrefs(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	did := "did:plc:prefsuser"
+
+	got, err := s.GetUserPrefs(ctx, did)
+	if err != nil {
+		t.Fatalf("GetUserPrefs(default): %v", err)
+	}
+	if !got.GifAutoplay {
+		t.Fatalf("default gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+
+	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: false}); err != nil {
+		t.Fatalf("SetUserPrefs: %v", err)
+	}
+	got, err = s.GetUserPrefs(ctx, did)
+	if err != nil {
+		t.Fatalf("GetUserPrefs(stored): %v", err)
+	}
+	if got.GifAutoplay {
+		t.Fatalf("stored gifAutoplay = %v, want false", got.GifAutoplay)
+	}
+
+	// Upsert path: flipping back updates the existing row rather than erroring.
+	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: true}); err != nil {
+		t.Fatalf("SetUserPrefs(update): %v", err)
+	}
+	got, _ = s.GetUserPrefs(ctx, did)
+	if !got.GifAutoplay {
+		t.Fatalf("updated gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+}

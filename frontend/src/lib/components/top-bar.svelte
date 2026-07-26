@@ -6,10 +6,9 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { apiFetch } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
-	import { isNative, isMobileWeb, isStandalonePwa } from '$lib/platform';
+	import { isNative, isAndroid, isMobileWeb, isStandalonePwa } from '$lib/platform';
 	import { shouldOpenExternally, openExternal } from '$lib/external';
 	import { pwaInstall, promptInstall } from '$lib/stores/pwa-install.svelte';
-	import { auth } from '$lib/stores/auth.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as InputGroup from '$lib/components/ui/input-group';
 	import * as Select from '$lib/components/ui/select';
@@ -58,6 +57,7 @@
 		FEATURE_BECOME_SUPPORTER
 	} from '$lib/stores/features.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
+	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
 	import { role, loadRole, previewGated, canSeePreviewFeatures } from '$lib/stores/role.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { navHistory } from '$lib/stores/navigation.svelte';
@@ -160,6 +160,7 @@
 			void refreshSocial();
 			if (!features.loaded) void loadSeenFeatures();
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
+			if (!preferencesLoaded.value) void loadPreferences();
 			if (previewGated && !role.loaded) void loadRole();
 			if (!supporter.loaded) void loadSupporterStatus();
 		}
@@ -186,9 +187,10 @@
 				// best effort; even if the server call fails we still clear local state
 			}
 			await clearAuthToken();
-			auth.user = null;
-			auth.checked = true;
-			goto('/');
+			// Full reload of the local bundle wipes every store (and the layout's own `user`
+			// state), mirroring the web full-reload logout — a plain goto leaves stale state
+			// that keeps the app looking logged in.
+			window.location.href = '/';
 		} else {
 			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
 		}
@@ -228,6 +230,15 @@
 	function openBlog() {
 		if (shouldOpenExternally()) openExternal('/blog');
 		else goto(resolve('/blog'));
+	}
+
+	// /support-us (external Polar checkout) is hidden from the native apps for App Store
+	// compliance — it redirects to / on native. Google Play permits linking out, so on Android
+	// open the page in the system browser where the checkout works; iOS stays hidden.
+	function openSupportUs() {
+		if (!supporter.subscribed) markFeatureSeen(FEATURE_BECOME_SUPPORTER);
+		if (isAndroid()) openExternal('/support-us');
+		else goto(resolve('/support-us'));
 	}
 
 	$effect(() => {
@@ -395,12 +406,7 @@
 					{/if}
 				</DropdownMenu.Item>
 				{#if showSupporterItem}
-					<DropdownMenu.Item
-						onclick={() => {
-							if (!supporter.subscribed) markFeatureSeen(FEATURE_BECOME_SUPPORTER);
-							goto(resolve('/support-us'));
-						}}
-					>
+					<DropdownMenu.Item onclick={openSupportUs}>
 						<Heart class="size-4 fill-pink-500 stroke-pink-500" />
 						{supporter.subscribed ? "You're a supporter" : 'Become a supporter'}
 						{#if showSupporterNew}

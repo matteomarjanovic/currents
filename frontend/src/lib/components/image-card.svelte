@@ -7,6 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
+	import SaveImage from '$lib/components/save-image.svelte';
 
 	interface Props {
 		item: SaveView;
@@ -45,11 +46,11 @@
 
 {#snippet media()}
 	{#if image}
-		<img
-			src={image.imageUrl}
+		<SaveImage
+			{image}
 			alt={image.alt ?? item.text ?? ''}
-			loading="lazy"
 			class="w-full"
+			wrapperClass="block w-full"
 			style={image.width && image.height
 				? `aspect-ratio: ${image.width} / ${image.height}`
 				: undefined}

@@ -2,7 +2,8 @@
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { isNative } from '$lib/platform';
+	import { isNative, isAndroid } from '$lib/platform';
+	import { openExternal } from '$lib/external';
 	import {
 		openSupporterCheckout,
 		polarConfigured,
@@ -14,9 +15,11 @@
 	// settings dialog's subscription section.
 	let { onCheckoutOpen }: { onCheckoutOpen?: () => void } = $props();
 
-	// App Store rules forbid selling digital goods in-app through an external
-	// processor, so the native apps never show purchase buttons.
+	// App Store rules forbid selling digital goods in-app through an external processor, so the
+	// native apps never run the in-app Polar embed. Google Play permits linking out, so on Android
+	// we hand off to the web checkout in the system browser; iOS stays hidden.
 	const native = isNative();
+	const android = isAndroid();
 
 	let canSubscribe = $derived(polarConfigured && !!auth.user);
 
@@ -27,9 +30,19 @@
 		onCheckoutOpen?.();
 		openSupporterCheckout(productId).catch(() => toast.error("Couldn't open the checkout"));
 	}
+
+	// Android hands off to the web checkout: close the host dialog, then open /support-us in the
+	// system browser (where isNative() is false, so it isn't redirected away).
+	function openWebCheckout() {
+		onCheckoutOpen?.();
+		openExternal('/support-us');
+	}
 </script>
 
-{#if native}
+{#if android}
+	<Button variant="outline" class="w-full" onclick={openWebCheckout}>Become a supporter</Button>
+	<p class="text-xs text-muted-foreground">Opens in your browser to complete checkout.</p>
+{:else if native}
 	<p class="text-sm text-muted-foreground">Supporter subscriptions aren't available in the app.</p>
 {:else}
 	<div class="flex flex-col gap-2 sm:flex-row">

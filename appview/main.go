@@ -122,6 +122,38 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:   "backfill-mime-types",
+				Usage:  "sniff blob formats and fill save.mime_type for existing image saves (one-shot, resumable)",
+				Action: runBackfillMimeTypes,
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "batch-size",
+						Usage: "distinct blobs fetched from the DB per page",
+						Value: 100,
+					},
+					&cli.Float64Flag{
+						Name:  "rate",
+						Usage: "max blob fetches per second across all PDSes (token bucket; <=0 disables the limiter)",
+						Value: 3,
+					},
+					&cli.DurationFlag{
+						Name:  "interval",
+						Usage: "extra pause between DB pages (the --rate limiter is the primary throttle)",
+						Value: 0,
+					},
+					&cli.IntFlag{
+						Name:  "limit",
+						Usage: "stop after processing this many blobs (0 = no limit, run to exhaustion)",
+						Value: 0,
+					},
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "log sniffed mime types for the first batch and exit without writing",
+						Value: false,
+					},
+				},
+			},
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -535,6 +567,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/features/seen/{key}", srv.APIMarkFeatureSeen)
 	http.HandleFunc("GET /api/moderation/prefs", srv.APIGetModerationPrefs)
 	http.HandleFunc("PUT /api/moderation/prefs", srv.APIPutModerationPrefs)
+	http.HandleFunc("GET /api/preferences", srv.APIGetPreferences)
+	http.HandleFunc("PUT /api/preferences", srv.APIPutPreferences)
 	http.HandleFunc("GET /api/supporter/status", srv.APISupporterStatus)
 	http.HandleFunc("GET /api/supporter/stats", srv.APISupporterStats)
 	http.HandleFunc("POST /api/supporter/portal", srv.APISupporterPortal)

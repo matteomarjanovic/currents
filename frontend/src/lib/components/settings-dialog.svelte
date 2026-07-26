@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { goto } from '$app/navigation';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -8,7 +7,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { toast } from 'svelte-sonner';
 	import { apiFetch } from '$lib/api';
-	import { isNative } from '$lib/platform';
+	import { isNative, isAndroid } from '$lib/platform';
+	import { openExternal } from '$lib/external';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { settingsDialog, type SettingsSection } from '$lib/stores/settings.svelte';
@@ -24,6 +24,13 @@
 		type AdultVisibility,
 		type AiVisibility
 	} from '$lib/stores/moderation-prefs.svelte';
+	import {
+		preferences,
+		preferencesLoaded,
+		loadPreferences,
+		setGifAutoplay
+	} from '$lib/stores/preferences.svelte';
+	import { Switch } from '$lib/components/ui/switch';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
@@ -57,6 +64,7 @@
 		untrack(() => {
 			if (!isOpen) return;
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
+			if (!preferencesLoaded.value) void loadPreferences();
 			if (previewGated && !role.loaded) void loadRole();
 			void loadSupporterStatus();
 		});
@@ -100,6 +108,22 @@
 	async function openPortal() {
 		if (portalLoading) return;
 		portalLoading = true;
+		// Android opens the portal URL in the system browser (Capacitor Browser) — the blank-tab
+		// popup trick below doesn't work inside the webview.
+		if (isAndroid()) {
+			try {
+				const res = await apiFetch('/api/supporter/portal', { method: 'POST' });
+				if (!res.ok) throw new Error(`${res.status}`);
+				const { url } = (await res.json()) as { url: string };
+				const { Browser } = await import('@capacitor/browser');
+				await Browser.open({ url });
+			} catch {
+				toast.error("Couldn't open the billing portal");
+			} finally {
+				portalLoading = false;
+			}
+			return;
+		}
 		// Open the tab synchronously with the click so popup blockers allow it,
 		// then point it at the freshly minted portal session.
 		const tab = window.open('about:blank', '_blank');
@@ -139,16 +163,11 @@
 			if (!res.ok) throw new Error(`${res.status}`);
 			// The server wiped the account and cleared the session cookie.
 			auth.user = null;
-			if (isNative()) {
-				await clearAuthToken();
-				auth.checked = true;
-				deleteOpen = false;
-				settingsDialog.open = false;
-				await goto('/');
-			} else {
-				// Full reload resets every client store, mirroring the web logout flow.
-				window.location.href = '/';
-			}
+			if (isNative()) await clearAuthToken();
+			// Full reload resets every client store (and the layout's own `user` state),
+			// mirroring the web logout flow. On native this reloads the local bundle, so it
+			// re-derives to a clean logged-out state instead of leaving stale in-memory state.
+			window.location.href = '/';
 		} catch {
 			toast.error("Couldn't delete your account. Please try again.");
 		} finally {
@@ -297,7 +316,14 @@
 								<a
 									class="underline underline-offset-4 hover:text-foreground"
 									href={resolve('/support-us')}
-									onclick={() => (settingsDialog.open = false)}
+									onclick={(e) => {
+										// /support-us redirects to / on native; on Android open it in the system browser.
+										if (isAndroid()) {
+											e.preventDefault();
+											openExternal('/support-us');
+										}
+										settingsDialog.open = false;
+									}}
 								>
 									Learn more about supporting the project</a
 								>.
@@ -353,6 +379,27 @@
 									<span class="text-xs text-muted-foreground">@{auth.user?.handle}</span>
 								</div>
 							</div>
+
+							<section class="flex flex-col gap-3">
+								<h3 class="text-sm font-medium">Preferences</h3>
+								<div
+									class="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
+								>
+									<div class="flex flex-col gap-0.5">
+										<span class="text-sm font-medium">Autoplay GIFs</span>
+										<span class="text-xs text-muted-foreground">
+											When off, animated GIFs stay on their first frame and play when you hover over
+											them.
+										</span>
+									</div>
+									<Switch
+										checked={preferences.gifAutoplay}
+										disabled={!preferencesLoaded.value}
+										onCheckedChange={setGifAutoplay}
+										aria-label="Autoplay GIFs"
+									/>
+								</div>
+							</section>
 
 							<div class="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-card p-4">
 								<div class="flex flex-col gap-0.5">

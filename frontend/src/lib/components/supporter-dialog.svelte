@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { isAndroid } from '$lib/platform';
+	import { openExternal } from '$lib/external';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { supporter, supporterFlow } from '$lib/stores/supporter.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
@@ -51,7 +53,14 @@
 			<a
 				class="underline underline-offset-4 hover:text-foreground"
 				href={resolve('/support-us')}
-				onclick={() => (open = false)}
+				onclick={(e) => {
+					// /support-us redirects to / on native; on Android open it in the system browser.
+					if (isAndroid()) {
+						e.preventDefault();
+						openExternal('/support-us');
+					}
+					open = false;
+				}}
 			>
 				Learn more about supporting the project</a
 			>.

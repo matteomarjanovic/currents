@@ -287,6 +287,7 @@ func handleSaveUpsert(
 		}
 		if content != nil {
 			base.AltText = content.Alt
+			base.MimeType = content.Image.MimeType
 			if attr := saveAttributionOrNil(content.Attribution); attr != nil {
 				base.AttributionURL = attr.URL
 				base.AttributionLicense = attr.License

@@ -19,6 +19,7 @@
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
+	import SaveImage from '$lib/components/save-image.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
@@ -582,10 +583,11 @@
 				labels={currentSave.labels}
 				class="flex h-full w-full items-center justify-center"
 			>
-				<img
-					src={image.imageUrl}
+				<SaveImage
+					{image}
 					alt={image.alt ?? currentSave.text ?? ''}
 					class="max-h-full max-w-full object-contain"
+					wrapperClass="flex h-full w-full items-center justify-center"
 					style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 				/>
 			</LabeledMedia>
@@ -613,8 +615,8 @@
 		{@render hiddenState()}
 	{:else if image}
 		<LabeledMedia labels={currentSave.labels} class="flex justify-center">
-			<img
-				src={image.imageUrl}
+			<SaveImage
+				{image}
 				alt={image.alt ?? currentSave.text ?? ''}
 				class="max-h-[65vh] w-auto max-w-full object-contain"
 				style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}

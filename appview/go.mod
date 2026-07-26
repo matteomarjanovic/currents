@@ -17,6 +17,7 @@ require (
 	github.com/whyrusleeping/cbor-gen v0.2.1-0.20241030202151-b7a6831be65e
 	golang.org/x/image v0.38.0
 	golang.org/x/net v0.47.0
+	golang.org/x/time v0.12.0
 )
 
 require (
@@ -92,7 +93,6 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
-	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
 	gorm.io/gorm v1.25.9 // indirect

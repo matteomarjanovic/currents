@@ -362,12 +362,17 @@ func fetchBlobFromPDS(ctx context.Context, store *PgStore, dir identity.Director
 	return data, mime, nil
 }
 
+// blobUserAgent identifies Currents' own blob traffic to PDSes, so operators can
+// attribute and rate-limit it instead of seeing anonymous getBlob hits.
+const blobUserAgent = "currents-appview/1.0 (+https://currents.is)"
+
 func getBlobFromEndpoint(ctx context.Context, pdsEndpoint, authorDID, blobCID string) ([]byte, string, error) {
 	url := fmt.Sprintf("%s/xrpc/com.atproto.sync.getBlob?did=%s&cid=%s", pdsEndpoint, authorDID, blobCID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err
 	}
+	req.Header.Set("User-Agent", blobUserAgent)
 	resp, err := blobHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching blob: %w", err)

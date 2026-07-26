@@ -122,9 +122,10 @@
 				// best effort
 			}
 			await clearAuthToken();
-			auth.user = null;
-			auth.checked = true;
-			goto('/');
+			// Full reload of the local bundle wipes every store (and the layout's own `user`
+			// state), mirroring the web full-reload logout — a plain goto leaves stale state
+			// that keeps the app looking logged in.
+			window.location.href = '/';
 		} else {
 			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
 		}
