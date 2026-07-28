@@ -91,7 +91,9 @@
 	/* Juttu's filled CTA buttons hardcode `color: #fff` instead of reading a variable, so pairing
 	   `--juttu-accent-color` above with our (theme-inverting) `--primary` would make them unreadable
 	   in dark mode — restyle them directly instead, matching our own Button "default" variant. */
-	.prose :global(img) {
+	.prose :global(img),
+	.prose :global(video) {
+		width: 100%;
 		border-radius: var(--radius-2xl);
 	}
 

@@ -1,0 +1,25 @@
+---
+title: Searching by color
+description:
+    In this issue of the Currents blog, we introduce the new color search feature, which allows users to search for images by color and description.
+date: '2026-07-28'
+standardSiteRkey: '3mrqdhr4jcs6d'
+---
+
+Color is a fundamental pillar in visual reference research for creatives. It's often something words can only describe vaguely. That's why we're proud to introduce the **color search** feature, which allows users with more advanced needs to search for images whose palette matches a precise color of your choice.
+
+<video src="/blog/color-search.mp4" autoplay muted loop playsinline disablepictureinpicture aria-label="Picking a color in the search panel and browsing the images that match it"></video>
+
+This is extremely useful for research: you can explore the whole catalog of images on Currents by color. It's also helpful in your own library: you can now filter by collection and color in *organize mode*, to find something you saved months ago and had completely forgotten about.   
+
+Most of the time, color only makes sense in a search when it's **coupled with a subject**: if you're searching for an outfit, and you only want the ones with that particular deep-sea-blue accent, you don't want random underwater pictures of fish to be included in your search. This is why Currents allows you to include a description when you search by color, getting accurate results for requests like "images *about* outfits that *feature* deep-sea-blue color".
+
+<video src="/blog/hybrid-text-color-search.mp4" autoplay muted loop playsinline disablepictureinpicture aria-label="Combining a text description with a picked color to narrow the search results"></video>
+
+Color search is **designed for power users**, that's why it's reserved for supporters. To let you try it out and understand if it's something useful for you, you'll be able to do 5 color searches for free. We believe this feature strongly increases the value you can find by deciding to support our project financially, allowing the project to keep existing while getting a powerful tool for your work.   
+
+The color search isn't the only thing we've been working on: you can now set your preference for gif auto-play in the settings, so all the moving parts don't distract you while exploring Currents. A good amount of UI tweaks have been made too.   
+
+The focus now will fully be on shipping the highly requested **mobile apps** for Android and iOS. Once they're on the stores, we'll proceed with the most urgent fixes and features you've been asking for.   
+
+We can't wait to get your feedback on the color search, so we encourage you to try it out and let us know if you like it in the comments!   

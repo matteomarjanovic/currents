@@ -16,9 +16,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// meanMS averages an accumulated duration over a count, for the per-batch
+// mean averages an accumulated total over a count, for the per-batch
 // timing line that tells you which half of the work to tune.
-func meanMS(total, n int64) int64 {
+func mean(total, n int64) int64 {
 	if n == 0 {
 		return 0
 	}
@@ -110,7 +110,7 @@ func runBackfillColors(cctx *cli.Context) error {
 		// (the NOT EXISTS only drops the ones that got colors written).
 		afterID = batch[len(batch)-1].ID
 
-		var done, fetchMS, paletteMS atomic.Int64
+		var done, fetchMS, paletteMS, fetchedBytes atomic.Int64
 		jobs := make(chan VIColorBackfill)
 		var wg sync.WaitGroup
 		for range concurrency {
@@ -138,6 +138,7 @@ func runBackfillColors(cctx *cli.Context) error {
 						continue
 					}
 					fetchMS.Add(time.Since(start).Milliseconds())
+					fetchedBytes.Add(int64(len(imageBytes)))
 
 					start = time.Now()
 					colors, err := inference.Palette(ctx, imageBytes, mimeType)
@@ -190,8 +191,13 @@ func runBackfillColors(cctx *cli.Context) error {
 			"processed_total", processed,
 			"remaining_in_pool", pending-int64(processed),
 			"images_per_sec", fmt.Sprintf("%.1f", float64(done.Load())/elapsed.Seconds()),
-			"avg_fetch_ms", meanMS(fetchMS.Load(), done.Load()),
-			"avg_palette_ms", meanMS(paletteMS.Load(), done.Load()),
+			"avg_fetch_ms", mean(fetchMS.Load(), done.Load()),
+			"avg_palette_ms", mean(paletteMS.Load(), done.Load()),
+			"avg_blob_kb", mean(fetchedBytes.Load()/1024, done.Load()),
+			// Blob download throughput. If this plateaus while images_per_sec
+			// stays flat as --concurrency rises, the downlink is the wall and
+			// no amount of workers will help.
+			"mbit_per_sec", fmt.Sprintf("%.0f", float64(fetchedBytes.Load())*8/elapsed.Seconds()/1e6),
 		)
 
 		if dryRun {
