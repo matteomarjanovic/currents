@@ -117,10 +117,11 @@ color — try a broader color or drop the text").
   (swatch + text + collection filter). A palette swatch in the image detail opens
   a menu: copy the hex, or search that color in explore / in the library.
 
-## The hybrid gate (`colorHybridMinFraction`, `colorHybridMaxDeltaE`)
+## The hybrid gate (`colorHybridMinFraction` 0.05, `colorHybridMaxDeltaE` 20)
 
-Both constants are **hybrid-only**, tightened in two passes after results felt
-like "the text query is winning and the color is barely there".
+Both constants are **hybrid-only** and stricter than pure color search's ΔE 25.
+They were tuned over three passes; the history matters because it shows which
+dial does what and why the endpoints landed where they did.
 
 **Why hybrid needs its own thresholds.** Pure color search ranks by
 `ΔE − colorCoverageWeight·fraction`, so a weak match is *demoted*, not admitted
@@ -128,13 +129,22 @@ at the top; its ΔE 25 is the outer bound of a tail nobody scrolls to. Hybrid
 orders by semantics alone, so the gate is its **entire** color criterion — a
 2%-coverage accent at ΔE 24 is exactly as eligible for position 1 as an image
 that's 60% the exact color. Same threshold, very different exposure. Hybrid can
-also afford to be stricter: the text query carries recall, which pure color
-search has nothing to fall back on.
+afford stricter thresholds because the text query carries recall — but only up to
+a point, which is what pass 3 found.
 
-### Pass 1 — the coverage floor (0.08)
+**The two dials are not interchangeable.** The coverage floor is *hue-neutral*:
+raising it drops low-coverage matches regardless of color, and never
+preferentially re-admits greys. ΔE is *hue-selective but chroma-blind*: it's the
+only dial that excludes wrong hues, but because ΔE76 is plain L2 in Lab it can't
+tell a muted target color from grey (see the limitation below). So: reach for the
+floor to trade recall against accent-noise, reach for ΔE to trade recall against
+hue-drift — and know that tightening ΔE punishes muted queries hardest.
 
-Measured over the dev catalog (39,577 indexed visual identities, July 2026),
-counting images whose best palette match passes:
+### Pass 1 — add the coverage floor (0.08)
+
+Complaint: matches were a *speck* of the color. Measured over the dev catalog
+(39,577 indexed visual identities, July 2026), images whose best palette match
+passes:
 
 | query color | ΔE ≤ 25 | + `fraction ≥ 0.08` | ΔE ≤ 15 instead |
 |---|---|---|---|
@@ -146,13 +156,34 @@ counting images whose best palette match passes:
 Coverage was the right *first* lever: a scalpel where ΔE was a hatchet that cut
 hardest exactly where rare-color recall already hurts.
 
-### Pass 2 — ΔE 25 → 18
+### Pass 2 — tighten ΔE 25 → 18
 
-With coverage fixed (median survivor now covers ~18% of the image), the residual
-complaint turned out to be **hue drift**: the median survivor still sat at ΔE
-18–21, and the largest single band was 20–25. Sampling what a mid-blue `#3b6fb5`
-query actually matched in that band — `#275677` `#536480` `#56647e` `#6b7390` —
-showed uniformly **desaturated slate greys**. Big enough regions, wrong color.
+Complaint: matches were now well-covered but the *wrong hue*. The median survivor
+sat at ΔE 18–21 and the largest single band was 20–25; sampling what a mid-blue
+`#3b6fb5` query matched there — `#275677` `#536480` `#56647e` `#6b7390` — showed
+uniformly **desaturated slate greys**. Big enough regions, wrong color. ΔE 18 cut
+that band.
+
+### Pass 3 — loosen to ΔE 20 / floor 0.05
+
+Complaint: 18/0.08 was *too* tight — the color matched perfectly, but the color
+pool was so small that hybrid's semantic ranking had too few on-topic candidates
+to surface, so the top results drifted off the text query. Hybrid ranks semantics
+*over the filtered pool*, so an over-tight gate starves the ranker. Loosening
+restored the pool for the common (saturated) case without re-admitting greys:
+
+| query | pool at 18/0.08 | pool at 20/0.05 | grey share at 20/0.05 |
+|---|---|---|---|
+| red | 53 | 92 | 0% |
+| mid blue | 1,402 | 2,025 | 0% |
+| mustard | 1,182 | 1,825 | 0% |
+| green | 187 | 312 | 0% |
+| teal (muted) | 2,101 | 4,494 | 63% |
+
+For saturated queries the +40–75% recovered is entirely correct-hued. The floor
+came down to 0.05 (hue-neutral recall) and ΔE up only to 20 (still 5 under pure
+color search), because ΔE is the dial that trades against muted queries — which
+is the standing limitation:
 
 ### Known limitation: neutrals contaminate low-chroma queries
 
@@ -165,11 +196,14 @@ teal is simply not in that image.
 | `#0c4740` | survivors | of which near-neutral (chroma < 10) |
 |---|---|---|
 | ΔE ≤ 25 | 15,883 (40% of the catalog) | 12,104 (76%) |
+| ΔE ≤ 20 | 4,494 | 2,831 (63%) |
 | ΔE ≤ 18 | 2,106 | 1,045 (50%) |
 
-ΔE 18 excludes that example, but **half of what remains is still grey**. A flat
-threshold tight enough to exclude neutrals for a muted query (~12) would be far
-too tight for a saturated one, so this is not fixable by moving the number. The
+Even ΔE 18 leaves **half** the muted-query pool grey. A flat threshold tight
+enough to exclude neutrals for a muted query (~12) would be far too tight for a
+saturated one, so this is not fixable by moving the number — it caps how far ΔE
+can loosen before muted queries fill with grey, which is why pass 3 leaned on the
+floor instead. The
 structural fix is a chroma guard (require the matched color's chroma to be a
 minimum fraction of the query's) or a chroma-weighted distance / ΔE2000 —
 neither is implemented; ΔE76 is what the HNSW index speaks.

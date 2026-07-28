@@ -101,11 +101,25 @@
 		// Gate before navigating; on a completed checkout the paywall resumes `go`.
 		if (await requireColorSearch(go)) go();
 	}
+
+	// Enter starts the color search, mirroring how it runs a text search. In text
+	// mode bits-ui selects the highlighted list item; color mode has no item, so
+	// we submit here from anywhere in the dialog (text field, hex input, picker,
+	// presets). This runs before bits-ui's root handler, which the preventDefault
+	// then short-circuits; in text mode it no-ops and falls through. The IME guard
+	// matches bits-ui's own so Enter-to-commit-composition never submits.
+	function onDialogKeydown(e: KeyboardEvent) {
+		if (colorMode && e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+			e.preventDefault();
+			void submitColor();
+		}
+	}
 </script>
 
 <Command.Dialog
 	bind:open
 	shouldFilter={false}
+	onkeydown={onDialogKeydown}
 	title="Search"
 	description="Search images, collections, users, or by color."
 	class={colorMode ? 'top-1/2 -translate-y-1/2' : ''}

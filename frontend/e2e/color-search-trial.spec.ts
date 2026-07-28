@@ -51,6 +51,17 @@ test('a non-supporter with trial colors left runs a color search', async ({ page
 	await expect(page.getByText('Support Currents')).toHaveCount(0);
 });
 
+test('Enter starts the color search, like a text search', async ({ page }) => {
+	await mockApi(page, 2);
+	await openColorPanel(page);
+
+	await page.getByRole('button', { name: 'Pick #457b9d' }).click();
+	// Enter from the text field runs it — no need to reach the "Search this color" button.
+	await page.getByPlaceholder('Describe it too (optional)…').press('Enter');
+
+	await expect(page).toHaveURL(/\/search\/color\/457b9d$/);
+});
+
 // The "new feature" trail: a dot on the search button leads to a dot on the
 // palette toggle, and opening the color panel clears the flag for good.
 test('the color-search announcement clears when the color panel opens', async ({ page }) => {

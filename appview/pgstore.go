@@ -2594,8 +2594,8 @@ const (
 	// own and a loose gate only defines a tail; hybrid orders by semantics
 	// alone, so its gate is the whole color criterion and has to be stricter.
 	// It can afford to be — the text query carries recall.
-	colorHybridMinFraction = 0.08
-	colorHybridMaxDeltaE   = 18.0
+	colorHybridMinFraction = 0.05
+	colorHybridMaxDeltaE   = 20.0
 )
 
 // SearchSavesByColorPage returns saves whose palette contains a color close to
