@@ -61,9 +61,9 @@ signals where one is an approximate semantic match and the other a near-exact
 attribute.
 
 **Query contract:** "images *about* `<text>` that *feature* `<color>`" — keep
-only images whose palette contains a color within ΔE ≤ threshold (**any
-presence**, no coverage floor), then order those by cosine distance of the image
-embedding to the text-query embedding.
+only images whose palette contains a color within ΔE ≤ `colorHybridMaxDeltaE`
+covering at least `colorHybridMinFraction` of the image, then order those by
+cosine distance of the image embedding to the text-query embedding.
 
 `SearchHybridSavesPage` in `appview/pgstore.go` is the existing semantic query
 plus **one clause**:
@@ -73,7 +73,9 @@ plus **one clause**:
 WHERE vi.embedding IS NOT NULL
   AND <hidden / moderation / scope filters>
   AND EXISTS (SELECT 1 FROM visual_identity_color c
-              WHERE c.visual_identity_id = vi.id AND c.lab <-> $lab <= $maxDeltaE)
+              WHERE c.visual_identity_id = vi.id
+                AND c.lab <-> $lab <= $maxDeltaE
+                AND c.fraction >= $minFraction)
 ORDER BY vi.embedding <=> $textVec
 LIMIT $limit+1 OFFSET $offset
 ```
@@ -115,18 +117,72 @@ color — try a broader color or drop the text").
   (swatch + text + collection filter). A palette swatch in the image detail opens
   a menu: copy the hex, or search that color in explore / in the library.
 
-## Tightening the filter later
+## The hybrid gate (`colorHybridMinFraction`, `colorHybridMaxDeltaE`)
 
-Today the hybrid (and pure-color) filter matches **any** palette presence within
-ΔE — a color that's a tiny accent still qualifies. If "features this color" ever
-feels too loose, require the matched color to be a meaningful share of the image
-by adding **one line** to the `EXISTS` in `SearchHybridSavesPage` (and the
-`WHERE de <= $7` block in `SearchSavesByColorPage`):
+Both constants are **hybrid-only**, tightened in two passes after results felt
+like "the text query is winning and the color is barely there".
 
-```sql
-AND c.fraction >= 0.08   -- only count the color when it covers ≥ ~8% of the image
-```
+**Why hybrid needs its own thresholds.** Pure color search ranks by
+`ΔE − colorCoverageWeight·fraction`, so a weak match is *demoted*, not admitted
+at the top; its ΔE 25 is the outer bound of a tail nobody scrolls to. Hybrid
+orders by semantics alone, so the gate is its **entire** color criterion — a
+2%-coverage accent at ΔE 24 is exactly as eligible for position 1 as an image
+that's 60% the exact color. Same threshold, very different exposure. Hybrid can
+also afford to be stricter: the text query carries recall, which pure color
+search has nothing to fall back on.
 
-Expose it as a tunable constant (e.g. `colorHybridMinFraction`) next to
-`colorMaxDeltaE`. The cost is more empty results for colors that only ever appear
-as accents, which is why it's off by default.
+### Pass 1 — the coverage floor (0.08)
+
+Measured over the dev catalog (39,577 indexed visual identities, July 2026),
+counting images whose best palette match passes:
+
+| query color | ΔE ≤ 25 | + `fraction ≥ 0.08` | ΔE ≤ 15 instead |
+|---|---|---|---|
+| mid blue `#3b6fb5` | 3,560 | 2,826 (−21%) | 1,190 (−67%) |
+| mustard `#d9a441` | 3,506 | 2,588 (−26%) | 981 (−72%) |
+| forest green | 871 | 697 (−20%) | 127 (−85%) |
+| red `#ff0000` | 210 | 125 (−40%) | 56 (−73%) |
+
+Coverage was the right *first* lever: a scalpel where ΔE was a hatchet that cut
+hardest exactly where rare-color recall already hurts.
+
+### Pass 2 — ΔE 25 → 18
+
+With coverage fixed (median survivor now covers ~18% of the image), the residual
+complaint turned out to be **hue drift**: the median survivor still sat at ΔE
+18–21, and the largest single band was 20–25. Sampling what a mid-blue `#3b6fb5`
+query actually matched in that band — `#275677` `#536480` `#56647e` `#6b7390` —
+showed uniformly **desaturated slate greys**. Big enough regions, wrong color.
+
+### Known limitation: neutrals contaminate low-chroma queries
+
+ΔE76 is plain L2 in Lab, so a fully neutral grey sits ΔE ≈ *the query's chroma*
+away from it. A muted query color therefore has the whole black/grey axis inside
+its ball. Real example: query `#0c4740` (dark teal, chroma ≈ 20) matched a
+near-white graphic on its `#2b2b29` near-black at 11% coverage, ΔE 21.7 — the
+teal is simply not in that image.
+
+| `#0c4740` | survivors | of which near-neutral (chroma < 10) |
+|---|---|---|
+| ΔE ≤ 25 | 15,883 (40% of the catalog) | 12,104 (76%) |
+| ΔE ≤ 18 | 2,106 | 1,045 (50%) |
+
+ΔE 18 excludes that example, but **half of what remains is still grey**. A flat
+threshold tight enough to exclude neutrals for a muted query (~12) would be far
+too tight for a saturated one, so this is not fixable by moving the number. The
+structural fix is a chroma guard (require the matched color's chroma to be a
+minimum fraction of the query's) or a chroma-weighted distance / ΔE2000 —
+neither is implemented; ΔE76 is what the HNSW index speaks.
+
+### Not applied to `SearchSavesByColorPage`
+
+Its ranking already demotes both weak-coverage and distant-hue matches, so
+gating there would cut recall — on rare colors especially — and buy no ordering
+improvement. `TestHybridColorGate` in `pgstore_db_test.go` pins the asymmetry:
+hybrid drops both an accent-only match (even when it's the nearest semantic
+neighbour) and a well-covered but visibly different hue, while pure color search
+keeps all three and orders them best-match first.
+
+The known cost is the anticipated one: colors that only ever appear as accents,
+or that are rare in the catalog, return less. Loosen the floor before loosening
+ΔE.

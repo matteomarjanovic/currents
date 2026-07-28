@@ -11,8 +11,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -95,7 +97,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(), `
 		TRUNCATE save, collection, "user", follow, favourite_collection,
-			visual_identity, visual_identity_color, cluster,
+			visual_identity, visual_identity_color, cluster, color_trial, seen_feature,
 			label, blob_moderation_state, review_item, report, moderation_event
 		RESTART IDENTITY CASCADE
 	`)
@@ -685,5 +687,216 @@ func TestUserPrefs(t *testing.T) {
 	got, _ = s.GetUserPrefs(ctx, did)
 	if !got.GifAutoplay {
 		t.Fatalf("updated gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+}
+
+// The color-search trial ledger: one row per color spent, scoped per viewer,
+// and idempotent so a repeat of the same color can't drain the allowance.
+func TestColorTrialLedger(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const did, other = "did:plc:trial", "did:plc:othertrial"
+
+	colors, err := s.ColorTrialColors(ctx, did)
+	if err != nil {
+		t.Fatalf("ColorTrialColors(empty): %v", err)
+	}
+	if len(colors) != 0 {
+		t.Fatalf("ColorTrialColors(empty) = %v, want none", colors)
+	}
+
+	for _, hex := range []string{"#e63946", "#2a9d8f", "#e63946"} {
+		if err := s.RecordColorTrial(ctx, did, hex); err != nil {
+			t.Fatalf("RecordColorTrial(%s): %v", hex, err)
+		}
+	}
+	if err := s.RecordColorTrial(ctx, other, "#457b9d"); err != nil {
+		t.Fatalf("RecordColorTrial(other): %v", err)
+	}
+
+	colors, err = s.ColorTrialColors(ctx, did)
+	if err != nil {
+		t.Fatalf("ColorTrialColors: %v", err)
+	}
+	// The repeat conflicts away, and the other viewer's color stays theirs.
+	want := map[string]bool{"#e63946": true, "#2a9d8f": true}
+	if len(colors) != len(want) {
+		t.Fatalf("ColorTrialColors = %v, want %v", colors, want)
+	}
+	for _, hex := range colors {
+		if !want[hex] {
+			t.Errorf("ColorTrialColors returned unexpected %q", hex)
+		}
+	}
+}
+
+// TestHybridColorGate pins the deliberate asymmetry between the two color
+// paths. Hybrid orders by semantics alone, so its gate is its only color
+// signal and runs stricter on both axes: a tiny accent of the query color is
+// excluded even when it's the closest semantic match, and so is a
+// well-covered but visibly different hue. Pure color search ranks by
+// ΔE − colorCoverageWeight·fraction, which demotes both cases without dropping
+// them, so it keeps all three and orders them best-match first.
+func TestHybridColorGate(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	author := "did:plc:author"
+	const queryHex = "#e03131"
+
+	// The accent image is the nearer semantic match, so without the coverage
+	// floor it would take the top hybrid slot.
+	queryEmb := make([]float32, 768)
+	queryEmb[0] = 1
+	accentEmb := make([]float32, 768)
+	accentEmb[0] = 1
+	dominantEmb := make([]float32, 768)
+	dominantEmb[0], dominantEmb[1] = 1, 1
+
+	collURI := "at://" + author + "/is.currents.feed.collection/palette"
+	seedCollection(t, s, collURI, author, "palette", "", testBase)
+
+	mkImage := func(rkey string, emb []float32, palette string) string {
+		t.Helper()
+		saveURI := "at://" + author + "/is.currents.feed.save/" + rkey
+		viID, err := s.CreateVI(ctx, author, "blob-"+rkey, emb, nil, nil)
+		if err != nil {
+			t.Fatalf("CreateVI(%s): %v", rkey, err)
+		}
+		quality := float32(0.5)
+		err = s.UpsertSave(ctx, UpsertSaveParams{
+			URI: saveURI, AuthorDID: author, CollectionURI: collURI, PdsBlobCID: "blob-" + rkey,
+			ContentNSID: "is.currents.content.image", CreatedAt: &testBase,
+			VisualIdentityID: &viID, QualityScore: &quality,
+		})
+		if err != nil {
+			t.Fatalf("seeding save %s: %v", rkey, err)
+		}
+		if err := s.SetVICanonicalSave(ctx, viID, saveURI); err != nil {
+			t.Fatalf("SetVICanonicalSave(%s): %v", rkey, err)
+		}
+		if err := s.SetVIColors(ctx, viID, json.RawMessage(palette)); err != nil {
+			t.Fatalf("SetVIColors(%s): %v", rkey, err)
+		}
+		return saveURI
+	}
+
+	// Same query color in both palettes at the same ΔE (0) — only coverage differs.
+	accentURI := mkImage("accent", accentEmb,
+		`[{"hex":"#101010","fraction":0.94},{"hex":"`+queryHex+`","fraction":0.02}]`)
+	dominantURI := mkImage("dominant", dominantEmb,
+		`[{"hex":"`+queryHex+`","fraction":0.5},{"hex":"#101010","fraction":0.4}]`)
+	// Plenty of coverage, but a visibly different hue: burnt orange sits in the
+	// band that pure color search still admits and hybrid no longer does.
+	farURI := mkImage("far", dominantEmb,
+		`[{"hex":"#be4614","fraction":0.6},{"hex":"#101010","fraction":0.3}]`)
+
+	lab, err := hexToLab(queryHex)
+	if err != nil {
+		t.Fatalf("hexToLab: %v", err)
+	}
+	// State the premise rather than trusting the fixture: #be4614 has to land
+	// between the two thresholds for this test to mean anything.
+	farLab, err := hexToLab("#be4614")
+	if err != nil {
+		t.Fatalf("hexToLab(far): %v", err)
+	}
+	farDE := math.Sqrt(float64((farLab[0]-lab[0])*(farLab[0]-lab[0]) +
+		(farLab[1]-lab[1])*(farLab[1]-lab[1]) + (farLab[2]-lab[2])*(farLab[2]-lab[2])))
+	if farDE <= colorHybridMaxDeltaE || farDE > colorMaxDeltaE {
+		t.Fatalf("fixture ΔE = %.1f, need it in (%.0f, %.0f] to separate the two gates",
+			farDE, colorHybridMaxDeltaE, colorMaxDeltaE)
+	}
+
+	uris := func(page annSavePage) []string {
+		out := make([]string, len(page.Rows))
+		for i, r := range page.Rows {
+			out[i] = r.URI
+		}
+		return out
+	}
+
+	hybrid, err := s.SearchHybridSavesPage(ctx, queryEmb, lab, "", false, nil, 10, 0)
+	if err != nil {
+		t.Fatalf("SearchHybridSavesPage: %v", err)
+	}
+	if got := uris(hybrid); !equalStrings(got, []string{dominantURI}) {
+		t.Fatalf("hybrid = %v, want only %v (the accent match is below the coverage floor)", got, dominantURI)
+	}
+
+	// The scoped variants rebind the collection placeholder, so exercise both.
+	lib, err := s.SearchHybridSavesPage(ctx, queryEmb, lab, author, true, nil, 10, 0)
+	if err != nil {
+		t.Fatalf("SearchHybridSavesPage(library): %v", err)
+	}
+	if got := uris(lib); !equalStrings(got, []string{dominantURI}) {
+		t.Fatalf("hybrid library = %v, want only %v", got, dominantURI)
+	}
+
+	scoped, err := s.SearchHybridSavesPage(ctx, queryEmb, lab, author, true, []string{collURI}, 10, 0)
+	if err != nil {
+		t.Fatalf("SearchHybridSavesPage(collections): %v", err)
+	}
+	if got := uris(scoped); !equalStrings(got, []string{dominantURI}) {
+		t.Fatalf("hybrid collections = %v, want only %v", got, dominantURI)
+	}
+
+	color, err := s.SearchSavesByColorPage(ctx, lab, "", false, nil, 10, 0)
+	if err != nil {
+		t.Fatalf("SearchSavesByColorPage: %v", err)
+	}
+	if got := uris(color); !equalStrings(got, []string{dominantURI, accentURI, farURI}) {
+		t.Fatalf("color search = %v, want %v (both gates are hybrid-only; the ranking demotes rather than excludes)",
+			got, []string{dominantURI, accentURI, farURI})
+	}
+}
+
+// Sign-up pre-dismisses the announcements outside the onboarding set, so a
+// fresh account isn't greeted by a wall of red dots.
+func TestSeedSeenFeatures(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const did, other = "did:plc:newuser", "did:plc:veteran"
+
+	// A veteran already dismissed one thing by hand; seeding another account
+	// must not touch them.
+	if err := s.MarkFeatureSeen(ctx, other, "organize-mode"); err != nil {
+		t.Fatalf("MarkFeatureSeen: %v", err)
+	}
+
+	if err := s.SeedSeenFeatures(ctx, did, onboardingSeenFeatures); err != nil {
+		t.Fatalf("SeedSeenFeatures: %v", err)
+	}
+	// Re-running (a re-login after a PDS profile wipe) is a no-op, not an error.
+	if err := s.SeedSeenFeatures(ctx, did, onboardingSeenFeatures); err != nil {
+		t.Fatalf("SeedSeenFeatures(repeat): %v", err)
+	}
+
+	seen, err := s.GetSeenFeatures(ctx, did)
+	if err != nil {
+		t.Fatalf("GetSeenFeatures: %v", err)
+	}
+	if len(seen) != len(onboardingSeenFeatures) {
+		t.Fatalf("seeded %v, want %v", seen, onboardingSeenFeatures)
+	}
+	got := map[string]bool{}
+	for _, k := range seen {
+		got[k] = true
+	}
+	for _, k := range onboardingSeenFeatures {
+		if !got[k] {
+			t.Errorf("key %q not seeded", k)
+		}
+	}
+	// The onboarding set is what stays lit: these must NOT be pre-dismissed.
+	for _, k := range []string{"pinterest-import", "organize-mode"} {
+		if got[k] {
+			t.Errorf("key %q was pre-dismissed, want it kept as onboarding", k)
+		}
+	}
+
+	if veteran, err := s.GetSeenFeatures(ctx, other); err != nil {
+		t.Fatalf("GetSeenFeatures(other): %v", err)
+	} else if len(veteran) != 1 || veteran[0] != "organize-mode" {
+		t.Errorf("veteran flags = %v, want only organize-mode", veteran)
 	}
 }

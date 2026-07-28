@@ -8,6 +8,7 @@
 	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 	import TopBar from '$lib/components/top-bar.svelte';
+	import LoginDialog from '$lib/components/login-dialog.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 
 	let { children } = $props();
@@ -39,5 +40,9 @@
 <TopBar user={auth.user} />
 
 {@render children()}
+
+<!-- This route is outside (with-navbar)/(without-navbar), so it has to mount the
+     login prompt itself — the tier buttons raise it for logged-out visitors. -->
+<LoginDialog />
 
 <Toaster />

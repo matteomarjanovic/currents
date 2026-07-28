@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,6 +33,81 @@ func (s *Server) isSupporter(ctx context.Context, did string) (bool, error) {
 	return s.Store.HasSupporterSubscription(ctx, did)
 }
 
+// Color search is the one supporter feature non-supporters can sample: a
+// lifetime allowance of distinct query colors. The ledger keys on the color
+// rather than on the request, so paginating a result set, adding a text query
+// or narrowing the scope all reuse a color already spent instead of costing
+// another one.
+const colorTrialLimit = 5
+
+// colorTrialSameDE groups near-identical query colors: two picks within this
+// ΔE76 are the same color to the eye, so nudging the picker by a shade doesn't
+// cost a second trial. Far below colorMaxDeltaE, which is what makes a stored
+// palette color a *match* — this only decides what counts as the same query.
+const colorTrialSameDE = 5.0
+
+// colorTrialSpent reports whether the query color is close enough to one the
+// viewer already spent to come for free.
+func colorTrialSpent(spent []string, lab [3]float32) bool {
+	for _, hex := range spent {
+		other, err := hexToLab(hex)
+		if err != nil {
+			continue
+		}
+		dL := float64(lab[0] - other[0])
+		dA := float64(lab[1] - other[1])
+		dB := float64(lab[2] - other[2])
+		if math.Sqrt(dL*dL+dA*dA+dB*dB) <= colorTrialSameDE {
+			return true
+		}
+	}
+	return false
+}
+
+// requireColorSearch gates color search. Supporters pass; everyone else spends
+// from their trial allowance, which is charged here rather than in the handler
+// so an unparseable color can't cost a trial. Denial reuses the same 403
+// SupporterRequired the client already handles.
+func (s *Server) requireColorSearch(w http.ResponseWriter, r *http.Request, did, hex string, lab [3]float32) bool {
+	ok, err := s.isSupporter(r.Context(), did)
+	if err != nil {
+		slog.Error("isSupporter", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return false
+	}
+	if ok {
+		return true
+	}
+
+	spent, err := s.Store.ColorTrialColors(r.Context(), did)
+	if err != nil {
+		slog.Error("ColorTrialColors", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return false
+	}
+	if colorTrialSpent(spent, lab) {
+		return true
+	}
+	if len(spent) >= colorTrialLimit {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "SupporterRequired", "message": "you've used your free color searches"})
+		return false
+	}
+	if err := s.Store.RecordColorTrial(r.Context(), did, normalizeHex(hex)); err != nil {
+		slog.Error("RecordColorTrial", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
+// normalizeHex canonicalizes a validated hex color for storage, so the same
+// color typed two ways is one row.
+func normalizeHex(hex string) string {
+	return "#" + strings.ToLower(strings.TrimPrefix(hex, "#"))
+}
+
 // requireSupporter gates an XRPC handler: when the viewer isn't a supporter it
 // writes a 403 SupporterRequired response and returns false.
 func (s *Server) requireSupporter(w http.ResponseWriter, r *http.Request, did string) bool {
@@ -52,7 +128,9 @@ func (s *Server) requireSupporter(w http.ResponseWriter, r *http.Request, did st
 
 // APISupporterStatus reports the viewer's entitlement. `subscribed` is the real
 // Polar subscription state (drives the settings UI); `active` is what the gate
-// enforces (everyone, while the gate is disabled).
+// enforces (everyone, while the gate is disabled). `colorTrialsLeft` is what's
+// left of the color-search trial allowance — only meaningful, and only
+// computed, when the gate would otherwise turn the viewer away.
 func (s *Server) APISupporterStatus(w http.ResponseWriter, r *http.Request) {
 	did, _, _ := s.currentSessionDID(r)
 	if did == nil {
@@ -66,8 +144,22 @@ func (s *Server) APISupporterStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	active := subscribed || s.PolarWebhookSecret == ""
+	colorTrialsLeft := 0
+	if !active {
+		spent, err := s.Store.ColorTrialColors(r.Context(), did.String())
+		if err != nil {
+			slog.Error("ColorTrialColors", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		colorTrialsLeft = max(0, colorTrialLimit-len(spent))
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"active": active, "subscribed": subscribed})
+	json.NewEncoder(w).Encode(map[string]any{
+		"active":          active,
+		"subscribed":      subscribed,
+		"colorTrialsLeft": colorTrialsLeft,
+	})
 }
 
 // APISupporterCheckout creates a Polar checkout session for the requested

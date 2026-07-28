@@ -366,6 +366,13 @@ func ensureUserProfile(ctx context.Context, c *atclient.APIClient, store *PgStor
 			slog.Error("creating is.currents.actor.profile", "did", did, "err", err)
 		}
 		currentsProfileLoaded = true
+
+		// No Currents profile record means this account has never used Currents:
+		// this is the sign-up. Pre-dismiss the announcements that would otherwise
+		// greet them as a wall of red dots (see onboardingSeenFeatures).
+		if err := store.SeedSeenFeatures(ctx, did, onboardingSeenFeatures); err != nil {
+			slog.Error("seeding seen features", "did", did, "err", err)
+		}
 	}
 
 	userRecord := UserRecord{

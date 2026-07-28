@@ -11,6 +11,20 @@ import (
 // web client. Keys are arbitrary strings owned by the frontend, so shipping a
 // new announcement needs no backend change.
 
+// onboardingSeenFeatures are pre-dismissed at sign-up. The dots double as
+// onboarding, but to someone signing up today nothing is actually "new" — all
+// of them at once is noise, and it teaches people that a red dot means
+// nothing. So a first login keeps only the few worth pointing a newcomer at
+// (Pinterest import, organize mode) and marks the rest seen. Keys mirror
+// frontend/src/lib/stores/features.svelte.ts; add one here when an
+// announcement should stop greeting new sign-ups. Existing users are
+// untouched — they keep whatever they haven't dismissed.
+var onboardingSeenFeatures = []string{
+	"bluesky-import",
+	"become-supporter",
+	"color-search",
+}
+
 func (s *Server) APIGetSeenFeatures(w http.ResponseWriter, r *http.Request) {
 	did, _, _ := s.currentSessionDID(r)
 	if did == nil {

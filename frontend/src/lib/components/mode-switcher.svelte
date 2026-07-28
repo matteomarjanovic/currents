@@ -19,6 +19,7 @@
 		variant = 'floating',
 		side = 'bottom',
 		anchor,
+		open = $bindable(false),
 		class: className = ''
 	}: {
 		mode: 'explore' | 'organize';
@@ -26,6 +27,9 @@
 		side?: 'top' | 'bottom';
 		// Anchor the menu to another element (centered) instead of the trigger.
 		anchor?: HTMLElement;
+		// Bindable so a caller sharing a button cluster can keep one menu open at
+		// a time (see the top bar); left alone it just manages itself.
+		open?: boolean;
 		class?: string;
 	} = $props();
 
@@ -59,7 +63,7 @@
 	});
 </script>
 
-<DropdownMenu.Root>
+<DropdownMenu.Root bind:open>
 	<DropdownMenu.Trigger>
 		{#snippet child({ props })}
 			{#if variant === 'icon'}

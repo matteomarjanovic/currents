@@ -8,6 +8,13 @@
 	import { Button } from '$lib/components/ui/button';
 	import { ColorPicker } from '$lib/components/ui/color-picker';
 	import ColorPaletteIcon from '$lib/components/color-palette-icon.svelte';
+	import ColorTrialNote from '$lib/components/color-trial-note.svelte';
+	import {
+		features,
+		isFeatureSeen,
+		markFeatureSeen,
+		FEATURE_COLOR_SEARCH
+	} from '$lib/stores/features.svelte';
 	import type { CollectionView } from '$lib/types';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -55,6 +62,13 @@
 	let query = $state('');
 	let colorMode = $state(false);
 	let color = $state('#e63946');
+
+	// One-time "new" dot on the color-search toggle, cleared the moment the
+	// color panel opens — by the toggle, or by reopening on a color search.
+	let showColorNew = $derived(features.loaded && !isFeatureSeen(FEATURE_COLOR_SEARCH));
+	$effect(() => {
+		if (colorMode) void markFeatureSeen(FEATURE_COLOR_SEARCH);
+	});
 	// Collection URIs the search is narrowed to (empty = whole library).
 	let selected = new SvelteSet<string>();
 	// Collections pinned to the top of the list: a snapshot of the selection taken each
@@ -163,11 +177,18 @@
 			<InputGroup.Addon align="inline-end">
 				<InputGroup.Button
 					size="icon-xs"
+					class="relative"
 					aria-label="Search by color"
 					aria-pressed={colorMode}
 					onclick={() => (colorMode = !colorMode)}
 				>
 					<ColorPaletteIcon filled={colorMode} />
+					{#if showColorNew}
+						<span
+							class="absolute -top-0.5 -right-0.5 inline-flex h-2 w-2 rounded-full bg-red-500 ring-2 ring-background"
+							aria-label="New feature available"
+						></span>
+					{/if}
 				</InputGroup.Button>
 			</InputGroup.Addon>
 		</InputGroup.Root>
@@ -191,6 +212,7 @@
 				<PaletteIcon />
 				{query.trim() ? `Search “${query.trim()}” in this color` : 'Search this color'}
 			</Button>
+			<ColorTrialNote />
 		</div>
 	{:else}
 		<Command.List>

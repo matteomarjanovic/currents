@@ -19,7 +19,7 @@
 	import { Kbd } from '$lib/components/ui/kbd';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
-	import { requireSupporter } from '$lib/stores/supporter.svelte';
+	import { requireSupporter, requireColorSearch } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -138,7 +138,9 @@
 
 	// Library search and find-similar are supporter-tier features (enforced
 	// server-side too); requireSupporter opens the shared paywall for
-	// non-supporters. The paywall itself is mounted once in the root layout.
+	// non-supporters. Color search runs through requireColorSearch instead —
+	// same paywall, but only once the free trial colors are used up. The
+	// paywall itself is mounted once in the root layout.
 	async function findSimilar(s: SaveView) {
 		if (!(await requireSupporter(() => void findSimilar(s)))) return;
 		searchQuery = null;
@@ -155,7 +157,7 @@
 	// filters, the text orders). Navigates to a `?color=` URL (dropping any
 	// find-similar); the ephemeral text query survives the same-collection nav.
 	async function searchColorInLibrary(hex: string, text?: string) {
-		if (!(await requireSupporter(() => void searchColorInLibrary(hex, text)))) return;
+		if (!(await requireColorSearch(() => void searchColorInLibrary(hex, text)))) return;
 		searchQuery = text?.trim() ? text.trim() : null;
 		scope.clear();
 		if (isMobile.current) selection = null;
@@ -166,7 +168,7 @@
 		const q = hex.replace('#', '').toLowerCase();
 		const go = () =>
 			goto(resolve('/(with-navbar)/search/[type]/[query]', { type: 'color', query: q }));
-		if (await requireSupporter(go)) go();
+		if (await requireColorSearch(go)) go();
 	}
 
 	// ⌘K / Ctrl+K opens the library search from anywhere in organize mode.

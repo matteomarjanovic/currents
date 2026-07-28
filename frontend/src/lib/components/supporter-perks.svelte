@@ -15,6 +15,10 @@
 	</li>
 	<li class="flex items-start gap-2.5">
 		<Check class="mt-1 size-4 shrink-0 text-foreground" />
+		<span>Search by color, unlimited (everyone gets 5 colors free)</span>
+	</li>
+	<li class="flex items-start gap-2.5">
+		<Check class="mt-1 size-4 shrink-0 text-foreground" />
 		<span>Filter searches by collection</span>
 	</li>
 	<li class="flex items-start gap-2.5">

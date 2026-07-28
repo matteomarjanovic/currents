@@ -894,6 +894,17 @@ func (m *PgStore) GetSeenFeatures(ctx context.Context, viewerDID string) ([]stri
 	return keys, rows.Err()
 }
 
+// SeedSeenFeatures marks several features seen at once, for a brand-new
+// account that was never going to find them "new" in the first place.
+func (m *PgStore) SeedSeenFeatures(ctx context.Context, viewerDID string, featureKeys []string) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO seen_feature (viewer_did, feature_key)
+		 SELECT $1, unnest($2::text[])
+		 ON CONFLICT (viewer_did, feature_key) DO NOTHING`,
+		viewerDID, featureKeys)
+	return err
+}
+
 func (m *PgStore) MarkFeatureSeen(ctx context.Context, viewerDID, featureKey string) error {
 	_, err := m.pool.Exec(ctx,
 		`INSERT INTO seen_feature (viewer_did, feature_key) VALUES ($1, $2)
@@ -984,6 +995,34 @@ func (m *PgStore) SupporterDIDs(ctx context.Context, dids []string) (map[string]
 		out[did] = true
 	}
 	return out, rows.Err()
+}
+
+// ColorTrialColors returns the query colors the DID has already spent from
+// their color-search trial allowance.
+func (m *PgStore) ColorTrialColors(ctx context.Context, did string) ([]string, error) {
+	rows, err := m.pool.Query(ctx, `SELECT color_hex FROM color_trial WHERE viewer_did = $1`, did)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	colors := []string{}
+	for rows.Next() {
+		var hex string
+		if err := rows.Scan(&hex); err != nil {
+			return nil, err
+		}
+		colors = append(colors, hex)
+	}
+	return colors, rows.Err()
+}
+
+// RecordColorTrial spends one color from the DID's trial allowance.
+func (m *PgStore) RecordColorTrial(ctx context.Context, did, hex string) error {
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO color_trial (viewer_did, color_hex) VALUES ($1, $2)
+		 ON CONFLICT (viewer_did, color_hex) DO NOTHING`,
+		did, hex)
+	return err
 }
 
 // CountUsers returns the total number of indexed Currents users.
@@ -1104,6 +1143,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 		`DELETE FROM moderation_pref WHERE viewer_did = $1`,
 		`DELETE FROM user_pref WHERE viewer_did = $1`,
 		`DELETE FROM notification_seen WHERE viewer_did = $1`,
+		`DELETE FROM color_trial WHERE viewer_did = $1`,   // a fresh DID gets a fresh allowance anyway
 		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
 		`DELETE FROM polar_subscription WHERE did = $1`,   // only non-active rows reach here
 		`DELETE FROM moderator WHERE did = $1`,
@@ -2547,6 +2587,15 @@ const (
 	colorCandidateLimit = 600  // color rows pulled from the ANN scan before per-image dedup
 	colorMaxDeltaE      = 25.0 // ΔE76 beyond which a palette color is not a match
 	colorCoverageWeight = 25.0 // ΔE advantage a full-coverage color earns over a tiny accent
+
+	// Hybrid only: the matched color must cover at least this share of the
+	// image, and sit this close in ΔE. Pure color search ranks by
+	// ΔE − colorCoverageWeight·fraction, so weak matches sink there on their
+	// own and a loose gate only defines a tail; hybrid orders by semantics
+	// alone, so its gate is the whole color criterion and has to be stricter.
+	// It can afford to be — the text query carries recall.
+	colorHybridMinFraction = 0.08
+	colorHybridMaxDeltaE   = 18.0
 )
 
 // SearchSavesByColorPage returns saves whose palette contains a color close to
@@ -2602,23 +2651,24 @@ func (m *PgStore) SearchSavesByColorPage(ctx context.Context, lab [3]float32, vi
 const hybridScanFloor = 500
 
 // SearchHybridSavesPage ranks images by semantic distance to the text embedding,
-// keeping only those whose palette contains a color within colorMaxDeltaE of the
-// query color. Color is a strict membership filter (not blended into the score);
-// semantic relevance alone orders the results. Global scope searches canonical
-// saves network-wide; library scope the viewer's own saves, optionally narrowed
-// to collections. Offset-based pagination.
+// keeping only those whose palette contains a color within colorHybridMaxDeltaE
+// of the query color covering at least colorHybridMinFraction of the image. Color is a
+// strict membership filter (not blended into the score); semantic relevance alone
+// orders the results. Global scope searches canonical saves network-wide; library
+// scope the viewer's own saves, optionally narrowed to collections. Offset-based
+// pagination.
 func (m *PgStore) SearchHybridSavesPage(ctx context.Context, embedding []float32, lab [3]float32, viewerDID string, library bool, collectionURIs []string, limit, offset int) (annSavePage, error) {
 	fetchLimit := limit + 1
 	joinClause := `FROM visual_identity vi
 		JOIN save s ON s.uri = vi.canonical_save_uri`
 	scopeClause := ""
-	args := []any{pgvector.NewVector(embedding), fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs, pgvector.NewVector(lab[:]), colorMaxDeltaE}
+	args := []any{pgvector.NewVector(embedding), fetchLimit, viewerDID, offset, m.cfg.HiddenDIDs, pgvector.NewVector(lab[:]), colorHybridMaxDeltaE, colorHybridMinFraction}
 	if library || len(collectionURIs) > 0 {
 		joinClause = `FROM save s
 			JOIN visual_identity vi ON vi.id = s.visual_identity_id`
 		scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.author_did = $3`
 		if len(collectionURIs) > 0 {
-			scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.collection_uri = ANY($8)`
+			scopeClause = `AND s.content_nsid = 'is.currents.content.image' AND s.collection_uri = ANY($9)`
 			args = append(args, collectionURIs)
 		}
 	}
@@ -2628,7 +2678,7 @@ func (m *PgStore) SearchHybridSavesPage(ctx context.Context, embedding []float32
 		WHERE vi.embedding IS NOT NULL
 		  AND s.author_did <> ALL($5)
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
-		  AND EXISTS (SELECT 1 FROM visual_identity_color c WHERE c.visual_identity_id = vi.id AND c.lab <-> $6 <= $7)
+		  AND EXISTS (SELECT 1 FROM visual_identity_color c WHERE c.visual_identity_id = vi.id AND c.lab <-> $6 <= $7 AND c.fraction >= $8)
 		  ` + scopeClause + `
 		ORDER BY vi.embedding <=> $1
 		LIMIT $2 OFFSET $4

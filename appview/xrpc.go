@@ -789,13 +789,17 @@ func (s *Server) XRPCSearchSavesByColor(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !s.requireSupporter(w, r, viewerDID.String()) {
+	hex := r.URL.Query().Get("color")
+	lab, err := hexToLab(hex)
+	if err != nil {
+		http.Error(w, `{"error":"InvalidRequest","message":"color must be a hex color like #e63946"}`, http.StatusBadRequest)
 		return
 	}
 
-	lab, err := hexToLab(r.URL.Query().Get("color"))
-	if err != nil {
-		http.Error(w, `{"error":"InvalidRequest","message":"color must be a hex color like #e63946"}`, http.StatusBadRequest)
+	// Non-supporters sample this on a lifetime allowance of distinct colors,
+	// spent here — a color already spent stays free, so paginating and
+	// refining the text query don't cost anything.
+	if !s.requireColorSearch(w, r, viewerDID.String(), hex, lab) {
 		return
 	}
 

@@ -117,14 +117,7 @@
 </svelte:head>
 
 {#if searchType === 'color'}
-	<div class="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
-		<span class="size-5 rounded-full border shadow-sm" style:background-color={colorHex}></span>
-		<span class="font-mono uppercase">{colorHex}</span>
-		{#if hybridText}
-			<span>·</span>
-			<span class="truncate">“{hybridText}”</span>
-		{/if}
-	</div>
+	<!-- What's being searched (hex, text, colored lens) lives in the top bar. -->
 	<MasonryGrid items={saves} loading={search.loading} />
 	{#if !search.loading && loadedType === 'color' && saves.length === 0}
 		<p class="mt-10 text-center text-sm text-muted-foreground">

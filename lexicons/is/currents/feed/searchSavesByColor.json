@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Search saves by dominant color. Matches images whose palette contains a color perceptually close to the query color, ranked by closeness and pixel coverage. With an optional text query, becomes a hybrid search: the color is a strict palette filter and semantic relevance to the text orders the results. Requires authentication and an active supporter subscription.",
+      "description": "Search saves by dominant color. Matches images whose palette contains a color perceptually close to the query color, ranked by closeness and pixel coverage. With an optional text query, becomes a hybrid search: the color is a strict palette filter and semantic relevance to the text orders the results. Requires authentication. Supporters have unlimited access; everyone else gets a lifetime trial allowance of distinct query colors, after which the endpoint answers SupporterRequired.",
       "parameters": {
         "type": "params",
         "required": [
@@ -69,7 +69,7 @@
       "errors": [
         {
           "name": "SupporterRequired",
-          "description": "The viewer must have an active supporter subscription to search by color."
+          "description": "The viewer has spent their trial allowance of query colors and needs an active supporter subscription to keep searching by color."
         }
       ]
     }

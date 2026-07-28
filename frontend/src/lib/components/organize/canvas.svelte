@@ -14,6 +14,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { emitSaveRemoved, onSaveRemoved } from '$lib/stores/save-events.svelte';
+	import { requireSupporter } from '$lib/stores/supporter.svelte';
 	import { copyLink, copyImage, downloadImage } from '$lib/save-actions';
 	import { toast } from 'svelte-sonner';
 	import ImageOff from '@lucide/svelte/icons/image-off';
@@ -417,7 +418,20 @@
 			{#if errorStatus === 401}
 				<p>Your session has expired.</p>
 				<Button href="/login" variant="outline" size="sm" class="mt-1">Log in again</Button>
-			{:else}
+			{:else if errorStatus === 403}
+				<!-- Reachable by revisiting a `?color=` URL after the free trial colors
+				     are spent — the gate runs before navigating, not on a cold load. -->
+				<p>
+					{#if color}
+						You’ve used your free color searches.
+					{:else}
+						This is a supporter feature.
+					{/if}
+				</p>
+				<Button variant="outline" size="sm" class="mt-1" onclick={() => void requireSupporter()}>
+					Become a supporter
+				</Button>
+		{:else}
 				<p>
 					{#if search || color}
 						Couldn't run the search.

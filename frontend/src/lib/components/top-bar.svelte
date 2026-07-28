@@ -36,6 +36,7 @@
 	import Bell from '@lucide/svelte/icons/bell';
 	import Heart from '@lucide/svelte/icons/heart';
 	import Logo from '$lib/assets/logo.svelte';
+	import SearchLensIcon from '$lib/components/search-lens-icon.svelte';
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
@@ -54,7 +55,8 @@
 		isFeatureSeen,
 		FEATURE_PINTEREST_IMPORT,
 		FEATURE_BLUESKY_IMPORT,
-		FEATURE_BECOME_SUPPORTER
+		FEATURE_BECOME_SUPPORTER,
+		FEATURE_COLOR_SEARCH
 	} from '$lib/stores/features.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
@@ -90,8 +92,17 @@
 	let browserExtensionDialogOpen = $state(false);
 	let installAppDialogOpen = $state(false);
 	let notificationsOpen = $state(false);
-	let burgerOpenDesktop = $state(false);
-	let burgerOpenMobile = $state(false);
+	// Which cluster menu is open, if any. Opening one closes the rest: a touch tap
+	// on a second trigger never reaches bits-ui's interact-outside handler, so
+	// without this the first menu stays open behind the second one on phones
+	// (mouse clicks close it fine, which is why this only shows up on touch).
+	// Ids are per instance — the desktop and mobile clusters are both in the DOM.
+	let openMenu = $state<string | null>(null);
+	function toggleMenu(id: string, open: boolean) {
+		if (open) openMenu = id;
+		// Ignore the close that fires on the menu we just superseded.
+		else if (openMenu === id) openMenu = null;
+	}
 	// The mobile bottom bar; its menus anchor to it (centered) instead of to their buttons.
 	let bottomBarEl = $state<HTMLElement | undefined>();
 
@@ -105,6 +116,12 @@
 	// never flash a dot before knowing what the user has already seen.
 	let showPinterestNew = $derived(features.loaded && !isFeatureSeen(FEATURE_PINTEREST_IMPORT));
 	let showBlueskyImportNew = $derived(features.loaded && !isFeatureSeen(FEATURE_BLUESKY_IMPORT));
+	// Color search lives behind the palette toggle inside the search command, so
+	// the dot on the search button is what leads there; the toggle carries its
+	// own dot and clears the flag once the panel opens.
+	let showColorSearchNew = $derived(
+		!!user && features.loaded && !isFeatureSeen(FEATURE_COLOR_SEARCH)
+	);
 
 	// Organize mode is preview-gated to moderators until public launch; the mode
 	// switcher only shows when the viewer can actually enter it.
@@ -126,6 +143,18 @@
 	// inside the profile menu, the burger aggregates its own "new" items.
 	let avatarDot = $derived(unreadCount > 0 || showBlueskyImportNew || showSupporterNew);
 	let burgerDot = $derived(showPinterestNew);
+
+	// What's currently being searched, surfaced next to the search button so the
+	// query stays visible after the command dialog closes. Color searches carry the
+	// hex (and paint the lens); hybrid searches carry both text and hex.
+	let activeSearch = $derived.by(() => {
+		if (page.route.id !== '/(with-navbar)/search/[type]/[query]') return null;
+		const param = page.params.query ?? '';
+		if (page.params.type === 'color') {
+			return { text: page.url.searchParams.get('q') ?? '', color: '#' + param };
+		}
+		return param ? { text: param, color: '' } : null;
+	});
 
 	// Every page except the explore home gets a floating back button next to the
 	// logo (save-detail has its own and doesn't render the top bar).
@@ -313,6 +342,53 @@
 	</InputGroup.Root>
 {/snippet}
 
+{#snippet searchQuery()}
+	{#if activeSearch?.text}
+		<span class="min-w-0 truncate">{activeSearch.text}</span>
+	{/if}
+	{#if activeSearch?.color}
+		<span class="shrink-0 font-mono text-xs text-muted-foreground uppercase">
+			{activeSearch.color}
+		</span>
+	{/if}
+{/snippet}
+
+<!-- The search trigger. With `labelled`, an active query sits to the left of the
+     lens — desktop only, since the mobile bar has no room; there the query rides
+     above the bottom cluster instead. -->
+{#snippet searchButton(variant: 'ghost' | 'glass', extraClass: string, labelled: boolean)}
+	{@const withQuery = labelled && !!activeSearch}
+	<Button
+		{variant}
+		size="icon"
+		class="relative rounded-full {withQuery
+			? 'md:w-auto md:max-w-72 md:gap-1.5 md:px-3'
+			: ''} {extraClass}"
+		type="button"
+		aria-label="Search"
+		onclick={() => (searchCommandOpen = true)}
+	>
+		{#if withQuery}
+			<!-- Baseline, not center: the hex is a size smaller than the query text, so
+			     centering the two boxes leaves their glyphs sitting a pixel apart. -->
+			<span class="hidden min-w-0 items-baseline gap-1.5 md:flex">{@render searchQuery()}</span>
+		{/if}
+		<SearchLensIcon class="size-4" color={activeSearch?.color} />
+		{#if showColorSearchNew}
+			<span
+				class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+				aria-label="New feature available"
+			></span>
+		{/if}
+	</Button>
+{/snippet}
+
+{#snippet loginButton(size: 'default' | 'lg')}
+	<a href={resolve('/login')} class="pointer-events-auto shrink-0">
+		<Button variant="default" {size} class="rounded-full px-5">Log in</Button>
+	</a>
+{/snippet}
+
 {#snippet burgerIcon(open: boolean)}
 	<span class="relative block size-4">
 		<span
@@ -328,8 +404,13 @@
 	</span>
 {/snippet}
 
-{#snippet plusMenu(side: 'top' | 'bottom', align: 'center' | 'end', anchor?: HTMLElement)}
-	<DropdownMenu.Root>
+{#snippet plusMenu(
+	id: string,
+	side: 'top' | 'bottom',
+	align: 'center' | 'end',
+	anchor?: HTMLElement
+)}
+	<DropdownMenu.Root bind:open={() => openMenu === id, (v) => toggleMenu(id, v)}>
 		<DropdownMenu.Trigger class="shrink-0 outline-none">
 			{#snippet child({ props })}
 				<Button
@@ -357,9 +438,14 @@
 	</DropdownMenu.Root>
 {/snippet}
 
-{#snippet avatarMenu(side: 'top' | 'bottom', align: 'center' | 'end', anchor?: HTMLElement)}
+{#snippet avatarMenu(
+	id: string,
+	side: 'top' | 'bottom',
+	align: 'center' | 'end',
+	anchor?: HTMLElement
+)}
 	{#if user}
-		<DropdownMenu.Root>
+		<DropdownMenu.Root bind:open={() => openMenu === id, (v) => toggleMenu(id, v)}>
 			<DropdownMenu.Trigger
 				aria-label="Profile menu"
 				class="relative flex size-9 shrink-0 items-center justify-center rounded-full outline-none"
@@ -522,7 +608,10 @@
 					<span class="block h-5"><Logo /></span>
 				</a>
 				{#if canSeeOrganize}
-					<ModeSwitcher mode="explore" />
+					<ModeSwitcher
+						mode="explore"
+						bind:open={() => openMenu === 'mode-desktop', (v) => toggleMenu('mode-desktop', v)}
+					/>
 				{/if}
 			</div>
 			<!-- Mobile: the logo floats centered on its own (same box and position as the
@@ -577,18 +666,11 @@
 			<!-- Desktop top-right cluster: search, add, burger, profile. On mobile these
 			     live in the bottom cluster instead. -->
 			<div in:fade={{ duration: 250, easing: cubicOut }} class="{glassGroup} hidden md:flex">
-				<Button
-					variant="ghost"
-					size="icon"
-					class="rounded-full"
-					type="button"
-					aria-label="Search"
-					onclick={() => (searchCommandOpen = true)}
+				{@render searchButton('ghost', '', true)}
+				{@render plusMenu('plus-desktop', 'bottom', 'end')}
+				<DropdownMenu.Root
+					bind:open={() => openMenu === 'burger-desktop', (v) => toggleMenu('burger-desktop', v)}
 				>
-					<SearchIcon class="size-4" />
-				</Button>
-				{@render plusMenu('bottom', 'end')}
-				<DropdownMenu.Root bind:open={burgerOpenDesktop}>
 					<DropdownMenu.Trigger class="shrink-0 outline-none">
 						{#snippet child({ props })}
 							<Button
@@ -599,7 +681,7 @@
 								type="button"
 								aria-label="Menu"
 							>
-								{@render burgerIcon(burgerOpenDesktop)}
+								{@render burgerIcon(openMenu === 'burger-desktop')}
 								{#if burgerDot}
 									<span
 										class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
@@ -613,27 +695,32 @@
 						{@render burgerItems()}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
-				{@render avatarMenu('bottom', 'end')}
+				{@render avatarMenu('avatar-desktop', 'bottom', 'end')}
 			</div>
-		{:else}
+		{:else if landing}
+			<!-- The hero already has a search bar on desktop; on mobile the icon expands
+			     it inline rather than opening the command dialog. -->
 			<Button
-				variant={landing ? 'ghost' : 'glass'}
+				variant="ghost"
 				size="icon"
-				class="pointer-events-auto shrink-0 rounded-full {landing ? 'md:hidden' : ''}"
+				class="pointer-events-auto shrink-0 rounded-full md:hidden"
 				type="button"
 				aria-label="Search"
-				onclick={() => (landing ? (searchOpen = true) : (searchCommandOpen = true))}
+				onclick={() => (searchOpen = true)}
 			>
 				<SearchIcon class="size-4" />
 			</Button>
-			{#if !landing}
+			{@render loginButton('lg')}
+		{:else}
+			<!-- Desktop top-right cluster for logged-out viewers. On mobile these live in
+			     the bottom cluster instead, mirroring the logged-in bar. -->
+			<div class="hidden shrink-0 items-center gap-2 md:flex">
+				{@render searchButton('glass', 'pointer-events-auto shrink-0', true)}
 				<ThemeToggle
 					class="pointer-events-auto h-9 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground"
 				/>
-			{/if}
-			<a href={resolve('/login')} class="pointer-events-auto">
-				<Button variant="default" size="lg" class="shrink-0 rounded-full px-5">Log in</Button>
-			</a>
+				{@render loginButton('lg')}
+			</div>
 		{/if}
 	{/if}
 
@@ -659,59 +746,83 @@
 	{/if}
 </header>
 
-<!-- Mobile bottom-center cluster: profile, menu, add, mode switch, search. The extra
-     0.125rem centers the 44px-tall cluster on the 48px explore flow-field button. -->
-{#if user && !landing}
+<!-- Mobile bottom-center cluster. Logged in: profile, menu, add, mode switch, search;
+     logged out: log in, theme, search. The extra 0.125rem centers the 44px-tall
+     cluster on the 48px explore flow-field button. -->
+{#if !landing}
+	{#if activeSearch}
+		<!-- The bottom cluster has no room beside the lens, so the active query rides
+		     just above it (44px cluster + 0.5rem gap over the cluster's own offset). -->
+		<button
+			type="button"
+			onclick={() => (searchCommandOpen = true)}
+			class="fixed left-1/2 z-10 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-baseline gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3 py-1.5 text-sm text-foreground shadow-sm backdrop-blur-sm md:hidden"
+			style="bottom: calc(env(safe-area-inset-bottom) + 4.625rem)"
+		>
+			{@render searchQuery()}
+		</button>
+	{/if}
 	<div
 		bind:this={bottomBarEl}
 		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 md:hidden"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1.375rem)"
 	>
-		{@render avatarMenu('top', 'center', bottomBarEl)}
-		<DropdownMenu.Root bind:open={burgerOpenMobile}>
-			<DropdownMenu.Trigger class="shrink-0 outline-none">
-				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="ghost"
-						size="icon"
-						class="relative rounded-full"
-						type="button"
-						aria-label="Menu"
-					>
-						{@render burgerIcon(burgerOpenMobile)}
-						{#if burgerDot}
-							<span
-								class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
-								aria-label="New feature available"
-							></span>
-						{/if}
-					</Button>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content
-				side="top"
-				align="center"
-				customAnchor={bottomBarEl ?? null}
-				class="w-56"
+		{#if !user}
+			{@render loginButton('default')}
+			<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
+			     bg-input/50 would read as a pressed state inside the glass pill. The
+			     asymmetric padding is optical, not arithmetic: the chevron already
+			     carries trailing space of its own, while the solid Log in pill needs
+			     room to breathe — that lands both gaps at ~18px of visible space. -->
+			<ThemeToggle
+				class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
+			/>
+		{:else}
+			{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
+			<DropdownMenu.Root
+				bind:open={() => openMenu === 'burger-mobile', (v) => toggleMenu('burger-mobile', v)}
 			>
-				{@render burgerItems()}
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
-		{@render plusMenu('top', 'center', bottomBarEl)}
-		{#if canSeeOrganize}
-			<ModeSwitcher mode="explore" variant="icon" side="top" anchor={bottomBarEl} />
+				<DropdownMenu.Trigger class="shrink-0 outline-none">
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="ghost"
+							size="icon"
+							class="relative rounded-full"
+							type="button"
+							aria-label="Menu"
+						>
+							{@render burgerIcon(openMenu === 'burger-mobile')}
+							{#if burgerDot}
+								<span
+									class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+									aria-label="New feature available"
+								></span>
+							{/if}
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content
+					side="top"
+					align="center"
+					customAnchor={bottomBarEl ?? null}
+					class="w-56"
+				>
+					{@render burgerItems()}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+			{@render plusMenu('plus-mobile', 'top', 'center', bottomBarEl)}
+			{#if canSeeOrganize}
+				<ModeSwitcher
+					mode="explore"
+					variant="icon"
+					side="top"
+					anchor={bottomBarEl}
+					bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
+				/>
+			{/if}
 		{/if}
-		<Button
-			variant="ghost"
-			size="icon"
-			class="rounded-full"
-			type="button"
-			aria-label="Search"
-			onclick={() => (searchCommandOpen = true)}
-		>
-			<SearchIcon class="size-4" />
-		</Button>
+		{@render searchButton('ghost', '', false)}
 	</div>
 {/if}
 

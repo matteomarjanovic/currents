@@ -46,7 +46,10 @@
 			page.url.pathname.startsWith('/login') ||
 			page.url.pathname.startsWith('/register') ||
 			page.url.pathname.startsWith('/profile/') ||
-			page.url.pathname.startsWith('/collection/');
+			page.url.pathname.startsWith('/collection/') ||
+			// Text search reads fine unauthenticated (searchSaves uses optional auth);
+			// the color route still 403s, which raises the login prompt in-page.
+			page.url.pathname.startsWith('/search/');
 		if (!user && !isPublic) {
 			// On native the login entry point is the welcome screen at '/', not the web /login route.
 			goto(native ? '/' : '/login');

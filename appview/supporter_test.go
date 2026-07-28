@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -53,5 +55,121 @@ func TestVerifyPolarSignature(t *testing.T) {
 				t.Errorf("verifyPolarSignature() = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestColorTrialSpent(t *testing.T) {
+	// Colors already spent by the viewer: a red, a teal and a near-black.
+	spent := []string{"#e63946", "#2a9d8f", "#111111"}
+
+	cases := []struct {
+		name string
+		hex  string
+		want bool
+	}{
+		{"exact match", "#e63946", true},
+		{"different case", "#E63946", true},
+		{"one channel nudged", "#e63947", true},
+		{"imperceptibly lighter", "#e73a47", true},
+		{"visibly different red", "#c1121f", false},
+		{"other spent color", "#2a9d8f", true},
+		{"unrelated blue", "#457b9d", false},
+		{"near-black vs black", "#000000", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lab, err := hexToLab(c.hex)
+			if err != nil {
+				t.Fatalf("hexToLab(%q): %v", c.hex, err)
+			}
+			if got := colorTrialSpent(spent, lab); got != c.want {
+				t.Errorf("colorTrialSpent(%q) = %v, want %v", c.hex, got, c.want)
+			}
+		})
+	}
+
+	t.Run("no colors spent", func(t *testing.T) {
+		lab, _ := hexToLab("#e63946")
+		if colorTrialSpent(nil, lab) {
+			t.Error("colorTrialSpent(nil, ...) = true, want false")
+		}
+	})
+}
+
+func TestNormalizeHex(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"#e63946", "#e63946"},
+		{"E63946", "#e63946"},
+		{"#E63946", "#e63946"},
+	} {
+		if got := normalizeHex(c.in); got != c.want {
+			t.Errorf("normalizeHex(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// The gate itself, against a real ledger: five distinct colors are free, a
+// sixth is not, and colors already spent stay free forever (which is what
+// keeps pagination and text refinement off the meter). DB-backed; skips
+// without TEST_DATABASE_URL.
+func TestRequireColorSearch(t *testing.T) {
+	store := newTestStore(t)
+	// A webhook secret switches the gate on; without one everyone is a supporter.
+	s := &Server{Store: store, PolarWebhookSecret: "polar_whs_test_secret"}
+	const did = "did:plc:trialgate"
+
+	call := func(t *testing.T, hex string) (bool, int) {
+		t.Helper()
+		lab, err := hexToLab(hex)
+		if err != nil {
+			t.Fatalf("hexToLab(%q): %v", hex, err)
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/xrpc/is.currents.feed.searchSavesByColor?color="+hex, nil)
+		return s.requireColorSearch(rec, req, did, hex, lab), rec.Code
+	}
+
+	// The whole allowance, spent one distinct color at a time.
+	for _, hex := range []string{"#e63946", "#2a9d8f", "#457b9d", "#e9c46a", "#7b2cbf"} {
+		if ok, code := call(t, hex); !ok {
+			t.Fatalf("requireColorSearch(%s) = false (status %d), want allowed", hex, code)
+		}
+	}
+
+	// Paginating and refining that first search cost nothing, and neither does
+	// a shade the eye can't tell apart from one already spent.
+	for _, hex := range []string{"#e63946", "#E63946", "#e63947"} {
+		if ok, _ := call(t, hex); !ok {
+			t.Errorf("requireColorSearch(%s) = false, want free (already spent)", hex)
+		}
+	}
+
+	// A sixth genuinely new color is where the paywall lands.
+	ok, code := call(t, "#111111")
+	if ok {
+		t.Fatal("requireColorSearch(#111111) = true, want denied after the allowance")
+	}
+	if code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", code, http.StatusForbidden)
+	}
+
+	// A denial must not have been charged: the ledger still holds exactly the
+	// allowance, so the viewer can keep browsing the colors they did spend.
+	spent, err := store.ColorTrialColors(context.Background(), did)
+	if err != nil {
+		t.Fatalf("ColorTrialColors: %v", err)
+	}
+	if len(spent) != colorTrialLimit {
+		t.Errorf("spent %d colors, want %d (%v)", len(spent), colorTrialLimit, spent)
+	}
+
+	// Subscribing lifts the ceiling without touching the ledger.
+	if err := store.UpsertPolarSubscription(context.Background(), PolarSubscription{
+		SubscriptionID: "sub_trial", DID: did, CustomerID: "cus_1", Status: "active", ProductID: "prod_1",
+	}); err != nil {
+		t.Fatalf("UpsertPolarSubscription: %v", err)
+	}
+	if ok, code := call(t, "#111111"); !ok {
+		t.Fatalf("requireColorSearch(#111111) as supporter = false (status %d), want allowed", code)
 	}
 }

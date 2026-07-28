@@ -9,7 +9,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { ColorPicker } from '$lib/components/ui/color-picker';
 	import ColorPaletteIcon from '$lib/components/color-palette-icon.svelte';
-	import { requireSupporter } from '$lib/stores/supporter.svelte';
+	import ColorTrialNote from '$lib/components/color-trial-note.svelte';
+	import { requireColorSearch } from '$lib/stores/supporter.svelte';
+	import {
+		features,
+		isFeatureSeen,
+		markFeatureSeen,
+		FEATURE_COLOR_SEARCH
+	} from '$lib/stores/features.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ImageIcon from '@lucide/svelte/icons/image';
 	import Folder from '@lucide/svelte/icons/folder';
@@ -43,6 +50,13 @@
 
 	let colorMode = $state(false);
 	let color = $state('#e63946');
+
+	// One-time "new" dot on the color-search toggle, cleared the moment the
+	// color panel opens — by the toggle, or by reopening on a color search.
+	let showColorNew = $derived(features.loaded && !isFeatureSeen(FEATURE_COLOR_SEARCH));
+	$effect(() => {
+		if (colorMode) void markFeatureSeen(FEATURE_COLOR_SEARCH);
+	});
 
 	// Reseed from the current search page each time the dialog opens: refining an
 	// active text search starts from its query, and opening on a color-search page
@@ -85,7 +99,7 @@
 		const go = () => goto(target);
 		open = false;
 		// Gate before navigating; on a completed checkout the paywall resumes `go`.
-		if (await requireSupporter(go)) go();
+		if (await requireColorSearch(go)) go();
 	}
 </script>
 
@@ -113,11 +127,18 @@
 			<InputGroup.Addon align="inline-end">
 				<InputGroup.Button
 					size="icon-xs"
+					class="relative"
 					aria-label="Search by color"
 					aria-pressed={colorMode}
 					onclick={() => (colorMode = !colorMode)}
 				>
 					<ColorPaletteIcon filled={colorMode} />
+					{#if showColorNew}
+						<span
+							class="absolute -top-0.5 -right-0.5 inline-flex h-2 w-2 rounded-full bg-red-500 ring-2 ring-background"
+							aria-label="New feature available"
+						></span>
+					{/if}
 				</InputGroup.Button>
 			</InputGroup.Addon>
 		</InputGroup.Root>
@@ -141,6 +162,7 @@
 				<PaletteIcon />
 				{trimmed ? `Search “${trimmed}” in this color` : 'Search this color'}
 			</Button>
+			<ColorTrialNote />
 		</div>
 	{:else}
 		<Command.List>

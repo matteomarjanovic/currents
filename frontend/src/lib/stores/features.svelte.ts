@@ -10,14 +10,20 @@ export const FEATURE_PINTEREST_IMPORT = 'pinterest-import';
 export const FEATURE_BLUESKY_IMPORT = 'bluesky-import';
 export const FEATURE_BECOME_SUPPORTER = 'become-supporter';
 export const FEATURE_ORGANIZE_MODE = 'organize-mode';
+export const FEATURE_COLOR_SEARCH = 'color-search';
 
-// Features currently surfaced with a "new" indicator. Drop a key here once the
-// feature is no longer newsworthy.
+// The announcements currently live. Nothing reads this at runtime — each
+// indicator checks its own key — but it's the one inventory of what's being
+// announced, and appview/features.go mirrors it to decide what a brand-new
+// account should be spared. Drop a key here once the feature is no longer
+// newsworthy, and add it to onboardingSeenFeatures there once it's no longer
+// worth greeting a newcomer with.
 export const ACTIVE_ANNOUNCEMENTS = [
 	FEATURE_PINTEREST_IMPORT,
 	FEATURE_BLUESKY_IMPORT,
 	FEATURE_BECOME_SUPPORTER,
-	FEATURE_ORGANIZE_MODE
+	FEATURE_ORGANIZE_MODE,
+	FEATURE_COLOR_SEARCH
 ];
 
 export const features = $state({
@@ -41,12 +47,6 @@ export async function loadSeenFeatures() {
 
 export function isFeatureSeen(key: string): boolean {
 	return features.seen.has(key);
-}
-
-// True when at least one announced feature hasn't been seen yet (drives the
-// aggregate avatar dot). Only meaningful once features.loaded is true.
-export function hasUnseenAnnouncement(): boolean {
-	return ACTIVE_ANNOUNCEMENTS.some((k) => !features.seen.has(k));
 }
 
 export async function markFeatureSeen(key: string) {
