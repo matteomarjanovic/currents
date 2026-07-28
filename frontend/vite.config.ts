@@ -97,11 +97,12 @@ export default defineConfig({
 				])
 	],
 	build: {
-		// @capawesome-team/* ships from a paid private registry (Insiders licence), which the
-		// Netlify deploy has no token for — so it installs with `--omit=optional` (netlify.toml)
-		// and the package is simply absent. Only the native builds need it: every call site in
+		// @capawesome-team/* ships from a paid private registry (Insiders licence). It's declared
+		// as an optionalDependency, so an install without a valid CAPAWESOME_TOKEN just warns and
+		// skips it instead of failing the deploy — which means it may or may not be on disk when
+		// the web build runs. Only the native builds actually need it: every call site in
 		// auth-storage.ts sits behind an `isNative()` guard, so in a web bundle the dynamic import
-		// is dead code. Leaving it external keeps `vite build` from having to resolve it.
+		// is dead code. Externalizing it makes the web build independent of whether it installed.
 		rollupOptions: {
 			external: isCapacitor ? [] : ['@capawesome-team/capacitor-secure-preferences']
 		}

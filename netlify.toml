@@ -3,12 +3,6 @@
   command = "npm run build"
   publish = "build"
 
-[build.environment]
-  # @capawesome-team/capacitor-secure-preferences comes from a paid private registry and is only
-  # used by the Capacitor builds (see frontend/vite.config.ts). It's an optionalDependency, so
-  # skipping optional installs keeps the deploy from needing a CAPAWESOME_TOKEN at all.
-  NPM_FLAGS = "--omit=optional"
-
 # SPA fallback: the SvelteKit static build (ssr=false, prerender=false) emits a
 # single index.html. Serve it for any path that doesn't match a real file so a
 # refresh / deep-link on a client-side route doesn't 404. Existing assets
