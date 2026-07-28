@@ -6,12 +6,24 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/time/rate"
 )
+
+// meanMS averages an accumulated duration over a count, for the per-batch
+// timing line that tells you which half of the work to tune.
+func meanMS(total, n int64) int64 {
+	if n == 0 {
+		return 0
+	}
+	return total / n
+}
 
 // runBackfillColors re-extracts the dominant-color palette of every visual
 // identity that has no color-index rows yet, via the inference server's
@@ -28,6 +40,17 @@ func runBackfillColors(cctx *cli.Context) error {
 	interval := cctx.Duration("interval")
 	limit := cctx.Int("limit")
 	dryRun := cctx.Bool("dry-run")
+	concurrency := cctx.Int("concurrency")
+	rps := cctx.Float64("rate")
+
+	// Each item is a PDS round trip plus a palette call, so the run is latency
+	// bound: workers overlap those waits, the token bucket caps the aggregate
+	// rate whatever the worker count. A non-positive --rate disables the cap.
+	lim := rate.Limit(rps)
+	if rps <= 0 {
+		lim = rate.Inf
+	}
+	limiter := rate.NewLimiter(lim, 1)
 
 	store, err := NewPgStore(ctx, &PgStoreConfig{
 		DSN:                       cctx.String("database-url"),
@@ -53,6 +76,8 @@ func runBackfillColors(cctx *cli.Context) error {
 	slog.Info("colors backfill starting",
 		"pending_vis", pending,
 		"batch_size", batchSize,
+		"concurrency", concurrency,
+		"rate_per_sec", rps,
 		"interval", interval,
 		"limit_arg", limit,
 		"dry_run", dryRun,
@@ -80,41 +105,94 @@ func runBackfillColors(cctx *cli.Context) error {
 			return nil
 		}
 
-		for _, vi := range batch {
-			if ctx.Err() != nil {
-				slog.Info("colors backfill interrupted", "processed", processed)
-				return nil
-			}
-			afterID = vi.ID
+		// The batch is ordered by id, so the cursor can advance past the whole
+		// page up front: items that fail stay in the pool for a rerun anyway
+		// (the NOT EXISTS only drops the ones that got colors written).
+		afterID = batch[len(batch)-1].ID
 
-			imageBytes, mimeType, err := fetchBlobFromPDS(ctx, store, dir, vi.BlobDID, vi.BlobCID)
-			if err != nil {
-				slog.Warn("colors backfill: fetch blob", "vi_id", vi.ID, "blob_cid", vi.BlobCID, "err", err)
-				continue
-			}
-			colors, err := inference.Palette(ctx, imageBytes, mimeType)
-			if err != nil {
-				slog.Warn("colors backfill: extract palette", "vi_id", vi.ID, "blob_cid", vi.BlobCID, "err", err)
-				continue
-			}
+		var done, fetchMS, paletteMS atomic.Int64
+		jobs := make(chan VIColorBackfill)
+		var wg sync.WaitGroup
+		for range concurrency {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for vi := range jobs {
+					if limiter.Wait(ctx) != nil {
+						return
+					}
 
-			if dryRun {
-				slog.Info("colors backfill DRY", "vi_id", vi.ID, "blob_cid", vi.BlobCID, "palette", string(colors))
-				processed++
-				continue
-			}
+					start := time.Now()
+					imageBytes, mimeType, err := fetchBlobFromPDS(ctx, store, dir, vi.BlobDID, vi.BlobCID)
+					if err != nil {
+						if isBlobRateLimited(err) {
+							slog.Warn("colors backfill: PDS answered 429, cooling down", "blob_cid", vi.BlobCID, "cooldown", rateLimitCooldown)
+							select {
+							case <-ctx.Done():
+								return
+							case <-time.After(rateLimitCooldown):
+							}
+						} else {
+							slog.Warn("colors backfill: fetch blob", "vi_id", vi.ID, "blob_cid", vi.BlobCID, "err", err)
+						}
+						continue
+					}
+					fetchMS.Add(time.Since(start).Milliseconds())
 
-			if err := store.SetVIColors(ctx, vi.ID, colors); err != nil {
-				slog.Warn("colors backfill: set vi colors", "vi_id", vi.ID, "err", err)
-				continue
-			}
-			if err := store.UpdateSaveDominantColorsByCID(ctx, vi.BlobCID, colors); err != nil {
-				slog.Warn("colors backfill: update save palettes", "blob_cid", vi.BlobCID, "err", err)
-			}
-			processed++
+					start = time.Now()
+					colors, err := inference.Palette(ctx, imageBytes, mimeType)
+					if err != nil {
+						slog.Warn("colors backfill: extract palette", "vi_id", vi.ID, "blob_cid", vi.BlobCID, "err", err)
+						continue
+					}
+					paletteMS.Add(time.Since(start).Milliseconds())
+
+					if dryRun {
+						slog.Info("colors backfill DRY", "vi_id", vi.ID, "blob_cid", vi.BlobCID, "palette", string(colors))
+						done.Add(1)
+						continue
+					}
+
+					if err := store.SetVIColors(ctx, vi.ID, colors); err != nil {
+						slog.Warn("colors backfill: set vi colors", "vi_id", vi.ID, "err", err)
+						continue
+					}
+					if err := store.UpdateSaveDominantColorsByCID(ctx, vi.BlobCID, colors); err != nil {
+						slog.Warn("colors backfill: update save palettes", "blob_cid", vi.BlobCID, "err", err)
+					}
+					done.Add(1)
+				}
+			}()
 		}
 
-		slog.Info("colors backfill batch done", "size", len(batch), "processed_total", processed, "remaining_in_pool", pending-int64(processed))
+		batchStart := time.Now()
+	feed:
+		for _, vi := range batch {
+			select {
+			case jobs <- vi:
+			case <-ctx.Done():
+				break feed
+			}
+		}
+		close(jobs)
+		wg.Wait()
+
+		processed += int(done.Load())
+		if ctx.Err() != nil {
+			slog.Info("colors backfill interrupted", "processed", processed)
+			return nil
+		}
+
+		elapsed := time.Since(batchStart)
+		slog.Info("colors backfill batch done",
+			"size", len(batch),
+			"ok", done.Load(),
+			"processed_total", processed,
+			"remaining_in_pool", pending-int64(processed),
+			"images_per_sec", fmt.Sprintf("%.1f", float64(done.Load())/elapsed.Seconds()),
+			"avg_fetch_ms", meanMS(fetchMS.Load(), done.Load()),
+			"avg_palette_ms", meanMS(paletteMS.Load(), done.Load()),
+		)
 
 		if dryRun {
 			slog.Info("colors backfill: --dry-run, stopping after first batch")

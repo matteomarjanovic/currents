@@ -105,10 +105,20 @@ func main() {
 						Usage: "visual identities per batch",
 						Value: 100,
 					},
+					&cli.IntFlag{
+						Name:  "concurrency",
+						Usage: "blob fetch + palette workers running in parallel",
+						Value: 8,
+					},
+					&cli.Float64Flag{
+						Name:  "rate",
+						Usage: "max images per second across all workers (token bucket; <=0 disables the limiter)",
+						Value: 20,
+					},
 					&cli.DurationFlag{
 						Name:  "interval",
-						Usage: "pause between batches so live TAP enrichment and PDSes aren't hammered",
-						Value: 1 * time.Second,
+						Usage: "extra pause between DB pages (the --rate limiter is the primary throttle)",
+						Value: 0,
 					},
 					&cli.IntFlag{
 						Name:  "limit",

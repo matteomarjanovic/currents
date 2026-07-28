@@ -544,12 +544,20 @@ class PaletteResponse(BaseModel):
     dominant_colors: list[DominantColor]
 
 
+def _palette_from_bytes(raw: bytes) -> list[dict[str, float | str]]:
+    """Decode and extract in one executor hop, so neither half runs on the event
+    loop — a full-resolution PIL decode is ~45 ms of blocking that would
+    serialize concurrent palette requests and stall live /embed/image traffic.
+    """
+    image, _ = _decode_image(raw)
+    return _dominant_colors(image)
+
+
 @app.post("/palette", response_model=PaletteResponse)
 async def palette(file: UploadFile = File(...)):
     raw = await file.read()
-    image, _ = _decode_image(raw)
     loop = asyncio.get_running_loop()
-    dominant_colors = await loop.run_in_executor(None, _dominant_colors, image)
+    dominant_colors = await loop.run_in_executor(None, _palette_from_bytes, raw)
     return PaletteResponse(dominant_colors=dominant_colors)
 
 

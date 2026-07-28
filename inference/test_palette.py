@@ -5,9 +5,11 @@ Run with:
     ./venv/bin/python -m unittest test_palette -v
 """
 
+import io
 import unittest
 
 import numpy as np
+from fastapi import HTTPException
 from PIL import Image
 
 import main
@@ -115,6 +117,30 @@ class DominantColorsTests(unittest.TestCase):
         for c in colors:
             r, gr, b = _channels(c["hex"])
             self.assertLessEqual(max(r, gr, b) - min(r, gr, b), 2, f"non-neutral gray: {c}")
+
+
+class PaletteFromBytesTests(unittest.TestCase):
+    """The /palette entry point runs decode + extraction in one executor hop;
+    it must stay byte-identical to the live indexing path, which extracts from
+    the same full-resolution decode."""
+
+    def _jpeg(self) -> bytes:
+        arr = np.zeros((64, 64, 3), dtype=np.uint8)
+        arr[:, :32] = (200, 40, 40)
+        arr[:, 32:] = (40, 60, 200)
+        buf = io.BytesIO()
+        Image.fromarray(arr).save(buf, format="JPEG", quality=95)
+        return buf.getvalue()
+
+    def test_matches_decode_then_extract(self):
+        raw = self._jpeg()
+        expected = main._dominant_colors(main._decode_image(raw)[0])
+        self.assertEqual(main._palette_from_bytes(raw), expected)
+
+    def test_garbage_raises_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            main._palette_from_bytes(b"not an image")
+        self.assertEqual(ctx.exception.status_code, 400)
 
 
 if __name__ == "__main__":

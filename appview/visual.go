@@ -19,7 +19,18 @@ import (
 	"github.com/bluesky-social/indigo/atproto/syntax"
 )
 
-var blobHTTPClient = &http.Client{Timeout: 30 * time.Second}
+// Blob traffic concentrates on a handful of large PDS hosts, and the default
+// transport keeps only 2 idle connections per host — enough to force a fresh
+// TLS handshake on almost every fetch once anything runs concurrently.
+var blobHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		MaxIdleConns:        200,
+		MaxIdleConnsPerHost: 32,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
 
 // ── Inference client ──────────────────────────────────────────────────────────
 
