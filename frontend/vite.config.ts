@@ -66,6 +66,23 @@ export default defineConfig({
 						},
 						workbox: {
 							globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}'],
+							// @vite-pwa/sveltekit appends `prerendered/**/*.{html,json}` to globPatterns
+							// on its own, which pulls the prerendered pages (the blog, /support-us) into
+							// the precache — and precache entries are served CACHE-FIRST. A returning
+							// visitor would then keep seeing the copy from whatever deploy installed their
+							// worker, so a newly published post only appeared after a hard refresh (which
+							// mobile browsers don't offer). Netlify serves HTML with `must-revalidate`,
+							// so letting these hit the network costs one conditional request and is always
+							// current. Content pages don't belong in a precache.
+							globIgnores: ['prerendered/**'],
+							// `registerType: 'autoUpdate'` only drives the virtual registerSW module, which
+							// this app doesn't use (injectRegister: false — registration is manual in
+							// +layout.svelte). Without these two, the generated worker calls skipWaiting()
+							// only on a `SKIP_WAITING` message that nothing ever posts, so an updated worker
+							// sits in "waiting" forever: the precache never refreshes and cleanupOutdatedCaches
+							// never runs until every tab on the origin is closed.
+							clientsClaim: true,
+							skipWaiting: true,
 							// Layer our Web Share Target POST handler onto the generated Workbox SW.
 							importScripts: ['/share-target-sw.js']
 						},
@@ -79,5 +96,15 @@ export default defineConfig({
 					})
 				])
 	],
+	build: {
+		// @capawesome-team/* ships from a paid private registry (Insiders licence), which the
+		// Netlify deploy has no token for — so it installs with `--omit=optional` (netlify.toml)
+		// and the package is simply absent. Only the native builds need it: every call site in
+		// auth-storage.ts sits behind an `isNative()` guard, so in a web bundle the dynamic import
+		// is dead code. Leaving it external keeps `vite build` from having to resolve it.
+		rollupOptions: {
+			external: isCapacitor ? [] : ['@capawesome-team/capacitor-secure-preferences']
+		}
+	},
 	ssr: { noExternal: ['@masonry-grid/svelte', '@masonry-grid/core'] }
 });

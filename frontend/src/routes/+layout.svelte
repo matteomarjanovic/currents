@@ -31,7 +31,22 @@
 		if (!dev && !isNative() && 'serviceWorker' in navigator) {
 			// updateViaCache 'none' keeps sw.js AND its importScripts (share-target-sw.js) fresh
 			// on update checks instead of being served from the HTTP cache.
-			navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
+			navigator.serviceWorker
+				.register('/sw.js', { updateViaCache: 'none' })
+				.then((reg) => {
+					// One-time migration off the worker deployed before the vite.config.ts fix: it was
+					// generated without skipWaiting, so its replacement parks in "waiting" — still serving
+					// the old worker's cache-first precache — until every tab on the origin is closed.
+					// Nudging it through is the only way those clients pick up the fix; the replacement
+					// skips waiting on its own, so this is a no-op once everyone has moved over and can
+					// be deleted then.
+					const nudge = () => reg.waiting?.postMessage({ type: 'SKIP_WAITING' });
+					nudge();
+					reg.addEventListener('updatefound', () =>
+						reg.installing?.addEventListener('statechange', nudge)
+					);
+				})
+				.catch(() => {});
 		}
 	});
 

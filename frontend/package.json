@@ -90,5 +90,8 @@
 		"@polar-sh/checkout": "^0.4.0",
 		"mode-watcher": "^1.1.0",
 		"send-intent": "^7.0.0"
+	},
+	"optionalDependencies": {
+		"@capawesome-team/capacitor-secure-preferences": "^0.3.2"
 	}
 }
