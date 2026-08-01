@@ -2,6 +2,9 @@ import { mdsvex } from 'mdsvex';
 import adapter from '@sveltejs/adapter-static';
 import { relative, sep, join } from 'node:path';
 
+// Keep in sync with the CAPACITOR guard in vite.config.ts and webDir in capacitor.config.ts.
+const outDir = process.env.CAPACITOR ? 'build-mobile' : 'build';
+
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
 	compilerOptions: {
@@ -18,11 +21,15 @@ const config = {
 		}
 	},
 	kit: {
-		// SPA build: Capacitor loads static files from build/, with a catch-all fallback
-		// so client-side routing works for every path.
+		// SPA build with a catch-all fallback so client-side routing works for every path.
+		// The web and native bundles are NOT interchangeable (vite.config.ts externalizes the
+		// Capawesome plugin and adds a service worker for web only), so they get separate output
+		// directories: capacitor.config.ts reads build-mobile/, which only a CAPACITOR=1 build
+		// ever writes. A stray `npm run build` can't leak a web bundle into the app — `cap sync`
+		// fails outright on a missing webDir instead of shipping something subtly broken.
 		adapter: adapter({
-			pages: 'build',
-			assets: 'build',
+			pages: outDir,
+			assets: outDir,
 			fallback: 'index.html',
 			precompress: false,
 			strict: false

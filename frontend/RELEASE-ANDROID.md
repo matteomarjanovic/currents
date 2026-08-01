@@ -24,9 +24,15 @@ cd frontend
 #   CAPAWESOME_TOKEN=...   (needed to install @capawesome-team/* — see §6)
 set -a; . ./.env; set +a
 npm ci
-npm run build           # vite build -> build/  (ssr=false SPA)
-npx cap sync android    # copies build/ into the native project
+npm run build:mobile    # CAPACITOR=1 vite build -> build-mobile/, then cap sync
 ```
+
+**Always `build:mobile`, never `npm run build` + `cap sync`.** The two bundles differ: the web
+build externalizes `@capawesome-team/capacitor-secure-preferences` into a bare import the webview
+can't resolve (so `getAuthToken()` rejects and every native request fails), and it emits a service
+worker that has no business inside the webview. They write to different directories for exactly
+this reason, so a plain `npm run build` leaves `build-mobile/` untouched and `cap sync` refuses to
+run rather than packaging the wrong thing.
 
 ## 2. Create a release signing keystore (one-time, keep it SAFE)
 
@@ -41,8 +47,8 @@ keytool -genkey -v -keystore currents-release.keystore \
 
 ## 3. Signing config (already wired — you only create keystore.properties)
 
-The Gradle signing config and `.gitignore` entries are **already in this repo** (`app/build.gradle`
-+ `android/.gitignore`). You only need to create the secrets file.
+The Gradle signing config and `.gitignore` entries are **already in this repo**
+(`app/build.gradle` and `android/.gitignore`). You only need to create the secrets file.
 
 Create `frontend/android/keystore.properties` (gitignored). `storeFile` is resolved relative to
 `frontend/android/` (where the keystore typically lives) — so just use its filename, or an absolute path:
@@ -147,8 +153,9 @@ keystore.properties
 5. `targetSdkVersion` is 36 (current) — meets Play's recent-target requirement.
 
 ## Checklist before each release
+
 - [ ] `PUBLIC_APPVIEW_URL` = production, prod backend has mobile CORS + `currents://` + `GET /oauth/login`
-- [ ] `npm run build && npx cap sync android`
+- [ ] `npm run build:mobile` (**not** `npm run build` — see §1)
 - [ ] `versionCode` bumped
 - [ ] `bundleRelease` produces a **signed** AAB
 - [ ] Smoke test the signed build: login, browse, upload (gallery + camera), save/unsave, share image + link

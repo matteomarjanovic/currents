@@ -33,7 +33,7 @@ npm run build:mobile     # CAPACITOR=1 vite build (mode=production) + cap sync
 # (or: CAPACITOR=1 vite build --mode production && npx cap sync ios)
 ```
 
-`cap sync ios` copies `build/` into `ios/App/App/public` and regenerates the SPM package list. It
+`cap sync ios` copies `build-mobile/` into `ios/App/App/public` and regenerates the SPM package list. It
 does **not** touch the ShareExtension target, Info.plist, or entitlements.
 
 ## 2. Toolchain (one-time)
@@ -125,7 +125,7 @@ Sanity-check the archive installs and the release build still logs in / uploads 
 ## Checklist before each release
 
 - [ ] `PUBLIC_APPVIEW_URL` = production; prod backend has mobile CORS + `currents://` + `GET /oauth/login`
-- [ ] `npm run build:mobile` (production mode) — verify `build/` baked `https://api.currents.is`
+- [ ] `npm run build:mobile` (production mode) — verify `build-mobile/` baked `https://api.currents.is`
 - [ ] `MARKETING_VERSION` + `CURRENT_PROJECT_VERSION` bumped on **both** targets
 - [ ] Both targets signed with the team; App Group registered on the portal
 - [ ] Archive uploads cleanly (no export-compliance / provisioning prompts)
