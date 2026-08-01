@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -20,6 +21,14 @@ const (
 	defaultBlobEnrichmentConcurrency = 2
 	defaultCollectionEmbeddingDelay  = 30 * time.Second
 )
+
+// errSkipRecord marks a TAP record that can never be processed no matter how
+// many times it is redelivered — a malformed or empty body, a record missing a
+// required field. handleTapConn acks (skips) these instead of leaving them
+// unacked, so one bad record can't head-of-line-block TAP's ordered outbox and
+// stall all ingestion behind it. Store/DB/network failures are NOT wrapped with
+// it: those are transient and must stay unacked so TAP redelivers them.
+var errSkipRecord = errors.New("unprocessable record; skipping")
 
 type TapEvent struct {
 	ID       int64             `json:"id"`
@@ -129,8 +138,13 @@ func handleTapConn(ctx context.Context, conn *websocket.Conn, handler *TapHandle
 				continue
 			}
 			if err := handleTapRecord(ctx, handler, evt.Record); err != nil {
-				slog.Error("TAP record handler error", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action, "did", evt.Record.DID, "rkey", evt.Record.Rkey)
-				continue // don't ack; TAP will redeliver
+				if !errors.Is(err, errSkipRecord) {
+					slog.Error("TAP record handler error", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action, "did", evt.Record.DID, "rkey", evt.Record.Rkey)
+					continue // transient; don't ack, TAP will redeliver
+				}
+				// Permanently unprocessable: log and fall through to ack so it
+				// doesn't block every record queued behind it.
+				slog.Warn("TAP record skipped", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action, "did", evt.Record.DID, "rkey", evt.Record.Rkey)
 			}
 		case "identity":
 			// no-op for now; fall through to ack
@@ -156,7 +170,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		}
 		var col collectionRecord
 		if err := json.Unmarshal(ev.Record, &col); err != nil {
-			return fmt.Errorf("unmarshal collection record: %w", err)
+			return fmt.Errorf("unmarshal collection record: %w: %w", err, errSkipRecord)
 		}
 		createdAt := parseTimestamp(col.CreatedAt)
 		parentURI := ""
@@ -172,21 +186,21 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		}
 		var s saveRecord
 		if err := json.Unmarshal(ev.Record, &s); err != nil {
-			return fmt.Errorf("unmarshal save record: %w", err)
+			return fmt.Errorf("unmarshal save record: %w: %w", err, errSkipRecord)
 		}
 		contentNSID, err := saveContentNSID(s.Content)
 		if err != nil {
-			return err
+			return fmt.Errorf("save content nsid: %w: %w", err, errSkipRecord)
 		}
 		pdsBlobCID := ""
 		if contentNSID == saveContentImageNSID {
 			content, err := decodeSaveImageContent(s.Content)
 			if err != nil {
-				return err
+				return fmt.Errorf("decode save image content: %w: %w", err, errSkipRecord)
 			}
 			pdsBlobCID = content.Image.Ref["$link"]
 			if pdsBlobCID == "" {
-				return fmt.Errorf("save record missing image blob CID")
+				return fmt.Errorf("save record missing image blob CID: %w", errSkipRecord)
 			}
 		}
 		createdAt := parseTimestamp(s.CreatedAt)
@@ -208,7 +222,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 			CreatedAt string `json:"createdAt"`
 		}
 		if err := json.Unmarshal(ev.Record, &f); err != nil {
-			return fmt.Errorf("unmarshal follow record: %w", err)
+			return fmt.Errorf("unmarshal follow record: %w: %w", err, errSkipRecord)
 		}
 		return handler.Store.UpsertFollow(ctx, atURI, ev.DID, f.Subject)
 
@@ -224,10 +238,10 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 			CreatedAt string `json:"createdAt"`
 		}
 		if err := json.Unmarshal(ev.Record, &f); err != nil {
-			return fmt.Errorf("unmarshal favourite record: %w", err)
+			return fmt.Errorf("unmarshal favourite record: %w: %w", err, errSkipRecord)
 		}
 		if f.Subject.URI == "" {
-			return fmt.Errorf("favourite record missing subject uri")
+			return fmt.Errorf("favourite record missing subject uri: %w", errSkipRecord)
 		}
 		return handler.Store.UpsertFavourite(ctx, atURI, ev.DID, f.Subject.URI)
 
@@ -237,7 +251,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		}
 		var p currentsProfileRecord
 		if err := json.Unmarshal(ev.Record, &p); err != nil {
-			return fmt.Errorf("unmarshal profile record: %w", err)
+			return fmt.Errorf("unmarshal profile record: %w: %w", err, errSkipRecord)
 		}
 		ident, err := handler.Dir.LookupDID(ctx, syntax.DID(ev.DID))
 		if err != nil {
