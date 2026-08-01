@@ -13,7 +13,6 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { settingsDialog, type SettingsSection } from '$lib/stores/settings.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
-	import { role, loadRole, previewGated, canSeePreviewFeatures } from '$lib/stores/role.svelte';
 	import {
 		modPrefs,
 		modPrefsLoaded,
@@ -50,10 +49,8 @@
 		{ key: 'subscription', name: 'Subscription', icon: CreditCardIcon },
 		{ key: 'moderation', name: 'Moderation', icon: ShieldIcon }
 	];
-	// While the preview gate is on, the subscription section is moderator-only.
-	let nav = $derived(canSeePreviewFeatures() ? NAV : NAV.filter((n) => n.key !== 'subscription'));
 	let section = $derived(
-		nav.some((n) => n.key === settingsDialog.section) ? settingsDialog.section : 'account'
+		NAV.some((n) => n.key === settingsDialog.section) ? settingsDialog.section : 'account'
 	);
 	let activeName = $derived(NAV.find((n) => n.key === section)?.name ?? '');
 
@@ -65,7 +62,6 @@
 			if (!isOpen) return;
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 			if (!preferencesLoaded.value) void loadPreferences();
-			if (previewGated && !role.loaded) void loadRole();
 			void loadSupporterStatus();
 		});
 	});
@@ -190,7 +186,7 @@
 						<Sidebar.GroupLabel>Settings</Sidebar.GroupLabel>
 						<Sidebar.GroupContent>
 							<Sidebar.Menu>
-								{#each nav as item (item.key)}
+								{#each NAV as item (item.key)}
 									<Sidebar.MenuItem>
 										<Sidebar.MenuButton
 											isActive={section === item.key}
@@ -213,7 +209,7 @@
 					<h2 class="text-base font-semibold md:hidden">Settings</h2>
 					<!-- The nav sidebar is hidden below md; switch sections here instead. -->
 					<div class="inline-flex self-start rounded-md border border-border p-0.5 md:hidden">
-						{#each nav as item (item.key)}
+						{#each NAV as item (item.key)}
 							<button
 								type="button"
 								onclick={() => (settingsDialog.section = item.key)}
@@ -411,8 +407,8 @@
 								</div>
 								{#if supporter.subscribed}
 									<p class="text-xs text-muted-foreground">
-										You can't delete your account while your supporter subscription is active. Cancel
-										it in the billing portal first.
+										You can't delete your account while your supporter subscription is active.
+										Cancel it in the billing portal first.
 									</p>
 								{/if}
 								<div class="flex flex-wrap items-center gap-2">

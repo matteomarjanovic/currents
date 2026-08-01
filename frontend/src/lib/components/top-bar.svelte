@@ -60,7 +60,6 @@
 	} from '$lib/stores/features.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
-	import { role, loadRole, previewGated, canSeePreviewFeatures } from '$lib/stores/role.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { navHistory } from '$lib/stores/navigation.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
@@ -123,20 +122,11 @@
 		!!user && features.loaded && !isFeatureSeen(FEATURE_COLOR_SEARCH)
 	);
 
-	// Organize mode is preview-gated to moderators until public launch; the mode
-	// switcher only shows when the viewer can actually enter it.
-	let canSeeOrganize = $derived(!!user && (!previewGated || role.value != null));
-
 	// The supporter item in the avatar menu — a "Become a supporter" CTA for
-	// non-supporters, or a "You're a supporter" badge for existing ones. Visible
-	// to everyone (while preview-gated) who can reach the subscription settings.
-	let showSupporterItem = $derived(canSeePreviewFeatures());
+	// non-supporters, or a "You're a supporter" badge for existing ones.
 	// The one-time "new" indicator only makes sense for the CTA, not existing supporters.
 	let showSupporterNew = $derived(
-		features.loaded &&
-			showSupporterItem &&
-			!supporter.subscribed &&
-			!isFeatureSeen(FEATURE_BECOME_SUPPORTER)
+		features.loaded && !supporter.subscribed && !isFeatureSeen(FEATURE_BECOME_SUPPORTER)
 	);
 
 	// Each menu carries its own dot: the avatar aggregates notifications + items
@@ -190,7 +180,6 @@
 			if (!features.loaded) void loadSeenFeatures();
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 			if (!preferencesLoaded.value) void loadPreferences();
-			if (previewGated && !role.loaded) void loadRole();
 			if (!supporter.loaded) void loadSupporterStatus();
 		}
 	});
@@ -491,15 +480,13 @@
 						</Badge>
 					{/if}
 				</DropdownMenu.Item>
-				{#if showSupporterItem}
-					<DropdownMenu.Item onclick={openSupportUs}>
-						<Heart class="size-4 fill-pink-500 stroke-pink-500" />
-						{supporter.subscribed ? "You're a supporter" : 'Become a supporter'}
-						{#if showSupporterNew}
-							<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
-						{/if}
-					</DropdownMenu.Item>
-				{/if}
+				<DropdownMenu.Item onclick={openSupportUs}>
+					<Heart class="size-4 fill-pink-500 stroke-pink-500" />
+					{supporter.subscribed ? "You're a supporter" : 'Become a supporter'}
+					{#if showSupporterNew}
+						<Badge class="ml-auto bg-red-500/15 text-red-700 dark:text-red-300">New</Badge>
+					{/if}
+				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={handleLogout}>
 					<LogOut class="size-4" />
@@ -607,7 +594,7 @@
 				>
 					<span class="block h-5"><Logo /></span>
 				</a>
-				{#if canSeeOrganize}
+				{#if user}
 					<ModeSwitcher
 						mode="explore"
 						bind:open={() => openMenu === 'mode-desktop', (v) => toggleMenu('mode-desktop', v)}
@@ -812,7 +799,7 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 			{@render plusMenu('plus-mobile', 'top', 'center', bottomBarEl)}
-			{#if canSeeOrganize}
+			{#if user}
 				<ModeSwitcher
 					mode="explore"
 					variant="icon"
