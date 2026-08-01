@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { resolve } from '$app/paths';
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { FieldGroup, Field, FieldDescription } from '$lib/components/ui/field/index.js';
 	import { onDeepLink } from '$lib/app-init';
+	import { gotoAfterLogin } from '$lib/post-login-route';
 
 	const RETURN_TO = 'currents://oauth-callback';
 
@@ -16,7 +16,7 @@
 		return onDeepLink((ev) => {
 			if (ev.type !== 'oauth-callback') return;
 			inFlight = false;
-			goto(resolve('/(with-navbar)/explore'));
+			void gotoAfterLogin();
 		});
 	});
 
@@ -50,12 +50,12 @@
 					<Button
 						variant="outline"
 						type="button"
-						class="w-full relative"
+						class="relative w-full"
 						disabled={inFlight}
 						onclick={() => startRegister('https://eurosky.social')}
 					>
 						<span
-							class="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-primary absolute -top-4"
+							class="absolute -top-4 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-primary"
 						>
 							Recommended
 						</span>

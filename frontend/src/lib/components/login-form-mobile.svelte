@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { resolve } from '$app/paths';
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
@@ -15,6 +14,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { cn } from '$lib/utils.js';
 	import { onDeepLink } from '$lib/app-init';
+	import { gotoAfterLogin } from '$lib/post-login-route';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> = $props();
@@ -35,7 +35,7 @@
 		return onDeepLink((ev) => {
 			if (ev.type !== 'oauth-callback') return;
 			inFlight = false;
-			goto(resolve('/(with-navbar)/explore'));
+			void gotoAfterLogin();
 		});
 	});
 
@@ -210,7 +210,7 @@
 								/>
 								{#if showSuggestions}
 									<ul
-										class="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
+										class="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-md"
 									>
 										{#each suggestions as actor, i (actor.did)}
 											<li>
