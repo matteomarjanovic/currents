@@ -5,7 +5,7 @@
 </script>
 
 <div
-	class="flex min-h-svh flex-col items-center justify-between gap-12 bg-secondary pt-[calc(env(safe-area-inset-top,1.5rem)+1.5rem)] pb-10"
+	class="flex min-h-svh flex-col items-center justify-between gap-12 bg-primary-foreground pt-[calc(env(safe-area-inset-top,1.5rem)+1.5rem)] pb-10"
 >
 	<!-- h-7 ≈ the top-bar logo size; mt (not pt) for the offset so the fixed height isn't eaten. -->
 	<div class="mt-10 flex h-7 w-full items-center justify-center text-foreground">
