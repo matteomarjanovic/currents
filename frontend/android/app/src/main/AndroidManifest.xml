@@ -43,6 +43,13 @@
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+            <!-- Multi-select from a gallery. Separate filter because SEND_MULTIPLE takes no
+                 text/plain: a multi-link share isn't a thing we can act on. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
         <provider

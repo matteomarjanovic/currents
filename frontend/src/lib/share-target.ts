@@ -32,9 +32,11 @@ async function readSharedImage(uri: string, mime: string): Promise<File | null> 
 	return new File([bytes], `shared-${Date.now()}.${ext}`, { type });
 }
 
+type SharedItem = { title?: string; description?: string; type?: string; url?: string };
+
 async function handleSharedIntent(): Promise<void> {
 	const { SendIntent } = await import('send-intent');
-	let result: { title?: string; description?: string; type?: string; url?: string };
+	let result: SharedItem & { additionalItems?: SharedItem[] };
 	try {
 		result = await SendIntent.checkSendIntentReceived();
 	} catch {
@@ -46,8 +48,20 @@ async function handleSharedIntent(): Promise<void> {
 	let next: PendingShare | null = null;
 	try {
 		if (type.startsWith('image/') && result.url) {
-			const file = await readSharedImage(result.url, type);
-			if (file) next = { type: 'image', file };
+			// ACTION_SEND_MULTIPLE: the plugin returns the first item flat and the rest under
+			// additionalItems. One unreadable item shouldn't sink the whole selection, so read
+			// them independently and keep whatever survives.
+			const items = [result, ...(result.additionalItems ?? [])];
+			const files = (
+				await Promise.all(
+					items.map((item) =>
+						item.url
+							? readSharedImage(item.url, item.type ?? type).catch(() => null)
+							: Promise.resolve(null)
+					)
+				)
+			).filter((f): f is File => f !== null);
+			if (files.length > 0) next = { type: 'image', files };
 		} else {
 			const url = firstUrl(result.url, result.description, result.title);
 			if (url) next = { type: 'url', url };
@@ -61,10 +75,7 @@ async function handleSharedIntent(): Promise<void> {
 	// before the upload can happen. It closes on its own (onPause/onStop) when the user leaves.
 	if (next) {
 		share.pending = next;
-		// A shared image goes to the native share sheet, which asks only for a
-		// collection. A shared link still needs /upload's paste-from-URL, since
-		// a page scrape can yield several images and there's no picker for that yet.
-		await goto(next.type === 'image' ? '/share' : '/upload');
+		await goto('/share');
 	}
 }
 
@@ -94,7 +105,7 @@ export async function consumeWebShare(): Promise<void> {
 				const blob = await res.blob();
 				const name = res.headers.get('x-filename') || `shared-${Date.now()}.jpg`;
 				const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
-				share.pending = { type: 'image', file };
+				share.pending = { type: 'image', files: [file] };
 			}
 		} else {
 			const url = firstUrl(

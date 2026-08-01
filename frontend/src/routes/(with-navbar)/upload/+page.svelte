@@ -226,7 +226,7 @@
 		if (!p) return;
 		share.pending = null;
 		if (p.type === 'image') {
-			addFiles([p.file]);
+			addFiles(p.files);
 		} else {
 			sourceUrl = p.url;
 			void fetchFromUrl();
