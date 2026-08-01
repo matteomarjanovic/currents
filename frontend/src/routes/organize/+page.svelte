@@ -9,6 +9,7 @@
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Command from '$lib/components/ui/command';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Button } from '$lib/components/ui/button';
 	import OrganizeSidebarLeft from '$lib/components/organize/sidebar-left.svelte';
@@ -16,6 +17,7 @@
 	import OrganizeSidebarRight from '$lib/components/organize/sidebar-right.svelte';
 	import OrganizeSearchCommand from '$lib/components/organize/search-command.svelte';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
+	import CollectionActions from '$lib/components/collection-actions.svelte';
 	import { Kbd } from '$lib/components/ui/kbd';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
@@ -25,6 +27,8 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
+	import Library from '@lucide/svelte/icons/library';
+	import Folder from '@lucide/svelte/icons/folder';
 	import X from '@lucide/svelte/icons/x';
 
 	// The selected collection/section lives in the URL (`?c=<uri>`), so tree rows are real
@@ -131,6 +135,9 @@
 	let parent = $derived(
 		selected?.parentUri ? (known.find((c) => c.uri === selected!.parentUri) ?? null) : null
 	);
+	// The actions menu edits records on the viewer's own PDS, so it's offered only
+	// for own collections — `collections` holds exactly those (favourites don't).
+	let ownSelected = $derived(collections.items.find((c) => c.uri === selectedUri) ?? null);
 
 	function hrefFor(uri: string) {
 		return uri ? `/organize?c=${encodeURIComponent(uri)}` : '/organize';
@@ -437,29 +444,64 @@
 					</button>
 				</div>
 			{:else}
-				<Breadcrumb.Root>
-					<Breadcrumb.List>
-						<Breadcrumb.Item>
+				<div class="flex min-w-0 items-center gap-0.5">
+					<!-- flex-nowrap + a truncating page: a long collection name must eat its
+					     own width rather than wrap the trail onto a second line or push the
+					     actions menu off-screen. -->
+					<Breadcrumb.Root class="min-w-0">
+						<Breadcrumb.List class="flex-nowrap">
 							{#if selected}
-								<Breadcrumb.Link href="/organize">My library</Breadcrumb.Link>
+								<!-- On mobile the ancestors collapse into a single "…" menu — always,
+								     even when "My library" is the only one, so the header keeps the
+								     same shape in a collection and in a section. Desktop shows the
+								     full trail. -->
+								<Breadcrumb.Item class="md:hidden">
+									<DropdownMenu.Root>
+										<DropdownMenu.Trigger aria-label="Go to a parent collection">
+											<Breadcrumb.Ellipsis />
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content align="start" class="w-48">
+											<DropdownMenu.Item onSelect={() => goto('/organize')}>
+												<Library />
+												My library
+											</DropdownMenu.Item>
+											{#if parent}
+												{@const p = parent}
+												<DropdownMenu.Item onSelect={() => goto(hrefFor(p.uri))}>
+													<Folder />
+													<span class="truncate">{p.name}</span>
+												</DropdownMenu.Item>
+											{/if}
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
+								</Breadcrumb.Item>
+								<Breadcrumb.Item class="hidden md:inline-flex">
+									<Breadcrumb.Link href="/organize">My library</Breadcrumb.Link>
+								</Breadcrumb.Item>
+								{#if parent}
+									<Breadcrumb.Separator class="hidden md:block" />
+									<Breadcrumb.Item class="hidden md:inline-flex">
+										<Breadcrumb.Link href={hrefFor(parent.uri)}>{parent.name}</Breadcrumb.Link>
+									</Breadcrumb.Item>
+								{/if}
+								<Breadcrumb.Separator />
+								<Breadcrumb.Item class="min-w-0">
+									<Breadcrumb.Page class="truncate">{selected.name}</Breadcrumb.Page>
+								</Breadcrumb.Item>
 							{:else}
-								<Breadcrumb.Page>My library</Breadcrumb.Page>
+								<Breadcrumb.Item>
+									<Breadcrumb.Page>My library</Breadcrumb.Page>
+								</Breadcrumb.Item>
 							{/if}
-						</Breadcrumb.Item>
-						{#if parent}
-							<Breadcrumb.Separator />
-							<Breadcrumb.Item>
-								<Breadcrumb.Link href={hrefFor(parent.uri)}>{parent.name}</Breadcrumb.Link>
-							</Breadcrumb.Item>
-						{/if}
-						{#if selected}
-							<Breadcrumb.Separator />
-							<Breadcrumb.Item>
-								<Breadcrumb.Page>{selected.name}</Breadcrumb.Page>
-							</Breadcrumb.Item>
-						{/if}
-					</Breadcrumb.List>
-				</Breadcrumb.Root>
+						</Breadcrumb.List>
+					</Breadcrumb.Root>
+					<!-- Same actions as the sidebar's right-click menu. This is the only way
+					     in on touch, so it's the one that has to be visible. Favourited
+					     collections belong to someone else — no actions there. -->
+					{#if ownSelected}
+						<CollectionActions collection={ownSelected} onDeleted={() => goto('/organize')} />
+					{/if}
+				</div>
 			{/if}
 
 			<!-- Search: icon-only on mobile (the field would crowd the header); on desktop

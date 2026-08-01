@@ -19,6 +19,7 @@
 	import { Spinner } from '$lib/components/ui/spinner';
 	import Logo from '$lib/assets/logo.svelte';
 	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
+	import CollectionActions from '$lib/components/collection-actions.svelte';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
 	import Folder from '@lucide/svelte/icons/folder';
@@ -50,6 +51,13 @@
 
 	function hrefFor(uri: string) {
 		return uri ? `/organize?c=${encodeURIComponent(uri)}` : '/organize';
+	}
+
+	// A delete cascades to the collection's sections, so rather than comparing
+	// URIs, check whether whatever is selected still exists once the store has
+	// been pruned — that covers deleting the selected row and its parent alike.
+	function onDeleted() {
+		if (selectedUri && !collections.items.some((c) => c.uri === selectedUri)) goto('/organize');
 	}
 
 	const byName = (a: CollectionView, b: CollectionView) =>
@@ -135,7 +143,7 @@
 </script>
 
 <Sidebar.Root collapsible="offcanvas" variant="inset" side="left">
-	<Sidebar.Header class="gap-3 pb-1 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+	<Sidebar.Header class="gap-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-1">
 		<div class="px-1 pt-1">
 			<a href="/organize" class="block h-5 w-fit text-foreground" aria-label="Currents">
 				<Logo />
@@ -212,14 +220,19 @@
 									}}
 								>
 									<Sidebar.MenuItem>
-										<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
-											{#snippet child({ props })}
-												<a href={hrefFor(node.root.uri)} {...props} onclick={closeMobile}>
-													<Folder />
-													<span>{node.root.name}</span>
-												</a>
-											{/snippet}
-										</Sidebar.MenuButton>
+										<!-- Right-click actions on the row itself. Desktop only in practice
+										     (touch has no right-click) — on mobile the same menu hangs off the
+										     header breadcrumb of the opened collection. -->
+										<CollectionActions collection={node.root} variant="context" {onDeleted}>
+											<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
+												{#snippet child({ props })}
+													<a href={hrefFor(node.root.uri)} {...props} onclick={closeMobile}>
+														<Folder />
+														<span>{node.root.name}</span>
+													</a>
+												{/snippet}
+											</Sidebar.MenuButton>
+										</CollectionActions>
 										{#if node.sections.length > 0}
 											<Collapsible.Trigger
 												data-sidebar="menu-action"
@@ -234,13 +247,15 @@
 												<Sidebar.MenuSub>
 													{#each node.sections as section (section.uri)}
 														<Sidebar.MenuSubItem>
-															<Sidebar.MenuSubButton
-																href={hrefFor(section.uri)}
-																isActive={selectedUri === section.uri}
-																onclick={closeMobile}
-															>
-																<span>{section.name}</span>
-															</Sidebar.MenuSubButton>
+															<CollectionActions collection={section} variant="context" {onDeleted}>
+																<Sidebar.MenuSubButton
+																	href={hrefFor(section.uri)}
+																	isActive={selectedUri === section.uri}
+																	onclick={closeMobile}
+																>
+																	<span>{section.name}</span>
+																</Sidebar.MenuSubButton>
+															</CollectionActions>
 														</Sidebar.MenuSubItem>
 													{/each}
 												</Sidebar.MenuSub>

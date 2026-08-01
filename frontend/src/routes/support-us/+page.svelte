@@ -245,7 +245,7 @@
 				<li class="flex gap-4">
 					<div class="flex w-3 flex-col items-center">
 						<span class="h-2 w-px shrink-0 bg-border"></span>
-						<span class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/50"></span>
+						<span class="size-3 shrink-0 rounded-full bg-foreground"></span>
 						<span class="w-px flex-1 bg-border"></span>
 					</div>
 					<div class="pb-6">Search by color</div>

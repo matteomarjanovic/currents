@@ -37,6 +37,12 @@ export function addCollection(collection: CollectionView) {
 	collections.items = [collection, ...collections.items];
 }
 
+// Apply an edit locally. The PDS→TAP index lags a write, so refetching right
+// after a rename or a move would hand back the pre-edit row.
+export function updateCollection(uri: string, patch: Partial<CollectionView>) {
+	collections.items = collections.items.map((c) => (c.uri === uri ? { ...c, ...patch } : c));
+}
+
 export function removeCollection(uri: string) {
 	collections.items = collections.items.filter((c) => c.uri !== uri);
 	deletedCollectionUris.add(uri);

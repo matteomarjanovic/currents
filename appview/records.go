@@ -294,9 +294,13 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 
 	rkey := r.PathValue("id")
 
+	// Parent is a pointer so the field is tri-state: absent keeps the current
+	// parent (the edit dialog only sends name/description), "" promotes the
+	// collection back to the top level, a URI nests it under that collection.
 	var body struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Parent      *string `json:"parent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -326,6 +330,39 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 				createdAt = ca
 			}
 			parent = cur["parent"]
+		}
+	}
+
+	if body.Parent != nil {
+		newParent := strings.TrimSpace(*body.Parent)
+		if newParent == "" {
+			parent = nil
+		} else {
+			uri := "at://" + did.String() + "/" + collectionNSID + "/" + rkey
+			parsed, err := syntax.ParseATURI(newParent)
+			if err != nil || parsed.Authority().String() != did.String() || parsed.Collection().String() != collectionNSID || newParent == uri {
+				http.Error(w, "parent must be another of your own is.currents.feed.collection records", http.StatusBadRequest)
+				return
+			}
+			// Enforce a single level from both ends: the new parent must be a root
+			// collection, and this collection must not have sections of its own.
+			if existing, err := s.Store.GetCollectionByURI(r.Context(), newParent, ""); err == nil && existing != nil && existing.ParentURI != "" {
+				http.Error(w, "sub-collections cannot have sub-collections", http.StatusBadRequest)
+				return
+			}
+			if subs, err := s.Store.GetSubcollectionURIs(r.Context(), uri, did.String()); err != nil {
+				http.Error(w, "checking sub-collections", http.StatusInternalServerError)
+				return
+			} else if len(subs) > 0 {
+				http.Error(w, "a collection with sections cannot become a section", http.StatusBadRequest)
+				return
+			}
+			ref, err := resolveStrongRef(r.Context(), c, newParent)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("resolving parent: %s", err), http.StatusBadRequest)
+				return
+			}
+			parent = ref
 		}
 	}
 
