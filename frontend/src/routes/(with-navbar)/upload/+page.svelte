@@ -220,7 +220,10 @@
 		input.value = '';
 	}
 
-	// Consume an image/link shared to the app from the OS share sheet (src/lib/share-target.ts).
+	// Consume a share the installed web PWA received from the OS share sheet
+	// (consumeWebShare in src/lib/share-target.ts forwards it here). The native app takes a
+	// different path — its share sheet routes to /share, which is native-only — so this only
+	// fires on the web now, but the store shape is shared so both stay in step.
 	$effect(() => {
 		const p = share.pending;
 		if (!p) return;
@@ -363,7 +366,6 @@
 	<p class="text-sm text-muted-foreground">IMPORTANT: Collections and saves are public for now.</p>
 
 	<div class="flex justify-between space-y-2">
-		<!-- <div class="text-sm font-medium">Select the collection where to save your images</div> -->
 		<div class="hidden md:block">
 			<CollectionSelector
 				variant="popover"
