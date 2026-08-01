@@ -2,6 +2,7 @@ import { isNative } from './platform';
 import { setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
 import { initShareTarget } from './share-target';
+import { dismissTopOverlay } from './back-button';
 
 let initialized = false;
 
@@ -49,6 +50,14 @@ export async function initApp(): Promise<void> {
 		} catch (err) {
 			console.warn('appUrlOpen handler error', err);
 		}
+	});
+
+	// Android hardware back. Registering any listener switches off Capacitor's built-in
+	// handling, so the navigate/exit fallback below has to be reproduced by hand.
+	App.addListener('backButton', ({ canGoBack }) => {
+		if (dismissTopOverlay()) return;
+		if (canGoBack) history.back();
+		else App.exitApp();
 	});
 
 	// Receive images/links shared to the app from the OS share sheet.

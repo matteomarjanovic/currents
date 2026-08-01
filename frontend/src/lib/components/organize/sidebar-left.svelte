@@ -5,6 +5,7 @@
 	import { apiFetch } from '$lib/api';
 	import { isNative } from '$lib/platform';
 	import { clearAuthToken } from '$lib/auth-storage';
+	import { onBackButton } from '$lib/back-button';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
@@ -38,6 +39,15 @@
 	function closeMobile() {
 		if (sidebar.isMobile) sidebar.setOpenMobile(false);
 	}
+
+	// Tapping outside the sheet closes it, and so should Android's back button —
+	// otherwise back leaves organize mode with the sheet still covering the screen.
+	$effect(() => {
+		// Both conditions: `openMobile` can stay true after a resize past the mobile
+		// breakpoint, and a dismisser that no-ops would swallow the press instead.
+		if (!sidebar.isMobile || !sidebar.openMobile) return;
+		return onBackButton(closeMobile);
+	});
 
 	let query = $state('');
 	let q = $derived(query.trim().toLowerCase());

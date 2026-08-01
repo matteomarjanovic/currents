@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { apiFetch } from '$lib/api';
+	import { onBackButton } from '$lib/back-button';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -195,6 +196,12 @@
 	let selectedSave = $derived(
 		selection && selection.collectionUri === selectedUri ? selection.save : null
 	);
+	// The panel's X closes it, and so should Android's back button — otherwise back
+	// leaves organize mode with the (full-screen, on mobile) panel still open.
+	$effect(() => {
+		if (!selectedSave) return;
+		return onBackButton(() => (selection = null));
+	});
 	const isMobile = new IsMobile();
 </script>
 
