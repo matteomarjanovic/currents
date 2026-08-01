@@ -534,6 +534,15 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	// uploadBlob stores this verbatim as the blob's mimeType, and the PDS checks it
+	// against the granted `blob:image/*` scope — so a wildcard (`image/*`, what Android
+	// share intents usually carry) or a generic type is a 403, not a mislabelled blob.
+	// Sniff the bytes whenever what we were handed isn't a concrete image type.
+	if !strings.HasPrefix(contentType, "image/") || strings.Contains(contentType, "*") {
+		if sniffed := http.DetectContentType(imageBytes); strings.HasPrefix(sniffed, "image/") {
+			contentType = sniffed
+		}
+	}
 	if len(imageBytes) > maxBlobSize {
 		prepared, preparedCT, err := prepareImageForUpload(r.Context(), s.Inference, imageBytes, contentType)
 		if err != nil {
@@ -815,6 +824,23 @@ func (s *Server) UpdateSaveAttribution(w http.ResponseWriter, r *http.Request) {
 // applied to its image content, preserving all other fields, and writes it back
 // to the viewer's PDS via RepoPutRecord.
 func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClient, did *syntax.DID, rkey string, attribution *saveAttribution) error {
+	return s.putSaveContentForRkey(ctx, c, did, rkey, func(contentRaw json.RawMessage) (any, error) {
+		return buildSaveContentWithAttribution(contentRaw, attribution, true)
+	})
+}
+
+// putAltForRkey rebuilds a single save record with the given alt text applied to
+// its image content, preserving all other fields.
+func (s *Server) putAltForRkey(ctx context.Context, c *atclient.APIClient, did *syntax.DID, rkey string, alt string) error {
+	return s.putSaveContentForRkey(ctx, c, did, rkey, func(contentRaw json.RawMessage) (any, error) {
+		return buildSaveContentWithAlt(contentRaw, alt)
+	})
+}
+
+// putSaveContentForRkey reads one of the viewer's save records, hands its content
+// to rebuild, and writes the record back with every other field preserved —
+// RepoPutRecord replaces the whole record, so anything not copied across is lost.
+func (s *Server) putSaveContentForRkey(ctx context.Context, c *atclient.APIClient, did *syntax.DID, rkey string, rebuild func(json.RawMessage) (any, error)) error {
 	existing, err := comatproto.RepoGetRecord(ctx, c, "", saveNSID, did.String(), rkey)
 	if err != nil {
 		return fmt.Errorf("get existing: %w", err)
@@ -834,7 +860,7 @@ func (s *Server) putAttributionForRkey(ctx context.Context, c *atclient.APIClien
 		}
 	}
 
-	contentAny, err := buildSaveContentWithAttribution(existingVal.Content, attribution, true)
+	contentAny, err := rebuild(existingVal.Content)
 	if err != nil {
 		return fmt.Errorf("build content: %w", err)
 	}
@@ -1002,6 +1028,39 @@ func (s *Server) UpdateSaveLabels(w http.ResponseWriter, r *http.Request) {
 	slog.Info("updated save labels", "uri", uri, "labels", vals)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"uri": uri, "labels": vals})
+}
+
+// UpdateSaveAlt sets the alt text on one save the viewer owns. Scoped to a single
+// rkey, unlike UpdateSaveAttribution, which fans out over every save of the blob:
+// alt is edited from a panel showing one save, so the edit stays where it was made
+// (the same image saved twice can carry different alt text). Allowed on resaves —
+// the record is the viewer's own copy of the image.
+func (s *Server) UpdateSaveAlt(w http.ResponseWriter, r *http.Request) {
+	c, did, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	rkey := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	// Empty is meaningful: it clears the alt text.
+	alt := strings.TrimSpace(r.PostFormValue("alt"))
+
+	if err := s.putAltForRkey(r.Context(), c, did, rkey, alt); err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		http.Error(w, fmt.Sprintf("updating alt: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	uri := "at://" + did.String() + "/" + saveNSID + "/" + rkey
+	slog.Info("updated save alt", "uri", uri)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"uri": uri, "alt": alt})
 }
 
 // UpdateSaveLabelsBulk applies the same add-only self-labels to many of the

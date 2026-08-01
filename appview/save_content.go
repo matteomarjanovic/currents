@@ -278,6 +278,25 @@ func buildSaveContentWithAttribution(contentRaw json.RawMessage, attribution *sa
 	return content, nil
 }
 
+// buildSaveContentWithAlt rebuilds image content with alt text applied, leaving
+// the blob ref and attribution as they were. An empty alt clears the field (it's
+// omitempty, so it drops out of the record entirely).
+func buildSaveContentWithAlt(contentRaw json.RawMessage, alt string) (any, error) {
+	content, err := decodeSaveImageContent(contentRaw)
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return buildSaveContent(contentRaw)
+	}
+	if content.Image.Type == "" {
+		content.Image.Type = "blob"
+	}
+	content.Attribution = saveAttributionOrNil(content.Attribution)
+	content.Alt = alt
+	return content, nil
+}
+
 func parseViewerSaveState(rawSaves, rawAttribution json.RawMessage) *saveViewerState {
 	var saves []viewerSave
 	if len(rawSaves) > 0 && string(rawSaves) != "null" {

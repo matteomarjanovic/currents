@@ -28,6 +28,20 @@ proposing new work; delete an entry when it ships.
 
 ## Engineering
 
+- **Collapse the per-field save-edit endpoints into one.** Editing a save's
+  metadata is currently spread over four handlers — `PUT /save/{id}/alt`,
+  `PUT /save/{id}/labels`, `PUT /save/attribution`, `PUT /save/labels/bulk` —
+  each re-implementing "read the record, change one field, write the whole thing
+  back" (`RepoPutRecord` replaces the record, so every untouched field has to be
+  copied across or it's lost). A single PATCH-style endpoint taking optional
+  fields would be the better design; `/alt` followed the existing per-field
+  pattern rather than breaking it mid-feature. Two notes for whoever does it:
+  `putSaveContentForRkey` already unifies the alt and attribution rewrites, so
+  the content path is half-done; labels genuinely differ (add-only merge, and
+  resaves are refused) and shouldn't be flattened into the same semantics.
+  Related: **`PUT /save/{id}` looks like dead code** — it 302s to `/save`, a
+  server-rendered page that no longer exists, and no client calls it. Worth
+  deleting in the same pass, after one more grep for external consumers.
 - **CI for the test suites.** GitHub Actions workflow running on PRs: appview
   `go test ./...` twice — plain, and with `TEST_DATABASE_URL` against a
   `pgvector/pgvector` service container (the suite creates and migrates its own
