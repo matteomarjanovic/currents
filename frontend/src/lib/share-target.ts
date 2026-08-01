@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { isNative } from './platform';
 import { share, type PendingShare } from './stores/share.svelte';
+import { concreteImageMime } from './image-mime';
 
 // Receives shares from the OS (Android share sheet, via the `send-intent` plugin) and routes
 // them to the upload page: an image is staged for upload, a link is fed to paste-from-URL.
@@ -24,10 +25,11 @@ async function readSharedImage(uri: string, mime: string): Promise<File | null> 
 	const { Filesystem } = await import('@capacitor/filesystem');
 	const { data } = await Filesystem.readFile({ path: uri });
 	if (typeof data !== 'string') return null; // base64 on native
-	const ext = (mime.split('/')[1] || 'jpg').toLowerCase();
-	return new File([base64ToBytes(data)], `shared-${Date.now()}.${ext}`, {
-		type: mime || `image/${ext}`
-	});
+	const bytes = base64ToBytes(data);
+	// Never trust the intent's type here — see concreteImageMime.
+	const type = concreteImageMime(bytes, mime);
+	const ext = type.split('/')[1];
+	return new File([bytes], `shared-${Date.now()}.${ext}`, { type });
 }
 
 async function handleSharedIntent(): Promise<void> {
@@ -59,7 +61,10 @@ async function handleSharedIntent(): Promise<void> {
 	// before the upload can happen. It closes on its own (onPause/onStop) when the user leaves.
 	if (next) {
 		share.pending = next;
-		await goto('/upload');
+		// A shared image goes to the native share sheet, which asks only for a
+		// collection. A shared link still needs /upload's paste-from-URL, since
+		// a page scrape can yield several images and there's no picker for that yet.
+		await goto(next.type === 'image' ? '/share' : '/upload');
 	}
 }
 
