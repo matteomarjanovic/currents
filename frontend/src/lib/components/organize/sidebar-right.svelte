@@ -9,9 +9,13 @@
 	import SimilarPanel from '$lib/components/organize/similar-panel.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import ColorMenu from '$lib/components/color-menu.svelte';
+	import SaveAltDialog from '$lib/components/save-alt-dialog.svelte';
+	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
+	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
-	import { getImageContent, type SaveView } from '$lib/types';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
 	import { copyLink, copyImage, downloadImage } from '$lib/save-actions';
 	import X from '@lucide/svelte/icons/x';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
@@ -53,10 +57,44 @@
 		}
 	});
 
-	let attribution = $derived(save.viewer?.attribution ?? image?.attribution ?? null);
+	// ── Detail editing ───────────────────────────────────────────────────────
+	// Organize mode is where saved images get annotated, so the three editors
+	// live here as well as in the explore detail panel. Gating matches
+	// save-detail.svelte: labels are owner-only and refused on resaves by the
+	// server; alt and attribution are edits to the viewer's own record, so a
+	// resave can carry its own. Edits are applied to a local overlay because the
+	// panel's `save` comes from the page's selection, which nothing refetches.
+	let isOwnSave = $derived(auth.user?.did === save.author.did);
+	let isResave = $derived(!!save.resaveOf);
+	let canEditAlt = $derived(isOwnSave && !!image);
+	let canAttribute = $derived(!!auth.user && (save.viewer?.saves?.length ?? 0) > 0);
+	let canEditLabels = $derived(isOwnSave && !isResave && !!image);
+
+	let altDialogOpen = $state(false);
+	let attributionDialogOpen = $state(false);
+	let labelDialogOpen = $state(false);
+
+	let altOverride = $state<string | null>(null);
+	let attributionOverride = $state<SaveAttribution | null>(null);
+	let addedLabels = $state<string[]>([]);
+	// Selecting a different image reuses this component, so clear the overlay.
+	let overlaidUri = $state('');
+	$effect(() => {
+		if (save.uri === overlaidUri) return;
+		overlaidUri = save.uri;
+		altOverride = null;
+		attributionOverride = null;
+		addedLabels = [];
+	});
+
+	let alt = $derived(altOverride ?? image?.alt ?? '');
+	let attribution = $derived(
+		attributionOverride ?? save.viewer?.attribution ?? image?.attribution ?? null
+	);
 	let hasAttribution = $derived(
 		!!attribution && (!!attribution.credit || !!attribution.license || !!attribution.url)
 	);
+	let labelVals = $derived([...(save.labels ?? []).map((l) => l.val), ...addedLabels]);
 
 	let savedIn = $derived.by(() => {
 		const known = [...collections.items, ...favouriteCollections.items];
@@ -110,7 +148,9 @@
 		class="h-full {sidebar.isMobile ? 'w-full' : 'w-[22rem]'}"
 	>
 		<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
-			<div class="flex items-center justify-between gap-2 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+			<div
+				class="flex items-center justify-between gap-2 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]"
+			>
 				<Tabs.List>
 					<Tabs.Trigger value="details">Details</Tabs.Trigger>
 					<Tabs.Trigger value="similar">Related</Tabs.Trigger>
@@ -245,26 +285,76 @@
 					</section>
 				{/if}
 
-				{#if hasAttribution && attribution}
+				{#if hasAttribution || canAttribute}
 					<section class="flex flex-col gap-1.5">
-						<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-							Attribution
-						</h3>
-						<div class="flex flex-col gap-1 text-sm text-muted-foreground">
-							{#if attribution.credit}<span>Credit: {attribution.credit}</span>{/if}
-							{#if attribution.license}<span>License: {attribution.license}</span>{/if}
-							{#if attribution.url}
-								<a
-									href={attribution.url}
-									target="_blank"
-									rel="noopener noreferrer"
-									class="inline-flex items-center gap-1 hover:text-foreground"
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+								Attribution
+							</h3>
+							{#if canAttribute}
+								<Button
+									variant="ghost"
+									size="sm"
+									class="-mr-2 h-7 text-xs"
+									onclick={() => (attributionDialogOpen = true)}
 								>
-									<span class="truncate">Attribution link</span>
-									<ExternalLink class="size-3 shrink-0" />
-								</a>
+									{hasAttribution ? 'Edit' : 'Add'}
+								</Button>
 							{/if}
 						</div>
+						{#if !hasAttribution}
+							<p class="text-sm text-muted-foreground">
+								Credit the source. Applies to every collection of yours holding this image.
+							</p>
+						{/if}
+						{#if attribution}
+							<div class="flex flex-col gap-1 text-sm text-muted-foreground">
+								{#if attribution.credit}<span>Credit: {attribution.credit}</span>{/if}
+								{#if attribution.license}<span>License: {attribution.license}</span>{/if}
+								{#if attribution.url}
+									<a
+										href={attribution.url}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="inline-flex items-center gap-1 hover:text-foreground"
+									>
+										<span class="truncate">Attribution link</span>
+										<ExternalLink class="size-3 shrink-0" />
+									</a>
+								{/if}
+							</div>
+						{/if}
+					</section>
+				{/if}
+
+				{#if canEditLabels || labelVals.length > 0}
+					<section class="flex flex-col gap-1.5">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+								Labels
+							</h3>
+							{#if canEditLabels}
+								<Button
+									variant="ghost"
+									size="sm"
+									class="-mr-2 h-7 text-xs"
+									onclick={() => (labelDialogOpen = true)}
+								>
+									Add
+								</Button>
+							{/if}
+						</div>
+						{#if labelVals.length > 0}
+							<div class="flex flex-wrap gap-1">
+								{#each labelVals as val (val)}
+									<Badge variant="secondary" class="text-xs">{val}</Badge>
+								{/each}
+							</div>
+						{:else}
+							<p class="text-sm text-muted-foreground">
+								Flag sensitive or AI-generated content. Labels can be added, not removed.
+							</p>
+						{/if}
 					</section>
 				{/if}
 
@@ -287,14 +377,31 @@
 								<dd>{createdAt}</dd>
 							</div>
 						{/if}
-						{#if image?.alt}
-							<div class="flex flex-col gap-0.5 pt-1">
-								<dt class="text-muted-foreground">Alt text</dt>
-								<dd class="text-sm">{image.alt}</dd>
-							</div>
-						{/if}
 					</dl>
 				</section>
+
+				{#if canEditAlt || alt}
+					<section class="flex flex-col gap-1.5">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+								Alt text
+							</h3>
+							{#if canEditAlt}
+								<Button
+									variant="ghost"
+									size="sm"
+									class="-mr-2 h-7 text-xs"
+									onclick={() => (altDialogOpen = true)}
+								>
+									{alt ? 'Edit' : 'Add'}
+								</Button>
+							{/if}
+						</div>
+						<p class="text-sm {alt ? '' : 'text-muted-foreground'}">
+							{alt || 'Describe the image for people using a screen reader.'}
+						</p>
+					</section>
+				{/if}
 			</Tabs.Content>
 
 			<Tabs.Content value="similar" class="mt-0 min-h-0 flex-1 overflow-hidden">
@@ -308,3 +415,23 @@
 		</Tabs.Root>
 	</Sidebar.Root>
 </div>
+
+{#if canEditAlt}
+	<SaveAltDialog bind:open={altDialogOpen} {save} onSaved={(next) => (altOverride = next)} />
+{/if}
+
+{#if canAttribute}
+	<SaveAttributionDialog
+		bind:open={attributionDialogOpen}
+		{save}
+		onSaved={(attr) => (attributionOverride = attr)}
+	/>
+{/if}
+
+{#if canEditLabels}
+	<ContentLabelDialog
+		bind:open={labelDialogOpen}
+		{save}
+		onSaved={(added) => (addedLabels = [...addedLabels, ...added])}
+	/>
+{/if}
