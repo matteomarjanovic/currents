@@ -39,6 +39,9 @@
 		// popover/drawer trigger props to spread onto a focusable element.
 		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 		onOpenChange?: (open: boolean) => void;
+		// Bindable so a host can present the picker without a trigger tap — the share
+		// flow opens the drawer on arrival, since choosing a collection is the whole task.
+		open?: boolean;
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
@@ -50,6 +53,7 @@
 		triggerVariant = 'glass',
 		trigger,
 		onOpenChange,
+		open = $bindable(false),
 		selectedUri,
 		onSelect,
 		onSavesChange
@@ -90,7 +94,6 @@
 		syncedItemUri = nextItemUri;
 	});
 
-	let open = $state(false);
 	let createOpen = $state(false);
 	let createParent = $state<CollectionView | null>(null);
 	// When set, the list shows this collection's sections instead of the roots.
@@ -291,7 +294,11 @@
 		} else {
 			save(uri);
 		}
-		if (variant === 'popover') open = false;
+		// Close on any pick, drawer included. Saving into several collections in one
+		// opening is rare, the desktop popover has always closed, and a drawer that
+		// stays put after a tap reads as "did that register?". (Inert for `inline`,
+		// whose visibility its host owns — `open` is unbound there.)
+		open = false;
 	}
 
 	function handleButtonClick() {
