@@ -26,11 +26,6 @@ class ShareViewController: UIViewController {
 	private let appScheme = "currents"
 	private var shareItems: [ShareItem] = []
 
-	override func viewDidAppear(_ animated: Bool) {
-		super.viewDidAppear(animated)
-		extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-	}
-
 	override func viewDidLoad() {
 		super.viewDidLoad()
 		shareItems.removeAll()
@@ -168,8 +163,15 @@ class ShareViewController: UIViewController {
 				URLQueryItem(name: "url", value: item.url ?? "")
 			]
 		}
-		guard let url = comps.url else { return }
+		guard let url = comps.url else {
+			extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+			return
+		}
 		openURL(url)
+		// Tear the extension down only AFTER handing off — completing earlier (e.g. in
+		// viewDidAppear) races the async attachment load and kills the extension before the
+		// openURL: hand-off can reach the host app, so the share silently does nothing.
+		extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
 	}
 
 	// Walk the responder chain to reach UIApplication from inside the extension. UIApplication.open
