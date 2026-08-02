@@ -19,6 +19,11 @@
 
 	const native = isNative();
 
+	// The home route. Match on route.id, not `pathname === '/'`: the native webview serves the
+	// SPA fallback as `/index.html`, so the pathname isn't literally `/` there — a string compare
+	// would leave a logged-in user stuck on the welcome screen (no redirect) with the nav bar shown.
+	const isHome = $derived(page.route.id === '/(with-navbar)');
+
 	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null =
 		$state(null);
 	let checked = $state(false);
@@ -37,11 +42,11 @@
 		auth.checked = true;
 		if (user) {
 			loadCollections(user.did);
-			if (page.url.pathname === '/') goto('/explore');
+			if (isHome) goto('/explore');
 		}
 
 		const isPublic =
-			page.url.pathname === '/' ||
+			isHome ||
 			page.url.pathname.startsWith('/explore') ||
 			page.url.pathname.startsWith('/login') ||
 			page.url.pathname.startsWith('/register') ||
@@ -57,7 +62,7 @@
 	});
 
 	$effect(() => {
-		if (auth.checked && auth.user && page.url.pathname === '/') goto('/explore');
+		if (auth.checked && auth.user && isHome) goto('/explore');
 	});
 
 	$effect(() => {
@@ -107,7 +112,7 @@
 <ModeWatcher />
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	{#if page.url.pathname === '/'}
+	{#if isHome}
 		<title>Currents</title>
 		<meta name="description" content="A calm visual curation app on the AT Protocol." />
 		<meta property="og:type" content="website" />
@@ -123,12 +128,12 @@
 {#if !checked}
 	<!-- loading -->
 {:else}
-	{#if !(native && page.url.pathname === '/')}
-		<TopBar {user} landing={page.url.pathname === '/'} />
+	{#if !(native && isHome)}
+		<TopBar {user} landing={isHome} />
 	{/if}
-	{#if page.url.pathname === '/' && !auth.user}
+	{#if isHome && !auth.user}
 		{@render children()}
-	{:else if page.url.pathname !== '/'}
+	{:else if !isHome}
 		<main class="p-2 md:p-4">
 			{@render children()}
 		</main>
