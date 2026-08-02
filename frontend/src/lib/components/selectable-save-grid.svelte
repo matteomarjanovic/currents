@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { BalancedMasonryGrid, Frame } from '@masonry-grid/svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import { tileRatio } from '$lib/image-ratio';
 	import { effectiveVisibility, shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import Check from '@lucide/svelte/icons/check';
 
@@ -36,7 +37,8 @@
 			{@const ok = eligible(item)}
 			{@const isSelected = selected.has(item.uri)}
 			{@const blurred = effectiveVisibility(item.labels) === 'blur'}
-			<Frame width={image?.width ?? 3} height={image?.height ?? 4}>
+			{@const ratio = tileRatio(image?.width, image?.height)}
+			<Frame width={ratio.width} height={ratio.height}>
 				<button
 					type="button"
 					disabled={!ok}
@@ -51,7 +53,7 @@
 							src={image.imageUrl}
 							alt={image.alt ?? ''}
 							loading="lazy"
-							class="h-full w-full object-cover {blurred ? 'blur-md' : ''} {ok
+							class="h-full w-full object-cover object-top {blurred ? 'blur-md' : ''} {ok
 								? ''
 								: 'opacity-40'}"
 						/>

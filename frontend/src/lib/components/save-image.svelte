@@ -13,9 +13,20 @@
 		// grid → "block w-full", full-height contain → "flex h-full w-full items-center
 		// justify-center", intrinsic → leave empty.
 		wrapperClass?: string;
+		// object-fit/position classes for the frozen-GIF canvas. Must match the <img>'s
+		// own fit, or the still frame won't line up with the animation beneath it —
+		// a cropped grid tile covers, everything else contains.
+		overlayFit?: string;
 	}
 
-	let { image, alt, class: className = '', style, wrapperClass = '' }: Props = $props();
+	let {
+		image,
+		alt,
+		class: className = '',
+		style,
+		wrapperClass = '',
+		overlayFit = 'object-contain'
+	}: Props = $props();
 
 	// Freeze animated GIFs at their first frame unless the viewer opted into autoplay.
 	// Everything else (and users on the default) takes the plain <img> path — no change.
@@ -63,7 +74,7 @@
 		<canvas
 			bind:this={canvasEl}
 			aria-hidden="true"
-			class="pointer-events-none absolute inset-0 h-full w-full object-contain transition-opacity duration-150 {frozen &&
+			class="pointer-events-none absolute inset-0 h-full w-full {overlayFit} transition-opacity duration-150 {frozen &&
 			!hovering
 				? 'opacity-100'
 				: 'opacity-0'}"

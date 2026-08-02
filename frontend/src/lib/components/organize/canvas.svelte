@@ -3,6 +3,7 @@
 	import { BalancedMasonryGrid, Frame } from '@masonry-grid/svelte';
 	import { apiFetch } from '$lib/api';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
@@ -479,7 +480,8 @@
 			<BalancedMasonryGrid {frameWidth} {gap} style="overflow: visible;">
 				{#each visible as item (item.uri)}
 					{@const image = getImageContent(item)}
-					<Frame width={image?.width ?? 3} height={image?.height ?? 4}>
+					{@const ratio = tileRatio(image?.width, image?.height)}
+					<Frame width={ratio.width} height={ratio.height}>
 						<div class="group relative h-full w-full">
 							<ContextMenu.Root>
 								<ContextMenu.Trigger>
@@ -503,9 +505,11 @@
 														src={image.imageUrl}
 														alt={image.alt ?? item.text ?? ''}
 														loading="lazy"
-														class="w-full"
+														class="w-full {isCropped(image.width, image.height)
+															? 'object-cover object-top'
+															: ''}"
 														style={image.width && image.height
-															? `aspect-ratio: ${image.width} / ${image.height}`
+															? `aspect-ratio: ${ratio.width} / ${ratio.height}`
 															: undefined}
 													/>
 												{:else}

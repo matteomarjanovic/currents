@@ -27,6 +27,7 @@
 	import { shouldHide, effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
+	import { isLongImage } from '$lib/image-ratio';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
@@ -51,6 +52,9 @@
 	let hydratedSave = $state<SaveView | null>(null);
 	let currentSave = $derived(hydratedSave ?? save);
 	let image = $derived(getImageContent(currentSave));
+	// Past a few multiples of its width, fitting an image by height leaves an
+	// unreadable sliver — those render at full width and scroll instead.
+	let long = $derived(isLongImage(image?.width, image?.height));
 	let hiddenByPrefs = $derived(shouldHide(currentSave.labels));
 	// Render the source only as an http(s) link — guards a "javascript:"/"data:"
 	// originUrl (defense in depth; the appview validates the scheme on write).
@@ -69,7 +73,8 @@
 
 	let viewerAttr = $derived(currentSave.viewer?.attribution);
 	let originalAttr = $derived(image?.attribution);
-	let canAttribute = $derived(!!auth.user && (currentSave.viewer?.saves?.length ?? 0) > 0);
+	let anySaved = $derived((currentSave.viewer?.saves?.length ?? 0) > 0);
+	let canAttribute = $derived(!!auth.user && anySaved);
 	let isOwnSave = $derived(auth.user?.did === currentSave.author.did);
 	let hasViewerAttr = $derived(
 		!!viewerAttr && (!!viewerAttr.credit || !!viewerAttr.license || !!viewerAttr.url)
@@ -152,6 +157,26 @@
 		return () => {
 			cancelled = true;
 		};
+	});
+
+	// ── Long-image scroll affordance ─────────────────────────────────────────
+	// Nothing about a width-fitted long image says "this scrolls", so the pane
+	// carries a bottom fade until it's scrolled out. `long` guarantees the image
+	// overflows the pane many times over, so "not at the end" is the right initial
+	// state — no measuring needed before the first scroll.
+	let imagePane: HTMLDivElement | undefined = $state();
+	let imagePaneAtEnd = $state(false);
+
+	function onImagePaneScroll(e: Event) {
+		const el = e.currentTarget as HTMLDivElement;
+		imagePaneAtEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+	}
+
+	// A new save reuses the pane, so send it back to the top of the image.
+	$effect(() => {
+		void currentSave.uri;
+		imagePane?.scrollTo({ top: 0 });
+		imagePaneAtEnd = false;
 	});
 
 	function goBack() {
@@ -517,16 +542,41 @@
 	</Accordion.Root>
 {/snippet}
 
-{#snippet saveControl(variant: 'popover' | 'drawer')}
+{#snippet saveControl()}
 	{#if auth.user && collections.loaded}
 		<CollectionSelector
 			item={currentSave}
-			{variant}
+			variant="popover"
 			triggerVariant="secondary"
 			onSavesChange={handleSavesChange}
 		/>
 	{:else if auth.checked}
 		<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
+	{/if}
+{/snippet}
+
+<!-- Mobile Save: a content-width pill rather than the drawer trigger's default
+     full-width bar, so the floating back / scroll-to-top buttons sit beside it in
+     the same row instead of on top of it. Solid by design — it floats over the
+     image, so nothing glassy. -->
+{#snippet mobileSaveControl()}
+	{#if auth.user && collections.loaded}
+		<CollectionSelector item={currentSave} variant="drawer" onSavesChange={handleSavesChange}>
+			{#snippet trigger({ props })}
+				<Button
+					{...props}
+					variant={anySaved ? 'secondary' : 'default'}
+					size="lg"
+					class="rounded-full px-6 shadow-md"
+				>
+					{anySaved ? 'Saved' : 'Save'}
+				</Button>
+			{/snippet}
+		</CollectionSelector>
+	{:else if auth.checked}
+		<Button variant="default" size="lg" class="rounded-full px-6 shadow-md" onclick={promptLogin}>
+			Save
+		</Button>
 	{/if}
 {/snippet}
 
@@ -567,7 +617,7 @@
 
 <div bind:this={desktopHero} class="hidden h-screen md:flex">
 	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6 pt-20">
-		{@render saveControl('popover')}
+		{@render saveControl()}
 		{@render info(true)}
 		{@render imageCollectionsSection()}
 		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
@@ -575,64 +625,122 @@
 			<ArrowDown class="size-4" />
 		</div>
 	</div>
-	<div class="flex w-2/3 items-center justify-center p-6">
-		{#if hiddenByPrefs}
-			{@render hiddenState()}
-		{:else if image}
-			<LabeledMedia
-				labels={currentSave.labels}
-				class="flex h-full w-full items-center justify-center"
-			>
-				<SaveImage
-					{image}
-					alt={image.alt ?? currentSave.text ?? ''}
-					class="max-h-full max-w-full object-contain"
-					wrapperClass="flex h-full w-full items-center justify-center"
-					style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
-				/>
-			</LabeledMedia>
-		{:else}
+	<!-- Long images fill the pane's width and scroll it; everything else is
+	     contained and centred as before. The wrapper is the positioning context for
+	     the "more below" fade, which has to sit outside the scrolling element. -->
+	<div class="relative w-2/3">
+		<!-- The fade is a mask on the pane, not a colored gradient on top of it: this
+		     view renders both as a route (page background) and as the pushState overlay
+		     (app-muted-wash), and a mask doesn't need to know which. -->
+		<div
+			bind:this={imagePane}
+			onscroll={onImagePaneScroll}
+			class="flex h-full justify-center p-6 {long
+				? 'items-start overflow-y-auto'
+				: 'items-center'} {long && !imagePaneAtEnd ? 'mask-b-from-88% mask-b-to-100%' : ''}"
+		>
+			{#if hiddenByPrefs}
+				{@render hiddenState()}
+			{:else if image}
+				<LabeledMedia
+					labels={currentSave.labels}
+					class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
+				>
+					<SaveImage
+						{image}
+						alt={image.alt ?? currentSave.text ?? ''}
+						class={long ? 'w-full' : 'max-h-full max-w-full object-contain'}
+						wrapperClass={long ? 'block w-full' : 'flex h-full w-full items-center justify-center'}
+						style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+					/>
+				</LabeledMedia>
+			{:else}
+				<div
+					class="flex h-full w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+				>
+					Unsupported content
+				</div>
+			{/if}
+		</div>
+		{#if long && !hiddenByPrefs && image}
+			<!-- Says out loud what the fade implies. Both clear together once there's
+			     nothing left to scroll to. -->
 			<div
-				class="flex h-full w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+				class="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center transition-opacity duration-200 {imagePaneAtEnd
+					? 'opacity-0'
+					: 'opacity-100'}"
 			>
-				Unsupported content
+				<span
+					class="flex items-center gap-1.5 rounded-full bg-primary-foreground/80 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur-sm"
+				>
+					<ArrowDown class="size-3" />
+					Scroll to see the whole image
+				</span>
 			</div>
 		{/if}
 	</div>
 </div>
 
-<div
-	class="flex flex-col gap-4 p-2 md:hidden"
-	style="padding-top: calc(env(safe-area-inset-top) + 1rem)"
->
-	<div bind:this={topControls} class="flex items-center justify-between gap-2">
-		<Button variant="ghost" size="icon-sm" onclick={goBack} aria-label="Go back">
-			<ArrowLeft class="size-4" />
-		</Button>
-		{@render reportButton('')}
-	</div>
-	{#if hiddenByPrefs}
-		{@render hiddenState()}
-	{:else if image}
-		<LabeledMedia labels={currentSave.labels} class="flex justify-center">
-			<SaveImage
-				{image}
-				alt={image.alt ?? currentSave.text ?? ''}
-				class="max-h-[65vh] w-auto max-w-full object-contain"
-				style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
-			/>
-		</LabeledMedia>
-	{:else}
-		<div
-			class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
-			style="aspect-ratio: 3 / 4;"
-		>
-			Unsupported content
+<div class="md:hidden">
+	<!-- One viewport-tall stage: the image takes whatever height is left over and is
+	     centred in it, so a short image sits mid-screen and a long one simply makes
+	     the stage taller. `flex-1` grows into free space but never squashes the image
+	     (flex items keep min-height:auto), which is what makes both cases work. -->
+	<div
+		class="flex min-h-dvh flex-col gap-4 p-2"
+		style="padding-top: calc(env(safe-area-inset-top) + 1rem)"
+	>
+		<div bind:this={topControls} class="flex items-center justify-between gap-2">
+			<Button variant="ghost" size="icon-sm" onclick={goBack} aria-label="Go back">
+				<ArrowLeft class="size-4" />
+			</Button>
+			{@render reportButton('')}
 		</div>
-	{/if}
-	{@render saveControl('drawer')}
-	{@render info(false)}
-	{@render imageCollectionsSection()}
+		<div class="flex flex-1 items-center justify-center">
+			{#if hiddenByPrefs}
+				{@render hiddenState()}
+			{:else if image}
+				<LabeledMedia labels={currentSave.labels} class="flex justify-center">
+					<SaveImage
+						{image}
+						alt={image.alt ?? currentSave.text ?? ''}
+						class={long ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
+						style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
+					/>
+				</LabeledMedia>
+			{:else}
+				<div
+					class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
+					style="aspect-ratio: 3 / 4;"
+				>
+					Unsupported content
+				</div>
+			{/if}
+		</div>
+		<div class="flex flex-col gap-4">
+			{@render info(false)}
+			{@render imageCollectionsSection()}
+		</div>
+		<!-- Pinned to the bottom of the stage — the bottom of the viewport until the
+		     image and its details run out, then it lands under them. The button's own
+		     bottom edge keeps the floating back / scroll-to-top offset so the three
+		     read as one row. Plain sticky semantics: no scroll listener.
+		     `-mt-4` cancels the stage's gap so the landed pill sits closer to the
+		     accordion; the padding above it is the scrim's fade, not spacing. -->
+		<div
+			class="pointer-events-none sticky bottom-0 z-10 -mx-2 -mt-4 flex justify-center pt-8"
+			style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+		>
+			<!-- Scrim, so the pill stays legible over whatever it floats above. Painted
+			     in the page's own wash and masked out towards the top, which keeps it
+			     exact in both themes and in both contexts this view renders in (route
+			     background and pushState overlay are the same mix). -->
+			<div class="absolute inset-0 app-muted-wash mask-t-from-0% mask-t-to-100%"></div>
+			<div class="pointer-events-auto relative">
+				{@render mobileSaveControl()}
+			</div>
+		</div>
+	</div>
 </div>
 
 <!-- Mobile floating home button: full wordmark, pinned at top center. -->

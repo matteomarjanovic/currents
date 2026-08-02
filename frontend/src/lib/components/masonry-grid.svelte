@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { BalancedMasonryGrid, Frame } from '@masonry-grid/svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import { tileRatio } from '$lib/image-ratio';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import ImageCard from '$lib/components/image-card.svelte';
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
@@ -64,7 +65,9 @@
 <div bind:clientWidth={containerWidth}>
 	<BalancedMasonryGrid {frameWidth} {gap}>
 		{#each visibleItems as item (item.uri)}
-			<Frame width={getImageContent(item)?.width ?? 3} height={getImageContent(item)?.height ?? 4}>
+			{@const image = getImageContent(item)}
+			{@const ratio = tileRatio(image?.width, image?.height)}
+			<Frame width={ratio.width} height={ratio.height}>
 				<ImageCard {item} {linkToDetail} {mobileSave} />
 			</Frame>
 		{/each}

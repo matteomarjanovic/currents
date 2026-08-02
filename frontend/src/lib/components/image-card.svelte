@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { pushState } from '$app/navigation';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -27,6 +28,10 @@
 		return `/profile/${item.author.handle}/save/${rkey}`;
 	});
 	let image = $derived(getImageContent(item));
+	// A very tall image renders as a top crop at the clamped ratio; the <img> keeps
+	// its own dimensions but is covered into the shorter box (see $lib/image-ratio).
+	let ratio = $derived(tileRatio(image?.width, image?.height));
+	let cropped = $derived(isCropped(image?.width, image?.height));
 
 	function handleClick(e: MouseEvent) {
 		// Let the browser handle modified clicks (open in new tab, etc.)
@@ -49,10 +54,11 @@
 		<SaveImage
 			{image}
 			alt={image.alt ?? item.text ?? ''}
-			class="w-full"
+			class="w-full {cropped ? 'object-cover object-top' : ''}"
 			wrapperClass="block w-full"
+			overlayFit={cropped ? 'object-cover object-top' : 'object-contain'}
 			style={image.width && image.height
-				? `aspect-ratio: ${image.width} / ${image.height}`
+				? `aspect-ratio: ${ratio.width} / ${ratio.height}`
 				: undefined}
 		/>
 	{:else}
