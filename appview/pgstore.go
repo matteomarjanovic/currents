@@ -350,6 +350,7 @@ type CollectionRow struct {
 	CreatedAt      *time.Time
 	LastSavedAt    *time.Time // newest save in this collection or its sub-collections
 	SaveCount      int
+	SectionCount   int // number of child collections (sections); populated by GetActorCollectionsPage
 	PreviewBlobs   []string // up to 4; each is "did,cid"
 	FavouriteCount int      // total favourites of this collection across the network
 	FavouriteURI   *string  // AT-URI of the viewer's favourite record; nil if not favourited / unauthenticated
@@ -508,6 +509,10 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 		),
 		preview_agg AS (
 			SELECT root, array_agg(blob ORDER BY rn) AS blobs FROM preview WHERE rn <= 4 GROUP BY root
+		),
+		section_counts AS (
+			SELECT parent_uri AS root, count(*)::int AS cnt
+			FROM collection WHERE parent_uri IN (SELECT uri FROM cols) GROUP BY parent_uri
 		)
 		SELECT
 			c.uri,
@@ -518,11 +523,13 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			c.created_at,
 			ss.last_saved AS last_saved_at,
 			COALESCE(ss.cnt, 0) AS save_count,
+			COALESCE(secc.cnt, 0) AS section_count,
 			COALESCE(pa.blobs, ARRAY[]::text[]) AS preview_blobs,
 			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
 			fc.uri AS favourite_uri
 		FROM cols c
 		LEFT JOIN save_stats ss ON ss.root = c.uri
+		LEFT JOIN section_counts secc ON secc.root = c.uri
 		LEFT JOIN preview_agg pa ON pa.root = c.uri
 		LEFT JOIN favourite_collection fc ON fc.collection_uri = c.uri AND fc.viewer_did = NULLIF($3, '')
 		ORDER BY c.created_at DESC NULLS LAST, c.uri ASC
@@ -537,7 +544,7 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 	var result []CollectionRow
 	for rows.Next() {
 		var row CollectionRow
-		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI); err != nil {
+		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.SectionCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)

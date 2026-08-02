@@ -363,6 +363,58 @@ func TestGetCollectionByURI(t *testing.T) {
 	}
 }
 
+// TestGetActorCollectionsPage pins the profile listing: parent="root" returns
+// only root collections (sections never surface as their own cards), each
+// root's SectionCount reflects its children, and saveCount rolls in section
+// saves. Without the parent filter, sections would consume the page budget and
+// hide roots on section-heavy accounts.
+func TestGetActorCollectionsPage(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	author := "did:plc:author"
+
+	alpha := "at://" + author + "/is.currents.feed.collection/alpha"
+	alphaSec1 := "at://" + author + "/is.currents.feed.collection/alphasec1"
+	alphaSec2 := "at://" + author + "/is.currents.feed.collection/alphasec2"
+	beta := "at://" + author + "/is.currents.feed.collection/beta"
+	seedCollection(t, s, alpha, author, "Alpha", "", testBase.Add(3*time.Hour))
+	seedCollection(t, s, alphaSec1, author, "Alpha Detail 1", alpha, testBase.Add(2*time.Hour))
+	seedCollection(t, s, alphaSec2, author, "Alpha Detail 2", alpha, testBase.Add(1*time.Hour))
+	seedCollection(t, s, beta, author, "Beta", "", testBase)
+
+	saveURI := func(rkey string) string { return "at://" + author + "/is.currents.feed.save/" + rkey }
+	seedImageSave(t, s, saveURI("a1"), author, alpha, "blob-a1", 0.9, testBase)
+	seedImageSave(t, s, saveURI("s1"), author, alphaSec1, "blob-s1", 0.8, testBase)
+
+	// parent="root": only roots, with section counts and rolled-up save counts.
+	roots, _, err := s.GetActorCollectionsPage(ctx, author, "", "root", 50, "")
+	if err != nil {
+		t.Fatalf("GetActorCollectionsPage root: %v", err)
+	}
+	byURI := map[string]CollectionRow{}
+	for _, r := range roots {
+		byURI[r.URI] = r
+	}
+	if len(roots) != 2 {
+		t.Fatalf("root page returned %d collections, want 2 (roots only)", len(roots))
+	}
+	if a := byURI[alpha]; a.SectionCount != 2 || a.SaveCount != 2 {
+		t.Fatalf("Alpha = {sections:%d, saves:%d}, want {2, 2}", a.SectionCount, a.SaveCount)
+	}
+	if b := byURI[beta]; b.SectionCount != 0 || b.SaveCount != 0 {
+		t.Fatalf("Beta = {sections:%d, saves:%d}, want {0, 0}", b.SectionCount, b.SaveCount)
+	}
+
+	// No parent filter: roots and sections both appear.
+	all, _, err := s.GetActorCollectionsPage(ctx, author, "", "", 50, "")
+	if err != nil {
+		t.Fatalf("GetActorCollectionsPage all: %v", err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("unfiltered page returned %d collections, want 4 (roots + sections)", len(all))
+	}
+}
+
 // TestActiveLabelSemantics pins what the label indexes serve: the latest row
 // per (src, uri/blob, val) decides activeness, so a negation hides a label and
 // a re-application after negation revives it.

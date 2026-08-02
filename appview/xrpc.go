@@ -230,6 +230,7 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		Description    string                 `json:"description,omitempty"`
 		ParentURI      string                 `json:"parentUri,omitempty"`
 		SaveCount      int                    `json:"saveCount,omitempty"`
+		SectionCount   int                    `json:"sectionCount,omitempty"`
 		FavouriteCount int                    `json:"favouriteCount,omitempty"`
 		Previews       []previewItem          `json:"previews,omitempty"`
 		CreatedAt      string                 `json:"createdAt"`
@@ -257,6 +258,7 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 			Description:    row.Description,
 			ParentURI:      row.ParentURI,
 			SaveCount:      row.SaveCount,
+			SectionCount:   row.SectionCount,
 			FavouriteCount: row.FavouriteCount,
 		}
 		if row.CreatedAt != nil {

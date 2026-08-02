@@ -16,12 +16,21 @@ export const collections = $state({
 });
 
 export async function loadCollections(did: string) {
-	const res = await apiFetch(
-		`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&limit=100`
-	);
-	if (!res.ok) return;
-	const data = await res.json();
-	collections.items = data.collections ?? [];
+	// The selector needs every collection (roots and sections), so page through
+	// the full set instead of capping at one 100-item page — accounts with more
+	// than 100 collections would otherwise be silently truncated.
+	const all: CollectionView[] = [];
+	let cursor = '';
+	do {
+		const params = new URLSearchParams({ actor: did, limit: '100' });
+		if (cursor) params.set('cursor', cursor);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getActorCollections?${params}`);
+		if (!res.ok) return;
+		const data = await res.json();
+		all.push(...(data.collections ?? []));
+		cursor = data.cursor ?? '';
+	} while (cursor);
+	collections.items = all;
 	collections.loaded = true;
 	if (collections.lastUsedUri === '' && collections.items.length > 0) {
 		collections.lastUsedUri = collections.items[0].uri;

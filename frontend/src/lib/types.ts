@@ -19,6 +19,7 @@ export interface CollectionView {
 	description?: string;
 	parentUri?: string;
 	saveCount?: number;
+	sectionCount?: number;
 	favouriteCount?: number;
 	previews?: PreviewItem[];
 	createdAt?: string;

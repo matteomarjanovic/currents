@@ -75,19 +75,32 @@ async function getAuth(): Promise<AuthCache | null> {
 
 async function fetchCollections(did: string): Promise<Collection[]> {
   try {
-    const url = `${CURRENTS_URL}/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&limit=100`;
-    const resp = await appviewFetch(url);
-    if (!resp.ok) return [];
-    const data = await resp.json();
-    return (data.collections ?? []).map((c: any) => ({
-      uri: c.uri,
-      name: c.name,
-      saveCount: c.saveCount ?? 0,
-      parentUri: c.parentUri,
-      previews: c.previews,
-      createdAt: c.createdAt,
-      lastSavedAt: c.lastSavedAt,
-    }));
+    // Page through the full set — the picker needs every collection (roots and
+    // sections); a single 100-item page truncates accounts with more.
+    const out: Collection[] = [];
+    let cursor = '';
+    do {
+      const params = new URLSearchParams({ actor: did, limit: '100' });
+      if (cursor) params.set('cursor', cursor);
+      const resp = await appviewFetch(
+        `${CURRENTS_URL}/xrpc/is.currents.feed.getActorCollections?${params}`,
+      );
+      if (!resp.ok) return out;
+      const data = await resp.json();
+      for (const c of data.collections ?? []) {
+        out.push({
+          uri: c.uri,
+          name: c.name,
+          saveCount: c.saveCount ?? 0,
+          parentUri: c.parentUri,
+          previews: c.previews,
+          createdAt: c.createdAt,
+          lastSavedAt: c.lastSavedAt,
+        });
+      }
+      cursor = data.cursor ?? '';
+    } while (cursor);
+    return out;
   } catch {
     return [];
   }

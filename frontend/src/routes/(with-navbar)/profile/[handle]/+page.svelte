@@ -33,16 +33,9 @@
 		);
 	const roots = $derived(
 		collections
-			.filter((c) => !c.parentUri && !deletedCollectionUris.has(c.uri))
+			.filter((c) => !deletedCollectionUris.has(c.uri))
 			.sort((a, b) => activityTs(b) - activityTs(a))
 	);
-	const sectionCounts = $derived.by(() => {
-		const m = new Map<string, number>();
-		for (const c of collections) {
-			if (c.parentUri) m.set(c.parentUri, (m.get(c.parentUri) ?? 0) + 1);
-		}
-		return m;
-	});
 
 	// Collections vs. Unsorted (saves in no collection — profile-only). Unsorted is
 	// fetched lazily the first time its tab is opened.
@@ -77,6 +70,25 @@
 		return { items: data.collections ?? [], cursor: data.cursor };
 	});
 
+	// The profile grid shows root collections only (sections nest inside their
+	// parent card). Fetch roots directly with parent=root — filtering client-side
+	// would let sections eat the page budget and hide roots on section-heavy
+	// accounts. Follow the cursor so accounts with >100 roots still load fully.
+	async function loadRootCollections(handle: string): Promise<CollectionView[]> {
+		const all: CollectionView[] = [];
+		let cursor = '';
+		do {
+			const params = new URLSearchParams({ actor: handle, parent: 'root', limit: '100' });
+			if (cursor) params.set('cursor', cursor);
+			const res = await apiFetch(`/xrpc/is.currents.feed.getActorCollections?${params}`);
+			if (!res.ok) break;
+			const data = await res.json();
+			all.push(...(data.collections ?? []));
+			cursor = data.cursor ?? '';
+		} while (cursor);
+		return all;
+	}
+
 	$effect(() => {
 		const handle = page.params.handle ?? '';
 		loading = true;
@@ -89,20 +101,15 @@
 
 		Promise.all([
 			apiFetch(`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`),
-			apiFetch(
-				`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(handle)}&limit=100`
-			)
+			loadRootCollections(handle)
 		])
-			.then(async ([pRes, cRes]) => {
+			.then(async ([pRes, cols]) => {
 				if (!pRes.ok) {
 					notFound = true;
 					return;
 				}
 				profile = await pRes.json();
-				if (cRes.ok) {
-					const data = await cRes.json();
-					collections = data.collections ?? [];
-				}
+				collections = cols;
 			})
 			.catch(() => {
 				notFound = true;
@@ -252,7 +259,7 @@
 				{:else}
 					<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
 						{#each roots as c (c.uri)}
-							<CollectionCard collection={c} sectionCount={sectionCounts.get(c.uri) ?? 0} />
+							<CollectionCard collection={c} sectionCount={c.sectionCount ?? 0} />
 						{/each}
 					</div>
 				{/if}

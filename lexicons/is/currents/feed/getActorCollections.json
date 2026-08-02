@@ -14,6 +14,10 @@
             "format": "at-identifier",
             "description": "The DID or handle of the actor whose collections to fetch."
           },
+          "parent": {
+            "type": "string",
+            "description": "Filter by parent: omit for all collections, \"root\" for only root-level collections, or a collection AT-URI for that collection's sections."
+          },
           "limit": {
             "type": "integer",
             "minimum": 1,

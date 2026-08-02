@@ -49,17 +49,33 @@
 			childrenLoaded = true;
 			return;
 		}
-		apiFetch(
-			`/xrpc/is.currents.feed.getActorCollections?actor=${encodeURIComponent(did)}&parent=${encodeURIComponent(uri)}&limit=100`
-		)
-			.then((r) => (r.ok ? r.json() : null))
-			.then((d) => {
-				if (d) children = d.collections ?? [];
-			})
-			.catch(() => {})
-			.finally(() => {
-				childrenLoaded = true;
-			});
+		// Page through every section — a collection with more than 100 sections
+		// would otherwise be truncated. `cancelled` guards against a route change
+		// landing a stale response over the new collection's children.
+		let cancelled = false;
+		void (async () => {
+			const all: CollectionView[] = [];
+			let cursor = '';
+			try {
+				do {
+					const params = new URLSearchParams({ actor: did, parent: uri, limit: '100' });
+					if (cursor) params.set('cursor', cursor);
+					const r = await apiFetch(`/xrpc/is.currents.feed.getActorCollections?${params}`);
+					if (!r.ok) break;
+					const d = await r.json();
+					all.push(...(d.collections ?? []));
+					cursor = d.cursor ?? '';
+				} while (cursor);
+			} catch {
+				// best-effort; render whatever loaded
+			}
+			if (cancelled) return;
+			children = all;
+			childrenLoaded = true;
+		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	$effect(() => {

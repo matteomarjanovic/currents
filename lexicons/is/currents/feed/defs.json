@@ -35,9 +35,18 @@
           "type": "string",
           "description": "Optional description shown with the collection."
         },
+        "parentUri": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "AT-URI of the parent collection when this collection is a section; absent for root collections."
+        },
         "saveCount": {
           "type": "integer",
-          "description": "Number of saves currently in the collection."
+          "description": "Number of saves currently in the collection (rolls in its sections' saves)."
+        },
+        "sectionCount": {
+          "type": "integer",
+          "description": "Number of child collections (sections) under this collection."
         },
         "favouriteCount": {
           "type": "integer",
