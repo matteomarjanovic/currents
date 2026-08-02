@@ -104,9 +104,9 @@
 	async function openPortal() {
 		if (portalLoading) return;
 		portalLoading = true;
-		// Android opens the portal URL in the system browser (Capacitor Browser) — the blank-tab
-		// popup trick below doesn't work inside the webview.
-		if (isAndroid()) {
+		// Native apps open the portal URL in the system browser (Capacitor Browser) — the
+		// blank-tab popup trick below doesn't work inside the webview.
+		if (isNative()) {
 			try {
 				const res = await apiFetch('/api/supporter/portal', { method: 'POST' });
 				if (!res.ok) throw new Error(`${res.status}`);

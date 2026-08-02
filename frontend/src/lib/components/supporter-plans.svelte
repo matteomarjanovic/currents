@@ -43,7 +43,13 @@
 	<Button variant="outline" class="w-full" onclick={openWebCheckout}>Become a supporter</Button>
 	<p class="text-xs text-muted-foreground">Opens in your browser to complete checkout.</p>
 {:else if native}
-	<p class="text-sm text-muted-foreground">Supporter subscriptions aren't available in the app.</p>
+	<div class="flex flex-col gap-1.5 text-sm text-muted-foreground">
+		<p>Apple doesn't allow paid subscriptions to be sold inside the app.</p>
+		<p>
+			To become a supporter, open <span class="font-medium text-foreground">currents.is</span> in your
+			browser, sign in, and subscribe from there — your account unlocks automatically.
+		</p>
+	</div>
 {:else}
 	<div class="flex flex-col gap-2 sm:flex-row">
 		<Button

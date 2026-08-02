@@ -6,7 +6,7 @@
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { apiFetch } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
-	import { isNative, isAndroid, isMobileWeb, isStandalonePwa } from '$lib/platform';
+	import { isNative, isAndroid, isIos, isMobileWeb, isStandalonePwa } from '$lib/platform';
 	import { shouldOpenExternally, openExternal } from '$lib/external';
 	import { pwaInstall, promptInstall } from '$lib/stores/pwa-install.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -252,10 +252,12 @@
 
 	// /support-us (external Polar checkout) is hidden from the native apps for App Store
 	// compliance — it redirects to / on native. Google Play permits linking out, so on Android
-	// open the page in the system browser where the checkout works; iOS stays hidden.
+	// open the page in the system browser where the checkout works; iOS can't sell in-app at
+	// all, so it opens the settings Subscription section (perks + manage-subscription) instead.
 	function openSupportUs() {
 		if (!supporter.subscribed) markFeatureSeen(FEATURE_BECOME_SUPPORTER);
 		if (isAndroid()) openExternal('/support-us');
+		else if (isIos()) openSettings('subscription');
 		else goto(resolve('/support-us'));
 	}
 
