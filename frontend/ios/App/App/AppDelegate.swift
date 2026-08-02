@@ -42,6 +42,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // but if you want the App API to support tracking app url opens, make sure to keep this call
         let handled = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
 
+        // TEMP diagnostics (app process → visible in Xcode's console). Remove once share works.
+        NSLog("Currents: application open url = \(url.absoluteString)")
+
         // currents://shared?... — content from the Share Extension. Pull the query items into the
         // send-intent plugin's ShareStore and notify it, mirroring its README integration. The
         // OAuth deep link (currents://oauth-callback?token=...) carries no "title" param, so it's
@@ -64,6 +67,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 }
                 shareStore.processed = false
                 NotificationCenter.default.post(name: Notification.Name("triggerSendIntent"), object: nil)
+                NSLog("Currents: shared \(titles.count) item(s) into ShareStore, posted triggerSendIntent")
             }
         }
 

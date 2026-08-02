@@ -167,6 +167,7 @@ class ShareViewController: UIViewController {
 			extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
 			return
 		}
+		NSLog("ShareExtension: handing off \(shareItems.count) item(s): \(url.absoluteString)")
 		openURL(url)
 		// Tear the extension down only AFTER handing off — completing earlier (e.g. in
 		// viewDidAppear) races the async attachment load and kills the extension before the
@@ -183,9 +184,11 @@ class ShareViewController: UIViewController {
 		while let current = responder {
 			if let app = current as? UIApplication, app.responds(to: selector) {
 				app.perform(selector, with: url)
+				NSLog("ShareExtension: dispatched openURL: to UIApplication")
 				return
 			}
 			responder = current.next
 		}
+		NSLog("ShareExtension: could NOT find UIApplication in responder chain — host app will not open")
 	}
 }
