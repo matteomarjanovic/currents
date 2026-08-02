@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phones are portrait-only (see MainActivity); values-sw600dp overrides this to false
+         so tablets keep rotating. -->
+    <bool name="portrait_only">true</bool>
+</resources>

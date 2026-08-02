@@ -32,11 +32,10 @@
 	<array>
 		<string>armv7</string>
 	</array>
+	<!-- iPhone is portrait-only; the ~ipad key below keeps iPad free to rotate. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
