@@ -167,3 +167,16 @@
 		background-color: var(--muted);
 	}
 }
+
+/* iOS/WebKit zooms the viewport when a form control smaller than 16px is focused. A few inputs
+   use smaller text by design (the color-picker hex/alpha fields, the command search box), so on
+   touch devices force editable controls to at least 16px to stop the zoom — applies to the native
+   app and to currents.is in a mobile browser alike. Desktop keeps the intended smaller sizes.
+   Unlayered so it beats Tailwind's utility layer. */
+@media (hover: none) and (pointer: coarse) {
+	input:not([type='checkbox']):not([type='radio']),
+	textarea,
+	select {
+		font-size: 16px;
+	}
+}
