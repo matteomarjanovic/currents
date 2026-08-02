@@ -163,22 +163,28 @@ class ShareViewController: UIViewController {
 				URLQueryItem(name: "url", value: item.url ?? "")
 			]
 		}
-		guard let url = comps.url else {
+		guard let ctx = extensionContext, let url = comps.url else {
 			extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
 			return
 		}
 		NSLog("ShareExtension: handing off \(shareItems.count) item(s): \(url.absoluteString)")
-		openURL(url)
-		// Tear the extension down only AFTER handing off — completing earlier (e.g. in
-		// viewDidAppear) races the async attachment load and kills the extension before the
-		// openURL: hand-off can reach the host app, so the share silently does nothing.
-		extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+
+		// Prefer the sanctioned NSExtensionContext.open — on recent iOS it opens the containing
+		// app where the deprecated -[UIApplication openURL:] selector is now ignored. Fall back
+		// to the responder-chain hack if it declines. Complete only AFTER the hand-off: finishing
+		// earlier (e.g. in viewDidAppear) races the async attachment load and kills the extension
+		// before the open can reach the host app, so the share silently does nothing.
+		ctx.open(url) { opened in
+			NSLog("ShareExtension: extensionContext.open -> \(opened)")
+			if !opened { self.openViaResponderChain(url) }
+			ctx.completeRequest(returningItems: [], completionHandler: nil)
+		}
 	}
 
-	// Walk the responder chain to reach UIApplication from inside the extension. UIApplication.open
-	// is unavailable to app extensions at compile time, so dispatch the (still-live) openURL:
-	// selector at runtime instead.
-	@objc private func openURL(_ url: URL) {
+	// Fallback: walk the responder chain to reach UIApplication from inside the extension.
+	// UIApplication.open is unavailable to app extensions at compile time, so dispatch the
+	// (still-live) openURL: selector at runtime instead.
+	@objc private func openViaResponderChain(_ url: URL) {
 		let selector = NSSelectorFromString("openURL:")
 		var responder: UIResponder? = self
 		while let current = responder {
