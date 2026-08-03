@@ -75,6 +75,9 @@ private final class CurrentsAPI {
 		var req = URLRequest(url: comps.url!)
 		req.httpMethod = method
 		req.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+		// Without this, a successful POST /save answers with a web-form 302 → /save, which
+		// URLSession follows as GET → 405 — an error response for a save that worked.
+		req.setValue("application/json", forHTTPHeaderField: "Accept")
 		return req
 	}
 
@@ -223,7 +226,10 @@ private final class ShareModel: ObservableObject {
 				phase = .pickCollection
 			case .link(let page):
 				pageUrl = page
-				scraped = try await api.extractImages(page: page)
+				// Dedupe: pages often repeat an image, and duplicate URLs break both the
+				// grid's ForEach identity and set-based selection.
+				var seen = Set<URL>()
+				scraped = try await api.extractImages(page: page).filter { seen.insert($0).inserted }
 				if scraped.isEmpty {
 					phase = .failed("No images found on that page.")
 				} else {
@@ -352,22 +358,34 @@ private struct ImagePickGrid: View {
 				model.selected.insert(url)
 			}
 		} label: {
-			AsyncImage(url: url) { phase in
-				if let image = phase.image {
-					image.resizable().scaledToFill()
-				} else {
-					Color(.secondarySystemBackground)
+			// Square cell: the frame comes from the aspect-ratio'd base color, the image
+			// fills it as an overlay and gets clipped — scaledToFill on its own bleeds
+			// across neighbouring grid cells.
+			Color(.secondarySystemBackground)
+				.aspectRatio(1, contentMode: .fit)
+				.overlay(
+					AsyncImage(url: url) { phase in
+						if let image = phase.image {
+							image.resizable().scaledToFill()
+						} else {
+							Color(.secondarySystemBackground)
+						}
+					}
+				)
+				.clipped()
+				.overlay(alignment: .topTrailing) {
+					Image(systemName: model.selected.contains(url) ? "checkmark.circle.fill" : "circle")
+						.foregroundColor(.white)
+						.shadow(radius: 2)
+						.padding(6)
 				}
-			}
-			.frame(height: 110)
-			.clipped()
-			.overlay(alignment: .topTrailing) {
-				Image(systemName: model.selected.contains(url) ? "checkmark.circle.fill" : "circle")
-					.foregroundColor(.white)
-					.shadow(radius: 2)
-					.padding(6)
-			}
+				.overlay(
+					RoundedRectangle(cornerRadius: 0)
+						.stroke(Color.accentColor, lineWidth: model.selected.contains(url) ? 3 : 0)
+				)
+				.contentShape(Rectangle())
 		}
+		.buttonStyle(.plain)
 	}
 }
 
@@ -403,7 +421,9 @@ private struct CollectionList: View {
 				}
 			}
 			Section {
-				row(name: "Profile", thumb: nil, indented: false) { model.save(to: nil) }
+				row(name: "Profile", thumb: nil, systemIcon: "person.crop.circle", indented: false) {
+					model.save(to: nil)
+				}
 			}
 			Section("Collections") {
 				ForEach(ordered, id: \.0.id) { pair in
@@ -416,7 +436,8 @@ private struct CollectionList: View {
 	}
 
 	private func row(
-		name: String, thumb: URL?, indented: Bool, action: @escaping () -> Void
+		name: String, thumb: URL?, systemIcon: String? = nil, indented: Bool,
+		action: @escaping () -> Void
 	) -> some View {
 		Button(action: action) {
 			HStack(spacing: 10) {
@@ -430,6 +451,13 @@ private struct CollectionList: View {
 								Color(.secondarySystemBackground)
 							}
 						}
+					} else if let systemIcon {
+						Image(systemName: systemIcon)
+							.resizable()
+							.scaledToFit()
+							.padding(5)
+							.foregroundColor(.secondary)
+							.background(Color(.secondarySystemBackground))
 					} else {
 						Color(.secondarySystemBackground)
 					}
