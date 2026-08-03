@@ -1,6 +1,7 @@
 import { isNative } from './platform';
 import { mirrorAuthToken, setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
+import { loadCollections } from './stores/collections.svelte';
 import { initShareTarget } from './share-target';
 import { dismissTopOverlay } from './back-button';
 
@@ -62,6 +63,14 @@ export async function initApp(): Promise<void> {
 		if (dismissTopOverlay()) return;
 		if (canGoBack) history.back();
 		else App.exitApp();
+	});
+
+	// Refresh the collections store when the app returns to the foreground: the iOS share
+	// extension can create collections (and saves) while the webview sleeps, so the
+	// launch-time load goes stale — the selector would miss a collection created from the
+	// share sheet until a cold relaunch.
+	App.addListener('resume', () => {
+		if (auth.user) void loadCollections(auth.user.did);
 	});
 
 	// Receive images/links shared to the app from the OS share sheet.
