@@ -151,46 +151,64 @@ class ShareViewController: UIViewController {
 
 	// MARK: - Hand off to the host app
 
+	// iOS no longer reliably lets a share extension open its containing app (NSExtensionContext
+	// .open and the UIApplication openURL: responder hack both fail silently on current iOS), so
+	// the share DATA never travels in the URL. It's persisted as a manifest in the App Group
+	// container, which the app consumes in applicationDidBecomeActive — whether that's right now
+	// (on iOS versions where the wake-up open still works) or the next time the user opens the
+	// app. The URL is a best-effort wake-up call only.
 	private func openHostApp() {
-		var comps = URLComponents()
-		comps.scheme = appScheme
-		comps.host = "shared"
-		comps.queryItems = shareItems.flatMap { item in
-			[
-				URLQueryItem(name: "title", value: item.title ?? ""),
-				URLQueryItem(name: "description", value: ""),
-				URLQueryItem(name: "type", value: item.type ?? ""),
-				URLQueryItem(name: "url", value: item.url ?? "")
-			]
-		}
-		guard let ctx = extensionContext, let url = comps.url else {
+		writeManifest()
+		guard let url = URL(string: "\(appScheme)://shared") else {
 			extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
 			return
 		}
-		NSLog("ShareExtension: handing off \(shareItems.count) item(s): \(url.absoluteString)")
-
-		// Prefer the sanctioned NSExtensionContext.open — on recent iOS it opens the containing
-		// app where the deprecated -[UIApplication openURL:] selector is now ignored. Fall back
-		// to the responder-chain hack if it declines. Complete only AFTER the hand-off: finishing
-		// earlier (e.g. in viewDidAppear) races the async attachment load and kills the extension
-		// before the open can reach the host app, so the share silently does nothing.
-		ctx.open(url) { opened in
-			NSLog("ShareExtension: extensionContext.open -> \(opened)")
-			if !opened { self.openViaResponderChain(url) }
-			ctx.completeRequest(returningItems: [], completionHandler: nil)
+		// NB: NSExtensionContext.open is deliberately NOT used — on share extensions it's
+		// unsupported (Today-widgets-only), returns false or never calls its completion.
+		openViaResponderChain(url)
+		// Give the system a beat to act on the open before tearing the extension down —
+		// completing immediately races the still-queued open and cancels it on modern iOS.
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+			self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
 		}
 	}
 
-	// Fallback: walk the responder chain to reach UIApplication from inside the extension.
-	// UIApplication.open is unavailable to app extensions at compile time, so dispatch the
-	// (still-live) openURL: selector at runtime instead.
+	// The pending share, as the JSON the AppDelegate feeds into send-intent's ShareStore.
+	// Deleted by the app on first read, so it surfaces exactly once.
+	private func writeManifest() {
+		guard let dir = containerURL() else { return }
+		let items = shareItems.map {
+			["title": $0.title ?? "", "type": $0.type ?? "", "url": $0.url ?? ""]
+		}
+		guard let data = try? JSONSerialization.data(withJSONObject: items) else { return }
+		do {
+			try data.write(to: dir.appendingPathComponent("pending-share.json"))
+			NSLog("ShareExtension: wrote pending-share.json with \(items.count) item(s)")
+		} catch {
+			NSLog("ShareExtension: manifest write failed: \(error.localizedDescription)")
+		}
+	}
+
+	// Walk the responder chain to reach UIApplication from inside the extension. UIApplication's
+	// open methods are compile-time unavailable to app extensions, so both are dispatched through
+	// the ObjC runtime. iOS 18+ silently ignores the deprecated openURL: selector, hence the
+	// modern openURL:options:completionHandler: goes first, with the legacy one as fallback.
 	@objc private func openViaResponderChain(_ url: URL) {
-		let selector = NSSelectorFromString("openURL:")
 		var responder: UIResponder? = self
 		while let current = responder {
-			if let app = current as? UIApplication, app.responds(to: selector) {
-				app.perform(selector, with: url)
-				NSLog("ShareExtension: dispatched openURL: to UIApplication")
+			if let app = current as? UIApplication {
+				let modern = NSSelectorFromString("openURL:options:completionHandler:")
+				if app.responds(to: modern) {
+					typealias Completion = @convention(block) (Bool) -> Void
+					typealias OpenURL = @convention(c) (NSObject, Selector, NSURL, NSDictionary, Completion?) -> Void
+					let fn = unsafeBitCast(app.method(for: modern), to: OpenURL.self)
+					fn(app, modern, url as NSURL, [:] as NSDictionary, { opened in
+						NSLog("ShareExtension: openURL:options:completionHandler: -> \(opened)")
+					})
+				} else {
+					app.perform(NSSelectorFromString("openURL:"), with: url)
+					NSLog("ShareExtension: dispatched legacy openURL:")
+				}
 				return
 			}
 			responder = current.next

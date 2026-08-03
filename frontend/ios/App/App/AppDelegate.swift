@@ -30,7 +30,33 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        consumePendingShare()
+    }
+
+    // Content from the Share Extension. iOS won't reliably let the extension open this app (see
+    // ShareViewController.openHostApp), so the share is persisted as a manifest in the App Group
+    // container and picked up here on every foreground: immediately when the wake-up open works,
+    // otherwise the next time the user opens the app. Deleting before parsing makes it one-shot.
+    private func consumePendingShare() {
+        let fm = FileManager.default
+        guard let dir = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.is.currents.app") else { return }
+        let manifest = dir.appendingPathComponent("pending-share.json")
+        guard let data = try? Data(contentsOf: manifest) else { return }
+        try? fm.removeItem(at: manifest)
+        guard let items = try? JSONSerialization.jsonObject(with: data) as? [[String: String]],
+            !items.isEmpty else { return }
+        NSLog("Currents: consuming pending share with \(items.count) item(s)")
+        shareStore.shareItems.removeAll()
+        for entry in items {
+            var item = JSObject()
+            item["title"] = entry["title"] ?? ""
+            item["description"] = ""
+            item["type"] = entry["type"] ?? ""
+            item["url"] = entry["url"] ?? ""
+            shareStore.shareItems.append(item)
+        }
+        shareStore.processed = false
+        NotificationCenter.default.post(name: Notification.Name("triggerSendIntent"), object: nil)
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -43,33 +69,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let handled = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
 
         // TEMP diagnostics (app process → visible in Xcode's console). Remove once share works.
+        // Share data no longer arrives via this URL — see consumePendingShare. The OAuth deep
+        // link (currents://oauth-callback?token=...) is handled by Capacitor's appUrlOpen
+        // (src/lib/app-init.ts) through the proxy call above.
         NSLog("Currents: application open url = \(url.absoluteString)")
-
-        // currents://shared?... — content from the Share Extension. Pull the query items into the
-        // send-intent plugin's ShareStore and notify it, mirroring its README integration. The
-        // OAuth deep link (currents://oauth-callback?token=...) carries no "title" param, so it's
-        // naturally skipped here and handled by Capacitor's appUrlOpen (src/lib/app-init.ts).
-        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-            let params = components.queryItems {
-            let titles = params.filter { $0.name == "title" }
-            if !titles.isEmpty {
-                let descriptions = params.filter { $0.name == "description" }
-                let types = params.filter { $0.name == "type" }
-                let urls = params.filter { $0.name == "url" }
-                shareStore.shareItems.removeAll()
-                for index in 0..<titles.count {
-                    var item = JSObject()
-                    item["title"] = titles[index].value ?? ""
-                    item["description"] = index < descriptions.count ? (descriptions[index].value ?? "") : ""
-                    item["type"] = index < types.count ? (types[index].value ?? "") : ""
-                    item["url"] = index < urls.count ? (urls[index].value ?? "") : ""
-                    shareStore.shareItems.append(item)
-                }
-                shareStore.processed = false
-                NotificationCenter.default.post(name: Notification.Name("triggerSendIntent"), object: nil)
-                NSLog("Currents: shared \(titles.count) item(s) into ShareStore, posted triggerSendIntent")
-            }
-        }
 
         return handled
     }
