@@ -122,6 +122,21 @@ private final class CurrentsAPI {
 		}
 	}
 
+	func createCollection(name: String) async throws -> String {
+		var req = request("POST", "/collection")
+		req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+		var comps = URLComponents()
+		comps.queryItems = [URLQueryItem(name: "name", value: name)]
+		// percentEncodedQuery leaves "+" literal, which form decoding reads as a space.
+		let encoded = (comps.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B")
+		req.httpBody = Data(encoded.utf8)
+		let data = try await run(req)
+		guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let uri = obj["uri"] as? String
+		else { throw APIError(message: "Unexpected collection response") }
+		return uri
+	}
+
 	func extractImages(page: String) async throws -> [URL] {
 		var req = request("POST", "/api/extract-images")
 		req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -242,6 +257,20 @@ private final class ShareModel: ObservableObject {
 	}
 
 	func proceedToCollections() { phase = .pickCollection }
+
+	// Create a collection on the fly, then save straight into it.
+	func createAndSave(name: String) {
+		guard let api else { return }
+		phase = .saving
+		Task {
+			do {
+				let uri = try await api.createCollection(name: name)
+				save(to: Collection(uri: uri, name: name, parentUri: nil, thumb: nil))
+			} catch {
+				phase = .failed(error.localizedDescription)
+			}
+		}
+	}
 
 	// nil = "Profile" (an unsorted save, empty collection URI).
 	func save(to collection: Collection?) {
@@ -391,6 +420,9 @@ private struct ImagePickGrid: View {
 
 private struct CollectionList: View {
 	@ObservedObject var model: ShareModel
+	@State private var creating = false
+	@State private var newName = ""
+	@FocusState private var nameFocused: Bool
 
 	// Roots in server order, each followed by its sections (indented).
 	private var ordered: [(Collection, Bool)] {
@@ -426,6 +458,29 @@ private struct CollectionList: View {
 				}
 			}
 			Section("Collections") {
+				if creating {
+					HStack(spacing: 10) {
+						Image(systemName: "folder.badge.plus")
+							.resizable()
+							.scaledToFit()
+							.padding(6)
+							.foregroundColor(.secondary)
+							.background(Color(.secondarySystemBackground))
+							.frame(width: 36, height: 36)
+							.clipShape(RoundedRectangle(cornerRadius: 6))
+						TextField("Collection name", text: $newName)
+							.focused($nameFocused)
+							.submitLabel(.done)
+							.onSubmit(submitNewCollection)
+							.onAppear { nameFocused = true }
+						Button("Create", action: submitNewCollection)
+							.disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+					}
+				} else {
+					row(name: "New collection", thumb: nil, systemIcon: "plus", indented: false) {
+						creating = true
+					}
+				}
 				ForEach(ordered, id: \.0.id) { pair in
 					row(name: pair.0.name, thumb: pair.0.thumb, indented: pair.1) {
 						model.save(to: pair.0)
@@ -433,6 +488,12 @@ private struct CollectionList: View {
 				}
 			}
 		}
+	}
+
+	private func submitNewCollection() {
+		let name = newName.trimmingCharacters(in: .whitespaces)
+		guard !name.isEmpty else { return }
+		model.createAndSave(name: name)
 	}
 
 	private func row(
