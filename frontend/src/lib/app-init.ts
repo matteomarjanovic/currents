@@ -1,5 +1,5 @@
 import { isNative } from './platform';
-import { setAuthToken } from './auth-storage';
+import { mirrorAuthToken, setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
 import { initShareTarget } from './share-target';
 import { dismissTopOverlay } from './back-button';
@@ -23,6 +23,10 @@ export async function initApp(): Promise<void> {
 	if (initialized) return;
 	initialized = true;
 	if (!isNative()) return;
+
+	// Keep the share extension's App Group token mirror fresh for installs that logged in
+	// before the extension existed (see auth-storage.ts).
+	void mirrorAuthToken();
 
 	const { App } = await import('@capacitor/app');
 	// Status-bar icon color is handled reactively from the app theme in the root +layout.svelte

@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation';
-import { isNative } from './platform';
+import { isIos, isNative } from './platform';
 import { share, type PendingShare } from './stores/share.svelte';
 import { concreteImageMime } from './image-mime';
 
@@ -81,6 +81,9 @@ async function handleSharedIntent(): Promise<void> {
 
 export function initShareTarget(): void {
 	if (!isNative()) return;
+	// iOS shares are handled natively inside the Share Extension (collection pick + upload) —
+	// nothing ever reaches the webview. Only Android hands off through send-intent.
+	if (isIos()) return;
 	// A share that cold-launched the app.
 	void handleSharedIntent();
 	// A share received while the app is already running.

@@ -1,14 +1,10 @@
-import UIKit
 import Capacitor
-// The send-intent SPM library product is "SendIntent" but its module/target is "SendIntentPlugin".
-import SendIntentPlugin
+import UIKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
-
-    let shareStore = ShareStore.store
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
@@ -30,33 +26,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        consumePendingShare()
-    }
-
-    // Content from the Share Extension. iOS won't reliably let the extension open this app (see
-    // ShareViewController.openHostApp), so the share is persisted as a manifest in the App Group
-    // container and picked up here on every foreground: immediately when the wake-up open works,
-    // otherwise the next time the user opens the app. Deleting before parsing makes it one-shot.
-    private func consumePendingShare() {
-        let fm = FileManager.default
-        guard let dir = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.is.currents.app") else { return }
-        let manifest = dir.appendingPathComponent("pending-share.json")
-        guard let data = try? Data(contentsOf: manifest) else { return }
-        try? fm.removeItem(at: manifest)
-        guard let items = try? JSONSerialization.jsonObject(with: data) as? [[String: String]],
-            !items.isEmpty else { return }
-        NSLog("Currents: consuming pending share with \(items.count) item(s)")
-        shareStore.shareItems.removeAll()
-        for entry in items {
-            var item = JSObject()
-            item["title"] = entry["title"] ?? ""
-            item["description"] = ""
-            item["type"] = entry["type"] ?? ""
-            item["url"] = entry["url"] ?? ""
-            shareStore.shareItems.append(item)
-        }
-        shareStore.processed = false
-        NotificationCenter.default.post(name: Notification.Name("triggerSendIntent"), object: nil)
+        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
@@ -64,17 +34,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Called when the app was launched with a url. Feel free to add additional processing here,
-        // but if you want the App API to support tracking app url opens, make sure to keep this call
-        let handled = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
-
-        // TEMP diagnostics (app process → visible in Xcode's console). Remove once share works.
-        // Share data no longer arrives via this URL — see consumePendingShare. The OAuth deep
-        // link (currents://oauth-callback?token=...) is handled by Capacitor's appUrlOpen
-        // (src/lib/app-init.ts) through the proxy call above.
-        NSLog("Currents: application open url = \(url.absoluteString)")
-
-        return handled
+        // The OAuth deep link (currents://oauth-callback?token=...) is handled by Capacitor's
+        // appUrlOpen listener (src/lib/app-init.ts) through this proxy call. Shares never reach
+        // the app anymore — they're handled natively inside the Share Extension.
+        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
@@ -84,4 +47,55 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// MARK: - SharedAuth plugin
+
+// Mirrors the session token (+ appview base URL) into the App Group container so the Share
+// Extension can call the appview directly — it can't read the app's keychain entry. Registered
+// on the bridge by MainViewController below; driven from src/lib/auth-storage.ts.
+@objc(SharedAuthPlugin)
+public class SharedAuthPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "SharedAuthPlugin"
+    public let jsName = "SharedAuth"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "set", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise)
+    ]
+
+    private static var fileURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: "group.is.currents.app")?
+            .appendingPathComponent("auth.json")
+    }
+
+    @objc func set(_ call: CAPPluginCall) {
+        guard let token = call.getString("token"), !token.isEmpty, let url = Self.fileURL else {
+            call.reject("token is required")
+            return
+        }
+        var payload = ["token": token]
+        if let apiUrl = call.getString("apiUrl"), !apiUrl.isEmpty { payload["apiUrl"] = apiUrl }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            call.resolve()
+        } catch {
+            call.reject("could not write shared auth: \(error.localizedDescription)")
+        }
+    }
+
+    @objc func clear(_ call: CAPPluginCall) {
+        if let url = Self.fileURL { try? FileManager.default.removeItem(at: url) }
+        call.resolve()
+    }
+}
+
+// The storyboard's root view controller (see Base.lproj/Main.storyboard) — the documented spot
+// to register locally defined Capacitor plugins with the bridge.
+@objc(MainViewController)
+class MainViewController: CAPBridgeViewController {
+    override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(SharedAuthPlugin())
+    }
 }
