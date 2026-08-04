@@ -98,7 +98,8 @@ func truncateAll(t *testing.T, s *PgStore) {
 	_, err := s.pool.Exec(context.Background(), `
 		TRUNCATE save, collection, "user", follow, favourite_collection,
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature,
-			label, blob_moderation_state, review_item, report, moderation_event
+			label, blob_moderation_state, review_item, report, moderation_event,
+			import_session
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {
@@ -950,5 +951,65 @@ func TestSeedSeenFeatures(t *testing.T) {
 		t.Fatalf("GetSeenFeatures(other): %v", err)
 	} else if len(veteran) != 1 || veteran[0] != "organize-mode" {
 		t.Errorf("veteran flags = %v, want only organize-mode", veteran)
+	}
+}
+
+// Pinterest's logged-out board feed omits pins that the board genuinely holds,
+// so a job's listed item count can fall short of the board's pin_count. The
+// job carries that count through to GetSessionStatus as Expected so the UI can
+// report the shortfall instead of presenting a partial import as complete.
+// Section jobs and section-filtered board jobs cover a subset of the board by
+// design, so they record 0 ("unknown") rather than a count to compare against.
+func TestImportJobExpectedCount(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const did = "did:plc:importer"
+	sessionID := "11111111-1111-1111-1111-111111111111"
+
+	if err := s.UpsertImportSession(ctx, sessionID, did, "becksburg04"); err != nil {
+		t.Fatalf("UpsertImportSession: %v", err)
+	}
+
+	newJob := func(name string, expected int) string {
+		t.Helper()
+		id, err := s.CreateImportJob(ctx, ImportJobRow{
+			SessionID: sessionID, OwnerDID: did, OAuthSessionID: "sess", Source: "pinterest",
+			SourceBoardID: "b1", SourceBoardName: name, SourceBoardURL: "/u/b/",
+			ExpectedCount: expected, TargetCollectionURI: "at://" + did + "/is.currents.feed.collection/c1",
+		})
+		if err != nil {
+			t.Fatalf("CreateImportJob(%s): %v", name, err)
+		}
+		return id
+	}
+
+	// A whole-board job: the board reports 40 pins, the feed yielded only 37.
+	boardJob := newJob("Beach/Swimsuit", 40)
+	pins := make([]PinterestPin, 0, 37)
+	for i := 0; i < 37; i++ {
+		pins = append(pins, PinterestPin{ID: fmt.Sprintf("pin%d", i), ImageURL: "https://i.pinimg.com/x.jpg"})
+	}
+	if n, err := s.BulkInsertImportItems(ctx, boardJob, did, pins); err != nil || n != 37 {
+		t.Fatalf("BulkInsertImportItems = %d, %v; want 37, nil", n, err)
+	}
+	// A section job covers part of the board, so it records no expectation.
+	sectionJob := newJob("Beach/Swimsuit › Bikinis", 0)
+
+	rows, err := s.GetSessionStatus(ctx, sessionID, did)
+	if err != nil {
+		t.Fatalf("GetSessionStatus: %v", err)
+	}
+	byID := map[string]SessionJobStatus{}
+	for _, r := range rows {
+		byID[r.JobID] = r
+	}
+	if len(byID) != 2 {
+		t.Fatalf("got %d jobs, want 2", len(byID))
+	}
+	if got := byID[boardJob]; got.Expected != 40 || got.Queued != 37 {
+		t.Errorf("board job: expected=%d queued=%d, want 40 and 37", got.Expected, got.Queued)
+	}
+	if got := byID[sectionJob]; got.Expected != 0 {
+		t.Errorf("section job: expected=%d, want 0 (not comparable)", got.Expected)
 	}
 }

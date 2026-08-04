@@ -91,6 +91,7 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		PinterestBoardURL  string `json:"pinterestBoardUrl"`
 		PinterestSectionID string `json:"pinterestSectionId"`
 		FilterSectionPins  bool   `json:"filterSectionPins"`
+		PinterestPinCount  int    `json:"pinterestPinCount"`
 		PinterestUsername  string `json:"pinterestUsername"`
 		CollectionURI      string `json:"collectionUri"`
 	}
@@ -112,6 +113,14 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("creating session: %s", err), http.StatusInternalServerError)
 		return
 	}
+	// The board's pin_count is only what this job should produce when the job
+	// covers the whole board. A section job imports one section, and a
+	// section-filtered board job deliberately leaves the section pins to those
+	// jobs — neither is comparable, so leave expected at 0 ("unknown").
+	expected := 0
+	if body.PinterestSectionID == "" && !body.FilterSectionPins {
+		expected = body.PinterestPinCount
+	}
 	jobID, err := s.Store.CreateImportJob(r.Context(), ImportJobRow{
 		SessionID:           body.ImportSessionID,
 		OwnerDID:            did.String(),
@@ -122,6 +131,7 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		SourceBoardURL:      body.PinterestBoardURL,
 		SourceSectionID:     body.PinterestSectionID,
 		FilterSectionPins:   body.FilterSectionPins,
+		ExpectedCount:       expected,
 		TargetCollectionURI: body.CollectionURI,
 	})
 	if err != nil {
@@ -155,6 +165,7 @@ func (s *Server) APIGetImportSession(w http.ResponseWriter, r *http.Request) {
 		Running   int    `json:"running"`
 		Done      int    `json:"done"`
 		Failed    int    `json:"failed"`
+		Expected  int    `json:"expected"`
 	}
 	out := struct {
 		SessionID string    `json:"sessionId"`
@@ -164,6 +175,7 @@ func (s *Server) APIGetImportSession(w http.ResponseWriter, r *http.Request) {
 		out.Jobs = append(out.Jobs, jobView{
 			JobID: j.JobID, BoardName: j.BoardName, Status: j.Status,
 			Queued: j.Queued, Running: j.Running, Done: j.Done, Failed: j.Failed,
+			Expected: j.Expected,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -38,6 +38,7 @@
 		running: number;
 		done: number;
 		failed: number;
+		expected: number;
 	}
 
 	interface SessionStatus {
@@ -245,6 +246,7 @@
 					pinterestBoardName: board.name,
 					pinterestBoardUrl: board.url,
 					filterSectionPins: sections.length > 0,
+					pinterestPinCount: board.pinCount,
 					pinterestUsername: uname,
 					collectionUri: rootUri
 				});
@@ -451,6 +453,11 @@
 						{#each status.jobs as job (job.jobId)}
 							{@const total = job.queued + job.running + job.done + job.failed}
 							{@const processed = job.done + job.failed}
+							<!-- Pinterest's board feed omits some of a board's pins for logged-out
+							     callers, so the listing can come up short of the board's own count.
+							     Only meaningful once listing has finished. -->
+							{@const unavailable =
+								job.status === 'listing' ? 0 : Math.max(0, job.expected - total)}
 							<li class="flex items-center justify-between gap-3 rounded-md border p-3">
 								<div class="min-w-0 flex-1">
 									<div class="truncate text-sm font-medium">{job.boardName || '—'}</div>
@@ -458,6 +465,12 @@
 										{processed} / {total} pins{#if job.failed > 0}
 											· {job.failed} failed{/if}
 									</div>
+									{#if unavailable > 0}
+										<div class="text-xs text-muted-foreground">
+											{unavailable} of {job.expected} pins weren't returned by Pinterest and couldn't
+											be imported
+										</div>
+									{/if}
 								</div>
 								<Badge variant={badgeVariant(job.status)}>{job.status}</Badge>
 							</li>

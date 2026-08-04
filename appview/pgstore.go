@@ -3169,6 +3169,7 @@ type ImportJobRow struct {
 	SourceBoardURL      string
 	SourceSectionID     string // non-empty when this job imports a board section
 	FilterSectionPins   bool   // board job: skip pins that belong to a section
+	ExpectedCount       int    // Pinterest's board pin_count; 0 when not comparable
 	TargetCollectionURI string
 	Status              string
 	ListCursor          string
@@ -3198,6 +3199,7 @@ type SessionJobStatus struct {
 	Running   int
 	Done      int
 	Failed    int
+	Expected  int // Pinterest's board pin_count; 0 when not comparable
 }
 
 func (m *PgStore) UpsertImportSession(ctx context.Context, id, ownerDID, username string) error {
@@ -3240,10 +3242,10 @@ func (m *PgStore) CreateImportJob(ctx context.Context, p ImportJobRow) (string, 
 	var id string
 	err := m.pool.QueryRow(ctx, `
 		INSERT INTO import_job
-			(session_id, owner_did, oauth_session_id, source, source_board_id, source_board_name, source_board_url, source_section_id, filter_section_pins, target_collection_uri, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'listing')
+			(session_id, owner_did, oauth_session_id, source, source_board_id, source_board_name, source_board_url, source_section_id, filter_section_pins, expected_count, target_collection_uri, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'listing')
 		RETURNING id
-	`, p.SessionID, p.OwnerDID, p.OAuthSessionID, p.Source, p.SourceBoardID, p.SourceBoardName, p.SourceBoardURL, p.SourceSectionID, p.FilterSectionPins, p.TargetCollectionURI).Scan(&id)
+	`, p.SessionID, p.OwnerDID, p.OAuthSessionID, p.Source, p.SourceBoardID, p.SourceBoardName, p.SourceBoardURL, p.SourceSectionID, p.FilterSectionPins, p.ExpectedCount, p.TargetCollectionURI).Scan(&id)
 	return id, err
 }
 
@@ -3329,7 +3331,7 @@ func (m *PgStore) UpdateImportJobCursor(ctx context.Context, jobID, cursor strin
 func (m *PgStore) ListJobsByOwnerStatus(ctx context.Context, ownerDID, status string) ([]ImportJobRow, error) {
 	rows, err := m.pool.Query(ctx, `
 		SELECT id, session_id, owner_did, oauth_session_id, source,
-		       source_board_id, source_board_name, source_board_url, source_section_id, filter_section_pins, target_collection_uri,
+		       source_board_id, source_board_name, source_board_url, source_section_id, filter_section_pins, expected_count, target_collection_uri,
 		       status, list_cursor, error
 		FROM import_job
 		WHERE owner_did = $1 AND status = $2
@@ -3343,7 +3345,7 @@ func (m *PgStore) ListJobsByOwnerStatus(ctx context.Context, ownerDID, status st
 	for rows.Next() {
 		var j ImportJobRow
 		if err := rows.Scan(&j.ID, &j.SessionID, &j.OwnerDID, &j.OAuthSessionID, &j.Source,
-			&j.SourceBoardID, &j.SourceBoardName, &j.SourceBoardURL, &j.SourceSectionID, &j.FilterSectionPins, &j.TargetCollectionURI,
+			&j.SourceBoardID, &j.SourceBoardName, &j.SourceBoardURL, &j.SourceSectionID, &j.FilterSectionPins, &j.ExpectedCount, &j.TargetCollectionURI,
 			&j.Status, &j.ListCursor, &j.Error); err != nil {
 			return nil, err
 		}
@@ -3492,7 +3494,7 @@ func (m *PgStore) ListInflightUsers(ctx context.Context) ([]string, error) {
 
 func (m *PgStore) GetSessionStatus(ctx context.Context, sessionID, ownerDID string) ([]SessionJobStatus, error) {
 	rows, err := m.pool.Query(ctx, `
-		SELECT j.id, j.source_board_name, j.status,
+		SELECT j.id, j.source_board_name, j.status, j.expected_count,
 		       SUM(CASE WHEN i.status='queued'  THEN 1 ELSE 0 END)::int AS queued,
 		       SUM(CASE WHEN i.status='running' THEN 1 ELSE 0 END)::int AS running,
 		       SUM(CASE WHEN i.status='done'    THEN 1 ELSE 0 END)::int AS done,
@@ -3510,7 +3512,7 @@ func (m *PgStore) GetSessionStatus(ctx context.Context, sessionID, ownerDID stri
 	var out []SessionJobStatus
 	for rows.Next() {
 		var s SessionJobStatus
-		if err := rows.Scan(&s.JobID, &s.BoardName, &s.Status, &s.Queued, &s.Running, &s.Done, &s.Failed); err != nil {
+		if err := rows.Scan(&s.JobID, &s.BoardName, &s.Status, &s.Expected, &s.Queued, &s.Running, &s.Done, &s.Failed); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
