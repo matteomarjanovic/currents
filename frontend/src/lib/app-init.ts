@@ -1,6 +1,7 @@
 import { isNative } from './platform';
-import { setAuthToken } from './auth-storage';
+import { mirrorAuthToken, setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
+import { loadCollections } from './stores/collections.svelte';
 import { initShareTarget } from './share-target';
 import { dismissTopOverlay } from './back-button';
 
@@ -23,6 +24,10 @@ export async function initApp(): Promise<void> {
 	if (initialized) return;
 	initialized = true;
 	if (!isNative()) return;
+
+	// Keep the share extension's App Group token mirror fresh for installs that logged in
+	// before the extension existed (see auth-storage.ts).
+	void mirrorAuthToken();
 
 	const { App } = await import('@capacitor/app');
 	// Status-bar icon color is handled reactively from the app theme in the root +layout.svelte
@@ -58,6 +63,14 @@ export async function initApp(): Promise<void> {
 		if (dismissTopOverlay()) return;
 		if (canGoBack) history.back();
 		else App.exitApp();
+	});
+
+	// Refresh the collections store when the app returns to the foreground: the iOS share
+	// extension can create collections (and saves) while the webview sleeps, so the
+	// launch-time load goes stale — the selector would miss a collection created from the
+	// share sheet until a cold relaunch.
+	App.addListener('resume', () => {
+		if (auth.user) void loadCollections(auth.user.did);
 	});
 
 	// Receive images/links shared to the app from the OS share sheet.

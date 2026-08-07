@@ -2,199 +2,636 @@
 //  ShareViewController.swift
 //  ShareExtension
 //
-//  Receives images / links from the iOS share sheet and hands them to the main app via the
-//  `currents://` URL scheme (parsed in AppDelegate into the send-intent plugin's ShareStore).
-//  Shared files are copied into the App Group container so the main app can read them.
+//  Native share flow: the collection pick and the upload happen entirely inside the extension,
+//  because iOS does not reliably let a share extension open its containing app (both
+//  NSExtensionContext.open and the UIApplication openURL: responder hack are refused on modern
+//  iOS). The user shares, picks a collection, and stays in the app they came from.
 //
-//  NB: query values are passed RAW — URLComponents percent-encodes them when building the URL
-//  and the AppDelegate decodes them once when parsing, so the JS receives clean values (matching
-//  Android). Do not add manual percent-encoding here or you'll double-encode.
+//  Auth: the main app mirrors its session token + appview base URL into the App Group container
+//  (SharedAuthPlugin in App/AppDelegate.swift → auth.json); the extension calls the appview
+//  directly with it. Images are uploaded via POST /save (the same endpoint the web uploader
+//  uses); shared links are scraped via POST /api/extract-images and the picked images saved by
+//  URL. No hand-off to the webview ever happens on iOS — Android keeps its send-intent flow.
 //
 
-import Social
+import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private final class ShareItem {
-	var title: String?
-	var type: String?
-	var url: String?
+// MARK: - What arrived from the share sheet
+
+private enum SharePayload {
+	case images([SharedImage]) // photos / image files
+	case link(String) // a web page to scrape for images
 }
 
+private struct SharedImage {
+	let data: Data
+	let filename: String
+	let mime: String
+}
+
+// MARK: - Appview client
+
+private struct AuthConfig {
+	let token: String
+	let apiUrl: URL
+
+	// Written by SharedAuthPlugin in the main app; absent means logged out.
+	static func load() -> AuthConfig? {
+		guard
+			let dir = FileManager.default.containerURL(
+				forSecurityApplicationGroupIdentifier: "group.is.currents.app"),
+			let data = try? Data(contentsOf: dir.appendingPathComponent("auth.json")),
+			let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+			let token = obj["token"]
+		else { return nil }
+		let base = obj["apiUrl"].flatMap(URL.init(string:)) ?? URL(string: "https://api.currents.is")!
+		return AuthConfig(token: token, apiUrl: base)
+	}
+}
+
+private struct Collection: Identifiable {
+	let uri: String
+	let name: String
+	let parentUri: String?
+	let thumb: URL?
+	var id: String { uri }
+}
+
+private struct APIError: LocalizedError {
+	let message: String
+	var errorDescription: String? { message }
+}
+
+private final class CurrentsAPI {
+	private let config: AuthConfig
+	init(_ config: AuthConfig) { self.config = config }
+
+	private func request(_ method: String, _ path: String, query: [URLQueryItem] = []) -> URLRequest {
+		var comps = URLComponents(
+			url: config.apiUrl.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
+		if !query.isEmpty { comps.queryItems = query }
+		var req = URLRequest(url: comps.url!)
+		req.httpMethod = method
+		req.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
+		// Without this, a successful POST /save answers with a web-form 302 → /save, which
+		// URLSession follows as GET → 405 — an error response for a save that worked.
+		req.setValue("application/json", forHTTPHeaderField: "Accept")
+		return req
+	}
+
+	private func run(_ req: URLRequest) async throws -> Data {
+		let (data, res) = try await URLSession.shared.data(for: req)
+		let code = (res as? HTTPURLResponse)?.statusCode ?? 0
+		guard (200..<300).contains(code) else {
+			if code == 401 {
+				throw APIError(message: "Session expired — open Currents and log in again.")
+			}
+			let body = (String(data: data, encoding: .utf8) ?? "")
+				.trimmingCharacters(in: .whitespacesAndNewlines)
+			throw APIError(message: body.isEmpty ? "Request failed (\(code))" : body)
+		}
+		return data
+	}
+
+	func me() async throws -> String {
+		let data = try await run(request("GET", "/api/me"))
+		guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let did = obj["did"] as? String
+		else { throw APIError(message: "Unexpected /api/me response") }
+		return did
+	}
+
+	func collections(did: String) async throws -> [Collection] {
+		let data = try await run(
+			request(
+				"GET", "/xrpc/is.currents.feed.getActorCollections",
+				query: [
+					URLQueryItem(name: "actor", value: did),
+					URLQueryItem(name: "limit", value: "100")
+				]))
+		guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let cols = obj["collections"] as? [[String: Any]]
+		else { throw APIError(message: "Unexpected collections response") }
+		return cols.compactMap { c in
+			guard let uri = c["uri"] as? String, let name = c["name"] as? String else { return nil }
+			let previews = c["previews"] as? [[String: Any]]
+			let thumb = (previews?.first?["url"] as? String).flatMap(URL.init(string:))
+			return Collection(uri: uri, name: name, parentUri: c["parentUri"] as? String, thumb: thumb)
+		}
+	}
+
+	func createCollection(name: String) async throws -> String {
+		var req = request("POST", "/collection")
+		req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+		var comps = URLComponents()
+		comps.queryItems = [URLQueryItem(name: "name", value: name)]
+		// percentEncodedQuery leaves "+" literal, which form decoding reads as a space.
+		let encoded = (comps.percentEncodedQuery ?? "").replacingOccurrences(of: "+", with: "%2B")
+		req.httpBody = Data(encoded.utf8)
+		let data = try await run(req)
+		guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let uri = obj["uri"] as? String
+		else { throw APIError(message: "Unexpected collection response") }
+		return uri
+	}
+
+	func extractImages(page: String) async throws -> [URL] {
+		var req = request("POST", "/api/extract-images")
+		req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+		req.httpBody = try JSONSerialization.data(withJSONObject: ["url": page])
+		let data = try await run(req)
+		guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+			let images = obj["images"] as? [String]
+		else { return [] }
+		return images.compactMap(URL.init(string:))
+	}
+
+	func save(image: SharedImage, collection: String) async throws {
+		var form = MultipartForm()
+		form.field("collection", collection)
+		form.file("image", filename: image.filename, mime: image.mime, data: image.data)
+		try await send(form)
+	}
+
+	func save(imageUrl: URL, page: String, collection: String) async throws {
+		var form = MultipartForm()
+		form.field("collection", collection)
+		form.field("imageUrl", imageUrl.absoluteString)
+		form.field("url", page)
+		try await send(form)
+	}
+
+	private func send(_ form: MultipartForm) async throws {
+		var req = request("POST", "/save")
+		var form = form
+		req.setValue(
+			"multipart/form-data; boundary=\(form.boundary)", forHTTPHeaderField: "Content-Type")
+		req.httpBody = form.finish()
+		_ = try await run(req)
+	}
+}
+
+private struct MultipartForm {
+	let boundary = "currents-\(UUID().uuidString)"
+	private var body = Data()
+
+	mutating func field(_ name: String, _ value: String) {
+		body.append(
+			Data(
+				"--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n"
+					.utf8))
+	}
+
+	mutating func file(_ name: String, filename: String, mime: String, data: Data) {
+		body.append(
+			Data(
+				"--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\nContent-Type: \(mime)\r\n\r\n"
+					.utf8))
+		body.append(data)
+		body.append(Data("\r\n".utf8))
+	}
+
+	mutating func finish() -> Data {
+		body.append(Data("--\(boundary)--\r\n".utf8))
+		return body
+	}
+}
+
+// MARK: - State
+
+@MainActor
+private final class ShareModel: ObservableObject {
+	enum Phase {
+		case loading
+		case login
+		case pickImages // link flow: choose which scraped images to keep
+		case pickCollection
+		case saving
+		case done(String)
+		case failed(String)
+	}
+
+	@Published var phase: Phase = .loading
+	@Published var scraped: [URL] = []
+	@Published var selected: Set<URL> = []
+	@Published var collections: [Collection] = []
+	var sharedImages: [SharedImage] = []
+
+	private var pageUrl: String?
+	private var api: CurrentsAPI?
+	let close: () -> Void
+
+	init(close: @escaping () -> Void) { self.close = close }
+
+	func start(payload: SharePayload) async {
+		guard let config = AuthConfig.load() else {
+			phase = .login
+			return
+		}
+		let api = CurrentsAPI(config)
+		self.api = api
+		do {
+			let did = try await api.me()
+			collections = try await api.collections(did: did)
+			switch payload {
+			case .images(let images):
+				sharedImages = images
+				phase = .pickCollection
+			case .link(let page):
+				pageUrl = page
+				// Dedupe: pages often repeat an image, and duplicate URLs break both the
+				// grid's ForEach identity and set-based selection.
+				var seen = Set<URL>()
+				scraped = try await api.extractImages(page: page).filter { seen.insert($0).inserted }
+				if scraped.isEmpty {
+					phase = .failed("No images found on that page.")
+				} else {
+					phase = .pickImages
+				}
+			}
+		} catch {
+			phase = .failed(error.localizedDescription)
+		}
+	}
+
+	func proceedToCollections() { phase = .pickCollection }
+
+	// Create a collection on the fly, then save straight into it.
+	func createAndSave(name: String) {
+		guard let api else { return }
+		phase = .saving
+		Task {
+			do {
+				let uri = try await api.createCollection(name: name)
+				save(to: Collection(uri: uri, name: name, parentUri: nil, thumb: nil))
+			} catch {
+				phase = .failed(error.localizedDescription)
+			}
+		}
+	}
+
+	// nil = "Profile" (an unsorted save, empty collection URI).
+	func save(to collection: Collection?) {
+		guard let api else { return }
+		let uri = collection?.uri ?? ""
+		let name = collection?.name ?? "your profile"
+		phase = .saving
+		Task {
+			do {
+				if let pageUrl {
+					for url in scraped where selected.contains(url) {
+						try await api.save(imageUrl: url, page: pageUrl, collection: uri)
+					}
+				} else {
+					for image in sharedImages {
+						try await api.save(image: image, collection: uri)
+					}
+				}
+				phase = .done(name)
+				try? await Task.sleep(nanoseconds: 900_000_000)
+				close()
+			} catch {
+				phase = .failed(error.localizedDescription)
+			}
+		}
+	}
+}
+
+// MARK: - Views
+
+private struct ShareRootView: View {
+	@ObservedObject var model: ShareModel
+
+	var body: some View {
+		NavigationView {
+			content
+				.navigationTitle("Save to Currents")
+				.navigationBarTitleDisplayMode(.inline)
+				.toolbar {
+					ToolbarItem(placement: .cancellationAction) {
+						Button("Cancel") { model.close() }
+					}
+				}
+		}
+		.navigationViewStyle(.stack)
+	}
+
+	@ViewBuilder private var content: some View {
+		switch model.phase {
+		case .loading:
+			ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+		case .login:
+			message("Log in to Currents first, then share again.")
+		case .failed(let text):
+			message(text)
+		case .pickImages:
+			ImagePickGrid(model: model)
+		case .pickCollection:
+			CollectionList(model: model)
+		case .saving:
+			VStack(spacing: 12) {
+				ProgressView()
+				Text("Saving…").foregroundColor(.secondary)
+			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+		case .done(let name):
+			VStack(spacing: 12) {
+				Image(systemName: "checkmark.circle.fill")
+					.font(.system(size: 44))
+					.foregroundColor(.green)
+				Text("Saved to \(name)")
+			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+		}
+	}
+
+	private func message(_ text: String) -> some View {
+		Text(text)
+			.multilineTextAlignment(.center)
+			.foregroundColor(.secondary)
+			.padding()
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+	}
+}
+
+private struct ImagePickGrid: View {
+	@ObservedObject var model: ShareModel
+	private let columns = [GridItem(.adaptive(minimum: 100), spacing: 2)]
+
+	var body: some View {
+		VStack(spacing: 0) {
+			ScrollView {
+				LazyVGrid(columns: columns, spacing: 2) {
+					ForEach(model.scraped, id: \.self) { url in
+						thumb(url)
+					}
+				}
+			}
+			Button(action: { model.proceedToCollections() }) {
+				Text(model.selected.isEmpty ? "Select images to save" : "Next")
+					.frame(maxWidth: .infinity)
+			}
+			.buttonStyle(.borderedProminent)
+			.disabled(model.selected.isEmpty)
+			.padding()
+		}
+	}
+
+	private func thumb(_ url: URL) -> some View {
+		Button {
+			if model.selected.contains(url) {
+				model.selected.remove(url)
+			} else {
+				model.selected.insert(url)
+			}
+		} label: {
+			// Square cell: the frame comes from the aspect-ratio'd base color, the image
+			// fills it as an overlay and gets clipped — scaledToFill on its own bleeds
+			// across neighbouring grid cells.
+			Color(.secondarySystemBackground)
+				.aspectRatio(1, contentMode: .fit)
+				.overlay(
+					AsyncImage(url: url) { phase in
+						if let image = phase.image {
+							image.resizable().scaledToFill()
+						} else {
+							Color(.secondarySystemBackground)
+						}
+					}
+				)
+				.clipped()
+				.overlay(alignment: .topTrailing) {
+					Image(systemName: model.selected.contains(url) ? "checkmark.circle.fill" : "circle")
+						.foregroundColor(.white)
+						.shadow(radius: 2)
+						.padding(6)
+				}
+				.overlay(
+					RoundedRectangle(cornerRadius: 0)
+						.stroke(Color.accentColor, lineWidth: model.selected.contains(url) ? 3 : 0)
+				)
+				.contentShape(Rectangle())
+		}
+		.buttonStyle(.plain)
+	}
+}
+
+private struct CollectionList: View {
+	@ObservedObject var model: ShareModel
+	@State private var creating = false
+	@State private var newName = ""
+	@FocusState private var nameFocused: Bool
+
+	// Roots in server order, each followed by its sections (indented).
+	private var ordered: [(Collection, Bool)] {
+		let roots = model.collections.filter { $0.parentUri == nil }
+		return roots.flatMap { root in
+			[(root, false)]
+				+ model.collections.filter { $0.parentUri == root.uri }.map { ($0, true) }
+		}
+	}
+
+	var body: some View {
+		List {
+			if !model.sharedImages.isEmpty {
+				Section {
+					ScrollView(.horizontal, showsIndicators: false) {
+						HStack(spacing: 6) {
+							ForEach(Array(model.sharedImages.enumerated()), id: \.offset) { _, img in
+								if let ui = UIImage(data: img.data) {
+									Image(uiImage: ui)
+										.resizable()
+										.scaledToFill()
+										.frame(width: 56, height: 56)
+										.clipShape(RoundedRectangle(cornerRadius: 8))
+								}
+							}
+						}
+					}
+				}
+			}
+			Section {
+				row(name: "Profile", thumb: nil, systemIcon: "person.crop.circle", indented: false) {
+					model.save(to: nil)
+				}
+			}
+			Section("Collections") {
+				if creating {
+					HStack(spacing: 10) {
+						Image(systemName: "folder.badge.plus")
+							.resizable()
+							.scaledToFit()
+							.padding(6)
+							.foregroundColor(.secondary)
+							.background(Color(.secondarySystemBackground))
+							.frame(width: 36, height: 36)
+							.clipShape(RoundedRectangle(cornerRadius: 6))
+						TextField("Collection name", text: $newName)
+							.focused($nameFocused)
+							.submitLabel(.done)
+							.onSubmit(submitNewCollection)
+							.onAppear { nameFocused = true }
+						Button("Create", action: submitNewCollection)
+							.disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+					}
+				} else {
+					row(name: "New collection", thumb: nil, systemIcon: "plus", indented: false) {
+						creating = true
+					}
+				}
+				ForEach(ordered, id: \.0.id) { pair in
+					row(name: pair.0.name, thumb: pair.0.thumb, indented: pair.1) {
+						model.save(to: pair.0)
+					}
+				}
+			}
+		}
+	}
+
+	private func submitNewCollection() {
+		let name = newName.trimmingCharacters(in: .whitespaces)
+		guard !name.isEmpty else { return }
+		model.createAndSave(name: name)
+	}
+
+	private func row(
+		name: String, thumb: URL?, systemIcon: String? = nil, indented: Bool,
+		action: @escaping () -> Void
+	) -> some View {
+		Button(action: action) {
+			HStack(spacing: 10) {
+				if indented { Spacer().frame(width: 16) }
+				Group {
+					if let thumb {
+						AsyncImage(url: thumb) { phase in
+							if let image = phase.image {
+								image.resizable().scaledToFill()
+							} else {
+								Color(.secondarySystemBackground)
+							}
+						}
+					} else if let systemIcon {
+						Image(systemName: systemIcon)
+							.resizable()
+							.scaledToFit()
+							.padding(5)
+							.foregroundColor(.secondary)
+							.background(Color(.secondarySystemBackground))
+					} else {
+						Color(.secondarySystemBackground)
+					}
+				}
+				.frame(width: 36, height: 36)
+				.clipShape(RoundedRectangle(cornerRadius: 6))
+				Text(name).foregroundColor(.primary)
+			}
+		}
+	}
+}
+
+// MARK: - Entry point
+
 class ShareViewController: UIViewController {
-	private let appGroupId = "group.is.currents.app"
-	private let appScheme = "currents"
-	private var shareItems: [ShareItem] = []
+	private var model: ShareModel!
 
 	override func viewDidLoad() {
 		super.viewDidLoad()
-		shareItems.removeAll()
+		view.backgroundColor = .systemBackground
 
-		guard let item = extensionContext?.inputItems.first as? NSExtensionItem,
-			let attachments = item.attachments
-		else {
-			openHostApp()
-			return
-		}
+		model = ShareModel(close: { [weak self] in
+			self?.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+		})
+		let host = UIHostingController(rootView: ShareRootView(model: model))
+		addChild(host)
+		host.view.frame = view.bounds
+		host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+		view.addSubview(host.view)
+		host.didMove(toParent: self)
 
 		Task {
-			do {
-				try await withThrowingTaskGroup(of: ShareItem.self) { group in
-					for (index, attachment) in attachments.enumerated() {
-						// Order matters: a Photos image also conforms to public.file-url, so check
-						// image/movie before url, otherwise it'd be mis-typed as a plain link.
-						if attachment.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-							group.addTask { try await self.handleImage(attachment, index) }
-						} else if attachment.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-							group.addTask { try await self.handleMovie(attachment) }
-						} else if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-							group.addTask { try await self.handleUrl(attachment) }
-						} else if attachment.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
-							group.addTask { try await self.handleText(attachment) }
-						}
-					}
-					for try await shared in group { self.shareItems.append(shared) }
-				}
-			} catch {
-				NSLog("ShareExtension: failed to load shared item: \(error.localizedDescription)")
-			}
-			self.openHostApp()
-		}
-	}
-
-	// MARK: - Type handlers
-
-	private func handleUrl(_ attachment: NSItemProvider) async throws -> ShareItem {
-		let result = try await attachment.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil)
-		let shared = ShareItem()
-		if let url = result as? URL {
-			if url.isFileURL {
-				shared.title = url.lastPathComponent
-				shared.type = "application/" + url.pathExtension.lowercased()
-				shared.url = copyToContainer(url)
-			} else {
-				shared.title = url.absoluteString
-				shared.type = "text/plain"
-				shared.url = url.absoluteString
-			}
-		}
-		return shared
-	}
-
-	private func handleText(_ attachment: NSItemProvider) async throws -> ShareItem {
-		let result = try await attachment.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil)
-		let shared = ShareItem()
-		shared.title = result as? String
-		shared.type = "text/plain"
-		return shared
-	}
-
-	private func handleMovie(_ attachment: NSItemProvider) async throws -> ShareItem {
-		let result = try await attachment.loadItem(forTypeIdentifier: UTType.movie.identifier, options: nil)
-		let shared = ShareItem()
-		if let url = result as? URL {
-			shared.title = url.lastPathComponent
-			shared.type = "video/" + url.pathExtension.lowercased()
-			shared.url = copyToContainer(url)
-		}
-		return shared
-	}
-
-	private func handleImage(_ attachment: NSItemProvider, _ index: Int) async throws -> ShareItem {
-		let result = try await attachment.loadItem(forTypeIdentifier: UTType.image.identifier, options: nil)
-		let shared = ShareItem()
-		switch result {
-		case let url as URL:
-			shared.title = url.lastPathComponent
-			shared.type = "image/" + url.pathExtension.lowercased()
-			shared.url = copyToContainer(url)
-		case let image as UIImage:
-			shared.title = "shared_\(index).png"
-			shared.type = "image/png"
-			shared.url = writePng(image, index)
-		default:
-			NSLog("ShareExtension: unexpected image payload \(type(of: result))")
-		}
-		return shared
-	}
-
-	// MARK: - App Group container
-
-	private func containerURL() -> URL? {
-		FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId)
-	}
-
-	private func copyToContainer(_ src: URL) -> String? {
-		guard let dir = containerURL() else { return nil }
-		let dest = dir.appendingPathComponent(src.lastPathComponent)
-		try? FileManager.default.removeItem(at: dest)
-		do {
-			try Data(contentsOf: src).write(to: dest)
-			return dest.absoluteString
-		} catch {
-			NSLog("ShareExtension: copy failed: \(error.localizedDescription)")
-			return nil
-		}
-	}
-
-	private func writePng(_ image: UIImage, _ index: Int) -> String? {
-		guard let dir = containerURL(), let data = image.pngData() else { return nil }
-		let dest = dir.appendingPathComponent("shared_\(index).png")
-		do {
-			try data.write(to: dest)
-			return dest.absoluteString
-		} catch {
-			NSLog("ShareExtension: png write failed: \(error.localizedDescription)")
-			return nil
-		}
-	}
-
-	// MARK: - Hand off to the host app
-
-	private func openHostApp() {
-		var comps = URLComponents()
-		comps.scheme = appScheme
-		comps.host = "shared"
-		comps.queryItems = shareItems.flatMap { item in
-			[
-				URLQueryItem(name: "title", value: item.title ?? ""),
-				URLQueryItem(name: "description", value: ""),
-				URLQueryItem(name: "type", value: item.type ?? ""),
-				URLQueryItem(name: "url", value: item.url ?? "")
-			]
-		}
-		guard let ctx = extensionContext, let url = comps.url else {
-			extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-			return
-		}
-		NSLog("ShareExtension: handing off \(shareItems.count) item(s): \(url.absoluteString)")
-
-		// Prefer the sanctioned NSExtensionContext.open — on recent iOS it opens the containing
-		// app where the deprecated -[UIApplication openURL:] selector is now ignored. Fall back
-		// to the responder-chain hack if it declines. Complete only AFTER the hand-off: finishing
-		// earlier (e.g. in viewDidAppear) races the async attachment load and kills the extension
-		// before the open can reach the host app, so the share silently does nothing.
-		ctx.open(url) { opened in
-			NSLog("ShareExtension: extensionContext.open -> \(opened)")
-			if !opened { self.openViaResponderChain(url) }
-			ctx.completeRequest(returningItems: [], completionHandler: nil)
-		}
-	}
-
-	// Fallback: walk the responder chain to reach UIApplication from inside the extension.
-	// UIApplication.open is unavailable to app extensions at compile time, so dispatch the
-	// (still-live) openURL: selector at runtime instead.
-	@objc private func openViaResponderChain(_ url: URL) {
-		let selector = NSSelectorFromString("openURL:")
-		var responder: UIResponder? = self
-		while let current = responder {
-			if let app = current as? UIApplication, app.responds(to: selector) {
-				app.perform(selector, with: url)
-				NSLog("ShareExtension: dispatched openURL: to UIApplication")
+			guard let payload = await loadPayload() else {
+				model.phase = .failed("Nothing Currents can save was shared.")
 				return
 			}
-			responder = current.next
+			await model.start(payload: payload)
 		}
-		NSLog("ShareExtension: could NOT find UIApplication in responder chain — host app will not open")
+	}
+
+	private func loadPayload() async -> SharePayload? {
+		guard let item = extensionContext?.inputItems.first as? NSExtensionItem,
+			let attachments = item.attachments
+		else { return nil }
+
+		var images: [SharedImage] = []
+		var link: String?
+
+		for (index, attachment) in attachments.enumerated() {
+			// Order matters: a Photos image also conforms to public.file-url, so check
+			// image before url, otherwise it'd be mis-typed as a plain link.
+			if attachment.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+				if let image = try? await loadImage(attachment, index) { images.append(image) }
+			} else if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+				if let result = try? await attachment.loadItem(
+					forTypeIdentifier: UTType.url.identifier, options: nil),
+					let url = result as? URL, !url.isFileURL
+				{
+					link = link ?? url.absoluteString
+				}
+			} else if attachment.hasItemConformingToTypeIdentifier(UTType.text.identifier) {
+				if let result = try? await attachment.loadItem(
+					forTypeIdentifier: UTType.text.identifier, options: nil),
+					let text = result as? String
+				{
+					link = link ?? firstHttpUrl(in: text)
+				}
+			}
+		}
+
+		if !images.isEmpty { return .images(images) }
+		if let link { return .link(link) }
+		return nil
+	}
+
+	private func loadImage(_ attachment: NSItemProvider, _ index: Int) async throws -> SharedImage? {
+		let result = try await attachment.loadItem(
+			forTypeIdentifier: UTType.image.identifier, options: nil)
+		switch result {
+		case let url as URL:
+			let data = try Data(contentsOf: url)
+			return prepared(data: data, filename: url.lastPathComponent, index: index)
+		case let image as UIImage:
+			guard let data = image.pngData() else { return nil }
+			return SharedImage(data: data, filename: "shared_\(index).png", mime: "image/png")
+		case let data as Data:
+			return prepared(data: data, filename: "shared_\(index)", index: index)
+		default:
+			NSLog("ShareExtension: unexpected image payload \(type(of: result))")
+			return nil
+		}
+	}
+
+	// The PDS blob scope wants a concrete image mime and the pipeline expects ordinary web
+	// formats, so anything else (HEIC above all) is re-encoded as JPEG.
+	private func prepared(data: Data, filename: String, index: Int) -> SharedImage? {
+		let webMimes = [
+			"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+			"gif": "image/gif", "webp": "image/webp"
+		]
+		let ext = (filename as NSString).pathExtension.lowercased()
+		if let mime = webMimes[ext] {
+			return SharedImage(data: data, filename: filename, mime: mime)
+		}
+		guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.9)
+		else { return nil }
+		return SharedImage(data: jpeg, filename: "shared_\(index).jpg", mime: "image/jpeg")
+	}
+
+	private func firstHttpUrl(in text: String) -> String? {
+		guard let range = text.range(of: #"https?://\S+"#, options: .regularExpression) else {
+			return nil
+		}
+		return String(text[range])
 	}
 }

@@ -1,14 +1,10 @@
-import UIKit
 import Capacitor
-// The send-intent SPM library product is "SendIntent" but its module/target is "SendIntentPlugin".
-import SendIntentPlugin
+import UIKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
-
-    let shareStore = ShareStore.store
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
@@ -38,40 +34,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Called when the app was launched with a url. Feel free to add additional processing here,
-        // but if you want the App API to support tracking app url opens, make sure to keep this call
-        let handled = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
-
-        // TEMP diagnostics (app process → visible in Xcode's console). Remove once share works.
-        NSLog("Currents: application open url = \(url.absoluteString)")
-
-        // currents://shared?... — content from the Share Extension. Pull the query items into the
-        // send-intent plugin's ShareStore and notify it, mirroring its README integration. The
-        // OAuth deep link (currents://oauth-callback?token=...) carries no "title" param, so it's
-        // naturally skipped here and handled by Capacitor's appUrlOpen (src/lib/app-init.ts).
-        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-            let params = components.queryItems {
-            let titles = params.filter { $0.name == "title" }
-            if !titles.isEmpty {
-                let descriptions = params.filter { $0.name == "description" }
-                let types = params.filter { $0.name == "type" }
-                let urls = params.filter { $0.name == "url" }
-                shareStore.shareItems.removeAll()
-                for index in 0..<titles.count {
-                    var item = JSObject()
-                    item["title"] = titles[index].value ?? ""
-                    item["description"] = index < descriptions.count ? (descriptions[index].value ?? "") : ""
-                    item["type"] = index < types.count ? (types[index].value ?? "") : ""
-                    item["url"] = index < urls.count ? (urls[index].value ?? "") : ""
-                    shareStore.shareItems.append(item)
-                }
-                shareStore.processed = false
-                NotificationCenter.default.post(name: Notification.Name("triggerSendIntent"), object: nil)
-                NSLog("Currents: shared \(titles.count) item(s) into ShareStore, posted triggerSendIntent")
-            }
-        }
-
-        return handled
+        // The OAuth deep link (currents://oauth-callback?token=...) is handled by Capacitor's
+        // appUrlOpen listener (src/lib/app-init.ts) through this proxy call. Shares never reach
+        // the app anymore — they're handled natively inside the Share Extension.
+        return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
@@ -81,4 +47,58 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// MARK: - SharedAuth plugin
+
+// Mirrors the session token (+ appview base URL) into the App Group container so the Share
+// Extension can call the appview directly — it can't read the app's keychain entry. Registered
+// on the bridge by MainViewController below; driven from src/lib/auth-storage.ts.
+@objc(SharedAuthPlugin)
+public class SharedAuthPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "SharedAuthPlugin"
+    public let jsName = "SharedAuth"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "set", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise)
+    ]
+
+    private static var fileURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: "group.is.currents.app")?
+            .appendingPathComponent("auth.json")
+    }
+
+    @objc func set(_ call: CAPPluginCall) {
+        guard let token = call.getString("token"), !token.isEmpty, let url = Self.fileURL else {
+            call.reject("token is required")
+            return
+        }
+        var payload = ["token": token]
+        if let apiUrl = call.getString("apiUrl"), !apiUrl.isEmpty { payload["apiUrl"] = apiUrl }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            call.resolve()
+        } catch {
+            call.reject("could not write shared auth: \(error.localizedDescription)")
+        }
+    }
+
+    @objc func clear(_ call: CAPPluginCall) {
+        if let url = Self.fileURL { try? FileManager.default.removeItem(at: url) }
+        call.resolve()
+    }
+}
+
+// The storyboard's root view controller (see Base.lproj/Main.storyboard) — the documented spot
+// to register locally defined Capacitor plugins with the bridge.
+@objc(MainViewController)
+class MainViewController: CAPBridgeViewController {
+    override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(SharedAuthPlugin())
+        // Enable the native edge-swipe-back gesture. It drives the WKWebView's back/forward
+        // list, which SvelteKit's client-side navigations populate via the History API.
+        webView?.allowsBackForwardNavigationGestures = true
+    }
 }
