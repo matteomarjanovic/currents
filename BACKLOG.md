@@ -28,6 +28,18 @@ proposing new work; delete an entry when it ships.
 
 ## Engineering
 
+- **Move the appview stack to a Scaleway Virtual Instance.** Motivation: the
+  2026-08-04 incident — the mac mini's ISP had a degraded route to
+  `relay1.us-west` and TAP fell hours behind (mitigated by pinning
+  `relay1.us-east`); a datacenter VM is immune to residential peering
+  roulette and moves the full-firehose bandwidth off the home line. The
+  plan, compose file, and cost/growth analysis are written up:
+  `SCALEWAY_MIGRATION.md` (step-by-step, `docker-compose.scaleway.yml`) and
+  `SCALING.md` (phased plan for when the vector data grows). Only inference
+  stays on the mac mini (reached over Tailscale); clustering runs on the VM
+  and publishes the monthly UMAP model through an Object Storage model store
+  that the mini syncs on a cron.
+
 - **Collapse the per-field save-edit endpoints into one.** Editing a save's
   metadata is currently spread over four handlers — `PUT /save/{id}/alt`,
   `PUT /save/{id}/labels`, `PUT /save/attribution`, `PUT /save/labels/bulk` —

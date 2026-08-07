@@ -5,3 +5,4 @@ hdbscan
 numpy
 scikit-learn
 joblib
+boto3

@@ -1,0 +1,124 @@
+# Production stack on a Scaleway Virtual Instance (see SCALEWAY_MIGRATION.md).
+# Differences from docker-compose.mac-mini.yml:
+#   - pgdata lives on a mounted Block Storage volume (/mnt/pgdata), not a named
+#     volume, so the instance is disposable and the volume can be re-attached
+#     to a bigger instance.
+#   - Postgres gets real memory settings (the image default is 128MB
+#     shared_buffers, sized for nothing) and publishes no port at all —
+#     everything that needs it runs in this compose; ad-hoc psql goes over SSH.
+#   - INFERENCE_URL must point at the mac mini over the tailnet (no
+#     host.docker.internal on Linux).
+#   - Clustering runs here, next to the DB, and publishes the monthly UMAP
+#     model to the Object Storage model store; the mac mini's inference server
+#     syncs the bucket on a cron (see SCALEWAY_MIGRATION.md). Its mem_limit
+#     keeps the monthly UMAP fit from squeezing Postgres.
+
+services:
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=5GB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - wal_compression=on
+    environment:
+      POSTGRES_USER: appview
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?}
+      POSTGRES_DB: appview
+    volumes:
+      - /mnt/pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appview -d appview"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  appview:
+    build:
+      context: ./appview
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      tap:
+        condition: service_started
+    environment:
+      SESSION_SECRET: ${SESSION_SECRET}
+      DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
+      CLIENT_HOSTNAME: ${DOMAIN}
+      CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
+      CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
+      FRONTEND_URL: ${FRONTEND_URL}
+      CDN_URL: https://${DOMAIN}
+      TAP_URL: ws://tap:2480/channel
+      TAP_ADMIN_URL: http://tap:2480
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
+      INFERENCE_URL: ${INFERENCE_URL:?set to the mac mini's tailnet address, e.g. http://100.x.y.z:8000}
+      HIDDEN_DIDS: ${HIDDEN_DIDS:-}
+      LABELER_DID: ${LABELER_DID:-}
+      LABELER_SIGNING_KEY: ${LABELER_SIGNING_KEY:-}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
+      POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
+      POLAR_SERVER: ${POLAR_SERVER:-production}
+
+  tap:
+    image: ghcr.io/bluesky-social/indigo/tap:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TAP_DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
+      # Pinned to us-east on purpose — do NOT revert to the bsky.network
+      # alias; see the note in docker-compose.mac-mini.yml history and
+      # BACKLOG.md (relay1.us-west path incident, 2026-08-04).
+      TAP_RELAY_URL: https://relay1.us-east.bsky.network
+      TAP_SIGNAL_COLLECTION: is.currents.actor.profile
+      TAP_COLLECTION_FILTERS: is.currents.*
+      TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
+
+  clustering:
+    build:
+      context: ./clustering
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # The monthly UMAP fit peaks at a few GB; cap it so it can never OOM the
+    # instance out from under Postgres.
+    mem_limit: 3g
+    volumes:
+      - ./models:/models
+    environment:
+      DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
+      MODELS_DIR: /models
+      MODELS_S3_ENDPOINT: https://s3.fr-par.scw.cloud
+      MODELS_S3_BUCKET: ${MODELS_S3_BUCKET:?}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?}
+      AWS_DEFAULT_REGION: fr-par
+      # INFERENCE_URL deliberately unset: the push-reload is dev-only — here
+      # the mac mini picks up published models via its bucket-sync cron.
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - appview
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    command: tunnel --no-autoupdate --protocol http2 run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}

@@ -2,9 +2,13 @@
 train_umap.py — Monthly UMAP model training.
 
 Samples up to 100k embeddings from visual_identity, fits a UMAP model,
-saves it atomically to MODELS_DIR, then re-projects all existing embeddings
-in the DB so the entire table is on the new model's coordinate space.
-Finally notifies the inference server to hot-reload the model.
+saves it atomically to MODELS_DIR, and publishes it to the model store
+(Scaleway Object Storage) for the inference server, which runs on other
+hardware and syncs the bucket on a cron (see SCALEWAY_MIGRATION.md). Then
+re-projects all existing embeddings in the DB so the entire table is on the
+new model's coordinate space. Finally notifies the inference server to
+hot-reload the model — a no-op unless INFERENCE_URL is set (dev, where
+inference shares the models directory and needs no bucket round-trip).
 """
 import os
 import logging
@@ -24,6 +28,8 @@ DATABASE_URL  = os.environ["DATABASE_URL"]
 MODELS_DIR    = os.environ.get("MODELS_DIR", "./models")
 UMAP_PATH     = os.path.join(MODELS_DIR, "umap_model.joblib")
 INFERENCE_URL = os.environ.get("INFERENCE_URL", "")
+S3_ENDPOINT   = os.environ.get("MODELS_S3_ENDPOINT", "")
+S3_BUCKET     = os.environ.get("MODELS_S3_BUCKET", "")
 TRAIN_LIMIT   = 100_000
 BATCH_SIZE    = 2_000
 
@@ -70,10 +76,13 @@ def train_umap():
 
     os.makedirs(MODELS_DIR, exist_ok=True)
     tmp_path = UMAP_PATH + ".tmp"
-    joblib.dump(reducer, tmp_path)
+    # compress: the pynndescent index pickles to ~1 GB uncompressed; zlib-3
+    # shrinks it several-fold and joblib.load handles it transparently.
+    joblib.dump(reducer, tmp_path, compress=3)
     os.replace(tmp_path, UMAP_PATH)
     log.info("UMAP model saved to %s", UMAP_PATH)
 
+    _publish_model()
     _reproject_all(reducer)
     _notify_inference()
 
@@ -121,6 +130,20 @@ def _reproject_all(reducer: UMAP):
         conn.close()
 
     log.info("Re-projection complete: %d rows updated", updated)
+
+
+def _publish_model():
+    """Upload the saved model to the model store. No-op when unconfigured
+    (dev). Deliberately not wrapped in try/except: a failed upload must fail
+    the cron run loudly, because the inference server would otherwise keep
+    syncing a stale model with no signal."""
+    if not S3_BUCKET:
+        return
+    import boto3  # deferred: not needed on the no-op path
+
+    s3 = boto3.client("s3", endpoint_url=S3_ENDPOINT or None)
+    s3.upload_file(UMAP_PATH, S3_BUCKET, os.path.basename(UMAP_PATH))
+    log.info("UMAP model published to s3://%s/%s", S3_BUCKET, os.path.basename(UMAP_PATH))
 
 
 def _notify_inference():
