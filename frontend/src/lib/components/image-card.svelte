@@ -2,6 +2,7 @@
 	import { pushState } from '$app/navigation';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
+	import { longpress } from '$lib/long-press';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -18,11 +19,16 @@
 		// The hover overlay needs a pointer; opt into an always-visible Save button
 		// (bottom-right, opens the collection drawer) on mobile viewports.
 		mobileSave?: boolean;
+		// Opt into long-press-to-save on touch: holding the tile opens the collection
+		// drawer directly instead of requiring a trip through the detail view first.
+		longPressSave?: boolean;
 	}
 
-	let { item, linkToDetail = true, mobileSave = false }: Props = $props();
+	let { item, linkToDetail = true, mobileSave = false, longPressSave = false }: Props = $props();
 
 	let dropdownOpen = $state(false);
+	let longPressDrawerOpen = $state(false);
+	let suppressNextClick = false;
 	let href = $derived.by(() => {
 		const rkey = item.uri.split('/').pop() ?? '';
 		return `/profile/${item.author.handle}/save/${rkey}`;
@@ -33,7 +39,22 @@
 	let ratio = $derived(tileRatio(image?.width, image?.height));
 	let cropped = $derived(isCropped(image?.width, image?.height));
 
+	function handleLongPress() {
+		if (!auth.user) {
+			promptLogin();
+			return;
+		}
+		if (!collections.loaded) return;
+		suppressNextClick = true;
+		longPressDrawerOpen = true;
+	}
+
 	function handleClick(e: MouseEvent) {
+		if (suppressNextClick) {
+			suppressNextClick = false;
+			e.preventDefault();
+			return;
+		}
 		// Let the browser handle modified clicks (open in new tab, etc.)
 		if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
 		e.preventDefault();
@@ -74,6 +95,7 @@
 <div
 	class="group relative overflow-hidden rounded-lg"
 	style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
 >
 	<LabeledMedia labels={item.labels}>
 		{#if linkToDetail}
@@ -114,6 +136,19 @@
 			{/if}
 		{/snippet}
 	</LabeledMedia>
+	{#if longPressSave && auth.user && collections.loaded}
+		<CollectionSelector
+			{item}
+			variant="drawer"
+			bind:open={longPressDrawerOpen}
+			onSavesChange={handleSavesChange}
+		>
+			{#snippet trigger({ props })}
+				<button {...props} type="button" class="hidden" tabindex={-1} aria-hidden="true"
+				></button>
+			{/snippet}
+		</CollectionSelector>
+	{/if}
 	{#if mobileSave && auth.user && collections.loaded}
 		<div class="absolute right-1.5 bottom-1.5 md:hidden">
 			<CollectionSelector {item} variant="drawer" onSavesChange={handleSavesChange}>

@@ -13,9 +13,17 @@
 		linkToDetail?: boolean;
 		// Forwarded to each ImageCard; shows an always-visible Save button on mobile.
 		mobileSave?: boolean;
+		// Forwarded to each ImageCard; long-pressing a tile opens the collection drawer.
+		longPressSave?: boolean;
 	}
 
-	let { items, loading, linkToDetail = true, mobileSave = false }: Props = $props();
+	let {
+		items,
+		loading,
+		linkToDetail = true,
+		mobileSave = false,
+		longPressSave = false
+	}: Props = $props();
 
 	// Drop saves the viewer has set to "hide" before the grid sees them: no
 	// card is rendered, no Frame reserved, and the <img> is never fetched.
@@ -68,7 +76,7 @@
 			{@const image = getImageContent(item)}
 			{@const ratio = tileRatio(image?.width, image?.height)}
 			<Frame width={ratio.width} height={ratio.height}>
-				<ImageCard {item} {linkToDetail} {mobileSave} />
+				<ImageCard {item} {linkToDetail} {mobileSave} {longPressSave} />
 			</Frame>
 		{/each}
 		{#if loading && items.length === 0}

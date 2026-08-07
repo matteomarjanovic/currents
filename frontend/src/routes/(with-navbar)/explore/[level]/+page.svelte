@@ -66,17 +66,6 @@
 	});
 
 	$effect(() => {
-		void level?.value;
-		const timeout = setTimeout(() => {
-			untrack(() => {
-				feed.reset();
-				feed.loadMore();
-			});
-		}, 300);
-		return () => clearTimeout(timeout);
-	});
-
-	$effect(() => {
 		if (!sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
@@ -86,6 +75,29 @@
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();
+	});
+
+	// The sentinel's observer above covers the initial load; this effect only
+	// needs to react to the level actually *changing* (switching feed levels
+	// reuses this component — the route param changes, not the instance). It
+	// still runs on mount too, since `$effect` always fires once immediately —
+	// skip that first run, or every page load would reset and refetch a feed
+	// that just loaded, tearing down tiles (and anything mid-interaction with
+	// one, like a long press) out from under themselves.
+	let skipNextLevelEffect = true;
+	$effect(() => {
+		void level?.value;
+		if (skipNextLevelEffect) {
+			skipNextLevelEffect = false;
+			return;
+		}
+		const timeout = setTimeout(() => {
+			untrack(() => {
+				feed.reset();
+				feed.loadMore();
+			});
+		}, 300);
+		return () => clearTimeout(timeout);
 	});
 </script>
 
@@ -120,7 +132,7 @@
 		</div>
 	</div>
 {:else}
-	<MasonryGrid items={feed.items} loading={feed.loading} />
+	<MasonryGrid items={feed.items} loading={feed.loading} longPressSave />
 	{#if feed.hasMore}
 		<div bind:this={sentinel} class="h-1"></div>
 	{/if}
