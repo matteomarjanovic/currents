@@ -58,8 +58,6 @@
 		FEATURE_BECOME_SUPPORTER,
 		FEATURE_COLOR_SEARCH
 	} from '$lib/stores/features.svelte';
-	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
-	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { navHistory } from '$lib/stores/navigation.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
@@ -178,8 +176,6 @@
 			void refreshNotifications();
 			void refreshSocial();
 			if (!features.loaded) void loadSeenFeatures();
-			if (!modPrefsLoaded.value) void loadModerationPrefs();
-			if (!preferencesLoaded.value) void loadPreferences();
 			if (!supporter.loaded) void loadSupporterStatus();
 		}
 	});

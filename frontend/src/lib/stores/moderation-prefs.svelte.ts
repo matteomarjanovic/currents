@@ -131,6 +131,22 @@ function activePrefs(): Prefs {
 	return auth.user ? modPrefs : LOGGED_OUT_DEFAULTS;
 }
 
+/**
+ * True while the viewer's own preferences aren't known yet — auth is still
+ * resolving, or it resolved to a logged-in user whose prefs haven't arrived.
+ *
+ * Rendering labeled content under the DEFAULTS during that window is wrong in
+ * both directions: a viewer who set an axis to "show" watches their feed unblur
+ * a beat later, and one who set it to "hide" gets a glimpse of what they asked
+ * never to see. <LabeledMedia> holds the image back until this clears — the tile
+ * keeps its reserved box and dominant-color background, so nothing moves when
+ * the image lands. Collection previews are the deliberate exception: they ride
+ * the `blur` default, already the conservative answer at thumbnail size.
+ */
+export function prefsPending(): boolean {
+	return !auth.checked || (!!auth.user && !modPrefsLoaded.value);
+}
+
 export function visibilityFor(labelVal: string): 'show' | 'blur' | 'hide' {
 	const prefs = activePrefs();
 	switch (labelVal) {
@@ -157,6 +173,9 @@ export function visibilityFor(labelVal: string): 'show' | 'blur' | 'hide' {
  */
 export function shouldHide(labels?: LabelView[]): boolean {
 	if (!labels || labels.length === 0) return false;
+	// Never drop a card on a guess: while prefs are pending the tile stays (empty,
+	// see prefsPending) so the grid doesn't reflow around a provisional decision.
+	if (prefsPending()) return false;
 	for (const l of labels) {
 		if (visibilityFor(l.val) === 'hide') return true;
 	}

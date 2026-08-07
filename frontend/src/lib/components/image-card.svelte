@@ -38,6 +38,19 @@
 	// its own dimensions but is covered into the shorter box (see $lib/image-ratio).
 	let ratio = $derived(tileRatio(image?.width, image?.height));
 	let cropped = $derived(isCropped(image?.width, image?.height));
+	// The tile's own box, so it stands in its dominant color at the right size while
+	// <LabeledMedia> holds a labeled image back (see prefsPending) — the height would
+	// otherwise come from the <img> alone and collapse to nothing. Same ratio the
+	// image renders at, and only where the image carries dimensions, so a tile with
+	// unknown ones keeps sizing itself rather than being cropped to a guessed 3:4.
+	let tileStyle = $derived(
+		[
+			image?.dominantColor ? `background-color: ${image.dominantColor}` : '',
+			image?.width && image?.height ? `aspect-ratio: ${ratio.width} / ${ratio.height}` : ''
+		]
+			.filter(Boolean)
+			.join('; ') || undefined
+	);
 
 	function handleLongPress() {
 		if (!auth.user) {
@@ -94,7 +107,7 @@
 
 <div
 	class="group relative overflow-hidden rounded-lg"
-	style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+	style={tileStyle}
 	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
 >
 	<LabeledMedia labels={item.labels}>
@@ -144,8 +157,7 @@
 			onSavesChange={handleSavesChange}
 		>
 			{#snippet trigger({ props })}
-				<button {...props} type="button" class="hidden" tabindex={-1} aria-hidden="true"
-				></button>
+				<button {...props} type="button" class="hidden" tabindex={-1} aria-hidden="true"></button>
 			{/snippet}
 		</CollectionSelector>
 	{/if}

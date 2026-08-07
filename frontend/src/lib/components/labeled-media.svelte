@@ -1,7 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { LabelView } from '$lib/types';
-	import { effectiveVisibility, visibilityFor } from '$lib/stores/moderation-prefs.svelte';
+	import {
+		effectiveVisibility,
+		prefsPending,
+		visibilityFor
+	} from '$lib/stores/moderation-prefs.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -45,6 +49,12 @@
 	let effective = $derived(effectiveVisibility(labelList));
 	let blurMatches = $derived(labelList.filter((l) => BLUR_LABELS.has(l.val)));
 
+	// Labeled content waits for the viewer's prefs rather than guessing at the
+	// defaults: nothing renders (no <img> request, no blur overlay) until they
+	// land. The wrapper stays, so the consumer's reserved box — a grid tile keeps
+	// its aspect ratio and dominant-color background — holds the space.
+	let pending = $derived(labelList.length > 0 && prefsPending());
+
 	let revealed = $state(false);
 	let shouldBlur = $derived(effective === 'blur' && !revealed);
 
@@ -82,50 +92,52 @@
 -->
 {#if effective !== 'hide'}
 	<div class="relative isolate {className}">
-		<div
-			class="transition-[filter] duration-200 {className}"
-			class:blur-2xl={shouldBlur}
-			class:pointer-events-none={shouldBlur}
-			class:select-none={shouldBlur}
-		>
-			{@render children()}
-		</div>
-
-		{#if overlay && !shouldBlur}
-			{@render overlay()}
-		{/if}
-
-		{#if shouldBlur}
+		{#if !pending}
 			<div
-				class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/30 p-3 text-center text-white backdrop-blur-sm"
+				class="transition-[filter] duration-200 {className}"
+				class:blur-2xl={shouldBlur}
+				class:pointer-events-none={shouldBlur}
+				class:select-none={shouldBlur}
 			>
-				<EyeOff class="size-6" />
-				<p class="text-sm font-medium">{summarize()}</p>
-				<button
-					type="button"
-					onclick={() => openSettings('moderation')}
-					class="pb-5 text-xs text-white/80 underline underline-offset-2 transition-colors hover:text-white"
-				>
-					Change visibility settings
-				</button>
-				<button
-					type="button"
-					class="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-white/90"
-					onclick={reveal}
-				>
-					Show
-				</button>
+				{@render children()}
 			</div>
-		{/if}
 
-		{#if aiBadge}
-			<div
-				class="pointer-events-none absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white backdrop-blur-sm"
-				title="AI-generated"
-			>
-				<Sparkles class="size-3" aria-hidden="true" />
-				<span>AI</span>
-			</div>
+			{#if overlay && !shouldBlur}
+				{@render overlay()}
+			{/if}
+
+			{#if shouldBlur}
+				<div
+					class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/30 p-3 text-center text-white backdrop-blur-sm"
+				>
+					<EyeOff class="size-6" />
+					<p class="text-sm font-medium">{summarize()}</p>
+					<button
+						type="button"
+						onclick={() => openSettings('moderation')}
+						class="pb-5 text-xs text-white/80 underline underline-offset-2 transition-colors hover:text-white"
+					>
+						Change visibility settings
+					</button>
+					<button
+						type="button"
+						class="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-white/90"
+						onclick={reveal}
+					>
+						Show
+					</button>
+				</div>
+			{/if}
+
+			{#if aiBadge}
+				<div
+					class="pointer-events-none absolute top-2 right-2 z-10 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white backdrop-blur-sm"
+					title="AI-generated"
+				>
+					<Sparkles class="size-3" aria-hidden="true" />
+					<span>AI</span>
+				</div>
+			{/if}
 		{/if}
 	</div>
 {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { dev } from '$app/environment';
 	import { mode } from 'mode-watcher';
@@ -7,6 +7,8 @@
 	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { navHistory } from '$lib/stores/navigation.svelte';
+	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
+	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
 	import SettingsDialog from '$lib/components/settings-dialog.svelte';
 	import SupporterDialog from '$lib/components/supporter-dialog.svelte';
 	import SupporterThanksDialog from '$lib/components/supporter-thanks-dialog.svelte';
@@ -48,6 +50,20 @@
 				})
 				.catch(() => {});
 		}
+	});
+
+	// Viewer preferences that drive how content renders — moderation blur/hide and GIF autoplay —
+	// are loaded here, the only layout every route shares. They used to be fetched from the top
+	// bar, which the standalone save pages and organize mode never render: landing on one of those
+	// directly (a refresh, a shared link) left both stores at their defaults, so a viewer who had
+	// set adult content to "show" saw it blurred, and one who had set it to "hide" saw it blurred
+	// instead of gone. Fires again on login, since the effect tracks `auth.user`.
+	$effect(() => {
+		if (!auth.user) return;
+		untrack(() => {
+			if (!modPrefsLoaded.value) void loadModerationPrefs();
+			if (!preferencesLoaded.value) void loadPreferences();
+		});
 	});
 
 	// Hide the native splash only once the first content is ready (the route layouts gate rendering
