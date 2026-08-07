@@ -97,5 +97,8 @@ public class SharedAuthPlugin: CAPPlugin, CAPBridgedPlugin {
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(SharedAuthPlugin())
+        // Enable the native edge-swipe-back gesture. It drives the WKWebView's back/forward
+        // list, which SvelteKit's client-side navigations populate via the History API.
+        webView?.allowsBackForwardNavigationGestures = true
     }
 }
