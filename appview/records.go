@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -488,6 +489,58 @@ func (s *Server) cascadeDelete(did syntax.DID, sessionID string, collRkeys, save
 // frontend copy (see frontend/src/lib/rate-limit.ts).
 const rateLimitMessage = "Your data server is temporarily limiting uploads. Please try again in a few minutes."
 
+// pdsServiceDID derives a PDS's service DID from its base URL. atproto PDSes
+// identify themselves as did:web:<hostname>, which is the audience a user
+// service-auth token must be scoped to when calling that PDS.
+func pdsServiceDID(hostURL string) (string, error) {
+	u, err := url.Parse(hostURL)
+	if err != nil || u.Hostname() == "" {
+		return "", fmt.Errorf("bad PDS host %q", hostURL)
+	}
+	return "did:web:" + u.Hostname(), nil
+}
+
+// CreateUploadToken mints a short-lived service-auth JWT the browser uses to
+// upload a blob straight to the user's PDS (com.atproto.repo.uploadBlob). The
+// PDS rate-limits blob uploads per IP; when the appview uploads on the user's
+// behalf every user shares the appview's single IP bucket. Uploading directly
+// from the browser puts the request on the user's own IP, so each user gets
+// their own bucket. The client then hands the returned blob ref back to
+// POST /save (the `blob` field), where the record is created as usual — the
+// PDS validates the ref against the uploading DID, so nothing else is trusted.
+func (s *Server) CreateUploadToken(w http.ResponseWriter, r *http.Request) {
+	c, _, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	pdsURL := strings.TrimSuffix(c.Host, "/")
+	aud, err := pdsServiceDID(pdsURL)
+	if err != nil {
+		http.Error(w, "resolving PDS", http.StatusInternalServerError)
+		return
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	// Bind the token to uploadBlob only, valid for a couple of minutes — enough
+	// for the browser to push the bytes, short enough to be low-risk in transit.
+	err = c.Get(r.Context(), "com.atproto.server.getServiceAuth", map[string]any{
+		"aud": aud,
+		"lxm": "com.atproto.repo.uploadBlob",
+		"exp": time.Now().Add(2 * time.Minute).Unix(),
+	}, &out)
+	if err != nil {
+		if s.handleSessionError(err, w, r) {
+			return
+		}
+		http.Error(w, fmt.Sprintf("minting upload token: %s", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": out.Token, "pdsUrl": pdsURL})
+}
+
 func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	c, did, err := s.apiClientFromSession(r)
 	if err != nil {
@@ -510,65 +563,80 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 	selfLabelVals := parseSelfLabels(r.PostFormValue("labels"))
 
-	// Image bytes come from either an uploaded file or a remote URL (paste-from-URL).
-	var imageBytes []byte
-	var contentType string
-	if file, header, fileErr := r.FormFile("image"); fileErr == nil {
-		defer file.Close()
-		contentType = header.Header.Get("Content-Type")
-		imageBytes, err = io.ReadAll(file)
-		if err != nil {
-			http.Error(w, "reading image file", http.StatusInternalServerError)
-			return
-		}
-	} else if imageURL := strings.TrimSpace(r.PostFormValue("imageUrl")); imageURL != "" {
-		imageBytes, contentType, err = fetchRemoteImage(r.Context(), imageURL)
-		if err != nil {
-			http.Error(w, "could not fetch image from URL", http.StatusBadGateway)
+	var blobAny any
+	if preUploaded := strings.TrimSpace(r.PostFormValue("blob")); preUploaded != "" {
+		// The client uploaded the blob straight to its own PDS with a service-auth
+		// token (POST /api/blob/upload-token) and passed back the returned blob ref,
+		// so uploadBlob counted against the user's own per-IP rate-limit bucket
+		// rather than the appview's shared one. createRecord below references this
+		// ref, and the PDS rejects a ref the uploading DID never actually holds, so
+		// there is nothing here to re-validate.
+		if err := json.Unmarshal([]byte(preUploaded), &blobAny); err != nil {
+			http.Error(w, "invalid blob ref", http.StatusBadRequest)
 			return
 		}
 	} else {
-		http.Error(w, "image or imageUrl is required", http.StatusBadRequest)
-		return
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	// uploadBlob stores this verbatim as the blob's mimeType, and the PDS checks it
-	// against the granted `blob:image/*` scope — so a wildcard (`image/*`, what Android
-	// share intents usually carry) or a generic type is a 403, not a mislabelled blob.
-	// Sniff the bytes whenever what we were handed isn't a concrete image type.
-	if !strings.HasPrefix(contentType, "image/") || strings.Contains(contentType, "*") {
-		if sniffed := http.DetectContentType(imageBytes); strings.HasPrefix(sniffed, "image/") {
-			contentType = sniffed
-		}
-	}
-	if len(imageBytes) > maxBlobSize {
-		prepared, preparedCT, err := prepareImageForUpload(r.Context(), s.Inference, imageBytes, contentType)
-		if err != nil {
-			http.Error(w, "image too large and could not be prepared for upload", http.StatusBadRequest)
+		// No pre-uploaded blob: the appview uploads on the user's behalf (from the
+		// shared appview IP). Image bytes come from an uploaded file or a remote URL
+		// (paste-from-URL, which must be fetched server-side).
+		var imageBytes []byte
+		var contentType string
+		if file, header, fileErr := r.FormFile("image"); fileErr == nil {
+			defer file.Close()
+			contentType = header.Header.Get("Content-Type")
+			imageBytes, err = io.ReadAll(file)
+			if err != nil {
+				http.Error(w, "reading image file", http.StatusInternalServerError)
+				return
+			}
+		} else if imageURL := strings.TrimSpace(r.PostFormValue("imageUrl")); imageURL != "" {
+			imageBytes, contentType, err = fetchRemoteImage(r.Context(), imageURL)
+			if err != nil {
+				http.Error(w, "could not fetch image from URL", http.StatusBadGateway)
+				return
+			}
+		} else {
+			http.Error(w, "image, imageUrl, or blob is required", http.StatusBadRequest)
 			return
 		}
-		imageBytes = prepared
-		contentType = preparedCT
-	}
-	var uploadOut struct {
-		Blob lexutil.LexBlob `json:"blob"`
-	}
-	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
-		if s.handleSessionError(err, w, r) {
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		// uploadBlob stores this verbatim as the blob's mimeType, and the PDS checks it
+		// against the granted `blob:image/*` scope — so a wildcard (`image/*`, what Android
+		// share intents usually carry) or a generic type is a 403, not a mislabelled blob.
+		// Sniff the bytes whenever what we were handed isn't a concrete image type.
+		if !strings.HasPrefix(contentType, "image/") || strings.Contains(contentType, "*") {
+			if sniffed := http.DetectContentType(imageBytes); strings.HasPrefix(sniffed, "image/") {
+				contentType = sniffed
+			}
+		}
+		if len(imageBytes) > maxBlobSize {
+			prepared, preparedCT, err := prepareImageForUpload(r.Context(), s.Inference, imageBytes, contentType)
+			if err != nil {
+				http.Error(w, "image too large and could not be prepared for upload", http.StatusBadRequest)
+				return
+			}
+			imageBytes = prepared
+			contentType = preparedCT
+		}
+		var uploadOut struct {
+			Blob lexutil.LexBlob `json:"blob"`
+		}
+		if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
+			if s.handleSessionError(err, w, r) {
+				return
+			}
+			if isRateLimited(err) {
+				http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
+				return
+			}
+			http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
 			return
 		}
-		if isRateLimited(err) {
-			http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
-			return
-		}
-		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
-		return
+		blobJSON, _ := json.Marshal(uploadOut.Blob)
+		json.Unmarshal(blobJSON, &blobAny)
 	}
-	blobJSON, _ := json.Marshal(uploadOut.Blob)
-	var blobAny any
-	json.Unmarshal(blobJSON, &blobAny)
 
 	record := map[string]any{
 		"$type":     saveNSID,

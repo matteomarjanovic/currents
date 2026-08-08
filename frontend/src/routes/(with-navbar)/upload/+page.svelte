@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { apiFetch } from '$lib/api';
+	import { uploadBlobDirect, DirectUploadError } from '$lib/blob-upload';
 	import { onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Progress } from '$lib/components/ui/progress';
@@ -261,7 +262,23 @@
 		try {
 			const form = new FormData();
 			if (item.file) {
-				form.append('image', item.file, item.file.name);
+				// Upload straight to the user's PDS (own IP → own rate-limit bucket),
+				// then hand the appview the returned blob ref.
+				try {
+					form.append('blob', JSON.stringify(await uploadBlobDirect(item.file)));
+				} catch (e) {
+					if (e instanceof DirectUploadError && e.status === 401) {
+						item.status = 'pending';
+						return 'unauthorized';
+					}
+					if (e instanceof DirectUploadError && e.status === 429) {
+						item.status = 'pending';
+						return 'rate-limited';
+					}
+					item.status = 'error';
+					item.error = String(e);
+					return 'ok';
+				}
 			} else if (item.imageUrl) {
 				form.append('imageUrl', item.imageUrl);
 				if (item.pageUrl) form.append('url', item.pageUrl);

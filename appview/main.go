@@ -557,6 +557,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /favourite", srv.CreateFavourite)
 	http.HandleFunc("DELETE /favourite/{rkey}", srv.DeleteFavourite)
 
+	http.HandleFunc("POST /api/blob/upload-token", srv.CreateUploadToken)
 	http.HandleFunc("POST /save", srv.CreateSave)
 	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)
 	http.HandleFunc("GET /save/{id}", srv.GetSave)

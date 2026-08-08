@@ -1,4 +1,5 @@
 import { blobCidFromBytes } from '../lib/blob-cid';
+import { concreteImageMime } from '../lib/image-mime';
 
 const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://api.currents.is';
 const FRONTEND_URL = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
@@ -167,12 +168,37 @@ async function handleSave(message: {
     return { ok: false, error: `Could not fetch image: ${e}` };
   }
 
-  const filename = message.imgUrl.startsWith('data:')
-    ? 'image.jpg'
-    : (new URL(message.imgUrl).pathname.split('/').pop() ?? 'image.jpg');
+  // Upload the blob straight to the user's PDS with a short-lived service-auth
+  // token from the appview, so com.atproto.repo.uploadBlob runs from the user's
+  // own IP (their own per-IP rate-limit bucket) rather than the shared appview
+  // IP. The returned blob ref is handed to POST /save in place of the raw file.
+  let blobRef: unknown;
+  try {
+    const tokenResp = await appviewFetch(`${CURRENTS_URL}/api/blob/upload-token`, { method: 'POST' });
+    if (tokenResp.status === 401) return { ok: false, error: 'Not logged in', authError: true };
+    if (!tokenResp.ok) throw new Error(`token HTTP ${tokenResp.status}`);
+    const { token, pdsUrl } = await tokenResp.json();
+
+    const bytes = new Uint8Array(await imageBlob.arrayBuffer());
+    const upResp = await fetch(`${pdsUrl.replace(/\/$/, '')}/xrpc/com.atproto.repo.uploadBlob`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': concreteImageMime(bytes, imageBlob.type) },
+      body: bytes,
+    });
+    if (upResp.status === 429) {
+      return {
+        ok: false,
+        error: 'Your data server is temporarily limiting uploads. Please try again in a few minutes.',
+      };
+    }
+    if (!upResp.ok) throw new Error(`uploadBlob HTTP ${upResp.status}`);
+    blobRef = (await upResp.json()).blob;
+  } catch (e) {
+    return { ok: false, error: `Could not upload image: ${e}` };
+  }
 
   const form = new FormData();
-  form.append('image', imageBlob, filename);
+  form.append('blob', JSON.stringify(blobRef));
   form.append('collection', message.collectionUri);
   if (message.text) form.append('title', message.text);
   if (message.alt) form.append('alt', message.alt);

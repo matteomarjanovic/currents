@@ -12,6 +12,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { apiFetch } from '$lib/api';
+	import { uploadBlobDirect, DirectUploadError } from '$lib/blob-upload';
 	import { isNative } from '$lib/platform';
 	import { share, type PendingShare } from '$lib/stores/share.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -180,7 +181,27 @@
 		try {
 			const form = new FormData();
 			if (item.file) {
-				form.append('image', item.file, item.file.name);
+				// Upload straight to the user's PDS (own IP → own rate-limit bucket),
+				// then hand the appview the returned blob ref.
+				try {
+					form.append('blob', JSON.stringify(await uploadBlobDirect(item.file)));
+				} catch (e) {
+					item.status = 'error';
+					if (e instanceof DirectUploadError && e.status === 401) {
+						if (savedCount === 0) {
+							bounceToLogin();
+							return 'stop';
+						}
+						auth.user = null;
+						errorText = 'Your session expired before the rest could be saved.';
+						return 'stop';
+					}
+					if (e instanceof DirectUploadError && e.status === 429) {
+						errorText = 'Your PDS is rate limiting uploads. Try again in a minute.';
+						return 'stop';
+					}
+					return 'ok';
+				}
 			} else if (item.imageUrl) {
 				form.append('imageUrl', item.imageUrl);
 				if (item.pageUrl) form.append('url', item.pageUrl);
