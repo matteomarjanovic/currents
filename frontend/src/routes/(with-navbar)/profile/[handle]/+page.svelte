@@ -269,7 +269,11 @@
 				{#if unsorted.items.length === 0 && !unsorted.loading && !unsorted.hasMore}
 					<div class="py-12 text-center text-sm text-muted-foreground">No unsorted saves yet.</div>
 				{:else}
-					<MasonryGrid items={unsorted.items} loading={unsorted.loading} />
+					<MasonryGrid
+						items={unsorted.items}
+						loading={unsorted.loading}
+						loadMore={unsorted.loadMore}
+					/>
 					{#if unsorted.hasMore}
 						<div bind:this={sentinel} class="h-1"></div>
 					{/if}

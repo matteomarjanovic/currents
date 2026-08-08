@@ -350,7 +350,7 @@
 		{#if selectionMode}
 			<SelectableSaveGrid items={scroll.items} selected={selectedUris} onToggle={toggleSelect} />
 		{:else}
-			<MasonryGrid items={scroll.items} loading={scroll.loading} />
+			<MasonryGrid items={scroll.items} loading={scroll.loading} loadMore={scroll.loadMore} />
 		{/if}
 		{#if scroll.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>

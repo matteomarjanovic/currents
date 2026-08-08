@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
@@ -27,7 +27,10 @@
 	import { shouldHide, effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
+	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import { isLongImage } from '$lib/image-ratio';
+	import { extendSaveSequence, neighbourSave, savesAfter } from '$lib/save-sequence.svelte';
+	import { swipe } from '$lib/swipe';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
@@ -50,7 +53,17 @@
 
 	let { save, onClose }: Props = $props();
 	let hydratedSave = $state<SaveView | null>(null);
-	let currentSave = $derived(hydratedSave ?? save);
+	// Guarded on the uri rather than cleared when `save` changes: an effect runs *after*
+	// the DOM has been updated, so clearing it there left one frame in which `save` was
+	// already the new image while `hydratedSave` still held the previous one. On a swipe
+	// that painted the old picture back at the centre of the stage the moment the swap
+	// landed — the image looking like it hadn't changed — and pointed prev/next at the
+	// old image's neighbours while it lasted.
+	let currentSave = $derived(hydratedSave?.uri === save.uri ? hydratedSave : save);
+	// Effects that only care about *which* save is open key off this, not off
+	// `currentSave` itself: hydration swaps in a new object with the same uri, and keying
+	// on the object re-ran everything below (a second related-saves fetch per image).
+	let currentUri = $derived(currentSave.uri);
 	let image = $derived(getImageContent(currentSave));
 	// Past a few multiples of its width, fitting an image by height leaves an
 	// unreadable sliver — those render at full width and scroll instead.
@@ -90,11 +103,6 @@
 				viewerAttr!.url !== originalAttr!.url)
 	);
 	let showDual = $derived(!isOwnSave && hasOriginalAttr && hasViewerAttr && attrsDiffer);
-
-	$effect(() => {
-		void save.uri;
-		hydratedSave = null;
-	});
 
 	$effect(() => {
 		const uri = save.uri;
@@ -174,7 +182,7 @@
 
 	// A new save reuses the pane, so send it back to the top of the image.
 	$effect(() => {
-		void currentSave.uri;
+		void currentUri;
 		imagePane?.scrollTo({ top: 0 });
 		imagePaneAtEnd = false;
 	});
@@ -189,6 +197,94 @@
 		} else {
 			goto('/');
 		}
+	}
+
+	// ── Swipe to the next / previous image ───────────────────────────────────
+	// The grid this view was opened from is still mounted underneath (opening a tile
+	// is a pushState overlay, not a navigation), so the neighbours are already loaded
+	// and a swipe only re-points the view at one of them. Null either side of the run
+	// — and everywhere the view wasn't reached from a grid at all, where the gesture
+	// is simply inert.
+	let prevSave = $derived(neighbourSave(currentUri, -1));
+	let nextSave = $derived(neighbourSave(currentUri, 1));
+
+	// Keep the run stocked ahead of the viewer, so swiping doesn't dead-end at whatever
+	// the grid happened to have loaded when the tile was tapped. The grid's own sentinel
+	// can't do this — it's underneath a full-screen overlay and never comes into view —
+	// so the ask has to come from here. Grids that handed over no loader (the related
+	// rail below) simply run out, which is the intended end of those runs.
+	const SEQUENCE_LOOKAHEAD = 5;
+	$effect(() => {
+		const left = savesAfter(currentUri);
+		if (left >= 0 && left <= SEQUENCE_LOOKAHEAD) void extendSaveSequence();
+	});
+
+	// The neighbours are rendered either side of the stage rather than merely warmed in
+	// the cache, so a drag actually reveals them — and being in the DOM is what loads
+	// them (they carry loading="eager"; lazy would hold them back until they were
+	// already sliding in). Only at mobile widths: on desktop the whole stage is
+	// display:none, and an eager <img> in a hidden subtree still downloads.
+	const isMobile = new IsMobile();
+	let neighbours = $derived(
+		isMobile.current
+			? ([
+					{ save: prevSave, dir: -1 as const },
+					{ save: nextSave, dir: 1 as const }
+				].filter((n) => n.save) as { save: SaveView; dir: -1 | 1 }[])
+			: []
+	);
+
+	// Keep in step with `duration-200` below.
+	const SWIPE_MS = 200;
+	// Breathing room between panes, so a neighbour reads as the next image rather than
+	// as more of the current one.
+	const SWIPE_GAP_PX = 24;
+	let stageWidth = $state(0);
+	let swipeX = $state(0);
+	let swipeEased = $state(false);
+	let swiping = $state(false);
+	let swipeStep = $derived(stageWidth + SWIPE_GAP_PX);
+
+	function onSwipeMove(dx: number) {
+		if (swiping) return;
+		// Resist where there's nothing to go to, so the end of the run is felt rather
+		// than met with a dead gesture.
+		swipeEased = false;
+		swipeX = (dx < 0 ? nextSave : prevSave) ? dx : dx * 0.2;
+	}
+
+	function cancelSwipe() {
+		if (swiping) return;
+		swipeEased = true;
+		swipeX = 0;
+	}
+
+	async function onSwipe(direction: 1 | -1) {
+		const target = direction === 1 ? nextSave : prevSave;
+		if (!target || swiping) return cancelSwipe();
+		swiping = true;
+		// Carry the track the rest of the way, landing the neighbour the finger was
+		// already pulling in exactly where the current image sits…
+		swipeEased = true;
+		swipeX = -direction * swipeStep;
+		await new Promise((r) => setTimeout(r, SWIPE_MS));
+		// …then swap and drop the track back to centre untransitioned. The pane that
+		// just slid in becomes the one in flow at the same place and the same size, so
+		// there is nothing to see in the swap itself.
+		swipeEased = false;
+		openSave(target);
+		swipeX = 0;
+		await new Promise((r) => requestAnimationFrame(r));
+		swiping = false;
+	}
+
+	function openSave(target: SaveView) {
+		// replaceState, not pushState: swiping through twenty images shouldn't cost
+		// twenty back presses to leave. Back always returns to the grid.
+		const rkey = target.uri.split('/').pop() ?? '';
+		replaceState(`/profile/${target.author.handle}/save/${rkey}`, {
+			save: $state.snapshot(target)
+		});
 	}
 
 	// ── Floating controls ────────────────────────────────────────────────────
@@ -270,8 +366,19 @@
 
 	let authorName = $derived(currentSave.author.displayName || currentSave.author.handle);
 
+	// A small first page, full pages thereafter. Every swipe resets this list, so the
+	// opening fetch is paid once per image looked at — asking for 50 images that are
+	// all below the fold competes with the one the viewer is actually looking at (and
+	// with the neighbours being warmed for the next swipe). The sentinel sits under a
+	// viewport-tall stage, so a short first page doesn't immediately page itself in.
+	const RELATED_FIRST_PAGE = 12;
+	const RELATED_PAGE = 50;
+
 	const related = useInfiniteScroll(async (cursor) => {
-		const params = new URLSearchParams({ uri: currentSave.uri, limit: '50' });
+		const params = new URLSearchParams({
+			uri: currentSave.uri,
+			limit: String(cursor ? RELATED_PAGE : RELATED_FIRST_PAGE)
+		});
 		if (cursor) params.set('cursor', cursor);
 		const res = await apiFetch(`/xrpc/is.currents.feed.getRelatedSaves?${params}`);
 		const data = await res.json();
@@ -279,7 +386,7 @@
 	});
 
 	$effect(() => {
-		void currentSave.uri;
+		void currentUri;
 		untrack(() => {
 			related.reset();
 			related.loadMore();
@@ -315,7 +422,7 @@
 	let collectionsAccordionValue = $state('');
 
 	$effect(() => {
-		void currentSave.uri;
+		void currentUri;
 		untrack(() => {
 			imageCollections.reset();
 			collectionsAccordionValue = '';
@@ -349,7 +456,7 @@
 	}
 
 	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
-		const base = hydratedSave ?? save;
+		const base = currentSave;
 		hydratedSave = {
 			...base,
 			viewer: { ...(base.viewer ?? {}), saves }
@@ -615,6 +722,34 @@
 	</div>
 {/snippet}
 
+<!-- One pane of the mobile swipe track. Takes the save rather than reading the
+     current one, because the neighbours either side render through here too — which
+     is also why it recomputes its own image state instead of using the deriveds. -->
+{#snippet stagePane(s: SaveView, loading: 'lazy' | 'eager')}
+	{@const paneImage = getImageContent(s)}
+	{@const paneLong = isLongImage(paneImage?.width, paneImage?.height)}
+	{#if shouldHide(s.labels)}
+		{@render hiddenState()}
+	{:else if paneImage}
+		<LabeledMedia labels={s.labels} class="flex justify-center">
+			<SaveImage
+				image={paneImage}
+				alt={paneImage.alt ?? s.text ?? ''}
+				{loading}
+				class={paneLong ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
+				style={`${paneImage.width && paneImage.height ? `aspect-ratio: ${paneImage.width} / ${paneImage.height};` : ''}${paneImage.dominantColor ? ` background-color: ${paneImage.dominantColor};` : ''}`}
+			/>
+		</LabeledMedia>
+	{:else}
+		<div
+			class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
+			style="aspect-ratio: 3 / 4;"
+		>
+			Unsupported content
+		</div>
+	{/if}
+{/snippet}
+
 <div bind:this={desktopHero} class="hidden h-screen md:flex">
 	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6 pt-20">
 		{@render saveControl()}
@@ -696,26 +831,41 @@
 			</Button>
 			{@render reportButton('')}
 		</div>
-		<div class="flex flex-1 items-center justify-center">
-			{#if hiddenByPrefs}
-				{@render hiddenState()}
-			{:else if image}
-				<LabeledMedia labels={currentSave.labels} class="flex justify-center">
-					<SaveImage
-						{image}
-						alt={image.alt ?? currentSave.text ?? ''}
-						class={long ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
-						style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
-					/>
-				</LabeledMedia>
-			{:else}
+		<!-- The image stage is also the swipe surface: dragging it sideways moves to the
+		     next/previous image of the grid this view was opened from. Scoped to here
+		     rather than the whole view so the vertical scroll down to the related images
+		     is untouched. The current image is in flow and gives the stage its height;
+		     the neighbours are absolutely positioned a step out on either side, so they
+		     ride along with the drag without ever affecting that height. -->
+		<div
+			class="relative flex flex-1 items-center justify-center overflow-hidden"
+			bind:clientWidth={stageWidth}
+			use:swipe={{
+				enabled: !!(prevSave || nextSave),
+				onMove: onSwipeMove,
+				onSwipe,
+				onCancel: cancelSwipe
+			}}
+		>
+			<div
+				class="flex w-full items-center justify-center {swipeEased
+					? 'transition-transform duration-200 ease-out'
+					: ''}"
+				style="transform: translate3d({swipeX}px, 0, 0)"
+			>
+				{@render stagePane(currentSave, 'lazy')}
+			</div>
+			{#each neighbours as n (n.dir)}
 				<div
-					class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
-					style="aspect-ratio: 3 / 4;"
+					aria-hidden="true"
+					class="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-center {swipeEased
+						? 'transition-transform duration-200 ease-out'
+						: ''}"
+					style="transform: translate3d({swipeX + n.dir * swipeStep}px, 0, 0)"
 				>
-					Unsupported content
+					{@render stagePane(n.save, 'eager')}
 				</div>
-			{/if}
+			{/each}
 		</div>
 		<div class="flex flex-col gap-4">
 			{@render info(false)}
@@ -826,7 +976,7 @@
 		bind:open={attributionDialogOpen}
 		save={currentSave}
 		onSaved={(attr) => {
-			const base = hydratedSave ?? save;
+			const base = currentSave;
 			hydratedSave = {
 				...base,
 				viewer: { ...(base.viewer ?? {}), attribution: attr }
@@ -840,7 +990,7 @@
 		bind:open={labelDialogOpen}
 		save={currentSave}
 		onSaved={(added) => {
-			const base = hydratedSave ?? save;
+			const base = currentSave;
 			const now = new Date().toISOString();
 			hydratedSave = {
 				...base,

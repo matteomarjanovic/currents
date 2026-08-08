@@ -22,9 +22,18 @@
 		// Opt into long-press-to-save on touch: holding the tile opens the collection
 		// drawer directly instead of requiring a trip through the detail view first.
 		longPressSave?: boolean;
+		// Called just before the detail view opens, so the grid can record the run of
+		// images this tile came from (see $lib/save-sequence).
+		onOpen?: () => void;
 	}
 
-	let { item, linkToDetail = true, mobileSave = false, longPressSave = false }: Props = $props();
+	let {
+		item,
+		linkToDetail = true,
+		mobileSave = false,
+		longPressSave = false,
+		onOpen
+	}: Props = $props();
 
 	let dropdownOpen = $state(false);
 	let longPressDrawerOpen = $state(false);
@@ -71,6 +80,7 @@
 		// Let the browser handle modified clicks (open in new tab, etc.)
 		if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
 		e.preventDefault();
+		onOpen?.();
 		pushState(href, { save: $state.snapshot(item) });
 	}
 

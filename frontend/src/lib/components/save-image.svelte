@@ -17,6 +17,11 @@
 		// own fit, or the still frame won't line up with the animation beneath it —
 		// a cropped grid tile covers, everything else contains.
 		overlayFit?: string;
+		// Lazy by default. Set "eager" for an image that is deliberately parked outside
+		// the viewport and has to be ready the moment it moves in — the detail view's
+		// swipe neighbours, which lazy loading would otherwise hold back until they're
+		// already sliding into view.
+		loading?: 'lazy' | 'eager';
 	}
 
 	let {
@@ -25,7 +30,8 @@
 		class: className = '',
 		style,
 		wrapperClass = '',
-		overlayFit = 'object-contain'
+		overlayFit = 'object-contain',
+		loading = 'lazy'
 	}: Props = $props();
 
 	// Freeze animated GIFs at their first frame unless the viewer opted into autoplay.
@@ -65,7 +71,7 @@
 			bind:this={imgEl}
 			src={image.imageUrl}
 			alt=""
-			loading="lazy"
+			{loading}
 			class={className}
 			{style}
 			onload={drawFirstFrame}
@@ -81,5 +87,5 @@
 		></canvas>
 	</div>
 {:else}
-	<img src={image.imageUrl} {alt} loading="lazy" class={className} {style} />
+	<img src={image.imageUrl} {alt} {loading} class={className} {style} />
 {/if}
