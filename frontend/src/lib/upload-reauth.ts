@@ -28,16 +28,15 @@ export function reauthorize(returnTo: string = location.pathname + location.sear
 
 let prompted = false;
 
-// Nudge the user to reconnect after a direct upload fell back to a server-side
-// upload because their session predates the uploadBlob rpc: scope. Shown once
-// per page session so a multi-file upload doesn't stack toasts; re-authorizing
-// grants the scope and stops it firing at all.
+// Nudge the user to reconnect after a direct upload failed because their session
+// predates the uploadBlob rpc: scope (there's no server-side fallback, so the
+// upload didn't go through). Shown once per page session so a multi-file upload
+// doesn't stack toasts; re-authorizing grants the scope and stops it firing.
 export function promptUploadReauth() {
 	if (prompted) return;
 	prompted = true;
-	toast('Reconnect for faster uploads', {
-		description:
-			'Your uploads are going through our server. Reconnect your account to upload directly to your data server.',
+	toast('Reconnect to upload', {
+		description: 'Uploading needs a quick reconnect to your data server. Reconnect and try again.',
 		duration: 10000,
 		action: { label: 'Reconnect', onClick: () => reauthorize() }
 	});

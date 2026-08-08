@@ -177,42 +177,45 @@ async function handleSave(message: {
 		return { ok: false, error: `Could not fetch image: ${e}` };
 	}
 
-	// Prefer a direct-to-PDS upload with a short-lived service-auth token from the
-	// appview, so com.atproto.repo.uploadBlob runs from the user's own IP (their own
-	// per-IP rate-limit bucket) rather than the shared appview IP. Fall back to a
-	// server-side upload if minting the token fails (e.g. a session predating the
-	// rpc: scope) or the direct upload errors; a server-side 429 is handled below.
+	// Upload straight to the user's PDS with a short-lived service-auth token so
+	// com.atproto.repo.uploadBlob runs from the user's own IP (their own per-IP
+	// bucket). No server-side fallback: if the session lacks the rpc: scope (403),
+	// ask the user to reconnect rather than silently draining the shared appview IP.
 	const form = new FormData();
-	let uploadedDirect = false;
 	try {
 		const tokenResp = await appviewFetch(`${CURRENTS_URL}/api/blob/upload-token`, {
 			method: 'POST'
 		});
 		if (tokenResp.status === 401) return { ok: false, error: 'Not logged in', authError: true };
-		if (tokenResp.ok) {
-			const { token, pdsUrl } = await tokenResp.json();
-			const bytes = new Uint8Array(await imageBlob.arrayBuffer());
-			const upResp = await fetch(`${pdsUrl.replace(/\/$/, '')}/xrpc/com.atproto.repo.uploadBlob`, {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${token}`,
-					'Content-Type': concreteImageMime(bytes, imageBlob.type)
-				},
-				body: bytes
-			});
-			if (upResp.ok) {
-				form.append('blob', JSON.stringify((await upResp.json()).blob));
-				uploadedDirect = true;
-			}
+		if (tokenResp.status === 403) {
+			return {
+				ok: false,
+				error:
+					'Reconnect your Currents account: open the web app and log in again to enable saving.'
+			};
 		}
-	} catch {
-		// fall through to the server-side upload
-	}
-	if (!uploadedDirect) {
-		const filename = message.imgUrl.startsWith('data:')
-			? 'image.jpg'
-			: (new URL(message.imgUrl).pathname.split('/').pop() ?? 'image.jpg');
-		form.append('image', imageBlob, filename);
+		if (!tokenResp.ok) throw new Error(`token HTTP ${tokenResp.status}`);
+		const { token, pdsUrl } = await tokenResp.json();
+		const bytes = new Uint8Array(await imageBlob.arrayBuffer());
+		const upResp = await fetch(`${pdsUrl.replace(/\/$/, '')}/xrpc/com.atproto.repo.uploadBlob`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${token}`,
+				'Content-Type': concreteImageMime(bytes, imageBlob.type)
+			},
+			body: bytes
+		});
+		if (upResp.status === 429) {
+			return {
+				ok: false,
+				error:
+					'Your data server is temporarily limiting uploads. Please try again in a few minutes.'
+			};
+		}
+		if (!upResp.ok) throw new Error(`uploadBlob HTTP ${upResp.status}`);
+		form.append('blob', JSON.stringify((await upResp.json()).blob));
+	} catch (e) {
+		return { ok: false, error: `Could not upload image: ${e}` };
 	}
 	form.append('collection', message.collectionUri);
 	if (message.text) form.append('title', message.text);

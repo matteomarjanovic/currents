@@ -262,10 +262,10 @@
 		try {
 			const form = new FormData();
 			if (item.file) {
-				// Prefer a direct-to-PDS upload (own IP → own rate-limit bucket). If minting
-				// the token fails (e.g. a session predating the rpc: scope) or the direct
-				// upload errors, fall back to a server-side upload — except a dead session,
-				// which needs re-auth. A server-side 429 is still handled below.
+				// Upload straight to the user's PDS (own IP → own rate-limit bucket). No
+				// server-side fallback: a dead session (401) re-auths; a missing rpc: scope
+				// (403) already fired the reconnect prompt in uploadBlobDirect and fails the
+				// item so the user reconnects rather than silently draining the shared bucket.
 				try {
 					form.append('blob', JSON.stringify(await uploadBlobDirect(item.file)));
 				} catch (e) {
@@ -273,7 +273,12 @@
 						item.status = 'pending';
 						return 'unauthorized';
 					}
-					form.append('image', item.file, item.file.name);
+					item.status = 'error';
+					item.error =
+						e instanceof DirectUploadError && e.status === 403
+							? 'Reconnect your account to upload'
+							: String(e);
+					return 'ok';
 				}
 			} else if (item.imageUrl) {
 				form.append('imageUrl', item.imageUrl);
