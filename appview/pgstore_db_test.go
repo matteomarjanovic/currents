@@ -661,6 +661,36 @@ func TestEarliestSaveCreatedAt(t *testing.T) {
 	}
 }
 
+func TestViewerBlobSaveURI(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	viewer := "did:plc:viewer"
+	other := "did:plc:other"
+	saveURI := func(did, rkey string) string { return "at://" + did + "/is.currents.feed.save/" + rkey }
+	colA := "at://" + viewer + "/is.currents.feed.collection/a"
+
+	// Viewer holds "blob-shared"; another user holds "blob-other" (must not leak).
+	seedImageSave(t, s, saveURI(viewer, "v1"), viewer, colA, "blob-shared", 0.5, testBase.Add(time.Hour))
+	seedImageSave(t, s, saveURI(other, "o1"), other, colA, "blob-other", 0.5, testBase)
+
+	got, err := s.ViewerBlobSaveURI(ctx, viewer, "blob-shared")
+	if err != nil {
+		t.Fatalf("ViewerBlobSaveURI: %v", err)
+	}
+	if got != saveURI(viewer, "v1") {
+		t.Fatalf("got %q, want the viewer's own save uri", got)
+	}
+
+	// A blob only another user holds → empty, so the resave falls through to upload.
+	none, err := s.ViewerBlobSaveURI(ctx, viewer, "blob-other")
+	if err != nil {
+		t.Fatalf("ViewerBlobSaveURI(other's blob): %v", err)
+	}
+	if none != "" {
+		t.Fatalf("got %q, want empty for a blob the viewer doesn't hold", none)
+	}
+}
+
 // TestSaveMimeTypeRoundTrip pins that a save's blob mime type survives the
 // upsert → GetSavesByURIs path (the field the web client reads to freeze GIFs),
 // and that a save whose record omits it reads back as "".

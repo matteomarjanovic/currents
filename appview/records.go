@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -500,6 +501,31 @@ func pdsServiceDID(hostURL string) (string, error) {
 	return "did:web:" + u.Hostname(), nil
 }
 
+// mintUploadToken mints a short-lived service-auth JWT bound to uploadBlob on
+// the session's PDS, returning it with the PDS base URL to send it to. Shared by
+// the standalone token endpoint and the resave rate-limit fallback.
+func mintUploadToken(ctx context.Context, c *atclient.APIClient) (token, pdsURL string, err error) {
+	pdsURL = strings.TrimSuffix(c.Host, "/")
+	aud, err := pdsServiceDID(pdsURL)
+	if err != nil {
+		return "", "", err
+	}
+	var out struct {
+		Token string `json:"token"`
+	}
+	// Bind the token to uploadBlob only, valid for a couple of minutes — enough
+	// for the browser to push the bytes, short enough to be low-risk in transit.
+	err = c.Get(ctx, "com.atproto.server.getServiceAuth", map[string]any{
+		"aud": aud,
+		"lxm": "com.atproto.repo.uploadBlob",
+		"exp": time.Now().Add(2 * time.Minute).Unix(),
+	}, &out)
+	if err != nil {
+		return "", "", err
+	}
+	return out.Token, pdsURL, nil
+}
+
 // CreateUploadToken mints a short-lived service-auth JWT the browser uses to
 // upload a blob straight to the user's PDS (com.atproto.repo.uploadBlob). The
 // PDS rate-limits blob uploads per IP; when the appview uploads on the user's
@@ -514,22 +540,7 @@ func (s *Server) CreateUploadToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	pdsURL := strings.TrimSuffix(c.Host, "/")
-	aud, err := pdsServiceDID(pdsURL)
-	if err != nil {
-		http.Error(w, "resolving PDS", http.StatusInternalServerError)
-		return
-	}
-	var out struct {
-		Token string `json:"token"`
-	}
-	// Bind the token to uploadBlob only, valid for a couple of minutes — enough
-	// for the browser to push the bytes, short enough to be low-risk in transit.
-	err = c.Get(r.Context(), "com.atproto.server.getServiceAuth", map[string]any{
-		"aud": aud,
-		"lxm": "com.atproto.repo.uploadBlob",
-		"exp": time.Now().Add(2 * time.Minute).Unix(),
-	}, &out)
+	token, pdsURL, err := mintUploadToken(r.Context(), c)
 	if err != nil {
 		if s.handleSessionError(err, w, r) {
 			return
@@ -538,7 +549,42 @@ func (s *Server) CreateUploadToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": out.Token, "pdsUrl": pdsURL})
+	json.NewEncoder(w).Encode(map[string]string{"token": token, "pdsUrl": pdsURL})
+}
+
+// blobRefFromSaveRecord fetches one of the viewer's own save records and returns
+// its embedded image blob ref, so a resave of an already-held image can
+// reference the blob directly instead of re-uploading it.
+func blobRefFromSaveRecord(ctx context.Context, c *atclient.APIClient, did *syntax.DID, saveURI string) (any, error) {
+	out, err := comatproto.RepoGetRecord(ctx, c, "", saveNSID, did.String(), rkeyFromURI(saveURI))
+	if err != nil {
+		return nil, err
+	}
+	if out.Value == nil {
+		return nil, fmt.Errorf("save record has no value")
+	}
+	return extractImageBlobRef(*out.Value)
+}
+
+// extractImageBlobRef pulls the image blob ref out of a save record's value
+// (value.content.image), the shape produced by buildImageContentRecordWithAttribution.
+func extractImageBlobRef(value json.RawMessage) (any, error) {
+	var rec struct {
+		Content struct {
+			Image json.RawMessage `json:"image"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(value, &rec); err != nil {
+		return nil, err
+	}
+	if len(rec.Content.Image) == 0 {
+		return nil, fmt.Errorf("save record has no image blob")
+	}
+	var blob any
+	if err := json.Unmarshal(rec.Content.Image, &blob); err != nil {
+		return nil, err
+	}
+	return blob, nil
 }
 
 func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
@@ -1381,6 +1427,29 @@ func (s *Server) DeleteFavourite(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// respondResaveRateLimited answers a resave that tripped the PDS's shared per-IP
+// blob rate limit with everything the client needs to finish from its own IP: a
+// service-auth token, the PDS URL, and the image bytes the appview already
+// fetched (base64, so the client uploads the exact original bytes and the blob
+// CID stays identical). The client uploads, then retries POST /resave with the
+// resulting blob ref. If the token can't be minted it degrades to a plain 429.
+func (s *Server) respondResaveRateLimited(w http.ResponseWriter, r *http.Request, c *atclient.APIClient, imageBytes []byte, contentType string) {
+	token, pdsURL, err := mintUploadToken(r.Context(), c)
+	if err != nil {
+		http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	json.NewEncoder(w).Encode(map[string]any{
+		"rateLimited": true,
+		"token":       token,
+		"pdsUrl":      pdsURL,
+		"image":       base64.StdEncoding.EncodeToString(imageBytes),
+		"contentType": contentType,
+	})
+}
+
 func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	c, did, err := s.apiClientFromSession(r)
 	if err != nil {
@@ -1391,6 +1460,9 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SaveURI       string `json:"saveUri"`
 		CollectionURI string `json:"collectionUri"`
+		// Blob, when present, is a blob ref the client already uploaded to its own
+		// PDS after a rate-limit fallback — the second leg of respondResaveRateLimited.
+		Blob json.RawMessage `json:"blob"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -1412,32 +1484,51 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch blob from the original author's PDS
-	imageBytes, contentType, err := fetchBlobFromPDS(r.Context(), s.Store, s.Dir, authorDID, blobCID)
-	if err != nil {
-		slog.Error("fetching blob for resave", "err", err)
-		http.Error(w, "could not fetch image", http.StatusBadGateway)
-		return
-	}
-
-	// Upload blob to the viewer's PDS
-	var uploadOut struct {
-		Blob lexutil.LexBlob `json:"blob"`
-	}
-	if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
-		if s.handleSessionError(err, w, r) {
-			return
-		}
-		if isRateLimited(err) {
-			http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
-			return
-		}
-		http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
-		return
-	}
-	blobJSON, _ := json.Marshal(uploadOut.Blob)
+	// Acquire a blob ref for the viewer's repo, cheapest path first:
+	//  1. the client already uploaded it (rate-limit fallback's second call) — use its ref
+	//  2. the viewer already holds this blob — reuse the ref from one of their saves, no upload
+	//  3. otherwise fetch the source bytes and upload; on the shared-bucket 429, hand the bytes
+	//     plus a service-auth token to the client so it can upload from its own IP and retry
 	var blobAny any
-	json.Unmarshal(blobJSON, &blobAny)
+	if len(body.Blob) > 0 {
+		if err := json.Unmarshal(body.Blob, &blobAny); err != nil {
+			http.Error(w, "invalid blob ref", http.StatusBadRequest)
+			return
+		}
+	}
+	if blobAny == nil {
+		if heldURI, err := s.Store.ViewerBlobSaveURI(r.Context(), did.String(), blobCID); err == nil && heldURI != "" {
+			if ref, err := blobRefFromSaveRecord(r.Context(), c, did, heldURI); err == nil {
+				blobAny = ref
+			} else {
+				slog.Warn("resave: reusing held blob ref failed, will re-upload", "err", err)
+			}
+		}
+	}
+	if blobAny == nil {
+		imageBytes, contentType, err := fetchBlobFromPDS(r.Context(), s.Store, s.Dir, authorDID, blobCID)
+		if err != nil {
+			slog.Error("fetching blob for resave", "err", err)
+			http.Error(w, "could not fetch image", http.StatusBadGateway)
+			return
+		}
+		var uploadOut struct {
+			Blob lexutil.LexBlob `json:"blob"`
+		}
+		if err := c.LexDo(r.Context(), "POST", contentType, "com.atproto.repo.uploadBlob", nil, bytes.NewReader(imageBytes), &uploadOut); err != nil {
+			if s.handleSessionError(err, w, r) {
+				return
+			}
+			if isRateLimited(err) {
+				s.respondResaveRateLimited(w, r, c, imageBytes, contentType)
+				return
+			}
+			http.Error(w, fmt.Sprintf("uploading image: %s", err), http.StatusInternalServerError)
+			return
+		}
+		blobJSON, _ := json.Marshal(uploadOut.Blob)
+		json.Unmarshal(blobJSON, &blobAny)
+	}
 
 	// Resolve strong refs
 	resaveRef, err := resolveStrongRefPublic(r.Context(), s.Store, s.Dir, body.SaveURI)

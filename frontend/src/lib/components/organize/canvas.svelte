@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { BalancedMasonryGrid, Frame } from '@masonry-grid/svelte';
 	import { apiFetch } from '$lib/api';
+	import { resaveWithFallback } from '$lib/resave';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -165,11 +166,7 @@
 		feed.removeItem(item.uri); // optimistic: leaves the current collection grid
 		try {
 			if (!alreadyInDest) {
-				const res = await apiFetch(`/resave`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ saveUri: item.uri, collectionUri })
-				});
+				const res = await resaveWithFallback(item.uri, collectionUri);
 				if (!res.ok) throw new Error(`resave: ${res.status}`);
 			}
 			const del = await apiFetch(`/save/${rkey}`, { method: 'DELETE' });
@@ -432,7 +429,7 @@
 				<Button variant="outline" size="sm" class="mt-1" onclick={() => void requireSupporter()}>
 					Become a supporter
 				</Button>
-		{:else}
+			{:else}
 				<p>
 					{#if search || color}
 						Couldn't run the search.

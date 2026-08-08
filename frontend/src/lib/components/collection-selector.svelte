@@ -2,6 +2,7 @@
 	import { untrack, type Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { apiFetch } from '$lib/api';
+	import { resaveWithFallback } from '$lib/resave';
 	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
 	import {
@@ -210,11 +211,7 @@
 		onSavesChange?.(localSaves);
 		if (collectionUri !== UNSORTED_URI) setLastUsedCollection(collectionUri);
 		try {
-			const res = await apiFetch(`/resave`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ saveUri: item.uri, collectionUri })
-			});
+			const res = await resaveWithFallback(item.uri, collectionUri);
 			if (!res.ok) {
 				if (res.status === 401) {
 					auth.user = null;

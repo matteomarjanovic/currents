@@ -350,7 +350,7 @@ type CollectionRow struct {
 	CreatedAt      *time.Time
 	LastSavedAt    *time.Time // newest save in this collection or its sub-collections
 	SaveCount      int
-	SectionCount   int // number of child collections (sections); populated by GetActorCollectionsPage
+	SectionCount   int      // number of child collections (sections); populated by GetActorCollectionsPage
 	PreviewBlobs   []string // up to 4; each is "did,cid"
 	FavouriteCount int      // total favourites of this collection across the network
 	FavouriteURI   *string  // AT-URI of the viewer's favourite record; nil if not favourited / unauthenticated
@@ -1840,6 +1840,25 @@ func (m *PgStore) EarliestSaveCreatedAt(ctx context.Context, authorDID, blobCID 
 		return nil, err
 	}
 	return t, nil
+}
+
+// ViewerBlobSaveURI returns the URI of one of the viewer's existing saves that
+// holds the given blob CID (empty string if none). Used to resave an image the
+// viewer already has without re-uploading the blob: the PDS already stores it
+// for this repo, so a new record can reference the same blob ref directly.
+func (m *PgStore) ViewerBlobSaveURI(ctx context.Context, authorDID, blobCID string) (string, error) {
+	var uri string
+	err := m.pool.QueryRow(ctx,
+		`SELECT uri FROM save WHERE author_did = $1 AND pds_blob_cid = $2 LIMIT 1`,
+		authorDID, blobCID,
+	).Scan(&uri)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return uri, nil
 }
 
 // DeleteSave deletes a save and re-elects the canonical blob for its visual identity if needed.
