@@ -181,13 +181,15 @@
 		try {
 			const form = new FormData();
 			if (item.file) {
-				// Upload straight to the user's PDS (own IP → own rate-limit bucket),
-				// then hand the appview the returned blob ref.
+				// Prefer a direct-to-PDS upload (own IP → own rate-limit bucket). If minting
+				// the token fails (e.g. a session predating the rpc: scope) or the direct
+				// upload errors, fall back to a server-side upload — except a dead session,
+				// which needs re-auth. A server-side 429 is still handled below.
 				try {
 					form.append('blob', JSON.stringify(await uploadBlobDirect(item.file)));
 				} catch (e) {
-					item.status = 'error';
-					if (e instanceof DirectUploadError && e.status === 401) {
+					if (e instanceof DirectUploadError && e.phase === 'token' && e.status === 401) {
+						item.status = 'error';
 						if (savedCount === 0) {
 							bounceToLogin();
 							return 'stop';
@@ -196,11 +198,7 @@
 						errorText = 'Your session expired before the rest could be saved.';
 						return 'stop';
 					}
-					if (e instanceof DirectUploadError && e.status === 429) {
-						errorText = 'Your PDS is rate limiting uploads. Try again in a minute.';
-						return 'stop';
-					}
-					return 'ok';
+					form.append('image', item.file, item.file.name);
 				}
 			} else if (item.imageUrl) {
 				form.append('imageUrl', item.imageUrl);

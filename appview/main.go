@@ -331,7 +331,12 @@ func runServer(cctx *cli.Context) error {
 		return fmt.Errorf("missing session-secret")
 	}
 
-	scopes := []string{"atproto", "repo:is.currents.actor.profile", "repo:is.currents.feed.collection", "repo:is.currents.feed.save", "repo:is.currents.graph.follow", "repo:is.currents.graph.favourite", "blob:image/*"}
+	// rpc:com.atproto.repo.uploadBlob?aud=* lets the appview mint a service-auth
+	// token (getServiceAuth) so the browser can upload blobs straight to the
+	// user's PDS from its own IP — the per-IP rate-limit workaround. aud=* because
+	// the audience is each user's own (varying) PDS DID. Existing sessions lack
+	// this scope until re-auth, so the client falls back to server-side upload.
+	scopes := []string{"atproto", "repo:is.currents.actor.profile", "repo:is.currents.feed.collection", "repo:is.currents.feed.save", "repo:is.currents.graph.follow", "repo:is.currents.graph.favourite", "blob:image/*", "rpc:com.atproto.repo.uploadBlob?aud=*"}
 	bind := ":8080"
 	dir := identity.DefaultDirectory()
 
