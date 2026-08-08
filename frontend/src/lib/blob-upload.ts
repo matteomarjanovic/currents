@@ -1,5 +1,6 @@
 import { apiFetch } from '$lib/api';
 import { concreteImageMime } from '$lib/image-mime';
+import { promptUploadReauth } from '$lib/upload-reauth';
 
 // A failure in the direct-to-PDS upload flow. `status` is the HTTP status of
 // whichever step failed; `phase` says which one, so callers can preserve the
@@ -21,7 +22,13 @@ export class DirectUploadError extends Error {
 // `blob` field in place of the raw `image` file.
 export async function uploadBlobDirect(file: Blob): Promise<unknown> {
 	const tokenRes = await apiFetch('/api/blob/upload-token', { method: 'POST' });
-	if (!tokenRes.ok) throw new DirectUploadError(tokenRes.status, 'token');
+	if (!tokenRes.ok) {
+		// 403 = the session lacks the uploadBlob rpc: scope (predates it). The caller
+		// falls back to a server-side upload; nudge the user to reconnect to unlock
+		// the direct path. Other statuses are transient — no nudge.
+		if (tokenRes.status === 403) promptUploadReauth();
+		throw new DirectUploadError(tokenRes.status, 'token');
+	}
 	const { token, pdsUrl } = await tokenRes.json();
 
 	const bytes = new Uint8Array(await file.arrayBuffer());

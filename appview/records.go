@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -543,6 +544,14 @@ func (s *Server) CreateUploadToken(w http.ResponseWriter, r *http.Request) {
 	token, pdsURL, err := mintUploadToken(r.Context(), c)
 	if err != nil {
 		if s.handleSessionError(err, w, r) {
+			return
+		}
+		// A 403 from getServiceAuth means the session predates the uploadBlob rpc:
+		// scope. Surface it as 403 so the client can offer re-authorization (it falls
+		// back to a server-side upload meanwhile); other errors are a real 500.
+		var apiErr *atclient.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
+			http.Error(w, "missing uploadBlob scope; re-authorization required", http.StatusForbidden)
 			return
 		}
 		http.Error(w, fmt.Sprintf("minting upload token: %s", err), http.StatusInternalServerError)
