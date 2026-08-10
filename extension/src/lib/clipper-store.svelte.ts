@@ -23,6 +23,9 @@ interface ClipperState {
 	collections: Collection[];
 	collectionsLoading: boolean;
 	authState: AuthState;
+	// True when authState flipped to unauthenticated because the session lacks the
+	// uploadBlob rpc: scope (not a real logout) — the UI shows "reconnect" copy.
+	reauthNeeded: boolean;
 	userHandle: string;
 	siteHints: SiteHints;
 }
@@ -35,14 +38,19 @@ export const clipper: ClipperState = $state({
 	collections: [],
 	collectionsLoading: false,
 	authState: 'unauthenticated',
+	reauthNeeded: false,
 	userHandle: '',
 	siteHints: {}
 });
 
 export function showClipper(
-	data: Omit<ClipperState, 'visible' | 'collectionsLoading'> & { collectionsLoading?: boolean }
+	data: Omit<ClipperState, 'visible' | 'collectionsLoading' | 'reauthNeeded'> & {
+		collectionsLoading?: boolean;
+	}
 ) {
-	Object.assign(clipper, { collectionsLoading: false }, data, { visible: true });
+	Object.assign(clipper, { collectionsLoading: false, reauthNeeded: false }, data, {
+		visible: true
+	});
 }
 
 export function hideClipper() {

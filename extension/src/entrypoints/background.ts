@@ -166,7 +166,7 @@ async function handleSave(message: {
 	attributionLicense?: string;
 	attributionCredit?: string;
 	labels?: string;
-}): Promise<{ ok: boolean; error?: string; authError?: boolean }> {
+}): Promise<{ ok: boolean; error?: string; authError?: boolean; reauth?: boolean }> {
 	const auth = await getAuth();
 	if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
@@ -187,13 +187,10 @@ async function handleSave(message: {
 			method: 'POST'
 		});
 		if (tokenResp.status === 401) return { ok: false, error: 'Not logged in', authError: true };
-		if (tokenResp.status === 403) {
-			return {
-				ok: false,
-				error:
-					'Reconnect your Currents account: open the web app and log in again to enable saving.'
-			};
-		}
+		// 403 = the session predates the uploadBlob rpc: scope. Route it to the auth UI
+		// (authError) flagged as a reconnect, not a full logout, so the clipper shows
+		// "reconnect to save" - re-authorizing grants the scope. No server-side fallback.
+		if (tokenResp.status === 403) return { ok: false, authError: true, reauth: true };
 		if (!tokenResp.ok) throw new Error(`token HTTP ${tokenResp.status}`);
 		const { token, pdsUrl } = await tokenResp.json();
 		const bytes = new Uint8Array(await imageBlob.arrayBuffer());

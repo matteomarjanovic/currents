@@ -35,8 +35,8 @@ let prompted = false;
 export function promptUploadReauth() {
 	if (prompted) return;
 	prompted = true;
-	toast('Reconnect to upload', {
-		description: 'Uploading needs a quick reconnect to your data server. Reconnect and try again.',
+	toast('Reconnect to save', {
+		description: 'Saving needs a quick reconnect to your data server. Reconnect and try again.',
 		duration: 10000,
 		action: { label: 'Reconnect', onClick: () => reauthorize() }
 	});

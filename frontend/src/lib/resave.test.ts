@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resaveWithFallback } from './resave';
 import { apiFetch } from '$lib/api';
+import { promptUploadReauth } from '$lib/upload-reauth';
 
 vi.mock('$lib/api', () => ({ apiFetch: vi.fn() }));
 vi.mock('$lib/image-mime', () => ({
 	concreteImageMime: (_bytes: Uint8Array, declared: string) => declared || 'image/jpeg'
 }));
+vi.mock('$lib/upload-reauth', () => ({ promptUploadReauth: vi.fn() }));
 
 const mockApiFetch = vi.mocked(apiFetch);
+const mockPromptReauth = vi.mocked(promptUploadReauth);
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
@@ -81,6 +84,15 @@ describe('resaveWithFallback', () => {
 
 		const res = await resaveWithFallback('at://save', 'at://coll');
 		expect(res.status).toBe(429);
+		expect(mockApiFetch).toHaveBeenCalledTimes(1); // no retry
+	});
+
+	it('nudges reconnect (no upload) when rate-limited and the session lacks the scope', async () => {
+		mockApiFetch.mockResolvedValueOnce(json({ rateLimited: true, needsReauth: true }, 429));
+		const res = await resaveWithFallback('at://save', 'at://coll');
+		expect(res.status).toBe(429);
+		expect(mockPromptReauth).toHaveBeenCalledTimes(1);
+		expect(mockFetch).not.toHaveBeenCalled(); // no PDS upload attempted
 		expect(mockApiFetch).toHaveBeenCalledTimes(1); // no retry
 	});
 

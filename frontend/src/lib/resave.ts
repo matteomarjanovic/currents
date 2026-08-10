@@ -1,5 +1,6 @@
 import { apiFetch } from '$lib/api';
 import { concreteImageMime } from '$lib/image-mime';
+import { promptUploadReauth } from '$lib/upload-reauth';
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 	const bin = atob(b64);
@@ -28,6 +29,7 @@ export async function resaveWithFallback(
 
 	let payload: {
 		rateLimited?: boolean;
+		needsReauth?: boolean;
 		token?: string;
 		pdsUrl?: string;
 		image?: string;
@@ -37,6 +39,12 @@ export async function resaveWithFallback(
 		payload = await first.clone().json();
 	} catch {
 		return first; // plain-text 429 from an older server — surface it as-is
+	}
+	// Rate-limited and the session lacks the rpc: scope, so the client-side rescue
+	// can't run — reconnecting would unlock it, so nudge and surface the 429.
+	if (payload.needsReauth) {
+		promptUploadReauth();
+		return first;
 	}
 	if (!payload.rateLimited || !payload.token || !payload.pdsUrl || !payload.image) return first;
 

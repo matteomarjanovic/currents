@@ -215,6 +215,7 @@
 				setTimeout(close, 1500);
 			} else if (response.authError) {
 				clipper.authState = 'unauthenticated';
+				clipper.reauthNeeded = response.reauth ?? false;
 			} else {
 				saveState = 'error';
 				errorMsg = response.error ?? 'Unknown error';
@@ -288,8 +289,9 @@
 							rel="noreferrer"
 							onclick={handleLoginClick}
 						>
-							Log in to Currents
-						</a> to save images.
+							{clipper.reauthNeeded ? 'Reconnect to Currents' : 'Log in to Currents'}
+						</a>
+						{clipper.reauthNeeded ? 'to keep saving.' : 'to save images.'}
 					</p>
 				{/if}
 			{:else}

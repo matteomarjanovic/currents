@@ -1445,6 +1445,16 @@ func (s *Server) DeleteFavourite(w http.ResponseWriter, r *http.Request) {
 func (s *Server) respondResaveRateLimited(w http.ResponseWriter, r *http.Request, c *atclient.APIClient, imageBytes []byte, contentType string) {
 	token, pdsURL, err := mintUploadToken(r.Context(), c)
 	if err != nil {
+		// A 403 means the session lacks the uploadBlob rpc: scope, so the client-side
+		// rescue can't run — but reconnecting would unlock it. Signal the client to
+		// nudge re-authorization instead of just reporting a dead-end rate limit.
+		var apiErr *atclient.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusForbidden {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]any{"rateLimited": true, "needsReauth": true})
+			return
+		}
 		http.Error(w, rateLimitMessage, http.StatusTooManyRequests)
 		return
 	}
