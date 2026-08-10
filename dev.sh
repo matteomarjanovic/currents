@@ -27,12 +27,14 @@ case "${1:-start}" in
 
     tmux new-session -d -s "$SESSION" -n docker -c "$ROOT" \
       "docker compose -f docker-compose.dev.yml logs -f; exec \$SHELL"
+    start_window docker-shell "$ROOT" "exec \$SHELL"
     start_window inference "$ROOT/inference" "source venv/bin/activate && uvicorn main:app --reload"
     start_window frontend "$ROOT/frontend" "npm run dev -- --host"
     start_window tunnel "$ROOT" "cloudflared tunnel run --url http://localhost:8080 $TUNNEL_NAME"
 
     tmux select-window -t "$SESSION:docker"
-    echo "Attaching to tmux session '$SESSION' (windows: docker, inference, frontend, tunnel)."
+    echo "Attaching to tmux session '$SESSION' (windows: docker, docker-shell, inference, frontend, tunnel)."
+    echo "  docker-shell is a free prompt for rebuilds, e.g.: docker compose -f docker-compose.dev.yml up -d --build appview"
     echo "  switch windows:      Ctrl-b <number>   or   Ctrl-b w"
     echo "  detach (keep running): Ctrl-b d"
     exec tmux attach -t "$SESSION"
