@@ -1,9 +1,16 @@
 # Save to Currents
 
 Browser extension for [Currents](https://currents.is). Save images to your
-collections from any website: right-click an image and choose **Save to
-Currents** to pick a collection and save. The toolbar popup shows your login
-status. Built with [WXT](https://wxt.dev) + Svelte, Manifest V3.
+collections from any website:
+
+- **One image** — right-click it and choose **Save to Currents** to pick a
+  collection and save.
+- **A whole page** — click the toolbar icon, or right-click anywhere on the page
+  and choose **Save images from this page…**. Every image large enough to be
+  worth saving is shown as a grid; deselect the ones you don't want and save the
+  rest into one collection, each carrying the page's own alt text.
+
+Built with [WXT](https://wxt.dev) + Svelte, Manifest V3.
 
 ## Build from source
 

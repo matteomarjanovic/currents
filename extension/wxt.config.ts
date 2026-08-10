@@ -18,6 +18,9 @@ export default defineConfig({
 	manifest: ({ browser }) => ({
 		name: 'Save to Currents',
 		description: 'Save images to Currents',
+		// No default_popup: clicking the toolbar icon opens the in-page picker for
+		// every image on the page, which needs action.onClicked to fire.
+		action: { default_title: 'Save images from this page' },
 		permissions: ['contextMenus', 'activeTab', 'storage', 'cookies'],
 		host_permissions: ['<all_urls>', 'https://currents.is/*'],
 		web_accessible_resources: [
