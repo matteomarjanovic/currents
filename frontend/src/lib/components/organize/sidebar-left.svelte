@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { apiFetch } from '$lib/api';
@@ -8,7 +9,7 @@
 	import { onBackButton } from '$lib/back-button';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
-	import { collections } from '$lib/stores/collections.svelte';
+	import { collections, addCollection } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import type { CollectionView } from '$lib/types';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -21,8 +22,10 @@
 	import Logo from '$lib/assets/logo.svelte';
 	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
 	import CollectionActions from '$lib/components/collection-actions.svelte';
+	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
+	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import Folder from '@lucide/svelte/icons/folder';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Star from '@lucide/svelte/icons/star';
@@ -51,13 +54,19 @@
 
 	let query = $state('');
 	let q = $derived(query.trim().toLowerCase());
+	let createCollectionOpen = $state(false);
+
+	function handleCollectionCreated(collection: CollectionView) {
+		addCollection(collection);
+		toast.success(`Collection "${collection.name}" created`);
+	}
 
 	// Sort order for collections, sections and favourites. Local UI preference.
 	let sortMode = $state<'name' | 'recent'>('name');
 
 	// Section headings collapse their whole group. Local UI preference.
 	let libraryOpen = $state(true);
-	let favouritesOpen = $state(true);
+	let favouritesOpen = $state(false);
 
 	function hrefFor(uri: string) {
 		return uri ? `/organize?c=${encodeURIComponent(uri)}` : '/organize';
@@ -203,10 +212,21 @@
 	</Sidebar.Header>
 
 	<Sidebar.Content>
+		<Sidebar.Group class="sticky top-0 z-10 bg-sidebar pb-0">
+			<Sidebar.Menu>
+				<Sidebar.MenuItem>
+					<Sidebar.MenuButton onclick={() => (createCollectionOpen = true)} class="h-8">
+						<FolderPlus />
+						<span>Create collection</span>
+					</Sidebar.MenuButton>
+				</Sidebar.MenuItem>
+			</Sidebar.Menu>
+		</Sidebar.Group>
+
 		<Collapsible.Root bind:open={libraryOpen} class="group/section">
 			<Sidebar.Group>
 				<Sidebar.GroupLabel
-					class="sticky top-0 z-10 cursor-pointer rounded-none bg-sidebar hover:text-foreground"
+					class="sticky top-10 z-10 cursor-pointer rounded-none bg-sidebar hover:text-foreground"
 				>
 					{#snippet child({ props })}
 						<Collapsible.Trigger {...props}>
@@ -293,11 +313,12 @@
 		</Collapsible.Root>
 
 		{#if !favouriteCollections.loaded || favourites.length > 0}
-			<Collapsible.Root bind:open={favouritesOpen} class="group/section">
+			<Collapsible.Root
+				bind:open={favouritesOpen}
+				class="group/section sticky bottom-0 z-10 mt-auto border-t bg-sidebar"
+			>
 				<Sidebar.Group>
-					<Sidebar.GroupLabel
-						class="sticky top-0 z-10 cursor-pointer rounded-none bg-sidebar hover:text-foreground"
-					>
+					<Sidebar.GroupLabel class="cursor-pointer rounded-none hover:text-foreground">
 						{#snippet child({ props })}
 							<Collapsible.Trigger {...props}>
 								Favourites from others
@@ -392,3 +413,5 @@
 		</Sidebar.Menu>
 	</Sidebar.Footer>
 </Sidebar.Root>
+
+<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
