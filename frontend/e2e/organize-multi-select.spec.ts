@@ -108,3 +108,69 @@ test('the tile menu Select enters the mode with that tile picked, and Copy resav
 	const body = JSON.parse(calls.resave[0]);
 	expect(body.collectionUri).toBe(INTERIORS);
 });
+
+// Mobile has no room for the bar, so it gets a floating pill and one drawer whose
+// view swaps in place. The swap is the point: stacking a second drawer over the
+// menu is what leaks the body scroll-lock (see scroll-lock.spec.ts).
+test('mobile: the floating pill opens the menu, and Copy swaps the drawer in place', async ({
+	page
+}) => {
+	const calls: Calls = { labelBulk: [], resave: [] };
+	await mockApi(page, calls);
+	await page.goto('/organize');
+
+	await expect(page.locator('[data-uri]').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Select' }).click();
+	await page.locator('[data-uri]').nth(0).click();
+	await page.locator('[data-uri]').nth(1).click();
+
+	// The bar belongs to desktop only; mobile carries the count on the pill.
+	await expect(page.getByText('2 selected')).toBeHidden();
+	const pill = page.getByRole('button', { name: 'Bulk actions (2)' });
+	await expect(pill).toBeVisible();
+	await pill.click();
+
+	await expect(page.getByRole('button', { name: 'Copy to collection' })).toBeVisible();
+	await page.getByRole('button', { name: 'Copy to collection' }).click();
+
+	// Same drawer, new view — the menu is gone and the destination list is in its place.
+	await expect(page.getByRole('button', { name: 'Copy to collection' })).toBeHidden();
+	await page.getByRole('button', { name: 'Interiors' }).click();
+
+	await expect.poll(() => calls.resave.length).toBeGreaterThan(0);
+	expect(JSON.parse(calls.resave[0]).collectionUri).toBe(INTERIORS);
+
+	// The drawer closed behind the action and left the page scrollable.
+	await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0);
+	await expect
+		.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow), { timeout: 4000 })
+		.not.toBe('hidden');
+});
+
+// Regression: when the drawer closes itself (tap outside, swipe down) vaul writes
+// its own `open` state. With a one-way `open` prop that write never reached us —
+// mobileView stayed on 'menu', so re-tapping the pill assigned the same value and
+// reopened nothing. Only a two-way binding observes it.
+test('mobile: dismissing the drawer lets the pill reopen it', async ({ page }) => {
+	const calls: Calls = { labelBulk: [], resave: [] };
+	await mockApi(page, calls);
+	await page.goto('/organize');
+
+	await expect(page.locator('[data-uri]').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Select' }).click();
+	await page.locator('[data-uri]').nth(0).click();
+
+	const pill = page.getByRole('button', { name: /Bulk actions/ });
+	const menuItem = page.getByRole('button', { name: 'Copy to collection' });
+
+	await pill.click();
+	await expect(menuItem).toBeVisible();
+
+	// Tap the overlay above the sheet to dismiss it.
+	await page.mouse.click(20, 30);
+	await expect(menuItem).toBeHidden();
+
+	// The pill must reopen it.
+	await pill.click();
+	await expect(menuItem).toBeVisible();
+});

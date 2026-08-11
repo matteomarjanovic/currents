@@ -542,55 +542,60 @@
 				</div>
 			{/if}
 
-			<!-- Multi-select toggle: enter/leave bulk-selection mode for the grid. -->
-			<Button
-				variant={selectMode ? 'default' : 'ghost'}
-				size="sm"
-				class="ml-auto shrink-0"
-				aria-pressed={selectMode}
-				aria-label={selectMode ? 'Done selecting' : 'Select'}
-				onclick={toggleSelectMode}
-			>
-				<ListChecks class="size-4" />
-				<span class="hidden md:inline">{selectMode ? 'Done' : 'Select'}</span>
-			</Button>
-
-			<!-- Search: icon-only on mobile (the field would crowd the header); on desktop
-			     a field whose text area opens the command dialog and whose X clears an
-			     active search and restores the collection grid. -->
-			<Button
-				variant="ghost"
-				size="icon"
-				class="shrink-0 md:hidden"
-				aria-label="Search your library"
-				onclick={() => (searchOpen = true)}
-			>
-				<SearchIcon />
-			</Button>
-			<div
-				class="ml-auto hidden h-9 w-full max-w-64 items-center rounded-md border bg-background text-sm md:flex"
-			>
-				<button
-					type="button"
-					onclick={() => (searchOpen = true)}
-					class="flex min-w-0 flex-1 items-center gap-2 px-3 text-muted-foreground hover:text-foreground"
+			<!-- Right-hand cluster: the multi-select toggle then search. One `ml-auto` on
+			     the wrapper — putting it on both children strands the first one mid-header,
+			     since the earlier auto margin eats the free space before the later one sees it. -->
+			<div class="ml-auto flex shrink-0 items-center gap-1">
+				<!-- Multi-select toggle: enter/leave bulk-selection mode for the grid. -->
+				<Button
+					variant={selectMode ? 'default' : 'ghost'}
+					size="sm"
+					class="shrink-0"
+					aria-pressed={selectMode}
+					aria-label={selectMode ? 'Done selecting' : 'Select'}
+					onclick={toggleSelectMode}
 				>
-					<SearchIcon class="size-4 shrink-0" />
-					<span class="truncate">{search ? search.query : 'Search your library…'}</span>
-					{#if !search}
-						<Kbd class="ml-auto hidden shrink-0 md:inline-flex">{isMac ? '⌘' : 'Ctrl'} K</Kbd>
-					{/if}
-				</button>
-				{#if search}
+					<ListChecks class="size-4" />
+					<span class="hidden md:inline">{selectMode ? 'Done' : 'Select'}</span>
+				</Button>
+
+				<!-- Search: icon-only on mobile (the field would crowd the header); on desktop
+				     a field whose text area opens the command dialog and whose X clears an
+				     active search and restores the collection grid. -->
+				<Button
+					variant="ghost"
+					size="icon"
+					class="shrink-0 md:hidden"
+					aria-label="Search your library"
+					onclick={() => (searchOpen = true)}
+				>
+					<SearchIcon />
+				</Button>
+				<div
+					class="hidden h-9 w-full max-w-64 items-center rounded-md border bg-background text-sm md:flex"
+				>
 					<button
 						type="button"
-						onclick={() => (searchQuery = null)}
-						class="mr-1 rounded p-1 text-muted-foreground hover:bg-muted"
-						aria-label="Clear search"
+						onclick={() => (searchOpen = true)}
+						class="flex min-w-0 flex-1 items-center gap-2 px-3 text-muted-foreground hover:text-foreground"
 					>
-						<X class="size-3.5" />
+						<SearchIcon class="size-4 shrink-0" />
+						<span class="truncate">{search ? search.query : 'Search your library…'}</span>
+						{#if !search}
+							<Kbd class="ml-auto hidden shrink-0 md:inline-flex">{isMac ? '⌘' : 'Ctrl'} K</Kbd>
+						{/if}
 					</button>
-				{/if}
+					{#if search}
+						<button
+							type="button"
+							onclick={() => (searchQuery = null)}
+							class="mr-1 rounded p-1 text-muted-foreground hover:bg-muted"
+							aria-label="Clear search"
+						>
+							<X class="size-3.5" />
+						</button>
+					{/if}
+				</div>
 			</div>
 		</header>
 

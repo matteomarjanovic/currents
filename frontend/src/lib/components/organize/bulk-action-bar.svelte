@@ -17,6 +17,9 @@
 	import Tag from '@lucide/svelte/icons/tag';
 	import Quote from '@lucide/svelte/icons/quote';
 	import X from '@lucide/svelte/icons/x';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 
 	let {
 		saves,
@@ -51,15 +54,22 @@
 		{ val: 'currents-ai-generated', label: 'AI-generated' }
 	];
 
-	// Copy/Move: two popovers on desktop (each anchored to its button); a shared
-	// drawer on mobile.
+	// Copy/Move: two popovers on desktop, each anchored to its own button.
 	let copyOpen = $state(false);
 	let moveOpen = $state(false);
-	let mobilePicker = $state<'copy' | 'move' | null>(null);
+
+	// Mobile has no room for a row of labelled buttons, so it gets a floating pill
+	// instead of the bar and everything lives one tap deeper. Crucially this is ONE
+	// drawer whose view swaps — Copy/Move/Labels each need a surface of their own,
+	// and opening a second drawer on top of the menu is what leaks the body
+	// scroll-lock (see e2e/scroll-lock.spec.ts).
+	type MobileView = 'menu' | 'copy' | 'move' | 'labels';
+	let mobileView = $state<MobileView | null>(null);
+
 	function pick(dest: string) {
-		if (mobilePicker === 'move') onMove(dest);
-		else if (mobilePicker === 'copy') onCopy(dest);
-		mobilePicker = null;
+		if (mobileView === 'move') onMove(dest);
+		else if (mobileView === 'copy') onCopy(dest);
+		mobileView = null;
 	}
 
 	let attributionOpen = $state(false);
@@ -93,6 +103,7 @@
 				`Labels applied to ${r.applied}${r.skipped ? ` · ${r.skipped} skipped` : ''}${r.failed ? ` · ${r.failed} failed` : ''}`
 			);
 			labelsOpen = false;
+			mobileView = null;
 			chosen.clear();
 			onExit();
 		} catch {
@@ -108,6 +119,15 @@
 			await downloadImage(s);
 			await new Promise((r) => setTimeout(r, 250));
 		}
+	}
+
+	// Attribution is a shared Dialog (desktop opens it straight from the bar), so on
+	// mobile it's the one action that can't become a drawer view. Let the drawer
+	// finish closing before the dialog mounts — overlapping the two fights over the
+	// body scroll-lock and can leave the page unscrollable after both are dismissed.
+	function openAttributionFromMenu() {
+		mobileView = null;
+		setTimeout(() => (attributionOpen = true), 250);
 	}
 </script>
 
@@ -140,42 +160,65 @@
 	</p>
 {/snippet}
 
-<div class="shrink-0 border-t bg-popover/95 p-3 backdrop-blur-sm">
-	<div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2">
-		<div class="flex items-center gap-3 text-sm">
-			<span class="font-medium">{saves.length} selected</span>
-			<button
-				type="button"
-				class="text-xs text-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
-				onclick={onSelectAll}
-				disabled={saves.length >= selectableCount}
-			>
-				Select all loaded
-			</button>
-			{#if saves.length > 0}
+{#snippet menuRow(
+	label: string,
+	Icon: typeof FolderPlus,
+	onclick: () => void,
+	opts?: { disabled?: boolean; deeper?: boolean; danger?: boolean }
+)}
+	<button
+		type="button"
+		{onclick}
+		disabled={opts?.disabled}
+		class="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40 {opts?.danger
+			? 'text-muted-foreground'
+			: ''}"
+	>
+		<Icon class="size-4 shrink-0" />
+		<span class="flex-1">{label}</span>
+		{#if opts?.deeper}
+			<ChevronRight class="size-4 shrink-0 text-muted-foreground" />
+		{/if}
+	</button>
+{/snippet}
+
+{#if sidebar.isMobile}
+	<!-- Mobile: a floating pill instead of a bar, so the grid keeps its height. The
+	     count rides on the pill and everything else lives in the drawer below. -->
+	<div
+		class="fixed left-1/2 z-40 -translate-x-1/2"
+		style="bottom: calc(env(safe-area-inset-bottom) + 1.25rem)"
+	>
+		<Button size="lg" class="rounded-full shadow-lg" onclick={() => (mobileView = 'menu')}>
+			<ListChecks class="size-4" />
+			Bulk actions ({saves.length})
+		</Button>
+	</div>
+{:else}
+	<div class="shrink-0 border-t bg-popover/95 p-3 backdrop-blur-sm">
+		<div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2">
+			<div class="flex items-center gap-3 text-sm">
+				<span class="font-medium">{saves.length} selected</span>
 				<button
 					type="button"
-					class="text-xs text-muted-foreground underline-offset-2 hover:underline"
-					onclick={onClear}
+					class="text-xs text-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
+					onclick={onSelectAll}
+					disabled={saves.length >= selectableCount}
 				>
-					Clear
+					Select all loaded
 				</button>
-			{/if}
-		</div>
+				{#if saves.length > 0}
+					<button
+						type="button"
+						class="text-xs text-muted-foreground underline-offset-2 hover:underline"
+						onclick={onClear}
+					>
+						Clear
+					</button>
+				{/if}
+			</div>
 
-		<div class="flex items-center gap-1.5">
-			<!-- Copy -->
-			{#if sidebar.isMobile}
-				<Button
-					variant="secondary"
-					size="sm"
-					disabled={saves.length === 0}
-					onclick={() => (mobilePicker = 'copy')}
-				>
-					<FolderPlus class="size-4" />
-					Copy
-				</Button>
-			{:else}
+			<div class="flex items-center gap-1.5">
 				<Popover.Root bind:open={copyOpen}>
 					<Popover.Trigger>
 						{#snippet child({ props })}
@@ -192,21 +235,8 @@
 						})}
 					</Popover.Content>
 				</Popover.Root>
-			{/if}
 
-			<!-- Move -->
-			{#if canMove}
-				{#if sidebar.isMobile}
-					<Button
-						variant="secondary"
-						size="sm"
-						disabled={saves.length === 0}
-						onclick={() => (mobilePicker = 'move')}
-					>
-						<FolderInput class="size-4" />
-						Move
-					</Button>
-				{:else}
+				{#if canMove}
 					<Popover.Root bind:open={moveOpen}>
 						<Popover.Trigger>
 							{#snippet child({ props })}
@@ -224,34 +254,22 @@
 						</Popover.Content>
 					</Popover.Root>
 				{/if}
-			{/if}
 
-			<Button variant="secondary" size="sm" disabled={saves.length === 0} onclick={downloadAll}>
-				<Download class="size-4" />
-				Download
-			</Button>
-
-			{#if ownContext}
-				<Button
-					variant="secondary"
-					size="sm"
-					disabled={blobCids.length === 0}
-					onclick={() => (attributionOpen = true)}
-				>
-					<Quote class="size-4" />
-					Attribution
+				<Button variant="secondary" size="sm" disabled={saves.length === 0} onclick={downloadAll}>
+					<Download class="size-4" />
+					Download
 				</Button>
-				{#if sidebar.isMobile}
+
+				{#if ownContext}
 					<Button
 						variant="secondary"
 						size="sm"
-						disabled={saves.length === 0}
-						onclick={() => (labelsOpen = true)}
+						disabled={blobCids.length === 0}
+						onclick={() => (attributionOpen = true)}
 					>
-						<Tag class="size-4" />
-						Labels
+						<Quote class="size-4" />
+						Attribution
 					</Button>
-				{:else}
 					<Popover.Root bind:open={labelsOpen}>
 						<Popover.Trigger>
 							{#snippet child({ props })}
@@ -274,60 +292,133 @@
 						</Popover.Content>
 					</Popover.Root>
 				{/if}
-			{/if}
 
-			<Button variant="ghost" size="sm" onclick={onExit}>
-				<X class="size-4" />
-				Cancel
-			</Button>
+				<Button variant="ghost" size="sm" onclick={onExit}>
+					<X class="size-4" />
+					Cancel
+				</Button>
+			</div>
 		</div>
 	</div>
-</div>
+{/if}
 
-<!-- Mobile copy/move destination drawer (desktop uses the popovers above). -->
+<!-- One mobile drawer, four views. Copy/Move/Labels swap the content in place
+     rather than stacking a second drawer on the menu. -->
 {#if sidebar.isMobile}
-	<Drawer.Root open={mobilePicker !== null} onOpenChange={(o) => !o && (mobilePicker = null)}>
+	<!-- Must be a two-way binding, not `open={...}` + onOpenChange. When the drawer
+	     dismisses itself, vaul writes its own open state (use-drawer-root's
+	     closeDrawer), and the tap-outside path gets there via onDialogOpenChange,
+	     which calls closeDrawer(true) and so skips onOpenChange entirely. A one-way
+	     prop never hears about it: the sheet is gone but mobileView still says
+	     'menu', so re-tapping the pill assigns the same value and reopens nothing.
+	     The setter is what pulls our state back. -->
+	<Drawer.Root
+		bind:open={() => mobileView !== null, (o) => (mobileView = o ? (mobileView ?? 'menu') : null)}
+	>
 		<Drawer.Content>
-			<Drawer.Header>
-				<Drawer.Title>
-					{mobilePicker === 'move' ? 'Move to collection' : 'Copy to collection'}
-				</Drawer.Title>
-				<Drawer.Description>
-					Pick a destination for the {saves.length} selected
-					{saves.length === 1 ? 'image' : 'images'}.
-				</Drawer.Description>
-			</Drawer.Header>
-			{@render destinationList(pick)}
-			<Drawer.Footer>
-				<Drawer.Close>
-					{#snippet child({ props })}
-						<Button {...props} variant="outline">Cancel</Button>
-					{/snippet}
-				</Drawer.Close>
-			</Drawer.Footer>
-		</Drawer.Content>
-	</Drawer.Root>
+			{#if mobileView === 'copy' || mobileView === 'move'}
+				<Drawer.Header>
+					<Drawer.Title>
+						{mobileView === 'move' ? 'Move to collection' : 'Copy to collection'}
+					</Drawer.Title>
+					<Drawer.Description>
+						Pick a destination for the {saves.length} selected
+						{saves.length === 1 ? 'image' : 'images'}.
+					</Drawer.Description>
+				</Drawer.Header>
+				{@render destinationList(pick)}
+				<Drawer.Footer>
+					<Button variant="outline" onclick={() => (mobileView = 'menu')}>
+						<ChevronLeft class="size-4" />
+						Back
+					</Button>
+				</Drawer.Footer>
+			{:else if mobileView === 'labels'}
+				<Drawer.Header>
+					<Drawer.Title>Add labels</Drawer.Title>
+					<Drawer.Description>Flag sensitive or AI-generated content.</Drawer.Description>
+				</Drawer.Header>
+				<div class="p-3">
+					{@render labelBody()}
+				</div>
+				<Drawer.Footer>
+					<Button disabled={applying || chosen.size === 0} onclick={applyLabels}>
+						{applying ? 'Applying…' : `Apply to ${saves.length}`}
+					</Button>
+					<Button variant="outline" onclick={() => (mobileView = 'menu')}>
+						<ChevronLeft class="size-4" />
+						Back
+					</Button>
+				</Drawer.Footer>
+			{:else}
+				<Drawer.Header>
+					<Drawer.Title>Bulk actions</Drawer.Title>
+					<Drawer.Description>
+						{saves.length}
+						{saves.length === 1 ? 'image' : 'images'} selected.
+					</Drawer.Description>
+				</Drawer.Header>
 
-	<!-- Mobile labels drawer. -->
-	<Drawer.Root bind:open={labelsOpen}>
-		<Drawer.Content>
-			<Drawer.Header>
-				<Drawer.Title>Add labels</Drawer.Title>
-				<Drawer.Description>Flag sensitive or AI-generated content.</Drawer.Description>
-			</Drawer.Header>
-			<div class="p-3">
-				{@render labelBody()}
-			</div>
-			<Drawer.Footer>
-				<Button disabled={applying || chosen.size === 0} onclick={applyLabels}>
-					{applying ? 'Applying…' : `Apply to ${saves.length}`}
-				</Button>
-				<Drawer.Close>
-					{#snippet child({ props })}
-						<Button {...props} variant="outline">Cancel</Button>
-					{/snippet}
-				</Drawer.Close>
-			</Drawer.Footer>
+				<div class="flex items-center gap-3 px-4 pb-1 text-xs">
+					<button
+						type="button"
+						class="text-muted-foreground underline-offset-2 disabled:opacity-40"
+						onclick={onSelectAll}
+						disabled={saves.length >= selectableCount}
+					>
+						Select all loaded
+					</button>
+					{#if saves.length > 0}
+						<button
+							type="button"
+							class="text-muted-foreground underline-offset-2"
+							onclick={onClear}
+						>
+							Clear
+						</button>
+					{/if}
+				</div>
+
+				<div class="px-2 pb-2">
+					{@render menuRow('Copy to collection', FolderPlus, () => (mobileView = 'copy'), {
+						disabled: saves.length === 0,
+						deeper: true
+					})}
+					{#if canMove}
+						{@render menuRow('Move to collection', FolderInput, () => (mobileView = 'move'), {
+							disabled: saves.length === 0,
+							deeper: true
+						})}
+					{/if}
+					{@render menuRow(
+						'Download',
+						Download,
+						() => {
+							mobileView = null;
+							void downloadAll();
+						},
+						{ disabled: saves.length === 0 }
+					)}
+					{#if ownContext}
+						{@render menuRow('Attribution', Quote, openAttributionFromMenu, {
+							disabled: blobCids.length === 0
+						})}
+						{@render menuRow('Labels', Tag, () => (mobileView = 'labels'), {
+							disabled: saves.length === 0,
+							deeper: true
+						})}
+					{/if}
+					{@render menuRow(
+						'Cancel selection',
+						X,
+						() => {
+							mobileView = null;
+							onExit();
+						},
+						{ danger: true }
+					)}
+				</div>
+			{/if}
 		</Drawer.Content>
 	</Drawer.Root>
 {/if}
