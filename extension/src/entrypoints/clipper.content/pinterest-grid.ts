@@ -1,4 +1,5 @@
-import { clipper, showClipper } from '../../lib/clipper-store.svelte';
+import { showClipper, loadClipperAuth } from '../../lib/clipper-store.svelte';
+import { bestImageUrl } from './collect-images';
 
 // Hover button injected into Pinterest pins that opens the Currents save dialog
 // for the pin's image — both masonry grid items and the closeup (single pin)
@@ -35,46 +36,18 @@ ${HOVER_REVEAL}{opacity:1;pointer-events:auto}
 ${GRID_PIN}:has(.${BTN_CLASS}) [data-test-id="pinrep-source-link"]{margin-left:44px;white-space:nowrap}
 `;
 
-// Largest entry in the srcset (Pinterest lists 236x → originals), falling
-// back to the rendered src.
-function bestImageUrl(img: HTMLImageElement): string {
-	let best = img.currentSrc || img.src;
-	let bestDesc = 0;
-	for (const part of (img.srcset ?? '').split(',')) {
-		const [url, desc] = part.trim().split(/\s+/);
-		const d = parseFloat(desc) || 0;
-		if (url && d > bestDesc) {
-			bestDesc = d;
-			best = url;
-		}
-	}
-	return best;
-}
-
-async function openClipper(host: HTMLElement) {
+function openClipper(host: HTMLElement) {
 	const img = host.querySelector('img');
 	if (!img) return;
 	// Grid pins carry the id directly; on the closeup it's in the URL.
 	const pinId =
 		host.getAttribute('data-test-pin-id') ?? location.pathname.match(/\/pin\/(\d+)/)?.[1] ?? null;
-	// Open the dialog immediately; auth + collections resolve in the background
-	// (optimistically assume signed in — the common case for the save button).
 	showClipper({
 		imgUrl: bestImageUrl(img),
 		originUrl: pinId ? `https://www.pinterest.com/pin/${pinId}/` : location.href,
-		pageTitle: document.title,
-		collections: [],
-		collectionsLoading: true,
-		authState: 'authenticated',
-		userHandle: '',
-		siteHints: {}
+		pageTitle: document.title
 	});
-	const res = await browser.runtime.sendMessage({ type: 'CHECK_AUTH' });
-	if (!clipper.visible) return; // dismissed while loading
-	clipper.authState = res.authenticated ? 'authenticated' : 'unauthenticated';
-	clipper.collections = res.authenticated ? res.collections : [];
-	clipper.userHandle = res.authenticated ? res.handle : '';
-	clipper.collectionsLoading = false;
+	void loadClipperAuth();
 }
 
 // Resolve the hover target to the element we attach the button to, or null when

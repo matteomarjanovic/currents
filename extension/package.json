@@ -17,7 +17,6 @@
 		"postinstall": "wxt prepare"
 	},
 	"devDependencies": {
-		"@fontsource-variable/instrument-sans": "^5.2.8",
 		"@lucide/svelte": "^1.14.0",
 		"@tailwindcss/vite": "^4.1.18",
 		"@tsconfig/svelte": "^5.0.8",

@@ -166,7 +166,15 @@ async function handleSave(message: {
 	attributionLicense?: string;
 	attributionCredit?: string;
 	labels?: string;
-}): Promise<{ ok: boolean; error?: string; authError?: boolean; reauth?: boolean }> {
+}): Promise<{
+	ok: boolean;
+	error?: string;
+	authError?: boolean;
+	reauth?: boolean;
+	// The PDS is throttling. A batch run stops on this rather than collecting
+	// another twenty 429s.
+	rateLimited?: boolean;
+}> {
 	const auth = await getAuth();
 	if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
@@ -205,6 +213,7 @@ async function handleSave(message: {
 		if (upResp.status === 429) {
 			return {
 				ok: false,
+				rateLimited: true,
 				error:
 					'Your data server is temporarily limiting uploads. Please try again in a few minutes.'
 			};
@@ -237,6 +246,7 @@ async function handleSave(message: {
 		if (resp.status === 429) {
 			return {
 				ok: false,
+				rateLimited: true,
 				error:
 					'Your data server is temporarily limiting uploads. Please try again in a few minutes.'
 			};
@@ -280,30 +290,55 @@ async function handleLookupAlt(message: { imgUrl: string }): Promise<{ alt: stri
 
 // --- Entry point ---
 
+// The clipper UI lives in the content script, which can't run on browser-internal
+// pages (or in tabs opened before the extension was installed). Send those to the
+// site rather than doing nothing visible.
+async function openClipper(
+	tab: { id?: number; url?: string; title?: string } | undefined,
+	message: Record<string, unknown>
+) {
+	if (!tab?.id) return;
+	try {
+		await browser.tabs.sendMessage(tab.id, message);
+	} catch {
+		await browser.tabs.create({ url: FRONTEND_URL });
+	}
+}
+
 export default defineBackground(() => {
-	// Create the context menu once on install to avoid duplicates across SW restarts
-	browser.runtime.onInstalled.addListener(() => {
+	// Menu items outlive an extension update, and re-creating a live id throws —
+	// so clear before creating.
+	browser.runtime.onInstalled.addListener(async () => {
+		await browser.contextMenus.removeAll();
 		browser.contextMenus.create({
 			id: 'save-to-currents',
 			title: 'Save to Currents',
 			contexts: ['image']
 		});
+		browser.contextMenus.create({
+			id: 'save-page-images',
+			title: 'Save images from this page…',
+			contexts: ['page', 'selection', 'link']
+		});
 	});
 
+	// Both entry points open the dialog immediately; the content script resolves
+	// auth + collections in the background (via CHECK_AUTH).
 	browser.contextMenus.onClicked.addListener(async (info, tab) => {
-		if (info.menuItemId !== 'save-to-currents' || !info.srcUrl || !tab?.id) return;
-		// Open the dialog immediately; the content script resolves auth + collections
-		// in the background (via CHECK_AUTH), matching the Pinterest save button.
-		try {
-			await browser.tabs.sendMessage(tab.id, {
+		if (info.menuItemId === 'save-to-currents' && info.srcUrl) {
+			await openClipper(tab, {
 				type: 'SHOW_CLIPPER',
 				imgUrl: info.srcUrl,
-				originUrl: tab.url ?? '',
-				pageTitle: tab.title ?? ''
+				originUrl: tab?.url ?? '',
+				pageTitle: tab?.title ?? ''
 			});
-		} catch (e) {
-			console.error('[currents] sendMessage failed', e);
+		} else if (info.menuItemId === 'save-page-images') {
+			await openClipper(tab, { type: 'SHOW_CLIPPER_MULTI' });
 		}
+	});
+
+	browser.action.onClicked.addListener(async (tab) => {
+		await openClipper(tab, { type: 'SHOW_CLIPPER_MULTI' });
 	});
 
 	browser.cookies.onChanged.addListener(async (changeInfo) => {

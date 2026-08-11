@@ -1,6 +1,7 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
-import { clipper, showClipper, hideClipper, type SiteHints } from '../../lib/clipper-store.svelte';
+import { showClipper, loadClipperAuth, type SiteHints } from '../../lib/clipper-store.svelte';
+import { collectPageImages } from './collect-images';
 import { setupPinterestGrid } from './pinterest-grid';
 import '../../lib/theme.css';
 
@@ -100,32 +101,27 @@ export default defineContentScript({
 		host.style.setProperty('border', '0', 'important');
 
 		browser.runtime.onMessage.addListener((message) => {
-			if (message.type !== 'SHOW_CLIPPER') return;
-			injectFont();
-			const siteHints = extractSiteHints();
-			// Open the dialog immediately, then resolve auth + collections in the
-			// background (like the Pinterest save button) so it doesn't wait on a
-			// network round-trip.
-			showClipper({
-				imgUrl: message.imgUrl ?? '',
-				originUrl: siteHints.originUrl ?? message.originUrl ?? '',
-				pageTitle: message.pageTitle ?? '',
-				collections: [],
-				collectionsLoading: true,
-				authState: 'authenticated',
-				userHandle: '',
-				siteHints
-			});
-			browser.runtime.sendMessage({ type: 'CHECK_AUTH' }).then((res) => {
-				if (!clipper.visible) return; // dismissed while loading
-				clipper.authState = res.authenticated ? 'authenticated' : 'unauthenticated';
-				clipper.collections = res.authenticated ? res.collections : [];
-				clipper.userHandle = res.authenticated ? res.handle : '';
-				clipper.collectionsLoading = false;
-			});
+			if (message.type === 'SHOW_CLIPPER') {
+				injectFont();
+				const siteHints = extractSiteHints();
+				showClipper({
+					imgUrl: message.imgUrl ?? '',
+					originUrl: siteHints.originUrl ?? message.originUrl ?? '',
+					pageTitle: message.pageTitle ?? '',
+					siteHints
+				});
+				void loadClipperAuth();
+			} else if (message.type === 'SHOW_CLIPPER_MULTI') {
+				injectFont();
+				showClipper({
+					mode: 'multi',
+					candidates: collectPageImages(),
+					originUrl: location.href,
+					pageTitle: document.title
+				});
+				void loadClipperAuth();
+			}
 		});
-
-		document.addEventListener('currents-clipper-close', () => hideClipper());
 
 		if (isPinterestHost(location.hostname)) {
 			injectFont();
