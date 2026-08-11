@@ -2897,10 +2897,12 @@ func (m *PgStore) UpdateCollectionEmbedding(ctx context.Context, collectionURI s
 	return err
 }
 
-// CollectionImportance pairs a collection URI with its precomputed canonical embedding.
+// CollectionImportance pairs a collection URI with its precomputed canonical
+// embedding and its time-decayed importance score (used to weight feed sampling).
 type CollectionImportance struct {
 	URI       string
 	Embedding []float32
+	Score     float64
 }
 
 type VisualIdentityEmbedding struct {
@@ -2930,7 +2932,7 @@ func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID stri
 			  AND c.canonical_embedding IS NOT NULL
 			GROUP BY c.uri, c.canonical_embedding
 		)
-		SELECT uri, canonical_embedding
+		SELECT uri, canonical_embedding, score
 		FROM ranked
 		ORDER BY score DESC, uri ASC
 		LIMIT $2
@@ -2944,10 +2946,11 @@ func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID stri
 	for rows.Next() {
 		var uri string
 		var vec pgvector.Vector
-		if err := rows.Scan(&uri, &vec); err != nil {
+		var score float64
+		if err := rows.Scan(&uri, &vec, &score); err != nil {
 			return nil, err
 		}
-		result = append(result, CollectionImportance{URI: uri, Embedding: vec.Slice()})
+		result = append(result, CollectionImportance{URI: uri, Embedding: vec.Slice(), Score: score})
 	}
 	return result, rows.Err()
 }

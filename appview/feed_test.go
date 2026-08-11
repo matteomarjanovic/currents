@@ -61,6 +61,126 @@ func TestFeedCursorRoundTripNegative(t *testing.T) {
 	}
 }
 
+func TestFeedCursorRoundTripWithSeed(t *testing.T) {
+	original := feedCursor{
+		Version:      1,
+		Mode:         feedCursorModePositive,
+		Initialized:  true,
+		Collections:  []feedCursorCollection{{URI: "at://did:plc:alice/is.currents.feed.collection/one", Offset: 3}},
+		GlobalOffset: 0,
+		Seed:         -8567143274837239424,
+	}
+
+	encoded, err := encodeFeedCursor(original)
+	if err != nil {
+		t.Fatalf("encodeFeedCursor: %v", err)
+	}
+	decoded, err := decodeFeedCursor(encoded)
+	if err != nil {
+		t.Fatalf("decodeFeedCursor: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, original) {
+		t.Fatalf("decoded cursor mismatch: got %#v want %#v", decoded, original)
+	}
+}
+
+func TestFeedCursorGlobalRejectsSeed(t *testing.T) {
+	// A global cursor must never carry a seed — the global feed keeps its own
+	// daily jitter and stays reproducible within a day.
+	if _, err := encodeFeedCursor(feedCursor{Version: 1, Mode: feedCursorModeGlobal, Seed: 42}); err == nil {
+		t.Fatal("encodeFeedCursor accepted a global cursor with a seed")
+	}
+}
+
+func TestSampleCollectionsDeterministicAndDistinct(t *testing.T) {
+	cands := []CollectionImportance{
+		{URI: "a", Score: 50},
+		{URI: "b", Score: 30},
+		{URI: "c", Score: 20},
+		{URI: "d", Score: 10},
+		{URI: "e", Score: 5},
+	}
+
+	first := sampleCollections(cands, 3, rand.New(rand.NewSource(99)))
+	again := sampleCollections(cands, 3, rand.New(rand.NewSource(99)))
+	if !reflect.DeepEqual(first, again) {
+		t.Fatalf("same seed gave different selections: %v vs %v", uris(first), uris(again))
+	}
+	if len(first) != 3 {
+		t.Fatalf("picked %d, want 3", len(first))
+	}
+	seen := map[string]bool{}
+	for _, c := range first {
+		if seen[c.URI] {
+			t.Fatalf("duplicate pick %q — sampling must be without replacement", c.URI)
+		}
+		seen[c.URI] = true
+	}
+}
+
+func TestSampleCollectionsClampsToPool(t *testing.T) {
+	cands := []CollectionImportance{{URI: "a", Score: 1}, {URI: "b", Score: 1}}
+	got := sampleCollections(cands, 5, rand.New(rand.NewSource(1)))
+	if len(got) != 2 {
+		t.Fatalf("picked %d, want 2 (all available)", len(got))
+	}
+}
+
+func TestSampleCollectionsFavoursHigherScores(t *testing.T) {
+	// Over many seeds the highest-scored collection should be selected far more
+	// often than the lowest — variety, not uniformity.
+	cands := []CollectionImportance{
+		{URI: "big", Score: 100},
+		{URI: "mid", Score: 20},
+		{URI: "small", Score: 2},
+	}
+	counts := map[string]int{}
+	for seed := int64(0); seed < 2000; seed++ {
+		for _, c := range sampleCollections(cands, 1, rand.New(rand.NewSource(seed))) {
+			counts[c.URI]++
+		}
+	}
+	if counts["big"] <= counts["small"] {
+		t.Fatalf("expected 'big' picked more than 'small'; got big=%d small=%d", counts["big"], counts["small"])
+	}
+	// But a low-scored collection should still surface sometimes (this is the point).
+	if counts["small"] == 0 {
+		t.Fatal("expected 'small' to be sampled at least once across 2000 seeds")
+	}
+}
+
+func TestSeededStartOffset(t *testing.T) {
+	// In range, deterministic, and sensitive to both seed and key.
+	for seed := int64(1); seed < 50; seed++ {
+		o := seededStartOffset(seed, "at://x", 60)
+		if o < 0 || o >= 60 {
+			t.Fatalf("offset %d out of [0,60)", o)
+		}
+		if seededStartOffset(seed, "at://x", 60) != o {
+			t.Fatal("seededStartOffset not deterministic")
+		}
+	}
+	if seededStartOffset(7, "key", 0) != 0 {
+		t.Fatal("zero window must yield offset 0")
+	}
+	// Different keys under one seed should not all collapse to the same offset.
+	distinct := map[int]bool{}
+	for _, k := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
+		distinct[seededStartOffset(123, k, 60)] = true
+	}
+	if len(distinct) < 2 {
+		t.Fatal("expected varied offsets across keys for one seed")
+	}
+}
+
+func uris(cs []CollectionImportance) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.URI
+	}
+	return out
+}
+
 func TestDecodeFeedCursorRejectsLegacyOffset(t *testing.T) {
 	legacy := base64.RawURLEncoding.EncodeToString([]byte("50"))
 

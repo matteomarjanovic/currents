@@ -610,6 +610,70 @@ func TestGlobalFeedJunkFilter(t *testing.T) {
 	}
 }
 
+// TestCollectionsByImportance pins what drives personalized-feed sampling: only
+// collections with a canonical embedding are eligible, each carries a positive
+// time-decayed Score (SUM of exp decay over its saves), and rows come back
+// ordered by that score — a bigger/more-recent collection outranking a smaller one.
+func TestCollectionsByImportance(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	viewer := "did:plc:viewer"
+	saveURI := func(rkey string) string { return "at://" + viewer + "/is.currents.feed.save/" + rkey }
+	colURI := func(rkey string) string { return "at://" + viewer + "/is.currents.feed.collection/" + rkey }
+
+	emb := make([]float32, 768)
+	emb[0] = 1
+
+	mkCollection := func(rkey string, withEmbedding bool) string {
+		t.Helper()
+		uri := colURI(rkey)
+		if err := s.UpsertCollection(ctx, uri, "cid-"+rkey, viewer, rkey, "", "", &testBase); err != nil {
+			t.Fatalf("UpsertCollection(%s): %v", rkey, err)
+		}
+		if withEmbedding {
+			if err := s.UpdateCollectionEmbedding(ctx, uri, emb); err != nil {
+				t.Fatalf("UpdateCollectionEmbedding(%s): %v", rkey, err)
+			}
+		}
+		return uri
+	}
+
+	big := mkCollection("big", true)      // 3 saves → higher summed score
+	small := mkCollection("small", true)  // 1 save → lower score
+	noEmb := mkCollection("noemb", false) // saves but no canonical embedding → excluded
+
+	seedImageSave(t, s, saveURI("b1"), viewer, big, "blob-b1", 0.5, testBase)
+	seedImageSave(t, s, saveURI("b2"), viewer, big, "blob-b2", 0.5, testBase)
+	seedImageSave(t, s, saveURI("b3"), viewer, big, "blob-b3", 0.5, testBase)
+	seedImageSave(t, s, saveURI("s1"), viewer, small, "blob-s1", 0.5, testBase)
+	seedImageSave(t, s, saveURI("n1"), viewer, noEmb, "blob-n1", 0.5, testBase)
+
+	got, err := s.GetCollectionsByImportance(ctx, viewer, 10)
+	if err != nil {
+		t.Fatalf("GetCollectionsByImportance: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d collections, want 2 (embedding-less collection must be excluded)", len(got))
+	}
+	if got[0].URI != big || got[1].URI != small {
+		t.Fatalf("order = [%s, %s], want [big, small]", got[0].URI, got[1].URI)
+	}
+	if !(got[0].Score > got[1].Score) {
+		t.Fatalf("scores not descending: big=%v small=%v", got[0].Score, got[1].Score)
+	}
+	if got[1].Score <= 0 {
+		t.Fatalf("score must be positive, got %v", got[1].Score)
+	}
+	for _, c := range got {
+		if c.URI == noEmb {
+			t.Fatal("collection without a canonical embedding must be excluded")
+		}
+		if len(c.Embedding) != 768 {
+			t.Fatalf("embedding length = %d, want 768", len(c.Embedding))
+		}
+	}
+}
+
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

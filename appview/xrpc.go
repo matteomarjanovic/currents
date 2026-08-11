@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1748,6 +1749,14 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		strictPersonalized := personalizedWeight >= 1.0
 		fetchLimit := feedPoolFetchLimit(limit)
 		personalizedPools := make([]*feedCandidatePool, 0, feedPersonalizedPoolCount)
+
+		// Per-request variety: mint a seed on the first page, carry it across pages.
+		// selectRng samples the source collections; mixRng drives pool interleaving.
+		if cursorState.Seed == 0 {
+			cursorState.Seed = newFeedSeed()
+		}
+		selectRng := rand.New(rand.NewSource(cursorState.Seed))
+		mixRng := rand.New(rand.NewSource(cursorState.Seed ^ feedMixSeedSalt))
 		appendPersonalizedPool := func(key string, embedding []float32, offset int) error {
 			candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, fetchLimit+1, offset)
 			if err != nil {
@@ -1796,14 +1805,15 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if len(cursorState.Collections) == 0 && !cursorState.Initialized {
-				cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedPersonalizedPoolCount)
+				cands, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedCollectionCandidatePool)
 				if err != nil {
 					slog.Error("GetCollectionsByImportance", "err", err)
 					http.Error(w, "internal error", http.StatusInternalServerError)
 					return
 				}
-				for _, col := range cols {
-					if err := appendPersonalizedPool(col.URI, col.Embedding, 0); err != nil {
+				for _, col := range sampleCollections(cands, feedPersonalizedPoolCount, selectRng) {
+					start := seededStartOffset(cursorState.Seed, col.URI, feedVarietyWindow)
+					if err := appendPersonalizedPool(col.URI, col.Embedding, start); err != nil {
 						slog.Error("SearchSavesByEmbedding (feed)", "collection", col.URI, "err", err)
 						continue
 					}
@@ -1835,7 +1845,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if len(cursorState.Seeds) == 0 && !cursorState.Initialized {
-				cols, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedPersonalizedPoolCount)
+				cands, err := s.Store.GetCollectionsByImportance(r.Context(), viewerStr, feedCollectionCandidatePool)
 				if err != nil {
 					slog.Error("GetCollectionsByImportance", "err", err)
 					http.Error(w, "internal error", http.StatusInternalServerError)
@@ -1848,7 +1858,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				selectedClusterIDs := make([]string, 0, feedPersonalizedPoolCount)
-				for _, col := range cols {
+				for _, col := range sampleCollections(cands, feedPersonalizedPoolCount, selectRng) {
 					excludedClusterIDs := make([]string, 0, len(viewerClusterIDs)+len(selectedClusterIDs))
 					excludedClusterIDs = append(excludedClusterIDs, viewerClusterIDs...)
 					excludedClusterIDs = append(excludedClusterIDs, selectedClusterIDs...)
@@ -1861,7 +1871,8 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 					if medoid == nil {
 						continue
 					}
-					if err := appendPersonalizedPool(medoid.VisualIdentityID, medoid.Embedding, 0); err != nil {
+					start := seededStartOffset(cursorState.Seed, medoid.VisualIdentityID, feedVarietyWindow)
+					if err := appendPersonalizedPool(medoid.VisualIdentityID, medoid.Embedding, start); err != nil {
 						slog.Error("SearchSavesByEmbedding (feed)", "seed", medoid.VisualIdentityID, "err", err)
 						continue
 					}
@@ -1905,9 +1916,9 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		saveRows = buildFeedPage(nil, pools, limit)
+		saveRows = buildFeedPage(mixRng, pools, limit)
 
-		nextState := feedCursor{Version: 1, Mode: requestedMode, Initialized: true}
+		nextState := feedCursor{Version: 1, Mode: requestedMode, Initialized: true, Seed: cursorState.Seed}
 		for _, pool := range pools {
 			if !pool.hasMoreAfterPage() {
 				continue

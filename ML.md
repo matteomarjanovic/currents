@@ -59,25 +59,25 @@ score = save_count × exp(−0.01 × age_in_days)
 
 Positive personalization builds up to 3 personalized pools from the viewer's own collections:
 
-1. The viewer's **top 3 collections** are selected, ranked by a time-decayed importance score:
+1. The viewer's collections are ranked by a time-decayed importance score:
 
 	```
 	importance = SUM(exp(−0.01 × age_in_days))
 	```
 
-	This is computed over the viewer's saves in each collection. Only collections with a precomputed `canonical_embedding` are eligible.
+	This is computed over the viewer's saves in each collection. Only collections with a precomputed `canonical_embedding` are eligible. Rather than taking a hard top-3, the feed takes the top `feedCollectionCandidatePool` (5) candidates and **samples 3 without replacement, weighted by importance**, using a per-request seed (see *Refresh variety* below). Bigger/more-recent collections are still favoured, but the selected set rotates between refreshes — and a smaller, less-important collection surfaces sometimes instead of never.
 
 2. Each selected collection contributes its `canonical_embedding`, which is the **medoid** of that collection's saves' embeddings: the real embedding with minimum total cosine distance to all others.
 
-3. Each collection medoid becomes one ANN retrieval pool by querying `visual_identity.embedding` with the same pgvector cosine-distance search used by text search.
+3. Each collection medoid becomes one ANN retrieval pool by querying `visual_identity.embedding` with the same pgvector cosine-distance search used by text search. The pool doesn't always start at the nearest neighbour: it begins at a **seeded start offset** in `[0, feedVarietyWindow)` (60), so the images shown within one collection also rotate per refresh.
 
-4. The cursor stores the selected collection URIs plus per-pool offsets, so later pages continue paging the same collection-derived pools instead of recomputing the top-3 set on every request.
+4. The cursor stores the selected collection URIs, their per-pool offsets, and the request seed, so later pages continue paging the same sampled pools from where they left off instead of re-sampling on every request.
 
 ### Negative personalization / serendipity (`personalized < 0`)
 
-Negative personalization starts from the same top 3 viewer collections, but swaps in **nearby unexplored cluster medoids** before retrieval:
+Negative personalization starts from the same sampled viewer collections, but swaps in **nearby unexplored cluster medoids** before retrieval:
 
-1. The viewer's top 3 collections are selected exactly as in positive personalization.
+1. Three of the viewer's collections are sampled exactly as in positive personalization (seed-weighted, from the top-5 candidate pool).
 
 2. Daily clustering assigns each visual identity to a cluster and stores a **cluster medoid** (a representative visual identity for that cluster).
 
@@ -88,7 +88,19 @@ Negative personalization starts from the same top 3 viewer collections, but swap
 
 4. Each selected cluster medoid contributes its own ANN retrieval pool, again querying the main 768-d `visual_identity.embedding` space. The cluster structure is only used to choose seeds; actual retrieval still happens in the shared SigLIP2 embedding space.
 
-5. The cursor stores the selected cluster-medoid visual-identity IDs plus per-pool offsets, so later pages continue paging the same serendipity pools even though cluster IDs themselves are not stable pagination keys.
+5. The cursor stores the selected cluster-medoid visual-identity IDs, per-pool offsets (seeded start included), and the request seed, so later pages continue paging the same serendipity pools even though cluster IDs themselves are not stable pagination keys.
+
+### Refresh variety (`personalized ≠ 0`)
+
+Users expect a fresh page load to change what they see. The personalized and serendipity feeds get this from a single per-request **seed**, minted on the first page (cursor-less request) and carried through the cursor across pages. A refresh sends no cursor, so it mints a new seed and reshuffles; scrolling reuses the cursor's seed, so pagination stays stable within a session.
+
+The seed drives three levers, none of which touches the importance *formula* itself — they are all sampling on top of the existing ranking:
+
+1. **Which collections** feed the pools — seed-weighted sampling of 3 from the top-5 (above).
+2. **Which images** within each pool — a seeded start offset in `[0, 60)` per pool (above). This is the lever that gives variety even to viewers with 3 or fewer collections, where collection sampling can't vary the selection.
+3. **Interleaving** — `buildFeedPage`'s weighted pool mixing is seeded from the same seed (a salted derivation, so it's independent of the collection-sampling draws).
+
+The **global feed (`personalized = 0`) is deliberately excluded** from this: it keeps its own `(uri, current_date)` jitter that rotates once a day and stays reproducible within a day, which is what its offset pagination relies on.
 
 ### Mixing global and personalized pools
 

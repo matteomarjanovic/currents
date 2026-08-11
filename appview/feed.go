@@ -2,12 +2,29 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 )
 
 const feedPersonalizedPoolCount = 3
+
+// feedCollectionCandidatePool is how many of the viewer's top collections (by
+// importance) are considered when building the personalized/serendipity pools.
+// feedPersonalizedPoolCount are then sampled from this wider set, weighted by
+// importance and driven by the per-request seed — that sampling is what rotates
+// the feed between refreshes instead of always drawing the same top collections.
+const feedCollectionCandidatePool = 5
+
+// feedVarietyWindow bounds the seeded start offset applied to each personalized
+// ANN pool: a fresh load starts somewhere within the first feedVarietyWindow
+// nearest neighbours instead of always at 0, so the images inside each pool
+// rotate too. This is the lever that gives per-refresh variety even to viewers
+// with feedPersonalizedPoolCount or fewer collections (where collection sampling
+// can't vary the selection).
+const feedVarietyWindow = 60
 
 type feedCursorMode string
 
@@ -24,6 +41,12 @@ type feedCursor struct {
 	Collections  []feedCursorCollection `json:"c,omitempty"`
 	Seeds        []feedCursorSeed       `json:"s,omitempty"`
 	GlobalOffset int                    `json:"g,omitempty"`
+	// Seed drives per-request variety in the personalized/serendipity feeds
+	// (collection sampling + per-pool start offsets + pool interleaving). Minted
+	// on the first page and carried across pages so pagination stays stable within
+	// a scroll session while a fresh load (new seed) reshuffles. Unused (0) for the
+	// global feed, which keeps its own daily jitter.
+	Seed int64 `json:"r,omitempty"`
 }
 
 type feedCursorCollection struct {
@@ -88,7 +111,7 @@ func (c feedCursor) validate() error {
 
 	switch c.Mode {
 	case feedCursorModeGlobal:
-		if c.Initialized || len(c.Collections) > 0 || len(c.Seeds) > 0 {
+		if c.Initialized || len(c.Collections) > 0 || len(c.Seeds) > 0 || c.Seed != 0 {
 			return fmt.Errorf("invalid global cursor")
 		}
 	case feedCursorModePositive:
@@ -157,6 +180,75 @@ func encodeFeedCursor(cursor feedCursor) (string, error) {
 
 func feedPoolFetchLimit(limit int) int {
 	return max(limit*3, limit+25)
+}
+
+// feedMixSeedSalt derives the pool-interleaving RNG seed from the cursor seed so
+// buildFeedPage's mixing is independent of the collection-sampling RNG draws.
+const feedMixSeedSalt int64 = -0x61c8864680b583eb // golden-ratio constant
+
+// newFeedSeed returns a non-zero random seed for a personalized/serendipity feed
+// request (0 is reserved for "no seed" / the global feed).
+func newFeedSeed() int64 {
+	s := rand.Int63()
+	if s == 0 {
+		s = 1
+	}
+	return s
+}
+
+// sampleCollections picks up to n collections from cands without replacement,
+// each draw weighted by its importance Score, using rng. It's deterministic for a
+// given rng seed, so a cursor's stored seed reproduces the same selection across
+// pages; the returned slice is in draw order. Sampling a few from a wider set
+// (rather than taking a hard top-n) is what rotates the feed between refreshes.
+func sampleCollections(cands []CollectionImportance, n int, rng *rand.Rand) []CollectionImportance {
+	pool := make([]CollectionImportance, len(cands))
+	copy(pool, cands)
+	picked := make([]CollectionImportance, 0, n)
+	for len(picked) < n && len(pool) > 0 {
+		total := 0.0
+		for _, c := range pool {
+			if c.Score > 0 {
+				total += c.Score
+			}
+		}
+		idx := len(pool) - 1
+		if total <= 0 {
+			// No positive weights left: fall back to a uniform pick.
+			idx = rng.Intn(len(pool))
+		} else {
+			pick := rng.Float64() * total
+			acc := 0.0
+			for i, c := range pool {
+				if c.Score <= 0 {
+					continue
+				}
+				acc += c.Score
+				if pick <= acc {
+					idx = i
+					break
+				}
+			}
+		}
+		picked = append(picked, pool[idx])
+		pool = append(pool[:idx], pool[idx+1:]...)
+	}
+	return picked
+}
+
+// seededStartOffset maps (seed, key) to a stable offset in [0, window), so each
+// personalized pool starts at a different slice of its nearest neighbours per
+// fresh load while staying fixed within a cursor session.
+func seededStartOffset(seed int64, key string, window int) int {
+	if window <= 0 {
+		return 0
+	}
+	h := fnv.New64a()
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], uint64(seed))
+	_, _ = h.Write(b[:])
+	_, _ = h.Write([]byte(key))
+	return int(h.Sum64() % uint64(window))
 }
 
 func (p *feedCandidatePool) hasRemaining() bool {
