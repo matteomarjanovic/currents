@@ -180,3 +180,14 @@
 		font-size: 16px;
 	}
 }
+
+/* Long-pressing an image in WKWebView (the native iOS shell) fires the system callout: the
+   image-zoom preview plus a "Save Image / Copy" menu. That races on top of our own long-press-to-save
+   drawer (see src/lib/long-press.ts). Suppress the native callout on images so only our behaviour
+   remains — applies in the native app and in mobile Safari alike. -webkit-user-drag/user-select stop
+   the long-press from also starting an image drag or selection. */
+img {
+	-webkit-touch-callout: none;
+	-webkit-user-drag: none;
+	user-select: none;
+}
