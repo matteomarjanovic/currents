@@ -30,6 +30,7 @@
 	import ListFilter from '@lucide/svelte/icons/list-filter';
 	import Library from '@lucide/svelte/icons/library';
 	import Folder from '@lucide/svelte/icons/folder';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import X from '@lucide/svelte/icons/x';
 
 	// The selected collection/section lives in the URL (`?c=<uri>`), so tree rows are real
@@ -203,6 +204,36 @@
 		return onBackButton(() => (selection = null));
 	});
 	const isMobile = new IsMobile();
+
+	// ── Multi-select ──────────────────────────────────────────────────────────
+	// A single selection shared by the header toggle and the canvas. It's scoped to
+	// the current feed, so any navigation (collection / search / color / similar)
+	// exits the mode and drops the selection.
+	let selectMode = $state(false);
+	let bulkSelected = new SvelteSet<string>();
+	function toggleSelectMode() {
+		if (selectMode) {
+			bulkSelected.clear();
+			selectMode = false;
+		} else {
+			selectMode = true;
+		}
+	}
+	$effect(() => {
+		void selectedUri;
+		void similarUri;
+		void colorParam;
+		void searchQuery;
+		untrack(() => {
+			selectMode = false;
+			bulkSelected.clear();
+		});
+	});
+	// True everywhere except a favourited (someone else's) collection — search/color/
+	// similar always run over the viewer's own library. Gates label/attribution.
+	let ownContext = $derived(
+		!!(searchQuery || colorParam || similarUri) || !selectedUri || !!ownSelected
+	);
 </script>
 
 <svelte:head>
@@ -511,13 +542,26 @@
 				</div>
 			{/if}
 
+			<!-- Multi-select toggle: enter/leave bulk-selection mode for the grid. -->
+			<Button
+				variant={selectMode ? 'default' : 'ghost'}
+				size="sm"
+				class="ml-auto shrink-0"
+				aria-pressed={selectMode}
+				aria-label={selectMode ? 'Done selecting' : 'Select'}
+				onclick={toggleSelectMode}
+			>
+				<ListChecks class="size-4" />
+				<span class="hidden md:inline">{selectMode ? 'Done' : 'Select'}</span>
+			</Button>
+
 			<!-- Search: icon-only on mobile (the field would crowd the header); on desktop
 			     a field whose text area opens the command dialog and whose X clears an
 			     active search and restores the collection grid. -->
 			<Button
 				variant="ghost"
 				size="icon"
-				class="ml-auto shrink-0 md:hidden"
+				class="shrink-0 md:hidden"
 				aria-label="Search your library"
 				onclick={() => (searchOpen = true)}
 			>
@@ -555,6 +599,9 @@
 			{search}
 			{similar}
 			color={colorSearch}
+			bind:selectMode
+			selected={bulkSelected}
+			{ownContext}
 			selectedSaveUri={selectedSave?.uri ?? null}
 			onSelectSave={(s) => (selection = { collectionUri: selectedUri, save: s })}
 			onFindSimilar={findSimilar}

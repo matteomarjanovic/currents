@@ -19,8 +19,6 @@ proposing new work; delete an entry when it ships.
 
 ## Organize mode
 
-- **Multi-select / bulk actions** — select several saves and move, remove, or
-  download them at once.
 - **Drag & drop saves onto collections** in the left sidebar.
 - **Grid virtualization** for very large libraries — the masonry currently
   keeps every loaded tile mounted; fine at hundreds of images, worth

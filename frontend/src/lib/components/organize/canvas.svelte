@@ -4,6 +4,9 @@
 	import { apiFetch } from '$lib/api';
 	import { resaveWithFallback } from '$lib/resave';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import type { SvelteSet } from 'svelte/reactivity';
+	import { selectedSaves, selectableUris } from '$lib/organize-bulk';
+	import BulkActionBar from '$lib/components/organize/bulk-action-bar.svelte';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
@@ -30,12 +33,17 @@
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import Download from '@lucide/svelte/icons/download';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import SquareCheck from '@lucide/svelte/icons/square-check';
+	import Check from '@lucide/svelte/icons/check';
 
 	let {
 		selectedUri = '',
 		selectedSaveUri = null,
 		onSelectSave,
 		onFindSimilar,
+		selectMode = $bindable(false),
+		selected,
+		ownContext = true,
 		search = null,
 		similar = null,
 		color = null
@@ -44,6 +52,13 @@
 		selectedSaveUri?: string | null;
 		onSelectSave: (save: SaveView) => void;
 		onFindSimilar: (save: SaveView) => void;
+		// Multi-select: the mode flag (owned by the page's header toggle) and the
+		// shared set of selected save URIs.
+		selectMode?: boolean;
+		selected: SvelteSet<string>;
+		// False only in a favourited (someone else's) collection — gates the actions
+		// that write to the viewer's own records (move/label/attribution).
+		ownContext?: boolean;
 		search?: { query: string; collections: string[] } | null;
 		similar?: { uri: string; collections: string[] } | null;
 		color?: { hex: string; collections: string[] } | null;
@@ -117,6 +132,95 @@
 	});
 
 	let visible = $derived(feed.items.filter((i) => !shouldHide(i.labels)));
+
+	// ── Multi-select ──────────────────────────────────────────────────────────
+	// The mode flag and the selected URI set are owned by the page (its header
+	// toggle flips the mode); the canvas resolves them against the live feed and
+	// runs the bulk actions that touch the feed (copy/move). The others live in
+	// the action bar.
+	let selectedList = $derived(selectedSaves(feed.items, selected));
+	let selectableCount = $derived(selectableUris(visible).length);
+	let canMove = $derived(ownContext && !!selectedUri && !search && !color && !similar);
+
+	function toggleSelect(item: SaveView) {
+		if (!getImageContent(item)) return; // unsupported content isn't selectable
+		if (selected.has(item.uri)) selected.delete(item.uri);
+		else selected.add(item.uri);
+	}
+	function selectAllLoaded() {
+		for (const uri of selectableUris(visible)) selected.add(uri);
+	}
+	function enterSelectWith(item: SaveView) {
+		selectMode = true;
+		selected.clear();
+		toggleSelect(item);
+	}
+	function exitSelect() {
+		selected.clear();
+		selectMode = false;
+	}
+
+	// Run an async op over `items` with at most `limit` in flight — copy/move each
+	// do a PDS write per item, so a modest cap keeps the write budget in check.
+	async function runBounded<T>(items: T[], limit: number, fn: (t: T) => Promise<void>) {
+		const queue = [...items];
+		const worker = async () => {
+			for (;;) {
+				const it = queue.shift();
+				if (it === undefined) return;
+				await fn(it);
+			}
+		};
+		await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker));
+	}
+
+	async function bulkCopy(dest: string) {
+		const targets = selectedList;
+		let ok = 0;
+		let failed = 0;
+		await runBounded(targets, 4, async (item) => {
+			try {
+				const res = await resaveWithFallback(item.uri, dest);
+				if (!res.ok) throw new Error(`${res.status}`);
+				ok++;
+			} catch {
+				failed++;
+			}
+		});
+		if (ok > 0) toast.success(`Copied ${ok}${failed ? ` · ${failed} failed` : ''}`);
+		else toast.error('Could not copy');
+		exitSelect();
+	}
+
+	async function bulkMove(dest: string) {
+		if (dest === selectedUri) {
+			exitSelect();
+			return;
+		}
+		const targets = selectedList;
+		let ok = 0;
+		let failed = 0;
+		await runBounded(targets, 4, async (item) => {
+			const rkey = item.uri.split('/').pop();
+			const alreadyInDest = item.viewer?.saves?.some((s) => s.collectionUri === dest);
+			try {
+				if (!alreadyInDest) {
+					const res = await resaveWithFallback(item.uri, dest);
+					if (!res.ok) throw new Error(`resave: ${res.status}`);
+				}
+				const del = await apiFetch(`/save/${rkey}`, { method: 'DELETE' });
+				if (!del.ok) throw new Error(`delete: ${del.status}`);
+				feed.removeItem(item.uri);
+				emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
+				ok++;
+			} catch {
+				failed++;
+			}
+		});
+		if (ok > 0) toast.success(`Moved ${ok}${failed ? ` · ${failed} failed` : ''}`);
+		else toast.error('Could not move');
+		exitSelect();
+	}
 
 	// ── Context-menu actions ──────────────────────────────────────────────────
 	// Mobile "Copy/Move to collection" opens a shared drawer (desktop uses an inline
@@ -327,6 +431,10 @@
 </script>
 
 {#snippet menuItems(Menu: typeof ContextMenu, item: SaveView)}
+	<Menu.Item onSelect={() => enterSelectWith(item)}>
+		<SquareCheck />
+		Select
+	</Menu.Item>
 	<Menu.Item onSelect={() => selectTile(item)}>
 		<Scan />
 		Open
@@ -405,6 +513,33 @@
 	{/if}
 {/snippet}
 
+{#snippet tileMedia(
+	item: SaveView,
+	image: ReturnType<typeof getImageContent>,
+	ratio: { width: number; height: number }
+)}
+	<LabeledMedia labels={item.labels}>
+		{#if image}
+			<img
+				src={image.imageUrl}
+				alt={image.alt ?? item.text ?? ''}
+				loading="lazy"
+				class="w-full {isCropped(image.width, image.height) ? 'object-cover object-top' : ''}"
+				style={image.width && image.height
+					? `aspect-ratio: ${ratio.width} / ${ratio.height}`
+					: undefined}
+			/>
+		{:else}
+			<div
+				class="flex items-center justify-center bg-muted text-xs text-muted-foreground"
+				style="aspect-ratio: 3 / 4;"
+			>
+				Unsupported content
+			</div>
+		{/if}
+	</LabeledMedia>
+{/snippet}
+
 <!-- overflow-anchor:none disables the browser's native scroll anchoring, which
      misfires on the masonry's transform-based layout; we anchor manually instead. -->
 <div bind:this={scrollEl} class="min-h-0 flex-1 overflow-y-auto p-4 [overflow-anchor:none]">
@@ -480,78 +615,91 @@
 					{@const ratio = tileRatio(image?.width, image?.height)}
 					<Frame width={ratio.width} height={ratio.height}>
 						<div class="group relative h-full w-full">
-							<ContextMenu.Root>
-								<ContextMenu.Trigger>
-									{#snippet child({ props })}
-										<button
-											{...props}
-											type="button"
-											data-uri={item.uri}
-											onclick={() => selectTile(item)}
-											class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-[box-shadow] group-hover:ring-2 {selectedSaveUri ===
-											item.uri
-												? 'ring-2 ring-primary'
-												: ''}"
-											style={image?.dominantColor
-												? `background-color: ${image.dominantColor}`
-												: undefined}
-										>
-											<LabeledMedia labels={item.labels}>
-												{#if image}
-													<img
-														src={image.imageUrl}
-														alt={image.alt ?? item.text ?? ''}
-														loading="lazy"
-														class="w-full {isCropped(image.width, image.height)
-															? 'object-cover object-top'
-															: ''}"
-														style={image.width && image.height
-															? `aspect-ratio: ${ratio.width} / ${ratio.height}`
-															: undefined}
-													/>
-												{:else}
-													<div
-														class="flex items-center justify-center bg-muted text-xs text-muted-foreground"
-														style="aspect-ratio: 3 / 4;"
-													>
-														Unsupported content
-													</div>
-												{/if}
-											</LabeledMedia>
-										</button>
-									{/snippet}
-								</ContextMenu.Trigger>
-								<!-- overflow-*-visible so the collection submenus (which render
-								     inside the content and open to the side) aren't clipped by the
-								     menu's default overflow-x-hidden/overflow-y-auto. -->
-								<ContextMenu.Content class="w-56 overflow-x-visible overflow-y-visible">
-									{@render menuItems(ContextMenu, item)}
-								</ContextMenu.Content>
-							</ContextMenu.Root>
-							<!-- Options button: opens the same menu as right-click, anchored to the button.
-							     Always visible on touch (no hover), revealed on hover on desktop, and kept
-							     visible while its menu is open. -->
-							<DropdownMenu.Root>
-								<DropdownMenu.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="secondary"
-											size="icon-sm"
-											aria-label="Options"
-											class="absolute right-2 bottom-2 aria-expanded:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-										>
-											<Ellipsis />
-										</Button>
-									{/snippet}
-								</DropdownMenu.Trigger>
-								<DropdownMenu.Content
-									align="end"
-									class="w-56 overflow-x-visible overflow-y-visible"
+							{#if selectMode}
+								{@const isSel = selected.has(item.uri)}
+								{@const ok = !!image}
+								<button
+									type="button"
+									data-uri={item.uri}
+									disabled={!ok}
+									aria-pressed={isSel}
+									onclick={() => toggleSelect(item)}
+									class="relative block h-full w-full overflow-hidden rounded-lg {ok
+										? 'cursor-pointer'
+										: 'cursor-not-allowed'}"
+									style={image?.dominantColor
+										? `background-color: ${image.dominantColor}`
+										: undefined}
 								>
-									{@render menuItems(dropdownMenu, item)}
-								</DropdownMenu.Content>
-							</DropdownMenu.Root>
+									{@render tileMedia(item, image, ratio)}
+									{#if ok}
+										<div
+											class="absolute inset-0 rounded-lg transition-colors {isSel
+												? 'bg-primary/20 ring-2 ring-primary ring-inset'
+												: 'group-hover:bg-black/10'}"
+										></div>
+										<div
+											class="absolute top-2 left-2 flex size-6 items-center justify-center rounded-full border-2 transition-colors {isSel
+												? 'border-primary bg-primary text-primary-foreground'
+												: 'border-white/90 bg-black/30'}"
+										>
+											{#if isSel}<Check class="size-4" />{/if}
+										</div>
+									{/if}
+								</button>
+							{:else}
+								<ContextMenu.Root>
+									<ContextMenu.Trigger>
+										{#snippet child({ props })}
+											<button
+												{...props}
+												type="button"
+												data-uri={item.uri}
+												onclick={() => selectTile(item)}
+												class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-[box-shadow] group-hover:ring-2 {selectedSaveUri ===
+												item.uri
+													? 'ring-2 ring-primary'
+													: ''}"
+												style={image?.dominantColor
+													? `background-color: ${image.dominantColor}`
+													: undefined}
+											>
+												{@render tileMedia(item, image, ratio)}
+											</button>
+										{/snippet}
+									</ContextMenu.Trigger>
+									<!-- overflow-*-visible so the collection submenus (which render
+									     inside the content and open to the side) aren't clipped by the
+									     menu's default overflow-x-hidden/overflow-y-auto. -->
+									<ContextMenu.Content class="w-56 overflow-x-visible overflow-y-visible">
+										{@render menuItems(ContextMenu, item)}
+									</ContextMenu.Content>
+								</ContextMenu.Root>
+								<!-- Options button: opens the same menu as right-click, anchored to the button.
+								     Always visible on touch (no hover), revealed on hover on desktop, and kept
+								     visible while its menu is open. -->
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="secondary"
+												size="icon-sm"
+												aria-label="Options"
+												class="absolute right-2 bottom-2 aria-expanded:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+											>
+												<Ellipsis />
+											</Button>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content
+										align="end"
+										class="w-56 overflow-x-visible overflow-y-visible"
+									>
+										{@render menuItems(dropdownMenu, item)}
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							{/if}
 						</div>
 					</Frame>
 				{/each}
@@ -575,6 +723,20 @@
 		{/if}
 	{/if}
 </div>
+
+{#if selectMode}
+	<BulkActionBar
+		saves={selectedList}
+		{selectableCount}
+		{canMove}
+		{ownContext}
+		onSelectAll={selectAllLoaded}
+		onClear={() => selected.clear()}
+		onExit={exitSelect}
+		onCopy={bulkCopy}
+		onMove={bulkMove}
+	/>
+{/if}
 
 <!-- Mobile "Copy/Move to collection": a shared bottom drawer (desktop uses the inline submenu). -->
 <Drawer.Root bind:open={drawerOpen}>
