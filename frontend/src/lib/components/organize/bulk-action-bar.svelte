@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
+	import { slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { apiFetch } from '$lib/api';
 	import { type SaveView } from '$lib/types';
@@ -195,8 +197,17 @@
 		</Button>
 	</div>
 {:else}
-	<div class="shrink-0 border-t bg-popover/95 p-3 backdrop-blur-sm">
-		<div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2">
+	<!-- Its own panel, stacked under the rounded main panel and inside the inset's
+	     gutter, so it inherits the same margins and lines up with it. `slide` animates
+	     the height; the panel above is flex-1, so it shrinks in step.
+	     `|global` is required: transitions are local by default, and the block this
+	     lives in isn't what changes — the page's `{#if selectMode}` around the whole
+	     component is. A local transition would simply never play. -->
+	<div
+		transition:slide|global={{ duration: 200, easing: cubicOut }}
+		class="mt-2 shrink-0 rounded-2xl bg-popover/95 shadow-sm backdrop-blur-sm"
+	>
+		<div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 p-3">
 			<div class="flex items-center gap-3 text-sm">
 				<span class="font-medium">{saves.length} selected</span>
 				<button

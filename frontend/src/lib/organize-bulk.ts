@@ -1,5 +1,19 @@
 import { getImageContent, type SaveView } from './types';
 
+// What the action bar needs to act on a selection. The canvas owns the feed these
+// are derived from, but the bar renders as a sibling of the canvas's rounded panel,
+// so the canvas hands this up (live, via getters) for the page to pass along.
+export type BulkApi = {
+	readonly saves: SaveView[];
+	readonly selectableCount: number;
+	readonly canMove: boolean;
+	onSelectAll: () => void;
+	onClear: () => void;
+	onExit: () => void;
+	onCopy: (dest: string) => void;
+	onMove: (dest: string) => void;
+};
+
 // Resolve a selection Set of save URIs against a list of loaded saves, preserving
 // the list's order. Selections can outlive a feed page (a URI stays selected while
 // its tile scrolls), so anything no longer present is simply dropped.

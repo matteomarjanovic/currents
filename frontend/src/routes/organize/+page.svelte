@@ -17,6 +17,8 @@
 	import OrganizeCanvas from '$lib/components/organize/canvas.svelte';
 	import OrganizeSidebarRight from '$lib/components/organize/sidebar-right.svelte';
 	import OrganizeSearchCommand from '$lib/components/organize/search-command.svelte';
+	import BulkActionBar from '$lib/components/organize/bulk-action-bar.svelte';
+	import type { BulkApi } from '$lib/organize-bulk';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
 	import CollectionActions from '$lib/components/collection-actions.svelte';
 	import { Kbd } from '$lib/components/ui/kbd';
@@ -211,6 +213,9 @@
 	// exits the mode and drops the selection.
 	let selectMode = $state(false);
 	let bulkSelected = new SvelteSet<string>();
+	// Handed up by the canvas (which owns the feed the selection is derived from) so
+	// the bar can render as a sibling of the rounded panel instead of inside it.
+	let bulk = $state<BulkApi | null>(null);
 	function toggleSelectMode() {
 		if (selectMode) {
 			bulkSelected.clear();
@@ -289,328 +294,355 @@
      since the page itself never scrolls). -->
 <Sidebar.Provider class="h-dvh overflow-hidden">
 	<OrganizeSidebarLeft {selectedUri} />
-	<Sidebar.Inset class="overflow-hidden">
-		<header
-			class="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b px-4 pt-[env(safe-area-inset-top)]"
+	<!-- The inset must stay a direct sibling of the sidebar: its gutter margins come
+	     from `peer-data-[variant=inset]` classes, and Tailwind's peer-* is a sibling
+	     combinator, so wrapping it would silently drop them. So the inset keeps the
+	     margins but hands its panel look (rounding/background/shadow) to the inner
+	     div below, leaving it free to act as the column that the panel and the bulk
+	     bar stack inside. -->
+	<Sidebar.Inset
+		class="overflow-hidden bg-transparent md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none"
+	>
+		<!-- The rounded panel. flex-1, so when the bar slides in below it the panel
+		     shrinks to make room — the same reflow the sidebars cause horizontally.
+		     Rounding/shadow are md-only: below that the inset has no gutter and the
+		     view is edge-to-edge, where rounded corners would just expose the page
+		     background behind them. -->
+		<div
+			class="flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-2xl md:shadow-sm"
 		>
-			<Sidebar.Trigger class="-ml-1" />
-			<Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
-			{#if search && colorSearch}
-				<!-- Hybrid: the color filters, the text orders. The chip shows the color
+			<header
+				class="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b px-4 pt-[env(safe-area-inset-top)]"
+			>
+				<Sidebar.Trigger class="-ml-1" />
+				<Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
+				{#if search && colorSearch}
+					<!-- Hybrid: the color filters, the text orders. The chip shows the color
 				     (click to adjust it), the text, the shared scope filter, and a clear-all. -->
-				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
-					<button
-						type="button"
-						onclick={() => (searchOpen = true)}
-						class="size-4 shrink-0 rounded-full border transition-transform hover:scale-110"
-						style="background-color: {colorSearch.hex}"
-						aria-label="Change color"
-						title="Change color"
-					></button>
-					<span class="min-w-0 truncate">“{search.query}”</span>
-					{@render scopeFilter()}
-					<button
-						type="button"
-						onclick={() => {
-							searchQuery = null;
-							goto(hrefFor(selectedUri));
-						}}
-						class="rounded p-1 text-muted-foreground hover:bg-muted"
-						aria-label="Clear search"
-					>
-						<X class="size-3.5" />
-					</button>
-				</div>
-			{:else if search}
-				<!-- A text search replaces the breadcrumb with this chip: it names the mode
-				     and shows the collection scope in words. The scope is live-editable via
-				     the filter (re-running the search without reopening the command); the
-				     query text and clear control live in the search field on the right. -->
-				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
-					<SearchIcon class="size-4 shrink-0 text-muted-foreground" />
-					<span class="truncate">Search results</span>
-					<span class="shrink-0 text-muted-foreground">·</span>
-					<span class="shrink-0 text-muted-foreground">{scopeLabel}</span>
-					<Popover.Root>
-						<Popover.Trigger>
-							{#snippet child({ props })}
-								<Button {...props} variant="ghost" size="icon-sm" aria-label="Filter by collection">
-									<ListFilter />
-								</Button>
-							{/snippet}
-						</Popover.Trigger>
-						<Popover.Content align="start" class="w-64 p-0">
-							<Command.Root shouldFilter={false} class="bg-transparent">
-								<Command.List>
-									<CollectionFilterItems
-										collections={collections.items}
-										favourites={favouriteCollections.items}
-										selected={scope}
-										onToggle={toggleScope}
-									/>
-								</Command.List>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-					<!-- On mobile the search field (and its clear X) collapses to an icon,
-					     so the chip carries the clear control instead. -->
-					<button
-						type="button"
-						onclick={() => (searchQuery = null)}
-						class="rounded p-1 text-muted-foreground hover:bg-muted md:hidden"
-						aria-label="Clear search"
-					>
-						<X class="size-3.5" />
-					</button>
-				</div>
-			{:else if similarUri}
-				<!-- Find-similar overlays the grid with visually similar images; this chip
-				     (in place of the breadcrumb) shows the source, a collection filter, and
-				     a clear button that navigates back to the underlying view. -->
-				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
-					<Sparkles class="size-4 shrink-0 text-muted-foreground" />
-					{#if similarImage && similarSource}
-						{@const source = similarSource}
+					<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
 						<button
 							type="button"
-							class="shrink-0 rounded transition-opacity hover:opacity-75"
-							onclick={() => (selection = { collectionUri: selectedUri, save: source })}
-							aria-label="Show image details"
-						>
-							<img src={similarImage.imageUrl} alt="" class="size-6 rounded object-cover" />
-						</button>
-					{/if}
-					<span class="truncate">Similar images</span>
-					<Popover.Root>
-						<Popover.Trigger>
-							{#snippet child({ props })}
-								<Button
-									{...props}
-									variant="ghost"
-									size="icon-sm"
-									class="relative"
-									aria-label="Filter by collection"
-								>
-									<ListFilter />
-									{#if similarScope.size > 0}
-										<span
-											class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
-										>
-											{similarScope.size}
-										</span>
-									{/if}
-								</Button>
-							{/snippet}
-						</Popover.Trigger>
-						<Popover.Content align="start" class="w-64 p-0">
-							<Command.Root shouldFilter={false} class="bg-transparent">
-								<Command.List>
-									<CollectionFilterItems
-										collections={collections.items}
-										favourites={favouriteCollections.items}
-										selected={similarScope}
-										onToggle={toggleSimScope}
-									/>
-								</Command.List>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-					<button
-						type="button"
-						onclick={() => goto(hrefFor(selectedUri))}
-						class="rounded p-1 text-muted-foreground hover:bg-muted"
-						aria-label="Clear find similar"
-					>
-						<X class="size-3.5" />
-					</button>
-				</div>
-			{:else if colorSearch}
-				<!-- Color search overlays the grid with library images matching a color;
-				     this chip shows the color (click to adjust it), a collection filter,
-				     and a clear button. -->
-				<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
-					<button
-						type="button"
-						onclick={() => (searchOpen = true)}
-						class="size-4 shrink-0 rounded-full border transition-transform hover:scale-110"
-						style="background-color: {colorSearch.hex}"
-						aria-label="Change color"
-						title="Change color"
-					></button>
-					<span class="truncate">Color search</span>
-					<Popover.Root>
-						<Popover.Trigger>
-							{#snippet child({ props })}
-								<Button
-									{...props}
-									variant="ghost"
-									size="icon-sm"
-									class="relative"
-									aria-label="Filter by collection"
-								>
-									<ListFilter />
-									{#if scope.size > 0}
-										<span
-											class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
-										>
-											{scope.size}
-										</span>
-									{/if}
-								</Button>
-							{/snippet}
-						</Popover.Trigger>
-						<Popover.Content align="start" class="w-64 p-0">
-							<Command.Root shouldFilter={false} class="bg-transparent">
-								<Command.List>
-									<CollectionFilterItems
-										collections={collections.items}
-										favourites={favouriteCollections.items}
-										selected={scope}
-										onToggle={toggleScope}
-									/>
-								</Command.List>
-							</Command.Root>
-						</Popover.Content>
-					</Popover.Root>
-					<button
-						type="button"
-						onclick={() => goto(hrefFor(selectedUri))}
-						class="rounded p-1 text-muted-foreground hover:bg-muted"
-						aria-label="Clear color search"
-					>
-						<X class="size-3.5" />
-					</button>
-				</div>
-			{:else}
-				<div class="flex min-w-0 items-center gap-0.5">
-					<!-- flex-nowrap + a truncating page: a long collection name must eat its
-					     own width rather than wrap the trail onto a second line or push the
-					     actions menu off-screen. -->
-					<Breadcrumb.Root class="min-w-0">
-						<Breadcrumb.List class="flex-nowrap">
-							{#if selected}
-								<!-- On mobile the ancestors collapse into a single "…" menu — always,
-								     even when "My library" is the only one, so the header keeps the
-								     same shape in a collection and in a section. Desktop shows the
-								     full trail. -->
-								<Breadcrumb.Item class="md:hidden">
-									<DropdownMenu.Root>
-										<DropdownMenu.Trigger aria-label="Go to a parent collection">
-											<Breadcrumb.Ellipsis />
-										</DropdownMenu.Trigger>
-										<DropdownMenu.Content align="start" class="w-48">
-											<DropdownMenu.Item onSelect={() => goto('/organize')}>
-												<Library />
-												My library
-											</DropdownMenu.Item>
-											{#if parent}
-												{@const p = parent}
-												<DropdownMenu.Item onSelect={() => goto(hrefFor(p.uri))}>
-													<Folder />
-													<span class="truncate">{p.name}</span>
-												</DropdownMenu.Item>
-											{/if}
-										</DropdownMenu.Content>
-									</DropdownMenu.Root>
-								</Breadcrumb.Item>
-								<Breadcrumb.Item class="hidden md:inline-flex">
-									<Breadcrumb.Link href="/organize">My library</Breadcrumb.Link>
-								</Breadcrumb.Item>
-								{#if parent}
-									<Breadcrumb.Separator class="hidden md:block" />
-									<Breadcrumb.Item class="hidden md:inline-flex">
-										<Breadcrumb.Link href={hrefFor(parent.uri)}>{parent.name}</Breadcrumb.Link>
-									</Breadcrumb.Item>
-								{/if}
-								<Breadcrumb.Separator />
-								<Breadcrumb.Item class="min-w-0">
-									<Breadcrumb.Page class="truncate">{selected.name}</Breadcrumb.Page>
-								</Breadcrumb.Item>
-							{:else}
-								<Breadcrumb.Item>
-									<Breadcrumb.Page>My library</Breadcrumb.Page>
-								</Breadcrumb.Item>
-							{/if}
-						</Breadcrumb.List>
-					</Breadcrumb.Root>
-					<!-- Same actions as the sidebar's right-click menu. This is the only way
-					     in on touch, so it's the one that has to be visible. Favourited
-					     collections belong to someone else — no actions there. -->
-					{#if ownSelected}
-						<CollectionActions collection={ownSelected} onDeleted={() => goto('/organize')} />
-					{/if}
-				</div>
-			{/if}
-
-			<!-- Right-hand cluster: the multi-select toggle then search. One `ml-auto` on
-			     the wrapper — putting it on both children strands the first one mid-header,
-			     since the earlier auto margin eats the free space before the later one sees it. -->
-			<div class="ml-auto flex shrink-0 items-center gap-1">
-				<!-- Multi-select toggle: enter/leave bulk-selection mode for the grid. -->
-				<Button
-					variant={selectMode ? 'default' : 'ghost'}
-					size="sm"
-					class="shrink-0"
-					aria-pressed={selectMode}
-					aria-label={selectMode ? 'Done selecting' : 'Select'}
-					onclick={toggleSelectMode}
-				>
-					<ListChecks class="size-4" />
-					<span class="hidden md:inline">{selectMode ? 'Done' : 'Select'}</span>
-				</Button>
-
-				<!-- Search: icon-only on mobile (the field would crowd the header); on desktop
-				     a field whose text area opens the command dialog and whose X clears an
-				     active search and restores the collection grid. -->
-				<Button
-					variant="ghost"
-					size="icon"
-					class="shrink-0 md:hidden"
-					aria-label="Search your library"
-					onclick={() => (searchOpen = true)}
-				>
-					<SearchIcon />
-				</Button>
-				<div
-					class="hidden h-9 w-full max-w-64 items-center rounded-md border bg-background text-sm md:flex"
-				>
-					<button
-						type="button"
-						onclick={() => (searchOpen = true)}
-						class="flex min-w-0 flex-1 items-center gap-2 px-3 text-muted-foreground hover:text-foreground"
-					>
-						<SearchIcon class="size-4 shrink-0" />
-						<span class="truncate">{search ? search.query : 'Search your library…'}</span>
-						{#if !search}
-							<Kbd class="ml-auto hidden shrink-0 md:inline-flex">{isMac ? '⌘' : 'Ctrl'} K</Kbd>
-						{/if}
-					</button>
-					{#if search}
+							onclick={() => (searchOpen = true)}
+							class="size-4 shrink-0 rounded-full border transition-transform hover:scale-110"
+							style="background-color: {colorSearch.hex}"
+							aria-label="Change color"
+							title="Change color"
+						></button>
+						<span class="min-w-0 truncate">“{search.query}”</span>
+						{@render scopeFilter()}
 						<button
 							type="button"
-							onclick={() => (searchQuery = null)}
-							class="mr-1 rounded p-1 text-muted-foreground hover:bg-muted"
+							onclick={() => {
+								searchQuery = null;
+								goto(hrefFor(selectedUri));
+							}}
+							class="rounded p-1 text-muted-foreground hover:bg-muted"
 							aria-label="Clear search"
 						>
 							<X class="size-3.5" />
 						</button>
-					{/if}
-				</div>
-			</div>
-		</header>
+					</div>
+				{:else if search}
+					<!-- A text search replaces the breadcrumb with this chip: it names the mode
+				     and shows the collection scope in words. The scope is live-editable via
+				     the filter (re-running the search without reopening the command); the
+				     query text and clear control live in the search field on the right. -->
+					<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+						<SearchIcon class="size-4 shrink-0 text-muted-foreground" />
+						<span class="truncate">Search results</span>
+						<span class="shrink-0 text-muted-foreground">·</span>
+						<span class="shrink-0 text-muted-foreground">{scopeLabel}</span>
+						<Popover.Root>
+							<Popover.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-sm"
+										aria-label="Filter by collection"
+									>
+										<ListFilter />
+									</Button>
+								{/snippet}
+							</Popover.Trigger>
+							<Popover.Content align="start" class="w-64 p-0">
+								<Command.Root shouldFilter={false} class="bg-transparent">
+									<Command.List>
+										<CollectionFilterItems
+											collections={collections.items}
+											favourites={favouriteCollections.items}
+											selected={scope}
+											onToggle={toggleScope}
+										/>
+									</Command.List>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
+						<!-- On mobile the search field (and its clear X) collapses to an icon,
+					     so the chip carries the clear control instead. -->
+						<button
+							type="button"
+							onclick={() => (searchQuery = null)}
+							class="rounded p-1 text-muted-foreground hover:bg-muted md:hidden"
+							aria-label="Clear search"
+						>
+							<X class="size-3.5" />
+						</button>
+					</div>
+				{:else if similarUri}
+					<!-- Find-similar overlays the grid with visually similar images; this chip
+				     (in place of the breadcrumb) shows the source, a collection filter, and
+				     a clear button that navigates back to the underlying view. -->
+					<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+						<Sparkles class="size-4 shrink-0 text-muted-foreground" />
+						{#if similarImage && similarSource}
+							{@const source = similarSource}
+							<button
+								type="button"
+								class="shrink-0 rounded transition-opacity hover:opacity-75"
+								onclick={() => (selection = { collectionUri: selectedUri, save: source })}
+								aria-label="Show image details"
+							>
+								<img src={similarImage.imageUrl} alt="" class="size-6 rounded object-cover" />
+							</button>
+						{/if}
+						<span class="truncate">Similar images</span>
+						<Popover.Root>
+							<Popover.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-sm"
+										class="relative"
+										aria-label="Filter by collection"
+									>
+										<ListFilter />
+										{#if similarScope.size > 0}
+											<span
+												class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
+											>
+												{similarScope.size}
+											</span>
+										{/if}
+									</Button>
+								{/snippet}
+							</Popover.Trigger>
+							<Popover.Content align="start" class="w-64 p-0">
+								<Command.Root shouldFilter={false} class="bg-transparent">
+									<Command.List>
+										<CollectionFilterItems
+											collections={collections.items}
+											favourites={favouriteCollections.items}
+											selected={similarScope}
+											onToggle={toggleSimScope}
+										/>
+									</Command.List>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
+						<button
+							type="button"
+							onclick={() => goto(hrefFor(selectedUri))}
+							class="rounded p-1 text-muted-foreground hover:bg-muted"
+							aria-label="Clear find similar"
+						>
+							<X class="size-3.5" />
+						</button>
+					</div>
+				{:else if colorSearch}
+					<!-- Color search overlays the grid with library images matching a color;
+				     this chip shows the color (click to adjust it), a collection filter,
+				     and a clear button. -->
+					<div class="flex min-w-0 items-center gap-2 text-sm font-medium">
+						<button
+							type="button"
+							onclick={() => (searchOpen = true)}
+							class="size-4 shrink-0 rounded-full border transition-transform hover:scale-110"
+							style="background-color: {colorSearch.hex}"
+							aria-label="Change color"
+							title="Change color"
+						></button>
+						<span class="truncate">Color search</span>
+						<Popover.Root>
+							<Popover.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-sm"
+										class="relative"
+										aria-label="Filter by collection"
+									>
+										<ListFilter />
+										{#if scope.size > 0}
+											<span
+												class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[10px] leading-none font-semibold text-primary-foreground"
+											>
+												{scope.size}
+											</span>
+										{/if}
+									</Button>
+								{/snippet}
+							</Popover.Trigger>
+							<Popover.Content align="start" class="w-64 p-0">
+								<Command.Root shouldFilter={false} class="bg-transparent">
+									<Command.List>
+										<CollectionFilterItems
+											collections={collections.items}
+											favourites={favouriteCollections.items}
+											selected={scope}
+											onToggle={toggleScope}
+										/>
+									</Command.List>
+								</Command.Root>
+							</Popover.Content>
+						</Popover.Root>
+						<button
+							type="button"
+							onclick={() => goto(hrefFor(selectedUri))}
+							class="rounded p-1 text-muted-foreground hover:bg-muted"
+							aria-label="Clear color search"
+						>
+							<X class="size-3.5" />
+						</button>
+					</div>
+				{:else}
+					<div class="flex min-w-0 items-center gap-0.5">
+						<!-- flex-nowrap + a truncating page: a long collection name must eat its
+					     own width rather than wrap the trail onto a second line or push the
+					     actions menu off-screen. -->
+						<Breadcrumb.Root class="min-w-0">
+							<Breadcrumb.List class="flex-nowrap">
+								{#if selected}
+									<!-- On mobile the ancestors collapse into a single "…" menu — always,
+								     even when "My library" is the only one, so the header keeps the
+								     same shape in a collection and in a section. Desktop shows the
+								     full trail. -->
+									<Breadcrumb.Item class="md:hidden">
+										<DropdownMenu.Root>
+											<DropdownMenu.Trigger aria-label="Go to a parent collection">
+												<Breadcrumb.Ellipsis />
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content align="start" class="w-48">
+												<DropdownMenu.Item onSelect={() => goto('/organize')}>
+													<Library />
+													My library
+												</DropdownMenu.Item>
+												{#if parent}
+													{@const p = parent}
+													<DropdownMenu.Item onSelect={() => goto(hrefFor(p.uri))}>
+														<Folder />
+														<span class="truncate">{p.name}</span>
+													</DropdownMenu.Item>
+												{/if}
+											</DropdownMenu.Content>
+										</DropdownMenu.Root>
+									</Breadcrumb.Item>
+									<Breadcrumb.Item class="hidden md:inline-flex">
+										<Breadcrumb.Link href="/organize">My library</Breadcrumb.Link>
+									</Breadcrumb.Item>
+									{#if parent}
+										<Breadcrumb.Separator class="hidden md:block" />
+										<Breadcrumb.Item class="hidden md:inline-flex">
+											<Breadcrumb.Link href={hrefFor(parent.uri)}>{parent.name}</Breadcrumb.Link>
+										</Breadcrumb.Item>
+									{/if}
+									<Breadcrumb.Separator />
+									<Breadcrumb.Item class="min-w-0">
+										<Breadcrumb.Page class="truncate">{selected.name}</Breadcrumb.Page>
+									</Breadcrumb.Item>
+								{:else}
+									<Breadcrumb.Item>
+										<Breadcrumb.Page>My library</Breadcrumb.Page>
+									</Breadcrumb.Item>
+								{/if}
+							</Breadcrumb.List>
+						</Breadcrumb.Root>
+						<!-- Same actions as the sidebar's right-click menu. This is the only way
+					     in on touch, so it's the one that has to be visible. Favourited
+					     collections belong to someone else — no actions there. -->
+						{#if ownSelected}
+							<CollectionActions collection={ownSelected} onDeleted={() => goto('/organize')} />
+						{/if}
+					</div>
+				{/if}
 
-		<OrganizeCanvas
-			{selectedUri}
-			{search}
-			{similar}
-			color={colorSearch}
-			bind:selectMode
-			selected={bulkSelected}
-			{ownContext}
-			selectedSaveUri={selectedSave?.uri ?? null}
-			onSelectSave={(s) => (selection = { collectionUri: selectedUri, save: s })}
-			onFindSimilar={findSimilar}
-		/>
+				<!-- Right-hand cluster: the multi-select toggle then search. One `ml-auto` on
+			     the wrapper — putting it on both children strands the first one mid-header,
+			     since the earlier auto margin eats the free space before the later one sees it. -->
+				<div class="ml-auto flex shrink-0 items-center gap-1">
+					<!-- Multi-select toggle: enter/leave bulk-selection mode for the grid. -->
+					<Button
+						variant={selectMode ? 'default' : 'ghost'}
+						size="sm"
+						class="shrink-0"
+						aria-pressed={selectMode}
+						aria-label={selectMode ? 'Done selecting' : 'Select'}
+						onclick={toggleSelectMode}
+					>
+						<ListChecks class="size-4" />
+						<span class="hidden md:inline">{selectMode ? 'Done' : 'Select'}</span>
+					</Button>
+
+					<!-- Search: icon-only on mobile (the field would crowd the header); on desktop
+				     a field whose text area opens the command dialog and whose X clears an
+				     active search and restores the collection grid. -->
+					<Button
+						variant="ghost"
+						size="icon"
+						class="shrink-0 md:hidden"
+						aria-label="Search your library"
+						onclick={() => (searchOpen = true)}
+					>
+						<SearchIcon />
+					</Button>
+					<div
+						class="hidden h-9 w-full max-w-64 items-center rounded-md border bg-background text-sm md:flex"
+					>
+						<button
+							type="button"
+							onclick={() => (searchOpen = true)}
+							class="flex min-w-0 flex-1 items-center gap-2 px-3 text-muted-foreground hover:text-foreground"
+						>
+							<SearchIcon class="size-4 shrink-0" />
+							<span class="truncate">{search ? search.query : 'Search your library…'}</span>
+							{#if !search}
+								<Kbd class="ml-auto hidden shrink-0 md:inline-flex">{isMac ? '⌘' : 'Ctrl'} K</Kbd>
+							{/if}
+						</button>
+						{#if search}
+							<button
+								type="button"
+								onclick={() => (searchQuery = null)}
+								class="mr-1 rounded p-1 text-muted-foreground hover:bg-muted"
+								aria-label="Clear search"
+							>
+								<X class="size-3.5" />
+							</button>
+						{/if}
+					</div>
+				</div>
+			</header>
+
+			<OrganizeCanvas
+				{selectedUri}
+				{search}
+				{similar}
+				color={colorSearch}
+				bind:selectMode
+				bind:bulk
+				selected={bulkSelected}
+				{ownContext}
+				selectedSaveUri={selectedSave?.uri ?? null}
+				onSelectSave={(s) => (selection = { collectionUri: selectedUri, save: s })}
+				onFindSimilar={findSimilar}
+			/>
+		</div>
+
+		{#if selectMode && bulk}
+			<BulkActionBar {...bulk} {ownContext} />
+		{/if}
 	</Sidebar.Inset>
 
 	{#if selectedSave}

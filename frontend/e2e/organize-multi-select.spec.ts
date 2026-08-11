@@ -174,3 +174,65 @@ test('mobile: dismissing the drawer lets the pill reopen it', async ({ page }) =
 	await pill.click();
 	await expect(menuItem).toBeVisible();
 });
+
+// The bar is a sibling of the rounded panel, not a strip inside it: the panel is
+// flex-1, so it gives up the height the bar takes. Rendering it inside the panel
+// again (or wrapping the inset, which breaks its peer-* gutter) would regress this.
+test('desktop: the action bar sits outside the panel and shrinks it', async ({ page }) => {
+	const calls: Calls = { labelBulk: [], resave: [] };
+	await mockApi(page, calls);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+
+	const panel = page.locator('main[data-slot="sidebar-inset"] > div').first();
+	await expect(page.locator('[data-uri]').first()).toBeVisible();
+	const before = (await panel.boundingBox())!.height;
+
+	await page.getByRole('button', { name: 'Select' }).click();
+	await page.locator('[data-uri]').nth(0).click();
+	await expect(page.getByText('1 selected')).toBeVisible();
+
+	// The bar is its own child of the inset, not a descendant of the panel.
+	await expect(page.locator('main[data-slot="sidebar-inset"] > div')).toHaveCount(2);
+	expect(await panel.evaluate((el) => !!el.textContent?.includes('Select all loaded'))).toBe(false);
+
+	// And the panel gave up the height the bar took.
+	await expect.poll(async () => (await panel.boundingBox())!.height).toBeLessThan(before);
+});
+
+// The slide must be `|global`: transitions are local by default, and the block this
+// element lives in is not the one that changes (the page's {#if selectMode} is), so
+// a local transition silently never plays.
+test('desktop: the action bar animates in', async ({ page }) => {
+	const calls: Calls = { labelBulk: [], resave: [] };
+	await mockApi(page, calls);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+
+	// Svelte 5 drives `css` transitions through the Web Animations API, so record
+	// the calls rather than racing the 200ms window with a computed-style read.
+	await page.evaluate(() => {
+		const w = window as unknown as { __anims: string[] };
+		w.__anims = [];
+		const orig = Element.prototype.animate;
+		Element.prototype.animate = function (this: Element, ...args: unknown[]) {
+			w.__anims.push((this as HTMLElement).className ?? '');
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			return orig.apply(this, args as any);
+		};
+	});
+
+	await expect(page.locator('[data-uri]').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Select' }).click();
+
+	// The bar's own element animated in.
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				(window as unknown as { __anims: string[] }).__anims.filter((c) =>
+					c.includes('backdrop-blur-sm')
+				)
+			)
+		)
+		.not.toHaveLength(0);
+});

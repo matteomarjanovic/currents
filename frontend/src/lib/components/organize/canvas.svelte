@@ -5,8 +5,7 @@
 	import { resaveWithFallback } from '$lib/resave';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import type { SvelteSet } from 'svelte/reactivity';
-	import { selectedSaves, selectableUris } from '$lib/organize-bulk';
-	import BulkActionBar from '$lib/components/organize/bulk-action-bar.svelte';
+	import { selectedSaves, selectableUris, type BulkApi } from '$lib/organize-bulk';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
@@ -43,6 +42,7 @@
 		onFindSimilar,
 		selectMode = $bindable(false),
 		selected,
+		bulk = $bindable(null),
 		ownContext = true,
 		search = null,
 		similar = null,
@@ -56,6 +56,10 @@
 		// shared set of selected save URIs.
 		selectMode?: boolean;
 		selected: SvelteSet<string>;
+		// The bulk-action API, handed up so the page can render the action bar as a
+		// sibling of the rounded panel rather than inside it. Everything it needs is
+		// derived from the feed, which lives here.
+		bulk?: BulkApi | null;
 		// False only in a favourited (someone else's) collection — gates the actions
 		// that write to the viewer's own records (move/label/attribution).
 		ownContext?: boolean;
@@ -221,6 +225,25 @@
 		else toast.error('Could not move');
 		exitSelect();
 	}
+
+	// Hand the bulk API up once, as getters — the values behind them are $derived,
+	// so the object stays live without an effect re-assigning it.
+	bulk = {
+		get saves() {
+			return selectedList;
+		},
+		get selectableCount() {
+			return selectableCount;
+		},
+		get canMove() {
+			return canMove;
+		},
+		onSelectAll: selectAllLoaded,
+		onClear: () => selected.clear(),
+		onExit: exitSelect,
+		onCopy: bulkCopy,
+		onMove: bulkMove
+	};
 
 	// ── Context-menu actions ──────────────────────────────────────────────────
 	// Mobile "Copy/Move to collection" opens a shared drawer (desktop uses an inline
@@ -723,20 +746,6 @@
 		{/if}
 	{/if}
 </div>
-
-{#if selectMode}
-	<BulkActionBar
-		saves={selectedList}
-		{selectableCount}
-		{canMove}
-		{ownContext}
-		onSelectAll={selectAllLoaded}
-		onClear={() => selected.clear()}
-		onExit={exitSelect}
-		onCopy={bulkCopy}
-		onMove={bulkMove}
-	/>
-{/if}
 
 <!-- Mobile "Copy/Move to collection": a shared bottom drawer (desktop uses the inline submenu). -->
 <Drawer.Root bind:open={drawerOpen}>
