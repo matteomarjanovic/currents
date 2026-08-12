@@ -20,6 +20,7 @@ import (
 
 	"github.com/gorilla/sessions"
 	polargo "github.com/polarsource/polar-go"
+	"github.com/polarsource/polar-go/models/operations"
 	"github.com/urfave/cli/v2"
 )
 
@@ -29,6 +30,11 @@ func main() {
 		Usage:  "AT Protocol appview server",
 		Action: runServer,
 		Commands: []*cli.Command{
+			{
+				Name:   "sync-polar-subscriptions",
+				Usage:  "re-sync the Polar subscription mirror (one-shot, requires subscriptions:read)",
+				Action: runSyncPolarSubscriptions,
+			},
 			{
 				Name:   "backfill-moderation",
 				Usage:  "score existing saves' embeddings and apply moderation labels (one-shot, resumable)",
@@ -304,6 +310,67 @@ func main() {
 	slog.SetDefault(slog.New(h))
 	app.RunAndExitOnError()
 }
+
+// runSyncPolarSubscriptions repairs a missed webhook delivery and initializes
+// fields added to the local mirror after subscriptions already exist.
+func runSyncPolarSubscriptions(cctx *cli.Context) error {
+	if cctx.String("polar-access-token") == "" {
+		return fmt.Errorf("missing polar-access-token")
+	}
+	ctx := context.Background()
+	store, err := NewPgStore(ctx, &PgStoreConfig{
+		DSN:                       cctx.String("database-url"),
+		SessionExpiryDuration:     time.Hour * 24 * 90,
+		SessionInactivityDuration: time.Hour * 24 * 14,
+		AuthRequestExpiryDuration: time.Minute * 30,
+		MinConns:                  int32(cctx.Int("db-min-conns")),
+		MaxConns:                  int32(cctx.Int("db-max-conns")),
+		MaxConnLifetime:           cctx.Duration("db-max-conn-lifetime"),
+		MaxConnIdleTime:           cctx.Duration("db-max-conn-idle-time"),
+	})
+	if err != nil {
+		return fmt.Errorf("opening store: %w", err)
+	}
+	defer store.pool.Close()
+
+	polar := polargo.New(
+		polargo.WithSecurity(cctx.String("polar-access-token")),
+		polargo.WithServer(cctx.String("polar-server")),
+		polargo.WithClient(&http.Client{Timeout: 30 * time.Second}),
+	)
+	const pageSize int64 = 100
+	for page := int64(1); ; page++ {
+		res, err := polar.Subscriptions.List(ctx, operations.SubscriptionsListRequest{Page: &page, Limit: int64ptr(pageSize)})
+		if err != nil {
+			return fmt.Errorf("listing Polar subscriptions: %w", err)
+		}
+		if res.ListResourceSubscription == nil {
+			return fmt.Errorf("listing Polar subscriptions: empty response")
+		}
+		for _, source := range res.ListResourceSubscription.Items {
+			if source.Customer.ExternalID == nil || *source.Customer.ExternalID == "" {
+				continue
+			}
+			if err := store.UpsertPolarSubscription(ctx, PolarSubscription{
+				SubscriptionID: source.ID,
+				DID:            *source.Customer.ExternalID,
+				CustomerID:     source.CustomerID,
+				Status:         string(source.Status),
+				ProductID:      source.ProductID,
+				Complimentary:  complimentaryDiscount(source.Discount),
+				EndsAt:         source.EndsAt,
+			}); err != nil {
+				return fmt.Errorf("syncing Polar subscription %s: %w", source.ID, err)
+			}
+		}
+		slog.Info("Polar subscription sync page complete", "page", page, "subscriptions", len(res.ListResourceSubscription.Items))
+		if page >= res.ListResourceSubscription.Pagination.MaxPage {
+			return nil
+		}
+	}
+}
+
+func int64ptr(v int64) *int64 { return &v }
 
 // splitCSV splits a comma-separated string into a slice, trimming whitespace
 // and dropping empty entries. Returns nil for an empty input.

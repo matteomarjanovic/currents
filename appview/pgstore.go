@@ -928,6 +928,7 @@ type PolarSubscription struct {
 	CustomerID     string
 	Status         string
 	ProductID      string
+	Complimentary  bool
 	EndsAt         *time.Time
 }
 
@@ -936,16 +937,17 @@ type PolarSubscription struct {
 // deliveries are harmless.
 func (m *PgStore) UpsertPolarSubscription(ctx context.Context, sub PolarSubscription) error {
 	_, err := m.pool.Exec(ctx,
-		`INSERT INTO polar_subscription (subscription_id, did, customer_id, status, product_id, ends_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO polar_subscription (subscription_id, did, customer_id, status, product_id, complimentary, ends_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT (subscription_id) DO UPDATE SET
 		   did = EXCLUDED.did,
 		   customer_id = EXCLUDED.customer_id,
 		   status = EXCLUDED.status,
 		   product_id = EXCLUDED.product_id,
+		   complimentary = EXCLUDED.complimentary,
 		   ends_at = EXCLUDED.ends_at,
 		   updated_at = now()`,
-		sub.SubscriptionID, sub.DID, sub.CustomerID, sub.Status, sub.ProductID, sub.EndsAt)
+		sub.SubscriptionID, sub.DID, sub.CustomerID, sub.Status, sub.ProductID, sub.Complimentary, sub.EndsAt)
 	return err
 }
 
@@ -1039,13 +1041,14 @@ func (m *PgStore) CountUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// CountSupportersByProduct returns the number of access-granting subscriptions
-// per Polar product id — the public transparency numbers on the support page.
+// CountSupportersByProduct returns the number of paid access-granting
+// subscriptions per Polar product id — the public transparency numbers on the
+// support page.
 // The client maps product ids to dollar amounts (it knows the configured ids).
 func (m *PgStore) CountSupportersByProduct(ctx context.Context) (map[string]int, error) {
 	rows, err := m.pool.Query(ctx, `
 		SELECT product_id, count(*) FROM polar_subscription
-		WHERE status IN ('active', 'trialing', 'past_due')
+		WHERE status IN ('active', 'trialing', 'past_due') AND NOT complimentary
 		GROUP BY product_id
 	`)
 	if err != nil {
@@ -1062,6 +1065,17 @@ func (m *PgStore) CountSupportersByProduct(ctx context.Context) (map[string]int,
 		counts[product] = n
 	}
 	return counts, rows.Err()
+}
+
+// CountSupporters returns the number of people with an access-granting paid
+// subscription. A person with more than one active plan is counted once.
+func (m *PgStore) CountSupporters(ctx context.Context) (int, error) {
+	var n int
+	err := m.pool.QueryRow(ctx, `
+		SELECT count(DISTINCT did) FROM polar_subscription
+		WHERE status IN ('active', 'trialing', 'past_due') AND NOT complimentary
+	`).Scan(&n)
+	return n, err
 }
 
 // --- Account deletion ---

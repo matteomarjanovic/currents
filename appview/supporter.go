@@ -244,15 +244,17 @@ func (s *Server) APISupporterStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	supporters, err := s.Store.CountSupporters(r.Context())
+	if err != nil {
+		slog.Error("CountSupporters", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	byProduct, err := s.Store.CountSupportersByProduct(r.Context())
 	if err != nil {
 		slog.Error("CountSupportersByProduct", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
-	}
-	supporters := 0
-	for _, n := range byProduct {
-		supporters += n
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -269,15 +271,27 @@ func (s *Server) APISupporterStats(w http.ResponseWriter, r *http.Request) {
 type polarWebhookEvent struct {
 	Type string `json:"type"`
 	Data struct {
-		ID         string     `json:"id"`
-		Status     string     `json:"status"`
-		CustomerID string     `json:"customer_id"`
-		ProductID  string     `json:"product_id"`
-		EndsAt     *time.Time `json:"ends_at"`
+		ID         string                           `json:"id"`
+		Status     string                           `json:"status"`
+		CustomerID string                           `json:"customer_id"`
+		ProductID  string                           `json:"product_id"`
+		EndsAt     *time.Time                       `json:"ends_at"`
+		Discount   *components.SubscriptionDiscount `json:"discount"`
 		Customer   struct {
 			ExternalID string `json:"external_id"`
 		} `json:"customer"`
 	} `json:"data"`
+}
+
+// complimentary is deliberately statistics-only: a user with a 100%-off
+// subscription keeps their Supporter access and badge, but is not presented
+// as financial support on the public transparency page.
+func complimentaryDiscount(discount *components.SubscriptionDiscount) bool {
+	if discount == nil {
+		return false
+	}
+	return (discount.DiscountPercentageOnceForeverDurationBase != nil && discount.DiscountPercentageOnceForeverDurationBase.BasisPoints == 10000) ||
+		(discount.DiscountPercentageRepeatDurationBase != nil && discount.DiscountPercentageRepeatDurationBase.BasisPoints == 10000)
 }
 
 // PolarWebhook ingests Polar webhook deliveries. Polar treats any non-2xx as
@@ -322,6 +336,7 @@ func (s *Server) PolarWebhook(w http.ResponseWriter, r *http.Request) {
 		CustomerID:     ev.Data.CustomerID,
 		Status:         ev.Data.Status,
 		ProductID:      ev.Data.ProductID,
+		Complimentary:  complimentaryDiscount(ev.Data.Discount),
 		EndsAt:         ev.Data.EndsAt,
 	}
 	if err := s.Store.UpsertPolarSubscription(r.Context(), sub); err != nil {

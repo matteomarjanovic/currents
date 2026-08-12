@@ -1,0 +1,1 @@
+ALTER TABLE polar_subscription ADD COLUMN complimentary BOOLEAN NOT NULL DEFAULT FALSE;

@@ -55,8 +55,9 @@ doesn't encode it.
    products have one price each). Note the two product UUIDs.
 2. **Access token** — Polar > Settings > Developers: create an organization access
    token (`polar_oat_...`). Server-side secret. Scopes: `checkouts:write` and
-   `customer_sessions:write`; optionally `subscriptions:read` for the future
-   webhook-miss backfill.
+   `customer_sessions:write`, and `subscriptions:read` for
+   `appview sync-polar-subscriptions` (the one-shot repair for missed webhooks
+   and new mirrored fields).
 3. **Webhook endpoint** — Polar > Settings > Webhooks > Add endpoint:
    - URL: `https://api-dev.currents.is/api/polar/webhook` (sandbox) /
      `https://api.currents.is/api/polar/webhook` (live)
@@ -87,8 +88,3 @@ doesn't encode it.
   replayable from the endpoint's delivery log in the dashboard. The handler answers
   non-2xx on any failure precisely so Polar retries. After 10 straight failures Polar
   disables the endpoint — re-enable it from the dashboard after fixing.
-
-## Not built yet
-
-- **Backfill** — if webhooks are missed for longer than the retry window, re-sync from
-  the Polar API (`GET /v1/subscriptions`) into `polar_subscription`.

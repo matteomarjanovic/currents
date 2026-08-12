@@ -10,9 +10,6 @@ proposing new work; delete an entry when it ships.
   the paid library search and find-similar. Run the repair pass
   (`APPVIEW_MODE=repair`) after deploys/outages so paid search coverage stays
   complete — and consider scheduling it.
-- **Polar webhook-miss backfill.** If webhooks are missed for longer than the
-  retry window, re-sync `GET /v1/subscriptions` from the Polar API into
-  `polar_subscription` (see POLAR.md "Not built yet").
 - **Colors backfill as a deploy step.** Visual identities enriched before the
   color-search deploy have no `visual_identity_color` rows and are invisible to
   search-by-color until `appview backfill-colors` runs (one-shot, resumable).

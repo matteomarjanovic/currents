@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/polarsource/polar-go/models/components"
 )
 
 func signPolar(id, ts string, body []byte, secret string) string {
@@ -105,6 +107,53 @@ func TestNormalizeHex(t *testing.T) {
 		if got := normalizeHex(c.in); got != c.want {
 			t.Errorf("normalizeHex(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestComplimentaryDiscount(t *testing.T) {
+	full := components.CreateSubscriptionDiscountDiscountPercentageOnceForeverDurationBase(
+		components.DiscountPercentageOnceForeverDurationBase{BasisPoints: 10000},
+	)
+	partial := components.CreateSubscriptionDiscountDiscountPercentageOnceForeverDurationBase(
+		components.DiscountPercentageOnceForeverDurationBase{BasisPoints: 2500},
+	)
+	if !complimentaryDiscount(&full) {
+		t.Error("100% discount should be complimentary")
+	}
+	if complimentaryDiscount(&partial) {
+		t.Error("partial discount should not be complimentary")
+	}
+	if complimentaryDiscount(nil) {
+		t.Error("no discount should not be complimentary")
+	}
+}
+
+func TestPaidSupporterStats(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	for _, sub := range []PolarSubscription{
+		{SubscriptionID: "sub_paid_monthly", DID: "did:plc:paid", Status: "active", ProductID: "monthly"},
+		{SubscriptionID: "sub_paid_yearly", DID: "did:plc:paid", Status: "active", ProductID: "yearly"},
+		{SubscriptionID: "sub_complimentary", DID: "did:plc:free", Status: "active", ProductID: "monthly", Complimentary: true},
+	} {
+		if err := store.UpsertPolarSubscription(ctx, sub); err != nil {
+			t.Fatalf("UpsertPolarSubscription(%s): %v", sub.SubscriptionID, err)
+		}
+	}
+
+	count, err := store.CountSupporters(ctx)
+	if err != nil {
+		t.Fatalf("CountSupporters: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("CountSupporters = %d, want 1 distinct paid supporter", count)
+	}
+	byProduct, err := store.CountSupportersByProduct(ctx)
+	if err != nil {
+		t.Fatalf("CountSupportersByProduct: %v", err)
+	}
+	if byProduct["monthly"] != 1 || byProduct["yearly"] != 1 {
+		t.Errorf("CountSupportersByProduct = %#v, want one paid subscription for each plan", byProduct)
 	}
 }
 
