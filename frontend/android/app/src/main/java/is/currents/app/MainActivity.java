@@ -2,6 +2,7 @@ package is.currents.app;
 
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
+import android.view.View;
 
 import androidx.activity.EdgeToEdge;
 
@@ -11,6 +12,10 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // BridgeActivity always hosts Capacitor's own WebView layout, not this app's
+        // activity_main.xml. Set the mode on that actual WebView so Android doesn't
+        // stretch the entire page when a scroll reaches either edge.
+        getBridge().getWebView().setOverScrollMode(View.OVER_SCROLL_NEVER);
         // Portrait-only on phones. Done here rather than via android:screenOrientation in the
         // manifest because that attribute takes no resource reference, and R.bool.portrait_only
         // is false in values-sw600dp so tablets stay rotatable.

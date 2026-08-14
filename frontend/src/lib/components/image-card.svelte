@@ -84,6 +84,14 @@
 		pushState(href, { save: $state.snapshot(item) });
 	}
 
+	// Android Chrome exposes a native link-preview drag on a held image card. The
+	// card already has its own touch interactions, so don't let the anchor open a
+	// second long-press affordance underneath them. Save-enabled cards let their
+	// contextmenu event bubble to the long-press action below instead.
+	function suppressLinkPreview(e: Event) {
+		if (!longPressSave) e.preventDefault();
+	}
+
 	// Keep viewer save state on the item in sync so the snapshot pushed to the
 	// detail view reflects saves made here (drives the "Add attribution" button).
 	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
@@ -122,7 +130,15 @@
 >
 	<LabeledMedia labels={item.labels}>
 		{#if linkToDetail}
-			<a {href} class="block" onclick={handleClick}>{@render media()}</a>
+			<a
+				{href}
+				class="block"
+				draggable={false}
+				onclick={handleClick}
+				oncontextmenu={suppressLinkPreview}
+			>
+				{@render media()}
+			</a>
 		{:else}
 			<div class="block">{@render media()}</div>
 		{/if}

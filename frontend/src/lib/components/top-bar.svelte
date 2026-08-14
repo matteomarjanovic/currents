@@ -732,8 +732,8 @@
 </header>
 
 <!-- Mobile bottom-center cluster. Logged in: profile, menu, add, mode switch, search;
-     logged out: log in, theme, search. The extra 0.125rem centers the 44px-tall
-     cluster on the 48px explore flow-field button. -->
+     logged out: log in, theme, search. Scale the compact controls up slightly so
+     the bar and its icons are easier to hit without changing its composition. -->
 {#if !landing}
 	{#if activeSearch}
 		<!-- The bottom cluster has no room beside the lens, so the active query rides
@@ -749,7 +749,7 @@
 	{/if}
 	<div
 		bind:this={bottomBarEl}
-		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 md:hidden"
+		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 scale-[1.08] md:hidden"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1.375rem)"
 	>
 		{#if !user}

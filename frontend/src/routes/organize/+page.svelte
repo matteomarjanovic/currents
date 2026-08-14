@@ -224,6 +224,12 @@
 			selectMode = true;
 		}
 	}
+	// Treat bulk selection like every other mobile overlay: Android Back exits it
+	// before falling through to the browser history.
+	$effect(() => {
+		if (!selectMode) return;
+		return onBackButton(toggleSelectMode);
+	});
 	$effect(() => {
 		void selectedUri;
 		void similarUri;

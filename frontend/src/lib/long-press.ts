@@ -1,4 +1,4 @@
-const DURATION_MS = 500;
+const DURATION_MS = 400;
 
 interface LongPressOptions {
 	enabled?: boolean;
