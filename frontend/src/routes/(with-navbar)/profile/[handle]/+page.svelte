@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { apiFetch } from '$lib/api';
-	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { deletedCollectionUris } from '$lib/stores/collections.svelte';
@@ -13,16 +13,25 @@
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import type { ActorProfileView, CollectionView } from '$lib/types';
+	import type { PageData } from './$types';
 
-	let profile = $state<ActorProfileView | null>(null);
-	let collections = $state<CollectionView[]>([]);
-	let loading = $state(true);
-	let notFound = $state(false);
+	let { data }: { data: PageData } = $props();
+
+	let profile = $state<ActorProfileView | null>(untrack(() => data.profile));
+	let collections = $state<CollectionView[]>(untrack(() => data.collections));
 	let editOpen = $state(false);
 	let activeImport = $state(false);
 
 	const isOwner = $derived(!!auth.user && !!profile && auth.user.did === profile.did);
+	const notFound = $derived(!profile);
 	const pageTitle = $derived(profile?.displayName || '@' + (profile?.handle ?? page.params.handle));
+	const description = $derived(
+		(
+			profile?.description?.trim() || `See @${profile?.handle ?? page.params.handle} on Currents.`
+		).slice(0, 200)
+	);
+	const ogImage = $derived(profile?.banner || profile?.avatar || '');
+	const canonical = $derived(page.url.origin + page.url.pathname);
 
 	// Show only root collections as cards, most recent activity first:
 	// newest of {created, last save}.
@@ -70,53 +79,24 @@
 		return { items: data.collections ?? [], cursor: data.cursor };
 	});
 
-	// The profile grid shows root collections only (sections nest inside their
-	// parent card). Fetch roots directly with parent=root — filtering client-side
-	// would let sections eat the page budget and hide roots on section-heavy
-	// accounts. Follow the cursor so accounts with >100 roots still load fully.
-	async function loadRootCollections(handle: string): Promise<CollectionView[]> {
-		const all: CollectionView[] = [];
-		let cursor = '';
-		do {
-			const params = new URLSearchParams({ actor: handle, parent: 'root', limit: '100' });
-			if (cursor) params.set('cursor', cursor);
-			const res = await apiFetch(`/xrpc/is.currents.feed.getActorCollections?${params}`);
-			if (!res.ok) break;
-			const data = await res.json();
-			all.push(...(data.collections ?? []));
-			cursor = data.cursor ?? '';
-		} while (cursor);
-		return all;
-	}
-
 	$effect(() => {
-		const handle = page.params.handle ?? '';
-		loading = true;
-		notFound = false;
-		profile = null;
-		collections = [];
-		activeTab = 'collections';
-		unsorted.reset();
-		favourites.reset();
+		const next = data;
+		untrack(() => {
+			profile = next.profile;
+			collections = next.collections;
+			activeTab = 'collections';
+			unsorted.reset();
+			favourites.reset();
+		});
+	});
 
-		Promise.all([
-			apiFetch(`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`),
-			loadRootCollections(handle)
-		])
-			.then(async ([pRes, cols]) => {
-				if (!pRes.ok) {
-					notFound = true;
-					return;
-				}
-				profile = await pRes.json();
-				collections = cols;
-			})
-			.catch(() => {
-				notFound = true;
-			})
-			.finally(() => {
-				loading = false;
-			});
+	// The server-rendered response is intentionally public. Once the browser discovers a viewer,
+	// rerun this universal load once so follow/favourite viewer state is hydrated with their cookie.
+	let viewerHydrated = false;
+	$effect(() => {
+		if (!auth.user || viewerHydrated) return;
+		viewerHydrated = true;
+		void invalidateAll();
 	});
 
 	// On your own profile, surface an in-flight Pinterest import so you can jump
@@ -191,27 +171,23 @@
 
 <svelte:head>
 	<title>{pageTitle} · Currents</title>
+	<link rel="canonical" href={canonical} />
+	<meta name="description" content={description} />
+	<meta property="og:type" content="profile" />
+	<meta property="og:url" content={canonical} />
+	<meta property="og:title" content={pageTitle + ' · Currents'} />
+	<meta property="og:description" content={description} />
+	{#if ogImage}
+		<meta property="og:image" content={ogImage} />
+		<meta name="twitter:image" content={ogImage} />
+	{/if}
+	<meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+	<meta name="twitter:title" content={pageTitle + ' · Currents'} />
+	<meta name="twitter:description" content={description} />
 </svelte:head>
 
 <div class="mx-auto max-w-5xl pb-16">
-	{#if loading}
-		<Skeleton class="h-40 w-full rounded-xl sm:h-56" />
-		<div class="-mt-10 flex items-end gap-4 sm:-mt-12">
-			<Skeleton class="size-24 rounded-full sm:size-28" />
-			<div class="flex-1 space-y-2 pb-2">
-				<Skeleton class="h-6 w-48" />
-				<Skeleton class="h-4 w-32" />
-			</div>
-		</div>
-		<div class="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-			{#each [0, 1, 2, 3] as i (i)}
-				<div>
-					<Skeleton class="aspect-square w-full rounded-lg" />
-					<Skeleton class="mt-2 h-4 w-24" />
-				</div>
-			{/each}
-		</div>
-	{:else if notFound || !profile}
+	{#if notFound || !profile}
 		<div class="py-24 text-center">
 			<h1 class="text-lg font-medium text-foreground">Profile not found</h1>
 			<p class="mt-1 text-sm text-muted-foreground">

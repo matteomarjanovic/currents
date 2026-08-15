@@ -91,7 +91,7 @@
 		if (rkeys.length === 0 || labels.length === 0) return;
 		applying = true;
 		try {
-			const res = await apiFetch(`/save/labels/bulk`, {
+			const res = await apiFetch(`/api/save/labels/bulk`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ rkeys, labels })

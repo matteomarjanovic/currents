@@ -253,7 +253,7 @@
 		onSavesChange?.(localSaves);
 		try {
 			const rkey = saveUri.split('/').pop()!;
-			const res = await apiFetch(`/save/${rkey}`, {
+			const res = await apiFetch(`/api/save/${rkey}`, {
 				method: 'DELETE'
 			});
 			if (!res.ok) {

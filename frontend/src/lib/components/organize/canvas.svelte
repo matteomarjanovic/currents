@@ -212,7 +212,7 @@
 					const res = await resaveWithFallback(item.uri, dest);
 					if (!res.ok) throw new Error(`resave: ${res.status}`);
 				}
-				const del = await apiFetch(`/save/${rkey}`, { method: 'DELETE' });
+				const del = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
 				if (!del.ok) throw new Error(`delete: ${del.status}`);
 				feed.removeItem(item.uri);
 				emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
@@ -270,7 +270,7 @@
 		const rkey = item.uri.split('/').pop();
 		feed.removeItem(item.uri); // optimistic
 		try {
-			const res = await apiFetch(`/save/${rkey}`, { method: 'DELETE' });
+			const res = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
 			if (!res.ok) throw new Error(`${res.status}`);
 			emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
 			toast.success('Removed from collection');
@@ -296,7 +296,7 @@
 				const res = await resaveWithFallback(item.uri, collectionUri);
 				if (!res.ok) throw new Error(`resave: ${res.status}`);
 			}
-			const del = await apiFetch(`/save/${rkey}`, { method: 'DELETE' });
+			const del = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
 			if (!del.ok) throw new Error(`delete: ${del.status}`);
 			emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
 			toast.success('Moved');

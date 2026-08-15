@@ -209,7 +209,7 @@
 				if (item.pageUrl) form.append('url', item.pageUrl);
 			}
 			form.append('collection', collectionUri);
-			const res = await apiFetch('/save', {
+			const res = await apiFetch('/api/save', {
 				method: 'POST',
 				body: form,
 				headers: { Accept: 'application/json' }

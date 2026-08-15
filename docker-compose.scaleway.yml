@@ -6,11 +6,11 @@
 #   - Postgres gets real memory settings (the image default is 128MB
 #     shared_buffers, sized for nothing) and publishes no port at all —
 #     everything that needs it runs in this compose; ad-hoc psql goes over SSH.
-#   - INFERENCE_URL must point at the mac mini over the tailnet (no
-#     host.docker.internal on Linux).
+#   - INFERENCE_URL points at the separate inference VM over the Scaleway
+#     Private Network (no host.docker.internal on Linux).
 #   - Clustering runs here, next to the DB, and publishes the monthly UMAP
-#     model to the Object Storage model store; the mac mini's inference server
-#     syncs the bucket on a cron (see SCALEWAY_MIGRATION.md). Its mem_limit
+#     model to the Object Storage model store; the inference VM syncs the
+#     bucket on a timer (see SCALEWAY_MIGRATION.md). Its mem_limit
 #     keeps the monthly UMAP fit from squeezing Postgres.
 
 services:
@@ -50,22 +50,38 @@ services:
         condition: service_started
     environment:
       SESSION_SECRET: ${SESSION_SECRET}
+      COOKIE_SAME_SITE: lax
       DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
-      CLIENT_HOSTNAME: ${DOMAIN}
+      OAUTH_HOSTNAME: ${OAUTH_HOSTNAME:-api.currents.is}
+      SERVICE_HOSTNAME: ${SERVICE_HOSTNAME:-api.currents.is}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
-      FRONTEND_URL: ${FRONTEND_URL}
-      CDN_URL: https://${DOMAIN}
+      FRONTEND_URL: ${FRONTEND_URL:-https://currents.is}
+      CDN_URL: ${CDN_URL:-https://api.currents.is}
       TAP_URL: ws://tap:2480/channel
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
-      INFERENCE_URL: ${INFERENCE_URL:?set to the mac mini's tailnet address, e.g. http://100.x.y.z:8000}
+      INFERENCE_URL: ${INFERENCE_URL:?set to the inference VM private address, e.g. http://10.x.y.z:8000}
       HIDDEN_DIDS: ${HIDDEN_DIDS:-}
       LABELER_DID: ${LABELER_DID:-}
       LABELER_SIGNING_KEY: ${LABELER_SIGNING_KEY:-}
       POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
       POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
       POLAR_SERVER: ${POLAR_SERVER:-production}
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        PUBLIC_WEB_APPVIEW_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - appview
+    environment:
+      APPVIEW_INTERNAL_URL: http://appview:8080
+      HOST: 0.0.0.0
+      ORIGIN: https://currents.is
+      PORT: 3000
 
   tap:
     image: ghcr.io/bluesky-social/indigo/tap:latest
@@ -103,22 +119,27 @@ services:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?}
       AWS_DEFAULT_REGION: fr-par
-      # INFERENCE_URL deliberately unset: the push-reload is dev-only — here
-      # the mac mini picks up published models via its bucket-sync cron.
+      # INFERENCE_URL deliberately unset: the push-reload is dev-only. The
+      # inference VM picks up published models via its bucket-sync timer.
 
-  nginx:
-    image: nginx:alpine
+  caddy:
+    image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       - appview
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Phase A is the safe default. Set CADDYFILE=./Caddyfile.scaleway only at Cutover B.
+      - type: bind
+        source: ${CADDYFILE:-./Caddyfile.scaleway.phase-a}
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - caddy_data:/data
+      - caddy_config:/config
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    depends_on:
-      - nginx
-    command: tunnel --no-autoupdate --protocol http2 run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+volumes:
+  caddy_data:
+  caddy_config:

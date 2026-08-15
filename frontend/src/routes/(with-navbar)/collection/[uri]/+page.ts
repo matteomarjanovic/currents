@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/api';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ params }) => {
+export const load: PageLoad = async ({ params, fetch }) => {
 	const uri = decodeURIComponent(params.uri);
 	const parts = uri.split('/');
 	const authority = parts[2] ?? '';
@@ -10,7 +10,9 @@ export const load: PageLoad = async ({ params }) => {
 
 	let handle = authority;
 	const res = await apiFetch(
-		`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(authority)}`
+		`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(authority)}`,
+		{},
+		fetch
 	);
 	if (res.ok) {
 		const profile = await res.json();

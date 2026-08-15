@@ -1,0 +1,19 @@
+currents.is {
+	request_body {
+		max_size 50MB
+	}
+
+	@appview path /api/* /xrpc/* /oauth/* /oauth-client-metadata.json /img/*
+	reverse_proxy @appview appview:8080
+	reverse_proxy frontend:3000
+}
+
+api.currents.is {
+	request_body {
+		max_size 50MB
+	}
+
+	@legacy_login path /oauth/login
+	redir @legacy_login https://currents.is{uri} 308
+	reverse_proxy appview:8080
+}

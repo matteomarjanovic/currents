@@ -42,7 +42,7 @@
 		try {
 			// Empty is a valid submission — it clears the alt text.
 			const next = alt.trim();
-			const res = await apiFetch(`/save/${rkey}/alt`, {
+			const res = await apiFetch(`/api/save/${rkey}/alt`, {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',

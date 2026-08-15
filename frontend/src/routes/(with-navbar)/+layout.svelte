@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
@@ -14,8 +14,9 @@
 	import { apiFetch } from '$lib/api';
 	import { isNative } from '$lib/platform';
 	import { lockBodyScroll } from '$lib/scroll-lock';
+	import type { LayoutData } from './$types';
 
-	let { children } = $props();
+	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 
 	const native = isNative();
 
@@ -23,19 +24,33 @@
 	// SPA fallback as `/index.html`, so the pathname isn't literally `/` there — a string compare
 	// would leave a logged-in user stuck on the welcome screen (no redirect) with the nav bar shown.
 	const isHome = $derived(page.route.id === '/(with-navbar)');
+	const isPublic = $derived(
+		isHome ||
+			page.url.pathname.startsWith('/explore') ||
+			page.url.pathname.startsWith('/login') ||
+			page.url.pathname.startsWith('/register') ||
+			page.url.pathname.startsWith('/profile/') ||
+			page.url.pathname.startsWith('/collection/') ||
+			// Text search reads fine unauthenticated (searchSaves uses optional auth); the color route
+			// still 403s, which raises the login prompt in-page.
+			page.url.pathname.startsWith('/search/')
+	);
 
-	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null =
-		$state(null);
-	let checked = $state(false);
+	let user: { did: string; handle: string; displayName?: string; avatar?: string } | null = $state(
+		untrack(() => data.viewer)
+	);
+	let checked = $state(untrack(() => !!data.viewer));
 
 	onMount(async () => {
-		try {
-			const res = await apiFetch('/api/me');
-			if (res.ok) {
-				user = await res.json();
+		if (!user) {
+			try {
+				const res = await apiFetch('/api/me');
+				if (res.ok) {
+					user = await res.json();
+				}
+			} catch {
+				// appview unreachable
 			}
-		} catch {
-			// appview unreachable
 		}
 		auth.user = user;
 		checked = true;
@@ -45,16 +60,6 @@
 			if (isHome) goto('/explore');
 		}
 
-		const isPublic =
-			isHome ||
-			page.url.pathname.startsWith('/explore') ||
-			page.url.pathname.startsWith('/login') ||
-			page.url.pathname.startsWith('/register') ||
-			page.url.pathname.startsWith('/profile/') ||
-			page.url.pathname.startsWith('/collection/') ||
-			// Text search reads fine unauthenticated (searchSaves uses optional auth);
-			// the color route still 403s, which raises the login prompt in-page.
-			page.url.pathname.startsWith('/search/');
 		if (!user && !isPublic) {
 			// On native the login entry point is the welcome screen at '/', not the web /login route.
 			goto(native ? '/' : '/login');
@@ -125,7 +130,7 @@
 	{/if}
 </svelte:head>
 
-{#if !checked}
+{#if !checked && !isPublic}
 	<!-- loading -->
 {:else}
 	{#if !(native && isHome)}

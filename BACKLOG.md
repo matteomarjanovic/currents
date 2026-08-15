@@ -30,10 +30,15 @@ proposing new work; delete an entry when it ships.
   roulette and moves the full-firehose bandwidth off the home line. The
   plan, compose file, and cost/growth analysis are written up:
   `SCALEWAY_MIGRATION.md` (step-by-step, `docker-compose.scaleway.yml`) and
-  `SCALING.md` (phased plan for when the vector data grows). Only inference
-  stays on the mac mini (reached over Tailscale); clustering runs on the VM
-  and publishes the monthly UMAP model through an Object Storage model store
-  that the mini syncs on a cron.
+  `SCALING.md` (phased plan for when the vector data grows). The settled
+  topology is an 8 GB main VM (`db + tap + appview + clustering + SvelteKit
+  SSR + Caddy`) plus a private 4 GB CPU inference VM, with models exchanged
+  through Object Storage. Production DNS-only records point directly from
+  Cloudflare DNS to the VM's Flexible IPv4; Cloudflare Tunnel remains for dev
+  hostnames but is not in the production traffic path. The web and OAuth
+  client live at `currents.is`, the appview DID/native API remains
+  `api.currents.is`, and Bunny serves immutable images from `cdn.currents.is`.
+  The mac mini leaves the production topology after the rollback window.
 
 - **Collapse the per-field save-edit endpoints into one.** Editing a save's
   metadata is currently spread over four handlers — `PUT /save/{id}/alt`,
@@ -49,10 +54,14 @@ proposing new work; delete an entry when it ships.
   Related: **`PUT /save/{id}` looks like dead code** — it 302s to `/save`, a
   server-rendered page that no longer exists, and no client calls it. Worth
   deleting in the same pass, after one more grep for external consumers.
-- **CI for the test suites.** GitHub Actions workflow running on PRs: appview
-  `go test ./...` twice — plain, and with `TEST_DATABASE_URL` against a
-  `pgvector/pgvector` service container (the suite creates and migrates its own
-  `_test` database); frontend `npm run test:unit` + lint; inference
-  `python -m unittest` (needs the Python deps but no model download); clustering
-  `python -m unittest` via its Docker image. Playwright e2e optional/later
-  (heaviest, needs browsers).
+- **Add CI/CD after the Scaleway migration is stable.** GitHub Actions runs on
+  PRs and `main`: appview `go test ./...` twice — plain and with
+  `TEST_DATABASE_URL` against a `pgvector/pgvector` service; frontend check,
+  lint, unit tests, SSR build, and Capacitor build; inference
+  `python -m unittest` without a model download; clustering tests in its Docker
+  image. After a green `main`, build immutable commit-SHA images into a private
+  Scaleway Container Registry. A protected, manually approved production job
+  deploys inference then the main VM over restricted SSH, runs health checks,
+  and retains the previous SHA for image rollback. Keep production app secrets
+  on the VMs, take a DB dump before migrations, and never automate down
+  migrations. Playwright remains optional/later.

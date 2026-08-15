@@ -1,5 +1,5 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 import { toast } from 'svelte-sonner';
+import { appviewUrl } from '$lib/api';
 import { auth } from '$lib/stores/auth.svelte';
 
 // Re-run the OAuth flow for the currently logged-in user to pick up newly
@@ -10,7 +10,7 @@ export function reauthorize(returnTo: string = location.pathname + location.sear
 	if (!handle) return;
 	const form = document.createElement('form');
 	form.method = 'POST';
-	form.action = `${PUBLIC_APPVIEW_URL}/oauth/login`;
+	form.action = appviewUrl('/oauth/login');
 	form.style.display = 'none';
 	for (const [name, value] of [
 		['username', handle],

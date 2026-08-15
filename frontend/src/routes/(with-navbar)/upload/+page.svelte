@@ -291,7 +291,7 @@
 			if (selectedSelfLabels.size > 0) {
 				form.append('labels', Array.from(selectedSelfLabels).join(','));
 			}
-			const res = await apiFetch(`/save`, {
+			const res = await apiFetch(`/api/save`, {
 				method: 'POST',
 				body: form,
 				headers: { Accept: 'application/json' }

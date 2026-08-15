@@ -63,7 +63,7 @@
 	let saveCount = $derived(collection.saveCount ?? 0);
 
 	async function move(targetUri: string, targetName: string) {
-		const res = await apiFetch(`/collection/${rkey}`, {
+		const res = await apiFetch(`/api/collection/${rkey}`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -98,7 +98,7 @@
 	async function confirmDelete() {
 		deleting = true;
 		try {
-			const res = await apiFetch(`/collection/${rkey}`, { method: 'DELETE' });
+			const res = await apiFetch(`/api/collection/${rkey}`, { method: 'DELETE' });
 			if (!res.ok) {
 				toast.error(`Couldn't delete "${collection.name}" (${res.status}).`);
 				return;

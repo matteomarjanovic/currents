@@ -13,7 +13,7 @@ export async function favouriteCollection(
 	subjectCid: string
 ): Promise<FavouriteOutcome> {
 	try {
-		const res = await apiFetch(`/favourite`, {
+		const res = await apiFetch(`/api/favourite`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ subjectUri, subjectCid })
@@ -35,7 +35,7 @@ export async function favouriteCollection(
 export async function unfavouriteCollection(favouriteUri: string): Promise<boolean> {
 	const rkey = favouriteUri.split('/').at(-1);
 	try {
-		const res = await apiFetch(`/favourite/${rkey}`, {
+		const res = await apiFetch(`/api/favourite/${rkey}`, {
 			method: 'DELETE'
 		});
 		return res.ok;

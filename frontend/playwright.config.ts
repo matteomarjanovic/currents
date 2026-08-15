@@ -9,7 +9,10 @@ export default defineConfig({
 	use: { baseURL: 'http://localhost:5173' },
 	projects: [{ name: 'mobile-chromium', use: { ...devices['Pixel 5'] } }],
 	webServer: {
-		command: 'npm run dev -- --port 5173',
+		// Browser request interception cannot see server-side load fetches. Keep the existing
+		// mocked interaction suite in SPA mode; SSR artifacts are verified separately.
+		command:
+			'CAPACITOR=1 PUBLIC_WEB_APPVIEW_URL=https://api-dev.currents.is npm run dev -- --port 5173',
 		url: 'http://localhost:5173',
 		reuseExistingServer: !process.env.CI,
 		timeout: 120_000

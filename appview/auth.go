@@ -105,11 +105,15 @@ func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
 	slog.Info("client metadata request", "url", r.URL, "host", r.Host)
 
 	meta := s.OAuth.Config.ClientMetadata()
+	oauthBaseURL := strings.TrimSuffix(s.OAuth.Config.ClientID, "/oauth-client-metadata.json")
 	if s.OAuth.Config.IsConfidential() {
-		meta.JWKSURI = strPtr(fmt.Sprintf("https://%s/oauth/jwks.json", r.Host))
+		meta.JWKSURI = strPtr(oauthBaseURL + "/oauth/jwks.json")
 	}
-	meta.ClientName = strPtr("Currents appview")
-	meta.ClientURI = strPtr(fmt.Sprintf("https://%s", r.Host))
+	meta.ClientName = strPtr("Currents")
+	meta.ClientURI = strPtr(oauthBaseURL)
+	if s.FrontendURL != "" {
+		meta.ClientURI = strPtr(s.FrontendURL)
+	}
 
 	if err := meta.Validate(s.OAuth.Config.ClientID); err != nil {
 		slog.Error("validating client metadata", "err", err)
@@ -278,9 +282,7 @@ func (s *Server) OAuthLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sess, _ := s.CookieStore.Get(r, "currents-session")
-	sess.Values = make(map[any]any)
-	if err := sess.Save(r, w); err != nil {
+	if err := s.clearSessionCookie(w, r); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -291,6 +293,27 @@ func (s *Server) OAuthLogout(w http.ResponseWriter, r *http.Request) {
 		redirectTarget = s.FrontendURL
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
+}
+
+// OAuthLegacyLogout clears the old api.currents.is host-only cookie before
+// returning to the root-domain logout during the OAuth-host migration.
+func (s *Server) OAuthLegacyLogout(w http.ResponseWriter, r *http.Request) {
+	if err := s.clearSessionCookie(w, r); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	redirectTarget := "/oauth/logout"
+	if s.FrontendURL != "" {
+		redirectTarget = strings.TrimRight(s.FrontendURL, "/") + redirectTarget
+	}
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
+}
+
+func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) error {
+	sess, _ := s.CookieStore.Get(r, "currents-session")
+	sess.Values = make(map[any]any)
+	sess.Options.MaxAge = -1
+	return sess.Save(r, w)
 }
 
 func ensureUserProfile(ctx context.Context, c *atclient.APIClient, store *PgStore, did, handle, pdsEndpoint, cdnBaseURL string) {

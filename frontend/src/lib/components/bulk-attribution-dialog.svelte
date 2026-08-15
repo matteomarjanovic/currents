@@ -53,7 +53,7 @@
 				const blobCid = queue.shift();
 				if (!blobCid) return;
 				try {
-					const res = await apiFetch(`/save/attribution`, {
+					const res = await apiFetch(`/api/save/attribution`, {
 						method: 'PUT',
 						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 						body: new URLSearchParams({

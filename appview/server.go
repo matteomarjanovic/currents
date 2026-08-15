@@ -19,6 +19,7 @@ type Server struct {
 	Store         *PgStore
 	CDNBaseURL    string
 	ServiceDID    string // did:web:{hostname}, used for /.well-known/did.json and XRPC service auth
+	ServiceURL    string // public appview endpoint advertised by the service DID
 	AuthValidator *auth.ServiceAuthValidator
 	Inference     *InferenceClient
 	FrontendURL   string

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { apiFetch } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { removeCollection } from '$lib/stores/collections.svelte';
@@ -23,59 +24,19 @@
 
 	const collectionUri = $derived(data.collectionUri);
 
-	let collection = $state<CollectionView | null>(null);
-	let notFound = $state(false);
-	let loadError = $state(false);
+	let collection = $state<CollectionView | null>(untrack(() => data.collection));
+	let notFound = $state(untrack(() => !data.collection && !data.loadError));
+	let loadError = $state(untrack(() => !!data.loadError));
 
 	let editOpen = $state(false);
 	let deleteOpen = $state(false);
 	let deleting = $state(false);
 	let createSectionOpen = $state(false);
 
-	let children = $state<CollectionView[]>([]);
-	let childrenLoaded = $state(false);
+	let children = $state<CollectionView[]>(untrack(() => data.children));
+	let childrenLoaded = $state(true);
 	let parent = $state<CollectionView | null>(null);
 	let parentFetchedFor = '';
-
-	$effect(() => {
-		const uri = collectionUri;
-		untrack(() => {
-			children = [];
-			childrenLoaded = false;
-		});
-		const did = uri.split('/')[2];
-		if (!did) {
-			childrenLoaded = true;
-			return;
-		}
-		// Page through every section — a collection with more than 100 sections
-		// would otherwise be truncated. `cancelled` guards against a route change
-		// landing a stale response over the new collection's children.
-		let cancelled = false;
-		void (async () => {
-			const all: CollectionView[] = [];
-			let cursor = '';
-			try {
-				do {
-					const params = new URLSearchParams({ actor: did, parent: uri, limit: '100' });
-					if (cursor) params.set('cursor', cursor);
-					const r = await apiFetch(`/xrpc/is.currents.feed.getActorCollections?${params}`);
-					if (!r.ok) break;
-					const d = await r.json();
-					all.push(...(d.collections ?? []));
-					cursor = d.cursor ?? '';
-				} while (cursor);
-			} catch {
-				// best-effort; render whatever loaded
-			}
-			if (cancelled) return;
-			children = all;
-			childrenLoaded = true;
-		})();
-		return () => {
-			cancelled = true;
-		};
-	});
 
 	$effect(() => {
 		const pUri = collection?.parentUri ?? '';
@@ -99,35 +60,51 @@
 		!!auth.user && !!collection?.author && auth.user.did === collection.author.did
 	);
 
-	const scroll = useInfiniteScroll(async (cursor) => {
-		const params = new URLSearchParams({
-			collection: collectionUri,
-			limit: '50'
-		});
-		if (cursor) params.set('cursor', cursor);
-		const res = await apiFetch(`/xrpc/is.currents.feed.getCollectionSaves?${params}`);
-		if (res.status === 404) {
-			notFound = true;
-			return { items: [], cursor: undefined };
-		}
-		if (!res.ok) {
-			loadError = true;
-			throw new Error(`HTTP ${res.status}`);
-		}
-		const data = await res.json();
-		if (data.collection) collection = data.collection;
-		return { items: data.saves ?? [], cursor: data.cursor };
-	});
+	const scroll = useInfiniteScroll(
+		async (cursor) => {
+			const params = new URLSearchParams({
+				collection: collectionUri,
+				limit: '50'
+			});
+			if (cursor) params.set('cursor', cursor);
+			const res = await apiFetch(`/xrpc/is.currents.feed.getCollectionSaves?${params}`);
+			if (res.status === 404) {
+				notFound = true;
+				return { items: [], cursor: undefined };
+			}
+			if (!res.ok) {
+				loadError = true;
+				throw new Error(`HTTP ${res.status}`);
+			}
+			const next = await res.json();
+			if (next.collection) collection = next.collection;
+			return { items: next.saves ?? [], cursor: next.cursor };
+		},
+		undefined,
+		untrack(() => ({ items: data.saves, cursor: data.cursor }))
+	);
 
 	$effect(() => {
-		void collectionUri;
+		const next = data;
 		untrack(() => {
-			collection = null;
-			notFound = false;
-			loadError = false;
-			scroll.reset();
-			scroll.loadMore();
+			collection = next.collection;
+			notFound = !next.collection && !next.loadError;
+			loadError = !!next.loadError;
+			children = next.children;
+			childrenLoaded = true;
+			parent = null;
+			parentFetchedFor = '';
+			scroll.reset({ items: next.saves, cursor: next.cursor });
 		});
+	});
+
+	// Refresh the universal load once after browser auth is known so viewer-specific favourite
+	// and save state replaces the public server-rendered response.
+	let viewerHydrated = false;
+	$effect(() => {
+		if (!auth.user || viewerHydrated) return;
+		viewerHydrated = true;
+		void invalidateAll();
 	});
 
 	// When an image is unsaved from this collection (e.g. via the save-detail overlay), drop it
@@ -175,7 +152,7 @@
 		if (!rkey) return;
 		deleting = true;
 		try {
-			const res = await apiFetch(`/collection/${rkey}`, {
+			const res = await apiFetch(`/api/collection/${rkey}`, {
 				method: 'DELETE'
 			});
 			if (!res.ok) {
@@ -200,10 +177,33 @@
 		const handle = c.author?.handle ?? c.uri.split('/')[2];
 		return `/profile/${handle}/collection/${rkey}`;
 	}
+
+	const pageTitle = $derived((collection?.name || 'Collection') + ' · Currents');
+	const description = $derived(
+		(
+			collection?.description?.trim() ||
+			`${collection?.saveCount ?? 0} saves curated by @${collection?.author?.handle ?? data.collectionUri.split('/')[2]}.`
+		).slice(0, 200)
+	);
+	const ogImage = $derived(collection?.previews?.[0]?.url ?? '');
+	const canonical = $derived(page.url.origin + page.url.pathname);
 </script>
 
 <svelte:head>
-	<title>{(collection?.name || 'Collection') + ' · Currents'}</title>
+	<title>{pageTitle}</title>
+	<link rel="canonical" href={canonical} />
+	<meta name="description" content={description} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={canonical} />
+	<meta property="og:title" content={pageTitle} />
+	<meta property="og:description" content={description} />
+	{#if ogImage}
+		<meta property="og:image" content={ogImage} />
+		<meta name="twitter:image" content={ogImage} />
+	{/if}
+	<meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+	<meta name="twitter:title" content={pageTitle} />
+	<meta name="twitter:description" content={description} />
 </svelte:head>
 
 {#if notFound}

@@ -1,22 +1,31 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { PUBLIC_APPVIEW_URL, PUBLIC_WEB_APPVIEW_URL } from '$env/static/public';
 import { isNative } from './platform';
 import { getAuthToken } from './auth-storage';
 
-function resolveUrl(path: string): string {
+export function appviewUrl(path: string): string {
 	if (/^https?:\/\//.test(path)) return path;
-	const base = PUBLIC_APPVIEW_URL.replace(/\/$/, '');
+	const base = (isNative() ? PUBLIC_APPVIEW_URL : PUBLIC_WEB_APPVIEW_URL).replace(/\/$/, '');
 	return `${base}${path.startsWith('/') ? '' : '/'}${path}`;
 }
 
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-	const url = resolveUrl(path);
+export function logoutUrl(): string {
+	if (isNative() || PUBLIC_WEB_APPVIEW_URL) return appviewUrl('/oauth/logout');
+	return `${PUBLIC_APPVIEW_URL.replace(/\/$/, '')}/oauth/logout/legacy`;
+}
+
+export async function apiFetch(
+	path: string,
+	init: RequestInit = {},
+	fetcher: typeof fetch = fetch
+): Promise<Response> {
+	const url = appviewUrl(path);
 	const headers = new Headers(init.headers ?? {});
 	if (isNative()) {
 		const token = await getAuthToken();
 		if (token && !headers.has('Authorization')) {
 			headers.set('Authorization', `Bearer ${token}`);
 		}
-		return fetch(url, { ...init, headers });
+		return fetcher(url, { ...init, headers });
 	}
-	return fetch(url, { credentials: 'include', ...init, headers });
+	return fetcher(url, { credentials: 'include', ...init, headers });
 }

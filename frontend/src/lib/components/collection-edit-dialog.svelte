@@ -40,7 +40,7 @@
 		submitting = true;
 		error = null;
 		try {
-			const res = await apiFetch(`/collection/${rkey}`, {
+			const res = await apiFetch(`/api/collection/${rkey}`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name: trimmedName, description: description.trim() })

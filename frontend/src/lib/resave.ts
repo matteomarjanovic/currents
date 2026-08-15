@@ -20,7 +20,7 @@ export async function resaveWithFallback(
 	saveUri: string,
 	collectionUri: string
 ): Promise<Response> {
-	const first = await apiFetch('/resave', {
+	const first = await apiFetch('/api/resave', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ saveUri, collectionUri })
@@ -63,7 +63,7 @@ export async function resaveWithFallback(
 		);
 		if (!up.ok) return new Response(null, { status: up.status });
 		const { blob } = await up.json();
-		return await apiFetch('/resave', {
+		return await apiFetch('/api/resave', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ saveUri, collectionUri, blob })

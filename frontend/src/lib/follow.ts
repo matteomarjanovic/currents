@@ -10,7 +10,7 @@ export type FollowOutcome =
 
 export async function followUser(subject: string): Promise<FollowOutcome> {
 	try {
-		const res = await apiFetch(`/follow`, {
+		const res = await apiFetch(`/api/follow`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ subject })
@@ -32,7 +32,7 @@ export async function followUser(subject: string): Promise<FollowOutcome> {
 export async function unfollowUser(followUri: string): Promise<boolean> {
 	const rkey = followUri.split('/').at(-1);
 	try {
-		const res = await apiFetch(`/follow/${rkey}`, {
+		const res = await apiFetch(`/api/follow/${rkey}`, {
 			method: 'DELETE'
 		});
 		return res.ok;

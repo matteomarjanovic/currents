@@ -26,7 +26,8 @@ services:
     environment:
       SESSION_SECRET: ${SESSION_SECRET}
       DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
-      CLIENT_HOSTNAME: ${DOMAIN}
+      OAUTH_HOSTNAME: ${DOMAIN}
+      SERVICE_HOSTNAME: ${DOMAIN}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: ${FRONTEND_URL}

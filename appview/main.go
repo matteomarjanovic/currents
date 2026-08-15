@@ -184,6 +184,12 @@ func main() {
 				EnvVars: []string{"SESSION_SECRET"},
 			},
 			&cli.StringFlag{
+				Name:    "cookie-same-site",
+				Usage:   "session cookie SameSite mode: lax or none",
+				Value:   "lax",
+				EnvVars: []string{"COOKIE_SAME_SITE"},
+			},
+			&cli.StringFlag{
 				Name:     "database-url",
 				Usage:    "PostgreSQL connection string",
 				Required: true,
@@ -214,9 +220,14 @@ func main() {
 				EnvVars: []string{"DB_MAX_CONN_IDLE_TIME"},
 			},
 			&cli.StringFlag{
-				Name:    "hostname",
-				Usage:   "public host name for this server (if not localhost dev mode)",
-				EnvVars: []string{"CLIENT_HOSTNAME"},
+				Name:    "oauth-hostname",
+				Usage:   "public hostname for OAuth metadata and callback (if not localhost dev mode)",
+				EnvVars: []string{"OAUTH_HOSTNAME", "CLIENT_HOSTNAME"},
+			},
+			&cli.StringFlag{
+				Name:    "service-hostname",
+				Usage:   "public hostname for the appview service DID and endpoint",
+				EnvVars: []string{"SERVICE_HOSTNAME", "CLIENT_HOSTNAME"},
 			},
 			&cli.StringFlag{
 				Name:    "client-secret-key",
@@ -408,8 +419,8 @@ func runServer(cctx *cli.Context) error {
 	dir := identity.DefaultDirectory()
 
 	var config oauth.ClientConfig
-	hostname := cctx.String("hostname")
-	if hostname == "" {
+	oauthHostname := cctx.String("oauth-hostname")
+	if oauthHostname == "" {
 		config = oauth.NewLocalhostConfig(
 			fmt.Sprintf("http://127.0.0.1%s/oauth/callback", bind),
 			scopes,
@@ -417,13 +428,13 @@ func runServer(cctx *cli.Context) error {
 		slog.Info("configuring localhost OAuth client", "CallbackURL", config.CallbackURL)
 	} else {
 		config = oauth.NewPublicConfig(
-			fmt.Sprintf("https://%s/oauth-client-metadata.json", hostname),
-			fmt.Sprintf("https://%s/oauth/callback", hostname),
+			fmt.Sprintf("https://%s/oauth-client-metadata.json", oauthHostname),
+			fmt.Sprintf("https://%s/oauth/callback", oauthHostname),
 			scopes,
 		)
 	}
 
-	if cctx.String("client-secret-key") != "" && hostname != "" {
+	if cctx.String("client-secret-key") != "" && oauthHostname != "" {
 		priv, err := atcrypto.ParsePrivateMultibase(cctx.String("client-secret-key"))
 		if err != nil {
 			return err
@@ -502,28 +513,35 @@ func runServer(cctx *cli.Context) error {
 	}
 
 	cdnURL := cctx.String("cdn-url")
+	serviceHostname := cctx.String("service-hostname")
 	var serviceDID string
-	if hostname == "" {
+	var serviceURL string
+	if serviceHostname == "" {
 		// localhost dev: did:web:localhost%3A8080 (colon in port must be percent-encoded)
 		port := strings.TrimPrefix(bind, ":")
 		serviceDID = "did:web:localhost%3A" + port
-		if cdnURL == "" {
-			cdnURL = "http://127.0.0.1" + bind
-		}
+		serviceURL = "http://127.0.0.1" + bind
 	} else {
-		serviceDID = "did:web:" + hostname
-		if cdnURL == "" {
-			cdnURL = "https://" + hostname
-		}
+		serviceDID = "did:web:" + serviceHostname
+		serviceURL = "https://" + serviceHostname
+	}
+	if cdnURL == "" {
+		cdnURL = serviceURL
 	}
 
 	cookieStore := sessions.NewCookieStore([]byte(cctx.String("session-secret")))
+	cookieSameSite := http.SameSiteLaxMode
+	if strings.EqualFold(cctx.String("cookie-same-site"), "none") {
+		cookieSameSite = http.SameSiteNoneMode
+	} else if !strings.EqualFold(cctx.String("cookie-same-site"), "lax") {
+		return fmt.Errorf("cookie-same-site must be lax or none")
+	}
 	cookieStore.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   86400 * 90,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteNoneMode,
+		SameSite: cookieSameSite,
 	}
 
 	srv := Server{
@@ -533,6 +551,7 @@ func runServer(cctx *cli.Context) error {
 		Store:       store,
 		CDNBaseURL:  cdnURL,
 		ServiceDID:  serviceDID,
+		ServiceURL:  serviceURL,
 		AuthValidator: &auth.ServiceAuthValidator{
 			Audience: serviceDID,
 			Dir:      dir,
@@ -592,11 +611,12 @@ func runServer(cctx *cli.Context) error {
 	// GET path is for native clients running OAuth inside @capacitor/browser (requires ?username=).
 	http.HandleFunc("GET /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)
+	http.HandleFunc("GET /oauth/logout/legacy", srv.OAuthLegacyLogout)
 
-	http.HandleFunc("POST /collection", srv.CreateCollection)
-	http.HandleFunc("GET /collection/{id}", srv.GetCollection)
-	http.HandleFunc("PUT /collection/{id}", srv.UpdateCollection)
-	http.HandleFunc("DELETE /collection/{id}", srv.DeleteCollection)
+	registerLegacyAndAPI(http.DefaultServeMux, "POST /collection", srv.CreateCollection)
+	registerLegacyAndAPI(http.DefaultServeMux, "GET /collection/{id}", srv.GetCollection)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /collection/{id}", srv.UpdateCollection)
+	registerLegacyAndAPI(http.DefaultServeMux, "DELETE /collection/{id}", srv.DeleteCollection)
 
 	http.HandleFunc("GET /img/{did}/{cid}", srv.ImageProxy)
 
@@ -623,22 +643,22 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /xrpc/is.currents.feed.getRelatedSaves", srv.XRPCGetRelatedSaves)
 	http.HandleFunc("GET /xrpc/is.currents.feed.getFeed", srv.XRPCGetFeed)
 
-	http.HandleFunc("POST /follow", srv.CreateFollow)
-	http.HandleFunc("DELETE /follow/{rkey}", srv.DeleteFollow)
+	registerLegacyAndAPI(http.DefaultServeMux, "POST /follow", srv.CreateFollow)
+	registerLegacyAndAPI(http.DefaultServeMux, "DELETE /follow/{rkey}", srv.DeleteFollow)
 
-	http.HandleFunc("POST /favourite", srv.CreateFavourite)
-	http.HandleFunc("DELETE /favourite/{rkey}", srv.DeleteFavourite)
+	registerLegacyAndAPI(http.DefaultServeMux, "POST /favourite", srv.CreateFavourite)
+	registerLegacyAndAPI(http.DefaultServeMux, "DELETE /favourite/{rkey}", srv.DeleteFavourite)
 
 	http.HandleFunc("POST /api/blob/upload-token", srv.CreateUploadToken)
-	http.HandleFunc("POST /save", srv.CreateSave)
-	http.HandleFunc("PUT /save/attribution", srv.UpdateSaveAttribution)
-	http.HandleFunc("GET /save/{id}", srv.GetSave)
-	http.HandleFunc("PUT /save/{id}", srv.UpdateSave)
-	http.HandleFunc("PUT /save/{id}/alt", srv.UpdateSaveAlt)
-	http.HandleFunc("PUT /save/{id}/labels", srv.UpdateSaveLabels)
-	http.HandleFunc("PUT /save/labels/bulk", srv.UpdateSaveLabelsBulk)
-	http.HandleFunc("DELETE /save/{id}", srv.DeleteSave)
-	http.HandleFunc("POST /resave", srv.CreateResave)
+	registerLegacyAndAPI(http.DefaultServeMux, "POST /save", srv.CreateSave)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/attribution", srv.UpdateSaveAttribution)
+	registerLegacyAndAPI(http.DefaultServeMux, "GET /save/{id}", srv.GetSave)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}", srv.UpdateSave)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}/alt", srv.UpdateSaveAlt)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}/labels", srv.UpdateSaveLabels)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/labels/bulk", srv.UpdateSaveLabelsBulk)
+	registerLegacyAndAPI(http.DefaultServeMux, "DELETE /save/{id}", srv.DeleteSave)
+	registerLegacyAndAPI(http.DefaultServeMux, "POST /resave", srv.CreateResave)
 
 	http.HandleFunc("GET /api/import/pinterest/boards", srv.APIPinterestBoards)
 	http.HandleFunc("GET /api/import/pinterest/sections", srv.APIPinterestSections)
@@ -704,4 +724,10 @@ func runServer(cctx *cli.Context) error {
 		return err
 	}
 	return nil
+}
+
+func registerLegacyAndAPI(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
+	method, path, _ := strings.Cut(pattern, " ")
+	mux.HandleFunc(pattern, handler)
+	mux.HandleFunc(method+" /api"+path, handler)
 }

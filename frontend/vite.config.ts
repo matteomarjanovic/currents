@@ -10,6 +10,11 @@ import { defineConfig } from 'vite';
 const isCapacitor = !!process.env.CAPACITOR;
 
 export default defineConfig({
+	define: {
+		// Route options are compiled into both server and client bundles, so expose the existing
+		// build-time CAPACITOR switch as a literal rather than reading process.env in app code.
+		'import.meta.env.VITE_CAPACITOR': JSON.stringify(isCapacitor)
+	},
 	plugins: [
 		tailwindcss(),
 		sveltekit(),

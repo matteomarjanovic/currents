@@ -1,0 +1,7 @@
+api.currents.is {
+	request_body {
+		max_size 50MB
+	}
+
+	reverse_proxy appview:8080
+}

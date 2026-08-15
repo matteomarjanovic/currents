@@ -2,8 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import { apiFetch } from '$lib/api';
+	import { apiFetch, logoutUrl } from '$lib/api';
 	import { isNative } from '$lib/platform';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { onBackButton } from '$lib/back-button';
@@ -154,7 +153,7 @@
 			// that keeps the app looking logged in.
 			window.location.href = '/';
 		} else {
-			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
+			window.location.href = logoutUrl();
 		}
 	}
 

@@ -46,7 +46,7 @@
 		error = null;
 		try {
 			const trimmedDescription = description.trim();
-			const res = await apiFetch(`/collection`, {
+			const res = await apiFetch(`/api/collection`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',

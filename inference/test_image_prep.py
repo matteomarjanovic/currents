@@ -30,6 +30,12 @@ def _noise(width: int, height: int) -> Image.Image:
     return Image.fromarray(rng.integers(0, 256, size=(height, width, 3), dtype=np.uint8), "RGB")
 
 
+class DeviceDtypeTests(unittest.TestCase):
+    def test_mps_uses_bfloat16_and_cpu_uses_float32(self):
+        self.assertEqual(main._dtype_for_device("mps"), main.torch.bfloat16)
+        self.assertEqual(main._dtype_for_device("cpu"), main.torch.float32)
+
+
 class DecodeImageTests(unittest.TestCase):
     def test_png_decodes_to_rgb_with_mime(self):
         image, mime = main._decode_image(_png_bytes(Image.new("RGB", (8, 8), (10, 20, 30))))

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { appviewUrl } from '$lib/api';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	let {
@@ -12,7 +12,7 @@
 	function reauthorize() {
 		const form = document.createElement('form');
 		form.method = 'POST';
-		form.action = `${PUBLIC_APPVIEW_URL}/oauth/login`;
+		form.action = appviewUrl('/oauth/login');
 		const u = document.createElement('input');
 		u.name = 'username';
 		u.value = auth.user?.handle ?? '';

@@ -1,0 +1,22 @@
+services:
+  inference:
+    build:
+      context: ./inference
+    restart: unless-stopped
+    mem_limit: 3500m
+    environment:
+      HF_HOME: /huggingface
+      MODELS_DIR: /models
+      IMAGE_MAX_BATCH: 4
+      IMAGE_QUEUE_SIZE: 8
+    volumes:
+      - /opt/currents-inference/huggingface:/huggingface
+      - /opt/currents-inference/models:/models
+    ports:
+      - "${INFERENCE_PRIVATE_IP:?}:8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 5m

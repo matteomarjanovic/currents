@@ -61,7 +61,7 @@ func (s *Server) WellKnownDID(w http.ResponseWriter, r *http.Request) {
 			{
 				"id":              "#atproto_appview",
 				"type":            "AtprotoAppView",
-				"serviceEndpoint": s.CDNBaseURL,
+				"serviceEndpoint": s.ServiceURL,
 			},
 		},
 	}

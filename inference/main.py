@@ -21,9 +21,13 @@ register_heif_opener(thumbnails=False)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+def _dtype_for_device(device: str):
+    return torch.bfloat16 if device == "mps" else torch.float32
+
+
 CHECKPOINT    = "google/siglip2-base-patch16-naflex"
 DEVICE        = "mps" if torch.backends.mps.is_available() else "cpu"
-DTYPE         = torch.bfloat16
+DTYPE         = _dtype_for_device(DEVICE)
 MAX_PATCHES   = 256
 TEXT_MIN_BATCH     = 8
 TEXT_MAX_BATCH     = 32
@@ -679,6 +683,7 @@ async def health():
     return {
         "status": "ok",
         "device": DEVICE,
+        "dtype": str(DTYPE).removeprefix("torch."),
         "model": CHECKPOINT,
         "umap": umap_loaded,
         "safety_heads": {axis: (sess is not None) for axis, sess in _safety_heads.items()},

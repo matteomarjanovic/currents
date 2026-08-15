@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
 	import { resolve } from '$app/paths';
+	import { appviewUrl } from '$lib/api';
 	import LogoMerged from '$lib/assets/logo.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
@@ -8,7 +8,7 @@
 	import RegisterFormMobile from '$lib/components/register-form-mobile.svelte';
 	import { isNative } from '$lib/platform';
 
-	const loginAction = `${PUBLIC_APPVIEW_URL}/oauth/login`;
+	const loginAction = appviewUrl('/oauth/login');
 	const native = isNative();
 </script>
 

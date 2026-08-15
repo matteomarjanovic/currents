@@ -1,0 +1,11 @@
+.git
+.svelte-kit
+node_modules
+build
+build-mobile
+android
+ios
+playwright-report
+test-results
+*.log
+.DS_Store

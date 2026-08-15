@@ -49,7 +49,7 @@
 		submitting = true;
 		error = null;
 		try {
-			const res = await apiFetch(`/save/attribution`, {
+			const res = await apiFetch(`/api/save/attribution`, {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/x-www-form-urlencoded',

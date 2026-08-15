@@ -3,8 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
-	import { apiFetch } from '$lib/api';
+	import { apiFetch, logoutUrl } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { isNative, isAndroid, isIos, isMobileWeb, isStandalonePwa } from '$lib/platform';
 	import { shouldOpenExternally, openExternal } from '$lib/external';
@@ -61,7 +60,6 @@
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { navHistory } from '$lib/stores/navigation.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
-	import { onMount } from 'svelte';
 	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
 
@@ -166,18 +164,19 @@
 
 	function openPinterestImport() {
 		markFeatureSeen(FEATURE_PINTEREST_IMPORT);
-		goto('/import/pinterest');
+		goto(resolve('/(with-navbar)/import/pinterest'));
 	}
 
-	// Fetch the pending-attestation list once when the user is known. The store
-	// caches across navigations; opening the dialog refreshes it again.
-	onMount(() => {
-		if (user) {
-			void refreshNotifications();
-			void refreshSocial();
-			if (!features.loaded) void loadSeenFeatures();
-			if (!supporter.loaded) void loadSupporterStatus();
-		}
+	// Public pages render before the browser auth refresh finishes, so `user` can become known
+	// after this component mounts. Load the account state once that happens.
+	let loadedForDid: string | null = null;
+	$effect(() => {
+		if (!user || loadedForDid === user.did) return;
+		loadedForDid = user.did;
+		void refreshNotifications();
+		void refreshSocial();
+		if (!features.loaded) void loadSeenFeatures();
+		if (!supporter.loaded) void loadSupporterStatus();
 	});
 
 	function handleCollectionCreated(collection: CollectionView) {
@@ -206,7 +205,7 @@
 			// that keeps the app looking logged in.
 			window.location.href = '/';
 		} else {
-			window.location.href = `${PUBLIC_APPVIEW_URL}/oauth/logout`;
+			window.location.href = logoutUrl();
 		}
 	}
 

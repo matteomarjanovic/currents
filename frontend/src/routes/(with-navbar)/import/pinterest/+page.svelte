@@ -165,7 +165,7 @@
 		description: string,
 		parent?: string
 	): Promise<string> {
-		const res = await apiFetch(`/collection`, {
+		const res = await apiFetch(`/api/collection`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
 			body: new URLSearchParams({ name, description, ...(parent ? { parent } : {}) }).toString()

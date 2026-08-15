@@ -1,4 +1,5 @@
 import type { SaveView } from '$lib/types';
+import { SvelteSet } from 'svelte/reactivity';
 
 interface FetchResult<T> {
 	items: T[];
@@ -7,12 +8,13 @@ interface FetchResult<T> {
 
 export function useInfiniteScroll<T = SaveView>(
 	fetchFn: (cursor?: string) => Promise<FetchResult<T>>,
-	getKey: (item: T) => string = (item) => (item as { uri?: string }).uri ?? ''
+	getKey: (item: T) => string = (item) => (item as { uri?: string }).uri ?? '',
+	initial?: FetchResult<T>
 ) {
-	let items: T[] = $state([]);
-	let cursor: string | undefined = $state(undefined);
+	let items: T[] = $state(initial?.items ?? []);
+	let cursor: string | undefined = $state(initial?.cursor);
 	let loading = $state(false);
-	let hasMore = $state(true);
+	let hasMore = $state(initial ? !!initial.cursor : true);
 	// The error thrown by the last failed fetch (fetchers that swallow failures
 	// and return an empty page never set it). While set, loadMore() is a no-op —
 	// the scroll sentinel would otherwise retry in a loop — until retry()/reset().
@@ -23,7 +25,7 @@ export function useInfiniteScroll<T = SaveView>(
 		loading = true;
 		try {
 			const result = await fetchFn(cursor);
-			const seen = new Set(items.map(getKey));
+			const seen = new SvelteSet(items.map(getKey));
 			const fresh = result.items.filter((i) => !seen.has(getKey(i)));
 			items = [...items, ...fresh];
 			cursor = result.cursor;
@@ -39,10 +41,10 @@ export function useInfiniteScroll<T = SaveView>(
 		void loadMore();
 	}
 
-	function reset() {
-		items = [];
-		cursor = undefined;
-		hasMore = true;
+	function reset(next?: FetchResult<T>) {
+		items = next?.items ?? [];
+		cursor = next?.cursor;
+		hasMore = next ? !!next.cursor : true;
 		loading = false;
 		error = null;
 	}

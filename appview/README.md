@@ -15,16 +15,18 @@ All options can be set via flags or environment variables.
 |---|---|---|---|
 | `APPVIEW_MODE` | `--mode` | No | Process mode: `all` or `repair` (default: `all`) |
 | `SESSION_SECRET` | `--session-secret` | Yes | Random secret for signing session cookies |
+| `COOKIE_SAME_SITE` | `--cookie-same-site` | No | Session cookie SameSite mode: `lax` (default) or `none` for cross-site web development |
 | `DATABASE_URL` | `--database-url` | Yes | PostgreSQL DSN, e.g. `postgres://user:pass@host:5432/db?sslmode=disable` |
 | `DB_MIN_CONNS` | `--db-min-conns` | No | Minimum PostgreSQL connections kept open (default: `4`) |
 | `DB_MAX_CONNS` | `--db-max-conns` | No | Maximum PostgreSQL connections in the pool (default: `12`) |
 | `DB_MAX_CONN_LIFETIME` | `--db-max-conn-lifetime` | No | Maximum PostgreSQL connection lifetime (default: `30m`) |
 | `DB_MAX_CONN_IDLE_TIME` | `--db-max-conn-idle-time` | No | Maximum PostgreSQL connection idle time (default: `5m`) |
-| `CLIENT_HOSTNAME` | `--hostname` | No | Public hostname (e.g. `example.com`). Omit for localhost dev mode |
+| `OAUTH_HOSTNAME` | `--oauth-hostname` | No | Hostname serving OAuth metadata and callback. Omit for localhost dev mode |
+| `SERVICE_HOSTNAME` | `--service-hostname` | No | Hostname used by the appview service DID and endpoint. Omit for localhost dev mode |
 | `CLIENT_SECRET_KEY` | `--client-secret-key` | No | P-256 private key in multibase encoding (confidential clients only) |
 | `CLIENT_SECRET_KEY_ID` | `--client-secret-key-id` | No | Key ID for `CLIENT_SECRET_KEY` (default: `primary`) |
 | `INFERENCE_URL` | `--inference-url` | No | Base URL of the inference FastAPI server (default: `http://localhost:8000`) |
-| `CDN_URL` | `--cdn-url` | No | Base URL for image CDN used in XRPC responses. Defaults to `http://127.0.0.1:8080` in localhost mode or `https://<hostname>` in production |
+| `CDN_URL` | `--cdn-url` | No | Base URL for images in XRPC responses. Defaults to the appview service URL |
 | `HIDDEN_DIDS` | `--hidden-dids` | No | Comma-separated author DIDs to filter from feed/search/related. Emergency lever — moderation-driven takedowns go through the labeler |
 | `LABELER_DID` | `--labeler-did` | No | DID of the moderation labeler, e.g. `did:web:moderation.currents.is`. Required when `LABELER_SIGNING_KEY` is set |
 | `LABELER_SIGNING_KEY` | `--labeler-signing-key` | No | Multibase-encoded secp256k1 private key for signing labels. Unset → labeler disabled (no label issuance; XRPC label endpoints return empty) |
@@ -74,13 +76,14 @@ The server binds to `:8080`.
 
 ### Localhost / dev (default)
 
-When `CLIENT_HOSTNAME` is not set, the server registers itself as a public client using `http://127.0.0.1:8080/oauth/callback` as the redirect URI. This works out of the box for local testing with any atproto PDS.
+When `OAUTH_HOSTNAME` is not set, the server registers itself as a public client using `http://127.0.0.1:8080/oauth/callback` as the redirect URI. This works out of the box for local testing with any atproto PDS.
 
 ### Production (public client)
 
-Set `CLIENT_HOSTNAME` to your domain:
+Set the OAuth and service hostnames (they may be the same):
 ```bash
-CLIENT_HOSTNAME=example.com \
+OAUTH_HOSTNAME=example.com \
+SERVICE_HOSTNAME=api.example.com \
 SESSION_SECRET=<random-string> \
 DATABASE_URL=<dsn> \
 go run .
@@ -90,9 +93,10 @@ The server will advertise `https://example.com/oauth-client-metadata.json` as it
 
 ### Production (confidential client)
 
-Generate a P-256 key in multibase encoding and set `CLIENT_SECRET_KEY` alongside `CLIENT_HOSTNAME`:
+Generate a P-256 key in multibase encoding and set `CLIENT_SECRET_KEY` alongside `OAUTH_HOSTNAME`:
 ```bash
-CLIENT_HOSTNAME=example.com \
+OAUTH_HOSTNAME=example.com \
+SERVICE_HOSTNAME=api.example.com \
 CLIENT_SECRET_KEY=<multibase-p256-key> \
 SESSION_SECRET=<random-string> \
 DATABASE_URL=<dsn> \

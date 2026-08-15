@@ -48,7 +48,7 @@
 		const added = [...pendingAdds];
 		try {
 			const rkey = save.uri.split('/').pop() ?? '';
-			const res = await apiFetch(`/save/${rkey}/labels`, {
+			const res = await apiFetch(`/api/save/${rkey}/labels`, {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body: new URLSearchParams({ labels: added.join(',') })

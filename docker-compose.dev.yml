@@ -60,8 +60,10 @@ services:
         condition: service_started
     environment:
       SESSION_SECRET: ${SESSION_SECRET:-changeme-use-a-strong-random-secret}
+      COOKIE_SAME_SITE: none
       DATABASE_URL: postgres://appview:appview@db:5432/appview?sslmode=disable
-      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-api.currents.is}
+      OAUTH_HOSTNAME: ${OAUTH_HOSTNAME:-api.currents.is}
+      SERVICE_HOSTNAME: ${SERVICE_HOSTNAME:-api.currents.is}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY:-}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: ${FRONTEND_URL:-http://192.168.1.221:5173}
