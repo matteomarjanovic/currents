@@ -105,7 +105,7 @@ Scaleway Private Network                                          │
 │   Scaleway inference instance
 └──▶ FastAPI + SigLIP2 (CPU FP32, :8000 private only)
 
-cdn.currents.is ──▶ DNS-only CNAME ──▶ Bunny ──▶ currents.is/img or /og
+cdn.currents.is ──▶ DNS-only CNAME ──▶ Bunny ──▶ api.currents.is/img
 
 dev.* ──▶ Cloudflare Tunnel ──▶ development environments only
 ```
@@ -126,8 +126,10 @@ production configuration, candidate ARM64 builds, and Cutover A have passed.
 The API, database, TAP, and inference now run on Scaleway while the root web
 app remains on Netlify for the production soak. Bunny now serves immutable
 images through `cdn.currents.is`, with European Origin Shield and dynamic image
-optimization enabled. Cutover B and the final mac mini rollback-window exit
-remain acceptance gates.
+optimization enabled. Responsive variants and resized dynamic OG images are
+live in the Netlify SSR deployment. Cutover B and the final mac mini
+rollback-window exit remain acceptance gates. The point-in-time operational
+handoff for resuming Cutover B is `SCALEWAY_CUTOVER_B_HANDOFF.md`.
 
 ### 0.1 Split the web and Capacitor builds
 
@@ -746,8 +748,11 @@ volume untouched for at least two weeks.
 
 Only begin after Cutover A has soaked successfully.
 
-As a low-risk application rehearsal, merge the migration branch and let Netlify
-serve the SSR build before moving the root DNS record. The adapter is selected
+For the exact 2026-08-17 production checkpoint and a copy-paste prompt for a
+fresh agent session, read `SCALEWAY_CUTOVER_B_HANDOFF.md` before acting.
+
+The low-risk application rehearsal completed on 2026-08-17: Netlify now serves
+the SSR build before the root DNS move. The adapter is selected
 per artifact: Netlify uses `adapter-netlify`, Scaleway uses `adapter-node`, and
 Capacitor keeps `adapter-static`. During this rehearsal
 `PUBLIC_WEB_APPVIEW_URL=https://api.currents.is`, so browser traffic continues
@@ -819,16 +824,19 @@ Add `/og/*` to Bunny only when a frontend OG image endpoint ships.
   `did:web:api.currents.is` and endpoint `https://api.currents.is`.
 - `https://currents.is/oauth-client-metadata.json` has client name `Currents`,
   root client URI/callback, and a working root JWKS URI.
-- `cdn.currents.is/img/...` returns the same bytes/content type as origin,
-  includes cache headers, and never varies on Cookie.
+- Raw `cdn.currents.is/img/...` returns the origin image with cache headers;
+  Dynamic Image URLs return the requested dimensions/format, cache on the
+  second request, and never vary on Cookie.
 
 ### Cutover B rollback
 
-Restore the previous Netlify DNS record for `currents.is`, revert
-`OAUTH_HOSTNAME` to `api.currents.is`, disable the legacy OAuth redirect, and
-temporarily restore `CDN_URL=https://api.currents.is`. The root-domain OAuth
-grants may remain at PDSes but become unused; no Currents data rollback is
-necessary.
+Restore the previous Netlify DNS record for `currents.is`, recreate appview and
+Caddy with `.env.production.phase-a`, and thereby restore
+`OAUTH_HOSTNAME=api.currents.is` and disable the legacy OAuth redirect. Bunny
+is independent from the root/OAuth cutover and should keep
+`CDN_URL=https://cdn.currents.is` unless Bunny itself is the failing component.
+The root-domain OAuth grants may remain at PDSes but become unused; no Currents
+data rollback is necessary.
 
 ## 6. Retire the mac mini production stack
 
