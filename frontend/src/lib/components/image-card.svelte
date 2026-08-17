@@ -105,6 +105,7 @@
 	{#if image}
 		<SaveImage
 			{image}
+			variant="grid"
 			alt={image.alt ?? item.text ?? ''}
 			class="w-full {cropped ? 'object-cover object-top' : ''}"
 			wrapperClass="block w-full"

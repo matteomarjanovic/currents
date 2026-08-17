@@ -17,6 +17,7 @@
 		markFeatureSeen,
 		FEATURE_BLUESKY_IMPORT
 	} from '$lib/stores/features.svelte';
+	import { bunnyImageUrl } from '$lib/image-url';
 
 	let {
 		profile,
@@ -104,7 +105,11 @@
 <section class="mb-6">
 	{#if profile.banner}
 		<div class="relative h-40 w-full overflow-hidden rounded-xl bg-muted sm:h-56">
-			<img src={profile.banner} alt="" class="h-full w-full object-cover" />
+			<img
+				src={bunnyImageUrl(profile.banner, { width: 1600, quality: 82 })}
+				alt=""
+				class="h-full w-full object-cover"
+			/>
 		</div>
 	{/if}
 

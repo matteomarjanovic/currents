@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { ImageContentView } from '$lib/types';
 	import { preferences } from '$lib/stores/preferences.svelte';
+	import { bunnyImageSrcset, bunnyImageUrl, type ImageTransform } from '$lib/image-url';
+	import { isCropped } from '$lib/image-ratio';
 
 	interface Props {
 		image: ImageContentView;
@@ -22,6 +24,8 @@
 		// swipe neighbours, which lazy loading would otherwise hold back until they're
 		// already sliding into view.
 		loading?: 'lazy' | 'eager';
+		variant?: 'grid' | 'detail';
+		sizes?: string;
 	}
 
 	let {
@@ -31,8 +35,40 @@
 		style,
 		wrapperClass = '',
 		overlayFit = 'object-contain',
-		loading = 'lazy'
+		loading = 'lazy',
+		variant = 'detail',
+		sizes
 	}: Props = $props();
+
+	const widths = $derived(variant === 'grid' ? [320, 480, 640, 960] : [640, 960, 1440, 2048]);
+	const fallbackWidth = $derived(variant === 'grid' ? 640 : 1440);
+	const transform = $derived.by((): Omit<ImageTransform, 'width'> => {
+		if (variant !== 'grid' || !isCropped(image.width, image.height) || !image.width) {
+			return { quality: variant === 'grid' ? 80 : 85 };
+		}
+		return {
+			crop: `${image.width},${image.width * 2}`,
+			cropGravity: 'north',
+			quality: 80
+		};
+	});
+	const src = $derived(
+		bunnyImageUrl(image.imageUrl, {
+			...transform,
+			width: Math.min(image.width ?? fallbackWidth, fallbackWidth)
+		})
+	);
+	const srcset = $derived(
+		image.width
+			? bunnyImageSrcset(image.imageUrl, widths, image.width, transform) || undefined
+			: undefined
+	);
+	const imageSizes = $derived(
+		sizes ??
+			(variant === 'grid'
+				? '(max-width: 623px) calc(50vw - 1.5rem), 200px'
+				: '(max-width: 767px) calc(100vw - 1rem), 67vw')
+	);
 
 	// Freeze animated GIFs at their first frame unless the viewer opted into autoplay.
 	// Everything else (and users on the default) takes the plain <img> path — no change.
@@ -69,7 +105,9 @@
 	>
 		<img
 			bind:this={imgEl}
-			src={image.imageUrl}
+			{src}
+			{srcset}
+			sizes={imageSizes}
 			alt=""
 			{loading}
 			class={className}
@@ -87,5 +125,5 @@
 		></canvas>
 	</div>
 {:else}
-	<img src={image.imageUrl} {alt} {loading} class={className} {style} />
+	<img {src} {srcset} sizes={imageSizes} {alt} {loading} class={className} {style} />
 {/if}

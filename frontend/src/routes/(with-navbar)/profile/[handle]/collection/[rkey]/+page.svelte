@@ -18,6 +18,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import type { CollectionView } from '$lib/types';
+	import { bunnyImageUrl } from '$lib/image-url';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -185,7 +186,11 @@
 			`${collection?.saveCount ?? 0} saves curated by @${collection?.author?.handle ?? data.collectionUri.split('/')[2]}.`
 		).slice(0, 200)
 	);
-	const ogImage = $derived(collection?.previews?.[0]?.url ?? '');
+	const ogImage = $derived(
+		collection?.previews?.[0]?.url
+			? bunnyImageUrl(collection.previews[0].url, { width: 1200, quality: 85 })
+			: ''
+	);
 	const canonical = $derived(page.url.origin + page.url.pathname);
 </script>
 

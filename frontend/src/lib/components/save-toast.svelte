@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { bunnyImageUrl } from '$lib/image-url';
+
 	interface Props {
 		imageUrl?: string;
 		collectionName: string;
@@ -10,7 +12,7 @@
 <div class="flex items-center gap-3">
 	{#if imageUrl}
 		<img
-			src={imageUrl}
+			src={bunnyImageUrl(imageUrl, { aspectRatio: '1:1', width: 96, quality: 75 })}
 			alt=""
 			class="size-10 shrink-0 rounded-sm bg-muted object-cover"
 		/>

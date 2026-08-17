@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CollectionView } from '$lib/types';
 	import { effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
+	import { bunnyImageUrl } from '$lib/image-url';
 
 	let { collection, sectionCount = 0 }: { collection: CollectionView; sectionCount?: number } =
 		$props();
@@ -28,7 +29,7 @@
 		{#each cells as cell, i (i)}
 			{#if cell}
 				<img
-					src={cell.url}
+					src={bunnyImageUrl(cell.url, { aspectRatio: '1:1', width: 384, quality: 78 })}
 					alt=""
 					loading="lazy"
 					class="h-full w-full object-cover {cell.vis === 'blur' ? 'blur-md' : ''}"

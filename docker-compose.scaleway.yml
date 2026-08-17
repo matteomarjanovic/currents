@@ -58,7 +58,7 @@ services:
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: ${FRONTEND_URL:-https://currents.is}
-      CDN_URL: ${CDN_URL:-https://api.currents.is}
+      CDN_URL: ${CDN_URL:-https://cdn.currents.is}
       TAP_URL: ws://tap:2480/channel
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}

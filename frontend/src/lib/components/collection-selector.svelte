@@ -26,6 +26,7 @@
 	import User from '@lucide/svelte/icons/user';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import SaveToast from '$lib/components/save-toast.svelte';
+	import { bunnyImageUrl } from '$lib/image-url';
 
 	interface Props {
 		item?: SaveView;
@@ -324,7 +325,11 @@
 {#snippet preview(col: CollectionView)}
 	{#if col.previews?.[0]}
 		<img
-			src={col.previews[0].url}
+			src={bunnyImageUrl(col.previews[0].url, {
+				aspectRatio: '1:1',
+				width: 96,
+				quality: 75
+			})}
 			alt=""
 			loading="lazy"
 			class="size-9 shrink-0 rounded-md object-cover"

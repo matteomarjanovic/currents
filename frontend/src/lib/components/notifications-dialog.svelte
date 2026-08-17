@@ -15,6 +15,7 @@
 	import { refreshSocial, markSocialSeen } from '$lib/stores/social.svelte';
 	import ActivityList from './activity-list.svelte';
 	import FollowScopeDialog from './follow-scope-dialog.svelte';
+	import { bunnyImageUrl } from '$lib/image-url';
 
 	interface Props {
 		open: boolean;
@@ -137,7 +138,12 @@
 				</button>
 				{#if s.previewUrl}
 					<div class="overflow-hidden rounded-lg bg-muted">
-						<img src={s.previewUrl} alt="" class="w-full object-cover" style="max-height: 18rem" />
+						<img
+							src={bunnyImageUrl(s.previewUrl, { width: 800, quality: 80 })}
+							alt=""
+							class="w-full object-cover"
+							style="max-height: 18rem"
+						/>
 					</div>
 				{:else}
 					<div class="h-48 rounded-lg bg-muted"></div>
@@ -260,7 +266,7 @@
 											class="relative flex w-28 flex-shrink-0 cursor-pointer overflow-hidden bg-muted"
 										>
 											<img
-												src={item.previewUrl}
+												src={bunnyImageUrl(item.previewUrl, { width: 256, quality: 75 })}
 												alt=""
 												loading="lazy"
 												class="h-full w-full object-cover transition-opacity hover:opacity-90"

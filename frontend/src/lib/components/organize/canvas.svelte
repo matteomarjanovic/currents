@@ -9,6 +9,7 @@
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
+	import SaveImage from '$lib/components/save-image.svelte';
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import { useSidebar } from '$lib/components/ui/sidebar';
@@ -543,11 +544,15 @@
 )}
 	<LabeledMedia labels={item.labels}>
 		{#if image}
-			<img
-				src={image.imageUrl}
+			<SaveImage
+				{image}
+				variant="grid"
 				alt={image.alt ?? item.text ?? ''}
-				loading="lazy"
 				class="w-full {isCropped(image.width, image.height) ? 'object-cover object-top' : ''}"
+				wrapperClass="block w-full"
+				overlayFit={isCropped(image.width, image.height)
+					? 'object-cover object-top'
+					: 'object-contain'}
 				style={image.width && image.height
 					? `aspect-ratio: ${ratio.width} / ${ratio.height}`
 					: undefined}

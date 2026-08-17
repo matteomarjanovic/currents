@@ -31,6 +31,7 @@
 	import { isLongImage } from '$lib/image-ratio';
 	import { extendSaveSequence, neighbourSave, savesAfter } from '$lib/save-sequence.svelte';
 	import { swipe } from '$lib/swipe';
+	import { bunnyImageUrl } from '$lib/image-url';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
@@ -596,7 +597,15 @@
 									</a>
 									<Item.Media variant="image" class="bg-muted">
 										{#if preview}
-											<img src={preview.url} alt="" class={preview.blur ? 'blur-md' : ''} />
+											<img
+												src={bunnyImageUrl(preview.url, {
+													aspectRatio: '1:1',
+													width: 96,
+													quality: 75
+												})}
+												alt=""
+												class={preview.blur ? 'blur-md' : ''}
+											/>
 										{/if}
 									</Item.Media>
 									<Item.Content class="min-w-0">

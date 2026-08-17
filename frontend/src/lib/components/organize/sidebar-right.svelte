@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils.js';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
+	import SaveImage from '$lib/components/save-image.svelte';
 	import SimilarPanel from '$lib/components/organize/similar-panel.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import ColorMenu from '$lib/components/color-menu.svelte';
@@ -166,9 +167,10 @@
 			>
 				{#if image}
 					<LabeledMedia labels={save.labels} class="flex justify-center">
-						<img
-							src={image.imageUrl}
+						<SaveImage
+							{image}
 							alt={image.alt ?? save.text ?? ''}
+							sizes="22rem"
 							class="max-h-[45vh] w-auto max-w-full object-contain"
 							style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 						/>

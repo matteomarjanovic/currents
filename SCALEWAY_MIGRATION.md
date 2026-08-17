@@ -124,8 +124,10 @@ address. Cross-device embedding compatibility, a live protected Caddy/SSR
 rehearsal, versioned model sync, nightly backup plus full restore, sealed
 production configuration, candidate ARM64 builds, and Cutover A have passed.
 The API, database, TAP, and inference now run on Scaleway while the root web
-app remains on Netlify for the production soak. Cutover B, Bunny, and the final
-mac mini rollback-window exit remain acceptance gates.
+app remains on Netlify for the production soak. Bunny now serves immutable
+images through `cdn.currents.is`, with European Origin Shield and dynamic image
+optimization enabled. Cutover B and the final mac mini rollback-window exit
+remain acceptance gates.
 
 ### 0.1 Split the web and Capacitor builds
 
@@ -254,15 +256,19 @@ AT Protocol appview.
 Create a Bunny Pull Zone with:
 
 - custom hostname `cdn.currents.is`;
-- origin `https://currents.is`;
+- origin `https://api.currents.is` while the root frontend remains on Netlify;
 - a DNS-only Cloudflare `CNAME` from `cdn` to the Bunny hostname;
-- an explicit cache rule for `/img/*` because CID paths have no file extension;
 - an explicit cache rule for `/og/*` when dynamic OG image generation ships;
 - European Origin Shield;
-- no cookie forwarding or cookie-based cache variation.
+- no cookie forwarding or cookie-based cache variation;
+- Bunny Optimizer with Dynamic Images and automatic WebP enabled, Smart Image
+  Optimization disabled, and upscaling disabled.
 
 The appview already returns image responses as public, one-year, immutable
-content. Bunny may evict and re-pull them; the source remains the user's PDS.
+content. Live MISS/HIT verification confirms that Bunny honors this header for
+the extensionless CID paths without an extra edge rule. Bunny may evict and
+re-pull them; the source remains the user's PDS. Dynamic Image URLs must include
+`optimizer=image` because those same paths have no file extension.
 
 ### 0.6 Make inference CPU-efficient and bounded
 
@@ -786,7 +792,7 @@ docker compose --env-file .env.production -f docker-compose.scaleway.yml \
 A brief login interruption is preferable to running both OAuth client
 identities concurrently. Existing users will need to approve the new client.
 
-After SSR and OAuth are stable:
+Completed on 2026-08-17 after SSR became stable:
 
 1. Create/test the Bunny Pull Zone against the `/img` origin using its default
    `b-cdn.net` hostname.
@@ -794,7 +800,8 @@ After SSR and OAuth are stable:
 3. Change `CDN_URL=https://cdn.currents.is` and restart appview.
 4. Verify the appview DID still advertises `https://api.currents.is`, not the
    CDN hostname.
-5. Add `/og/*` to Bunny only when the frontend OG image endpoint ships.
+
+Add `/og/*` to Bunny only when a frontend OG image endpoint ships.
 
 ### Cutover B verification
 

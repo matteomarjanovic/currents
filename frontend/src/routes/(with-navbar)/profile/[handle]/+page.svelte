@@ -13,6 +13,7 @@
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import type { ActorProfileView, CollectionView } from '$lib/types';
+	import { bunnyImageUrl } from '$lib/image-url';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -30,7 +31,11 @@
 			profile?.description?.trim() || `See @${profile?.handle ?? page.params.handle} on Currents.`
 		).slice(0, 200)
 	);
-	const ogImage = $derived(profile?.banner || profile?.avatar || '');
+	const ogImage = $derived(
+		profile?.banner || profile?.avatar
+			? bunnyImageUrl((profile.banner || profile.avatar)!, { width: 1200, quality: 85 })
+			: ''
+	);
 	const canonical = $derived(page.url.origin + page.url.pathname);
 
 	// Show only root collections as cards, most recent activity first:

@@ -26,6 +26,7 @@
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import { requireSupporter, requireColorSearch } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
+	import { bunnyImageUrl } from '$lib/image-url';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
@@ -409,7 +410,15 @@
 								onclick={() => (selection = { collectionUri: selectedUri, save: source })}
 								aria-label="Show image details"
 							>
-								<img src={similarImage.imageUrl} alt="" class="size-6 rounded object-cover" />
+								<img
+									src={bunnyImageUrl(similarImage.imageUrl, {
+										aspectRatio: '1:1',
+										width: 64,
+										quality: 75
+									})}
+									alt=""
+									class="size-6 rounded object-cover"
+								/>
 							</button>
 						{/if}
 						<span class="truncate">Similar images</span>
