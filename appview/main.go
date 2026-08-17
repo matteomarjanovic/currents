@@ -384,9 +384,10 @@ func runSyncPolarSubscriptions(cctx *cli.Context) error {
 func int64ptr(v int64) *int64 { return &v }
 
 // splitCSV splits a comma-separated string into a slice, trimming whitespace
-// and dropping empty entries. Returns nil for an empty input.
+// and dropping empty entries. The result stays non-nil because pgx encodes a
+// nil slice as SQL NULL rather than an empty array.
 func splitCSV(s string) []string {
-	var out []string
+	out := []string{}
 	for _, part := range strings.Split(s, ",") {
 		if p := strings.TrimSpace(part); p != "" {
 			out = append(out, p)

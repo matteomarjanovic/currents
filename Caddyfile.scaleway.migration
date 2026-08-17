@@ -1,0 +1,24 @@
+migration.currents.is {
+	request_body {
+		max_size 50MB
+	}
+
+	header X-Robots-Tag "noindex, nofollow"
+	basic_auth {
+		migration $2a$14$aKk4RJxR.662CVVbYay/a.HcmPj2NVKPItOA109tuWKXWFAtCq.Mi
+	}
+
+	@oauth_flow path /oauth/login /oauth/callback /oauth/logout*
+	respond @oauth_flow "OAuth is disabled during the migration rehearsal" 404
+
+	@write not method GET HEAD
+	respond @write "The migration rehearsal is read-only" 405
+
+	@appview path /api/* /xrpc/* /oauth/* /oauth-client-metadata.json /img/* /.well-known/did.json
+	reverse_proxy @appview appview:8080 {
+		# The rehearsal gate authenticates with Basic, while appview accepts only
+		# session cookies or Bearer tokens. Do not forward the gate credential.
+		header_up -Authorization
+	}
+	reverse_proxy frontend:3000
+}

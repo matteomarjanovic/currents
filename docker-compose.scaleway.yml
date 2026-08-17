@@ -17,6 +17,7 @@ services:
   db:
     image: pgvector/pgvector:pg18-trixie
     restart: unless-stopped
+    shm_size: 1gb
     command:
       - postgres
       - -c
@@ -74,13 +75,15 @@ services:
       context: ./frontend
       args:
         PUBLIC_WEB_APPVIEW_URL: ""
+        PUBLIC_POLAR_PRODUCT_MONTHLY: ${PUBLIC_POLAR_PRODUCT_MONTHLY:-}
+        PUBLIC_POLAR_PRODUCT_YEARLY: ${PUBLIC_POLAR_PRODUCT_YEARLY:-}
     restart: unless-stopped
     depends_on:
       - appview
     environment:
       APPVIEW_INTERNAL_URL: http://appview:8080
       HOST: 0.0.0.0
-      ORIGIN: https://currents.is
+      ORIGIN: ${ORIGIN:-https://currents.is}
       PORT: 3000
 
   tap:

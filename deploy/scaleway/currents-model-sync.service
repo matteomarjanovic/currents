@@ -1,0 +1,9 @@
+[Unit]
+Description=Sync Currents inference models from Object Storage
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/currents-sync-inference-model

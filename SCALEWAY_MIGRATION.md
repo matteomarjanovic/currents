@@ -115,12 +115,16 @@ dev.* ──▶ Cloudflare Tunnel ──▶ development environments only
 These changes ship before either production cutover. Do not improvise them
 during the database migration.
 
-Implementation status (2026-08-15): the dual frontend build, public SSR loads
+Implementation status (2026-08-17): the dual frontend build, public SSR loads
 and metadata, appview identity split, `/api/*` aliases, host-only cookie
 transition, service/CDN URL split, CPU dtype, two-phase Caddy configuration,
 and both Scaleway Compose files are implemented and covered by local checks.
-The CPU performance/RSS comparison and live Caddy/Bunny/DNS checks still
-require the provisioned VMs and remain acceptance gates, not completed work.
+The 4 GB ARM64 inference VM is deployed and healthy on its Private Network
+address. Cross-device embedding compatibility, a live protected Caddy/SSR
+rehearsal, versioned model sync, nightly backup plus full restore, sealed
+production configuration, and candidate ARM64 builds have passed. The fresh
+production dump/restore, DNS changes, production soak, and Bunny remain
+acceptance gates, not completed work.
 
 ### 0.1 Split the web and Capacitor builds
 
@@ -328,7 +332,7 @@ Network.
 ### Main instance
 
 - `BASIC2-A2C-8G` (or a dedicated-core equivalent if predictable DB latency
-  later proves necessary), Ubuntu 24.04 LTS.
+  later proves necessary), Ubuntu 26.04 LTS.
 - One Flexible IPv4 kept independently of the VM so it can be reattached to a
   replacement instance in the same Availability Zone.
 - 30 GB Block Storage volume for `/mnt/pgdata`.
@@ -338,7 +342,7 @@ Network.
 
 ### Inference instance
 
-- `BASIC2-A2C-4G`, Ubuntu 24.04 LTS.
+- `BASIC2-A2C-4G`, Ubuntu 26.04 LTS.
 - At least 15–20 GB total disk for the OS, Docker layers, the Hugging Face
   checkpoint, UMAP, and ONNX heads.
 - Security group: inbound SSH only. Do not publish port 8000 on the public
@@ -351,12 +355,16 @@ Network.
 
 - The existing Cloudflare DNS zone, with production records set to DNS-only
   and tunnel/proxied records reserved for development hostnames.
-- `currents-db-backups` Object Storage bucket in `fr-par`, with a 30-day
+- `obj-curr-db-backups` Object Storage bucket in `fr-par`, with a 30-day
   lifecycle rule.
-- `currents-models` Object Storage bucket in `fr-par`, with versioning enabled.
+- `obj-curr-models` Object Storage bucket in `fr-par`, with versioning enabled.
   It carries the UMAP model and deployed classifier heads from clustering or
   deployment to inference.
-- One API key scoped only to those buckets.
+- One API key scoped to those buckets. The main and inference VMs currently
+  share it because a separate inference application key could not be created;
+  keep the credential root-only on both hosts. This gives inference broader
+  backup/model write access than its runtime requires, so a model-read-only key
+  remains the preferred replacement if the IAM limitation is resolved.
 - One stable Private Network address or internal DNS name for inference.
 - Bunny Pull Zone as specified in section 0.5. It can be enabled after the SSR
   cutover; it is not on the critical path for the database move.
@@ -386,10 +394,52 @@ Seed the runtime models from Object Storage, start the service, run the full
 acceptance test in section 0.6, and record the actual warm latency, throughput,
 and peak RSS in this document before production cutover.
 
+Initial validation on 2026-08-16:
+
+- SigLIP2 runs on CPU FP32 with UMAP loaded; no classifier heads are deployed.
+  The NSFW head was deliberately omitted, and the other head artifacts were
+  not present in the deployment checkout.
+- Warm text requests took 0.24–0.31 seconds. Warm image requests for a
+  1024x500 test image took 0.95–1.08 seconds.
+- Four concurrent image requests drained successfully in about 3.37 seconds;
+  observed container memory stayed below 2.3 GiB with a 3.5 GB limit.
+- A text request submitted during an active image batch took 1.22 seconds,
+  narrowly missing the `<1 s` contention target. Keep the 4 GB instance for
+  the initial soak, but resize if production traffic confirms this contention.
+- Compatibility was checked against the mac mini's MPS BF16 output on the same
+  inputs. Text cosine distances were 0.000023-0.000094 and image distances were
+  0.000703, 0.000709, and 0.006859. All are below the application's 0.02 visual
+  deduplication threshold. The API still serializes embeddings as FP32
+  (`.cpu().float()`), matching the existing PostgreSQL `VECTOR(768)` rows; the
+  CPU deployment therefore does not double database storage.
+- The service recovered healthy after a Docker daemon restart, and port 8000
+  was unreachable through the public IPv4 address.
+
+The production image installs `torch` and `torchvision` from PyTorch's CPU
+wheel index. The default ARM64 PyPI wheel pulled CUDA libraries despite this
+being a CPU-only host.
+
 Add a daily model sync on the inference host. The sync must download a complete
-object before atomically replacing the active local file, then call
-`POST http://127.0.0.1:8000/reload-umap`. A partially downloaded UMAP file must
-never replace the live one.
+object before atomically replacing the active local file, then call:
+
+```bash
+docker compose --env-file .env.inference -f docker-compose.inference.scaleway.yml \
+  exec -T inference curl --fail --request POST http://localhost:8000/reload-umap
+```
+
+A partially downloaded UMAP file must never replace the live one.
+
+Deployed on 2026-08-17: the validated 356,992,321-byte model was published as
+`s3://obj-curr-models/umap_model.joblib`, and
+`deploy/scaleway/sync-inference-model.sh` runs from a persistent systemd timer
+at 03:30 UTC with up to five minutes of jitter. The job compares the latest
+Object Storage version ID with its local marker, downloads that exact version
+to the models filesystem only when it changes, atomically renames it, and then
+reloads inference. Its first run preserved SHA-256
+`bee0176a14b73f7b66a6530a4e003b7eff9393d5715039a8e4a5f30c4dc5c42e` and
+left `/health` reporting CPU FP32 with UMAP loaded. Bucket versioning and the
+backup bucket's 30-day expiration rule were also verified from the inference
+host. No classifier heads, including NSFW, were uploaded.
 
 Keep the mac mini inference server available as rollback until the Scaleway CPU
 server has passed both the synthetic test and a production soak.
@@ -404,7 +454,8 @@ blindly.
 # Example only after verifying the exact empty Block Storage device:
 mkfs.ext4 /dev/<verified-block-device>
 mkdir -p /mnt/pgdata
-echo '/dev/<verified-block-device> /mnt/pgdata ext4 defaults,nofail 0 2' >> /etc/fstab
+blkid /dev/<verified-block-device>
+echo 'UUID=<verified-uuid> /mnt/pgdata ext4 defaults,nofail 0 2' >> /etc/fstab
 mount -a
 
 git clone https://github.com/<you>/currents.git /opt/currents
@@ -418,7 +469,7 @@ SERVICE_HOSTNAME=api.currents.is
 FRONTEND_URL=https://currents.is
 CDN_URL=https://api.currents.is
 INFERENCE_URL=http://<inference-private-address>:8000
-MODELS_S3_BUCKET=currents-models
+MODELS_S3_BUCKET=obj-curr-models
 ```
 
 Also copy the existing secrets (`SESSION_SECRET`, client signing key,
@@ -429,14 +480,125 @@ planned OAuth client-ID change.
 `DB_PASSWORD` is required on the Scaleway compose. Postgres publishes no port;
 administrative access goes through SSH and `docker compose exec`.
 
+Pre-cutover configuration completed on 2026-08-17:
+
+- `/opt/currents/.env.production.phase-a` and
+  `/opt/currents/.env.production` are root-owned mode `0600`; neither has been
+  activated. The first keeps OAuth at `api.currents.is` and mounts the Phase A
+  Caddyfile. The second changes only the public OAuth identity to `currents.is`
+  and mounts the final Caddyfile. Both retain `did:web:api.currents.is` as the
+  service DID and use `http://172.16.8.2:8000` for inference.
+- Existing production session, OAuth signing, TAP, labeler, and Polar secrets
+  were copied unchanged. The old `DOMAIN`, mac-local inference URL, and
+  Cloudflare Tunnel token were deliberately omitted. The initialized
+  PostgreSQL cluster's random password was retained so cutover does not add a
+  database-role password rotation.
+- The SSR Docker build now receives the live public Polar product IDs. Monthly
+  is `6717e6de-771b-46bb-a0bd-cda4456bd92e`; yearly is
+  `4b4295d5-08d4-4d06-a72f-9fc93a999519`. Both were confirmed against the live
+  public bundle and the restored subscription rows.
+- Both Compose environments and Caddyfiles validate. Production frontend,
+  appview, and clustering images build on ARM64 without activating them. An
+  isolated candidate frontend returned the supporter page and dynamic profile
+  SSR metadata, Node 22 passed 52 frontend unit tests with no Svelte warnings,
+  and the clustering image passed all 7 unit tests.
+- The current root and API records are Cloudflare-proxied with a 300-second
+  effective TTL. At each cutover, replace the relevant proxied record with a
+  DNS-only `A` record for `51.159.84.247`; do not leave an old CNAME or explicit
+  AAAA record alongside it. `migration.currents.is` is already a direct record
+  with a 60-second TTL.
+
+`deploy/scaleway/prepare-production-env.sh` reproducibly creates the two
+files without committing secrets. Its temporary production-secret source was
+removed from the VM after generation.
+
 Validate the Caddyfile and test every upstream over the internal Compose
 network. Do not add the production host blocks early: enable them immediately
 before their DNS-only records move to the Flexible IPv4 so Caddy can complete
 ACME validation. Do not cut `currents.is` away from Netlify yet.
 
 The Compose default mounts `Caddyfile.scaleway.phase-a`, which exposes only
-`api.currents.is` and does not redirect OAuth. Keep `CADDYFILE` unset during
-Cutover A.
+`api.currents.is` and does not redirect OAuth. The prepared Phase A environment
+sets that path explicitly; do not activate the final Caddyfile during Cutover A.
+
+### 3.1 Protected migration rehearsal
+
+The first full rehearsal ran at `migration.currents.is` on 2026-08-16 while
+the mac mini remained production. The hostname was a DNS-only record pointing
+at Caddy and was protected with Basic Auth, `X-Robots-Tag: noindex, nofollow`,
+an all-non-GET/HEAD rejection, and disabled OAuth routes. Do not put rehearsal
+credentials in this repository.
+
+The rehearsal dump was a 942 MB consistent `pg_dump -Fc` snapshot. The
+successful restore took 26 minutes 27 seconds and produced:
+
+| Table | Rows immediately after restore |
+|---|---:|
+| `save` | 494,990 |
+| `visual_identity` | 355,434 |
+| `visual_identity_color` | 1,761,299 |
+| `collection` | 6,062 |
+| `user` | 540 |
+
+The restored database was 4,682 MB, schema migration 45 was clean, and every
+index was valid. Run `ANALYZE` after future restores because dumps do not carry
+planner statistics.
+
+The first restore attempt failed safely while building the main HNSW index
+because Docker's default 64 MB `/dev/shm` could not allocate a roughly 509 MB
+segment. `db.shm_size: 1gb` is therefore required; after recreating the empty
+rehearsal database with that setting, all three HNSW indexes restored. Keep
+this setting for production restores.
+
+Before starting appview against any live-network rehearsal copy, freeze cloned
+outbound work. Caddy's read-only rules protect HTTP requests but cannot stop
+background workers:
+
+```sql
+BEGIN;
+UPDATE import_item
+SET status = 'rehearsal_paused'
+WHERE status IN ('queued', 'running');
+
+UPDATE import_job
+SET status = 'rehearsal_paused'
+WHERE status = 'listing';
+COMMIT;
+
+SELECT count(*) FROM import_item WHERE status IN ('queued', 'running');
+SELECT count(*) FROM pds_wipe;
+```
+
+Both counts must be zero before appview starts. If `pds_wipe` is nonzero, do
+not start appview until those cloned jobs have been removed from the disposable
+copy or background workers have otherwise been disabled. Never apply these
+rehearsal-only status changes to production, and always make a fresh dump for
+the real cutover.
+
+This guard was discovered during the first appview start: it was stopped
+immediately, but 38 already-pending imports reached their deterministic
+`putRecord` keys before the cloned queue was frozen. No PDS wipe jobs existed.
+The rehearsal copy now has zero active import items. The status update touched
+only that copy, but production TAP may ingest the 38 PDS records as normal user
+records; no blind cleanup was attempted.
+
+After the freeze, the protected stack passed the relevant gates: Caddy obtained
+a Let's Encrypt certificate; unauthenticated requests returned 401; public
+root and profile pages returned SSR HTML with route-specific metadata; writes
+returned 405; OAuth login returned 404; the service DID and OAuth metadata used
+the migration hostname; TAP advanced from the restored relay cursor; and
+appview reached inference over the Private Network. At that point the main VM
+had about 4.5 GiB available memory, 21 GB free on the database volume, and 17 GB
+free on the root disk. Clustering remained off.
+
+The first browser Explore check exposed two additional issues. An unset
+`HIDDEN_DIDS` became a nil Go slice, which pgx encoded as SQL NULL and caused
+the global feed's `author_did <> ALL($n)` predicate to reject every row. Also,
+Caddy forwarded the rehearsal gate's `Authorization: Basic` header to appview,
+which correctly rejected it as an unsupported API auth scheme. `splitCSV` now
+returns a non-nil empty slice, and the rehearsal Caddy proxy removes its Basic
+credential before forwarding. The public feed subsequently returned 200 with
+images and a pagination cursor.
 
 ## 4. Cutover A: database, TAP, appview, and inference
 
@@ -446,35 +608,61 @@ with the database, TAP resumes from that point and replays the short gap from
 the relay.
 
 ```bash
-# On the mac mini: stop writers, keep db up.
+# On the mac mini: stop writers, keep db up, then checksum the final dump.
 docker compose -f docker-compose.mac-mini.yml stop appview tap clustering
-docker exec currents-db-1 pg_dump -U appview -d appview -Fc > currents.dump
+docker exec currents-db-1 pg_dump -U appview -d appview -Fc \
+  > currents-production-<timestamp>.dump
+shasum -a 256 currents-production-<timestamp>.dump \
+  > currents-production-<timestamp>.dump.sha256
 
 # Ship over SSH during the migration window.
-scp currents.dump root@<main-vm-address>:/opt/currents/
+scp currents-production-<timestamp>.dump* \
+  root@51.159.84.247:/opt/currents/
 
-# On the main VM: start a fresh DB and restore.
-cd /opt/currents
-docker compose -f docker-compose.scaleway.yml up -d db
-docker compose -f docker-compose.scaleway.yml exec -T db \
-  pg_restore -U appview -d appview --no-owner < currents.dump
+# On the main VM: verify the checksum/archive, stop the rehearsal services and
+# backup timer, replace only the rehearsal database, restore, ANALYZE, and run
+# integrity checks. This deliberately leaves services stopped for inspection.
+CONFIRM_REPLACE_REHEARSAL_DB=yes currents-restore-production-dump \
+  /opt/currents/currents-production-<timestamp>.dump
 
 # Seed/publish the current UMAP model before starting appview and clustering.
 scp <mini>:<currents-path>/models/umap_model.joblib /opt/currents/models/
-aws --endpoint-url https://s3.fr-par.scw.cloud \
-  s3 cp /opt/currents/models/umap_model.joblib s3://currents-models/
+set -a
+. /opt/currents/.env.storage
+set +a
+export AWS_ACCESS_KEY_ID="$S3_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY"
+export AWS_DEFAULT_REGION=fr-par
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
+  -v /opt/currents/models:/models:ro amazon/aws-cli:latest \
+  --endpoint-url https://s3.fr-par.scw.cloud \
+  s3 cp /models/umap_model.joblib \
+  s3://obj-curr-models/umap_model.joblib --no-progress
 
-docker compose -f docker-compose.scaleway.yml up -d --build \
-  appview tap clustering caddy
+# Start Phase A without rebuilding the already-validated candidate images.
+docker compose --env-file .env.production.phase-a \
+  -f docker-compose.scaleway.yml up -d --no-build \
+  db tap appview frontend clustering
 ```
 
 Sanity-check before changing public DNS:
 
 ```bash
-docker compose -f docker-compose.scaleway.yml exec db \
+docker compose --env-file .env.production.phase-a \
+  -f docker-compose.scaleway.yml exec db \
   psql -U appview -d appview -c "SELECT count(*) FROM save;" \
                              -c "SELECT count(*) FROM visual_identity;" \
                              -c "SELECT * FROM firehose_cursors;"
+```
+
+Only after those checks pass, start the backup timer again and create Phase A
+Caddy immediately before the API DNS change:
+
+```bash
+systemctl start currents-postgres-backup.timer
+docker compose --env-file .env.production.phase-a \
+  -f docker-compose.scaleway.yml up -d --no-build caddy
 ```
 
 Enable and reload the Caddy host blocks for `api.currents.is` and each public
@@ -525,8 +713,9 @@ Before DNS changes:
 
 At cutover:
 
-1. Change appview to `OAUTH_HOSTNAME=currents.is` and restart it.
-2. Set `CADDYFILE=./Caddyfile.scaleway` and recreate Caddy. This enables both
+1. Recreate appview from `.env.production`, which changes
+   `OAUTH_HOSTNAME=currents.is`.
+2. Recreate Caddy from the same environment. This enables both
    the legacy `api.currents.is/oauth/login` redirect and the `currents.is` host.
 3. Replace the Netlify root record with
    a DNS-only `A` record for the Scaleway Flexible IPv4.
@@ -537,6 +726,13 @@ At cutover:
    `Currents`.
 6. Confirm the new cookie has no Domain attribute and is not sent on requests
    to `api.currents.is` or `cdn.currents.is`.
+
+The prepared command for steps 1-2 is:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.scaleway.yml \
+  up -d --no-build --force-recreate appview caddy
+```
 
 A brief login interruption is preferable to running both OAuth client
 identities concurrently. Existing users will need to approve the new client.
@@ -601,18 +797,20 @@ Three layers, cheapest first:
 1. **Nightly `pg_dump` to Object Storage.** On the main VM:
 
    ```bash
-   # /opt/currents/backup.sh
-   #!/bin/sh -e
-   f=/tmp/currents-$(date +%F).dump
-   docker compose -f /opt/currents/docker-compose.scaleway.yml exec -T db \
-     pg_dump -U appview -d appview -Fc > "$f"
-   aws --endpoint-url https://s3.fr-par.scw.cloud \
-     s3 cp "$f" s3://currents-db-backups/
-   rm "$f"
+   systemctl status currents-postgres-backup.timer
+   systemctl start currents-postgres-backup.service  # manual run
    ```
 
-   Configure the bucket-scoped key and run at `10 4 * * *`. The bucket's
-   30-day lifecycle rule handles retention.
+   `deploy/scaleway/backup-postgres.sh` runs from a persistent systemd timer at
+   04:10 UTC with up to ten minutes of jitter. It creates a custom-format dump,
+   validates the archive catalog, uploads both the dump and a SHA-256 sidecar
+   under `s3://obj-curr-db-backups/postgres/`, and removes its root-only local
+   temporary files. The bucket's 30-day lifecycle rule handles retention.
+
+   The first run on 2026-08-17 captured the 4.8 GB rehearsal database as
+   `currents-2026-08-17T101732Z.dump`: 993,408,454 bytes, uploaded in about four
+   minutes. The timer, service, and root-only shared Object Storage credential
+   were then verified active/clean.
 
 2. **Weekly Block Storage snapshot** of `/mnt/pgdata`.
 
@@ -623,7 +821,21 @@ Three layers, cheapest first:
    the nightly database dump mandatory despite most rows being derived.
 
 Test a complete restore before deleting the mac rollback volume and at regular
-intervals afterward. A backup that has never been restored is unverified.
+intervals afterward. A backup that has never been restored is unverified. Use:
+
+```bash
+currents-verify-postgres-backup currents-<timestamp>.dump
+```
+
+`deploy/scaleway/verify-postgres-backup.sh` downloads both objects, verifies
+the SHA-256 and archive catalog, restores into a uniquely named temporary
+database with `--exit-on-error`, requires a clean schema migration and zero
+invalid indexes, then removes the temporary database and downloaded files.
+The first Object Storage round-trip and full restore passed on 2026-08-17 in
+about 30 minutes with 497,307 saves, 356,769 visual identities, 6,067
+collections, 543 users, schema migration 45 clean, and zero invalid indexes.
+All rehearsal services remained up; the VM did not meaningfully swap, and the
+cleanup check found zero temporary databases and files afterward.
 
 ## 8. Add CI/CD after the migration is stable
 
@@ -656,7 +868,7 @@ namespace in `fr-par`.
 - Give CI a registry-push credential scoped to this purpose. Give the two VMs
   a separate pull credential; do not copy the CI credential to production.
 - Keep model files out of the inference image. They continue to arrive through
-  the persistent Hugging Face cache and `currents-models` bucket.
+  the persistent Hugging Face cache and `obj-curr-models` bucket.
 - Pin third-party production images such as Postgres, TAP, and Caddy to explicit
   versions or digests; do not rebuild them in Currents CI.
 - Change the production Compose files from local `build:` entries to image
@@ -704,7 +916,7 @@ push can be reconsidered only after the approved workflow has proved reliable.
   the bounded 4 GB configuration returns 503 instead of risking a host OOM.
 - **TAP desynchronization:** mark the affected repo `desynchronized` with zeroed
   retry fields; the resyncer re-fetches and diff-emits it.
-- **Bad UMAP retrain:** restore the previous version in `currents-models`, sync
+- **Bad UMAP retrain:** restore the previous version in `obj-curr-models`, sync
   it to the inference instance, call `/reload-umap`, and rerun re-projection
   after a good model is published.
 - **Bunny unavailable:** temporarily set `CDN_URL=https://api.currents.is`;

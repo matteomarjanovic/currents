@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Currents PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 04:10:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

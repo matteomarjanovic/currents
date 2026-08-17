@@ -1,0 +1,16 @@
+[Unit]
+Description=Back up Currents PostgreSQL to Object Storage
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/currents-backup-postgres
+TimeoutStartSec=2h
+UMask=0077
+StateDirectory=currents-backups
+StateDirectoryMode=0700
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Currents inference model sync
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

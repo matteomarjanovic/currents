@@ -27,6 +27,13 @@ func TestRegisterLegacyAndAPI(t *testing.T) {
 	}
 }
 
+func TestSplitCSVEmptyIsNonNil(t *testing.T) {
+	got := splitCSV("")
+	if got == nil || len(got) != 0 {
+		t.Fatalf("splitCSV empty = %#v, want non-nil empty slice", got)
+	}
+}
+
 func TestClientMetadataUsesOAuthIdentity(t *testing.T) {
 	config := oauth.NewPublicConfig(
 		"https://currents.is/oauth-client-metadata.json",
