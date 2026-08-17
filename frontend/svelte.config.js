@@ -1,10 +1,12 @@
 import { mdsvex } from 'mdsvex';
+import netlifyAdapter from '@sveltejs/adapter-netlify';
 import nodeAdapter from '@sveltejs/adapter-node';
 import staticAdapter from '@sveltejs/adapter-static';
 import { relative, sep, join } from 'node:path';
 
 // Keep in sync with the CAPACITOR guard in vite.config.ts and webDir in capacitor.config.ts.
 const isCapacitor = !!process.env.CAPACITOR;
+const isNetlify = process.env.DEPLOY_TARGET === 'netlify';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -22,8 +24,8 @@ const config = {
 		}
 	},
 	kit: {
-		// The web and native artifacts are deliberately different. The web build is a Node SSR
-		// server; Capacitor keeps the static SPA fallback that it packages into the native shell.
+		// The web and native artifacts are deliberately different. Netlify packages SSR into a
+		// function, Scaleway runs a Node server, and Capacitor keeps its static SPA fallback.
 		adapter: isCapacitor
 			? staticAdapter({
 					pages: 'build-mobile',
@@ -32,7 +34,9 @@ const config = {
 					precompress: false,
 					strict: false
 				})
-			: nodeAdapter({ out: 'build' }),
+			: isNetlify
+				? netlifyAdapter()
+				: nodeAdapter({ out: 'build' }),
 		prerender: {
 			handleHttpError: ({ path, status, message }) => {
 				// Expected until the standard.site publication record is published and

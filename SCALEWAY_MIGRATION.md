@@ -740,6 +740,15 @@ volume untouched for at least two weeks.
 
 Only begin after Cutover A has soaked successfully.
 
+As a low-risk application rehearsal, merge the migration branch and let Netlify
+serve the SSR build before moving the root DNS record. The adapter is selected
+per artifact: Netlify uses `adapter-netlify`, Scaleway uses `adapter-node`, and
+Capacitor keeps `adapter-static`. During this rehearsal
+`PUBLIC_WEB_APPVIEW_URL=https://api.currents.is`, so browser traffic continues
+using the existing API-host cookie while public pages and their dynamic metadata
+render on Netlify. This validates SSR and hydration, but not the final
+same-origin root cookie, Caddy routing, or internal appview connection.
+
 Before DNS changes:
 
 1. Deploy the frontend Node container on the main VM.
