@@ -112,5 +112,5 @@ export default defineConfig({
 			external: isCapacitor ? [] : ['@capawesome-team/capacitor-secure-preferences']
 		}
 	},
-	ssr: { noExternal: ['@masonry-grid/svelte', '@masonry-grid/core'] }
+	ssr: { noExternal: ['@masonry-grid/svelte', '@masonry-grid/core', '@dagrejs/dagre'] }
 });
