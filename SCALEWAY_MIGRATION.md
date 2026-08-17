@@ -122,9 +122,10 @@ and both Scaleway Compose files are implemented and covered by local checks.
 The 4 GB ARM64 inference VM is deployed and healthy on its Private Network
 address. Cross-device embedding compatibility, a live protected Caddy/SSR
 rehearsal, versioned model sync, nightly backup plus full restore, sealed
-production configuration, and candidate ARM64 builds have passed. The fresh
-production dump/restore, DNS changes, production soak, and Bunny remain
-acceptance gates, not completed work.
+production configuration, candidate ARM64 builds, and Cutover A have passed.
+The API, database, TAP, and inference now run on Scaleway while the root web
+app remains on Netlify for the production soak. Cutover B, Bunny, and the final
+mac mini rollback-window exit remain acceptance gates.
 
 ### 0.1 Split the web and Capacitor builds
 
@@ -184,6 +185,12 @@ indexed Currents data.
 Keep the service DID independent. `/.well-known/did.json` on
 `api.currents.is` continues to advertise `did:web:api.currents.is`; moving
 OAuth must not change the service-auth audience.
+
+During Cutover A, the entire OAuth identity remains on `api.currents.is`,
+including `client_uri`. Current PDS validation requires `client_uri` to have
+the same origin as the URL-form `client_id`; pointing it at `currents.is`
+before moving the client ID makes token refresh fail with
+`invalid_client_metadata`. Cutover B moves both values together.
 
 ### 0.3 Make browser API routes unambiguous
 
@@ -685,6 +692,39 @@ Verify:
 - `dig` returns the Flexible IPv4 and production responses do not contain a
   Cloudflare proxy header such as `cf-ray`;
 - admin and labeler endpoints still work.
+
+Cutover A completed on 2026-08-17:
+
+- The final `currents-production-20260817T114317Z.dump` passed its SHA-256 and
+  archive checks. The restore produced 497,540 saves, 356,965 visual
+  identities, 6,068 collections, and 543 users; schema migration 45 was clean
+  and all indexes were valid.
+- The 1.0 GB production UMAP model, SHA-256
+  `2c30db08f2af006f3fcf20a1f870b6841059684bc9b69a561b828a2924684210`,
+  was atomically activated, published to the versioned model bucket, synced
+  to inference, and reloaded successfully.
+- `api.currents.is` is a DNS-only `A` record for `51.159.84.247`. Caddy holds
+  a production Let's Encrypt certificate; OAuth metadata, JWKS, service DID,
+  feed, CORS, image proxy, labeler query, and supporter stats passed publicly
+  with no `cf-ray` response header. `currents.is` deliberately remains on
+  Netlify for the soak.
+- The first Phase A metadata set `client_uri=https://currents.is`, which newer
+  PDS validation correctly rejected because the client ID was still on
+  `api.currents.is`. Appview was paused, fixed to derive `client_uri` from the
+  OAuth client origin, rebuilt, and restarted. The repair requeued 587 items
+  affected only by `invalid_client_metadata` and reopened five jobs that those
+  failures had prematurely finalized; 429 handling was untouched. After the
+  fix, the error count stayed at zero and 375 imports completed during the
+  initial observation.
+- The us-east TAP cursor advanced from 32,810,693,102 in the dump to
+  32,812,239,280 during validation. Ninety-eight newly created visual
+  identities had embeddings, canonical palettes, dimensions, and color-index
+  rows. Junk and safety scores remain absent because no classifier heads are
+  deployed, as decided for this migration.
+- The nightly backup timer is active, PostgreSQL uses about 2.3 GB on the 8 GB
+  VM under catch-up load, and no post-fix appview errors or panics were logged.
+  The remaining browser-session/admin checks, backlog repair, and production
+  soak are still required before Cutover B.
 
 Soak this state before the SSR/OAuth cutover. Run the repair pass for any
 `visual_identity_id IS NULL` rows created during migration.

@@ -111,9 +111,6 @@ func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	meta.ClientName = strPtr("Currents")
 	meta.ClientURI = strPtr(oauthBaseURL)
-	if s.FrontendURL != "" {
-		meta.ClientURI = strPtr(s.FrontendURL)
-	}
 
 	if err := meta.Validate(s.OAuth.Config.ClientID); err != nil {
 		slog.Error("validating client metadata", "err", err)

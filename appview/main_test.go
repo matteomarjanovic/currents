@@ -36,8 +36,8 @@ func TestSplitCSVEmptyIsNonNil(t *testing.T) {
 
 func TestClientMetadataUsesOAuthIdentity(t *testing.T) {
 	config := oauth.NewPublicConfig(
-		"https://currents.is/oauth-client-metadata.json",
-		"https://currents.is/oauth/callback",
+		"https://api.currents.is/oauth-client-metadata.json",
+		"https://api.currents.is/oauth/callback",
 		[]string{"atproto"},
 	)
 	srv := Server{
@@ -53,9 +53,9 @@ func TestClientMetadataUsesOAuthIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, want := range map[string]string{
-		"client_id":   "https://currents.is/oauth-client-metadata.json",
+		"client_id":   "https://api.currents.is/oauth-client-metadata.json",
 		"client_name": "Currents",
-		"client_uri":  "https://currents.is",
+		"client_uri":  "https://api.currents.is",
 	} {
 		if got := meta[key]; got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
