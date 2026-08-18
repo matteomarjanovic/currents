@@ -15,7 +15,7 @@ export function reauthorize(returnTo: string = location.pathname + location.sear
 	// the login hint: it is stable and is the identifier accepted by OAuth even
 	// when the cached profile handle is unavailable.
 	if (isNative()) {
-		const url = new URL(`${PUBLIC_APPVIEW_URL}/oauth/login`);
+		const url = new URL(appviewUrl('/oauth/login'));
 		url.searchParams.set('username', did);
 		url.searchParams.set('return_to', 'currents://oauth-callback');
 		void import('@capacitor/browser').then(({ Browser }) =>
