@@ -63,6 +63,8 @@
 	<string>Currents uses the camera so you can take a photo to save into a collection.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Currents accesses your photo library so you can choose an image to save into a collection.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Currents may save images to your photo library when requested.</string>
 	<!-- The app only uses standard HTTPS/OAuth (exempt encryption); skips the per-upload questionnaire. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>

@@ -113,8 +113,11 @@
 			});
 			addFiles([file]);
 		} catch (err) {
-			// user cancelled or plugin error
+			// Cancellation is expected; other errors should be visible instead of making the
+			// buttons appear inert (for example, camera requests are unavailable in Simulator).
 			console.warn('native picker', err);
+			const message = err instanceof Error ? err.message : String(err);
+			if (!/cancel/i.test(message)) toast.error(message || 'Could not open the picker.');
 		}
 	}
 
