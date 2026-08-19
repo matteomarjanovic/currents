@@ -15,7 +15,7 @@ const COLLECTIONS = [
 ];
 
 // Three image saves for the library grid.
-function librarySaves() {
+function librarySaves(withMembership = false) {
 	return [1, 2, 3].map((n) => ({
 		uri: `at://did:plc:test/is.currents.feed.save/save${n}`,
 		author: me,
@@ -26,13 +26,30 @@ function librarySaves() {
 			blobCid: `cid${n}`,
 			width: 400,
 			height: 500
-		}
+		},
+		...(withMembership
+			? {
+					viewer: {
+						saves: [
+							{ collectionUri: '', saveUri: `at://did:plc:test/is.currents.feed.save/save${n}` },
+							...(n === 1
+								? [
+										{
+											collectionUri: INTERIORS,
+											saveUri: 'at://did:plc:test/is.currents.feed.save/interior1'
+										}
+									]
+								: [])
+						]
+					}
+				}
+			: {})
 	}));
 }
 
-type Calls = { labelBulk: string[]; resave: string[] };
+type Calls = { labelBulk: string[]; resave: string[]; deleted: string[] };
 
-async function mockApi(page: Page, calls: Calls) {
+async function mockApi(page: Page, calls: Calls, withMembership = false) {
 	await page.route(`${APPVIEW}/**`, (route) => {
 		const req = route.request();
 		const url = req.url();
@@ -46,6 +63,10 @@ async function mockApi(page: Page, calls: Calls) {
 			calls.resave.push(req.postData() ?? '');
 			return json({ uri: 'at://did:plc:test/is.currents.feed.save/new', cid: 'newcid' });
 		}
+		if (url.includes('/api/save/') && req.method() === 'DELETE') {
+			calls.deleted.push(url.split('/').pop() ?? '');
+			return json({});
+		}
 		if (url.includes('/api/me/role')) return json({ role: 'user' });
 		if (url.includes('/api/me')) return json(me);
 		if (url.includes('/api/supporter/status'))
@@ -54,13 +75,14 @@ async function mockApi(page: Page, calls: Calls) {
 		if (url.includes('getFavouriteCollections')) return json({ collections: [] });
 		if (url.includes('features/seen')) return json({ seen: [] });
 		if (url.includes('moderation/prefs')) return json({ adult: 'blur', aiGenerated: 'show' });
-		if (url.includes('getLibrarySaves')) return json({ saves: librarySaves(), cursor: null });
+		if (url.includes('getLibrarySaves'))
+			return json({ saves: librarySaves(withMembership), cursor: null });
 		return json({ saves: [], cursor: null });
 	});
 }
 
 test('header toggle enters select mode and bulk-labels the selection', async ({ page }) => {
-	const calls: Calls = { labelBulk: [], resave: [] };
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
 	await mockApi(page, calls);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/organize');
@@ -89,7 +111,7 @@ test('header toggle enters select mode and bulk-labels the selection', async ({ 
 test('the tile menu Select enters the mode with that tile picked, and Copy resaves', async ({
 	page
 }) => {
-	const calls: Calls = { labelBulk: [], resave: [] };
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
 	await mockApi(page, calls);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/organize');
@@ -109,13 +131,31 @@ test('the tile menu Select enters the mode with that tile picked, and Copy resav
 	expect(body.collectionUri).toBe(INTERIORS);
 });
 
+test('My library can remove one membership without losing the deduplicated image', async ({
+	page
+}) => {
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
+	await mockApi(page, calls, true);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+
+	const firstTile = page.locator('[data-uri]').first();
+	await expect(firstTile).toBeVisible();
+	await firstTile.click({ button: 'right' });
+	await page.getByRole('menuitem', { name: 'Remove from…' }).hover();
+	await page.getByRole('menuitem', { name: 'Interiors' }).click();
+
+	await expect.poll(() => calls.deleted).toContain('interior1');
+	await expect(firstTile).toBeVisible();
+});
+
 // Mobile has no room for the bar, so it gets a floating pill and one drawer whose
 // view swaps in place. The swap is the point: stacking a second drawer over the
 // menu is what leaks the body scroll-lock (see scroll-lock.spec.ts).
 test('mobile: the floating pill opens the menu, and Copy swaps the drawer in place', async ({
 	page
 }) => {
-	const calls: Calls = { labelBulk: [], resave: [] };
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
 	await mockApi(page, calls);
 	await page.goto('/organize');
 
@@ -152,7 +192,7 @@ test('mobile: the floating pill opens the menu, and Copy swaps the drawer in pla
 // mobileView stayed on 'menu', so re-tapping the pill assigned the same value and
 // reopened nothing. Only a two-way binding observes it.
 test('mobile: dismissing the drawer lets the pill reopen it', async ({ page }) => {
-	const calls: Calls = { labelBulk: [], resave: [] };
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
 	await mockApi(page, calls);
 	await page.goto('/organize');
 
@@ -179,7 +219,7 @@ test('mobile: dismissing the drawer lets the pill reopen it', async ({ page }) =
 // flex-1, so it gives up the height the bar takes. Rendering it inside the panel
 // again (or wrapping the inset, which breaks its peer-* gutter) would regress this.
 test('desktop: the action bar sits outside the panel and shrinks it', async ({ page }) => {
-	const calls: Calls = { labelBulk: [], resave: [] };
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
 	await mockApi(page, calls);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/organize');
@@ -204,7 +244,7 @@ test('desktop: the action bar sits outside the panel and shrinks it', async ({ p
 // element lives in is not the one that changes (the page's {#if selectMode} is), so
 // a local transition silently never plays.
 test('desktop: the action bar animates in', async ({ page }) => {
-	const calls: Calls = { labelBulk: [], resave: [] };
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
 	await mockApi(page, calls);
 	await page.setViewportSize({ width: 1280, height: 800 });
 	await page.goto('/organize');

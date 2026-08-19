@@ -19,6 +19,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { emitSaveRemoved, onSaveRemoved } from '$lib/stores/save-events.svelte';
+	import { collections } from '$lib/stores/collections.svelte';
 	import { requireSupporter } from '$lib/stores/supporter.svelte';
 	import { copyLink, copyImage, downloadImage } from '$lib/save-actions';
 	import { toast } from 'svelte-sonner';
@@ -267,14 +268,33 @@
 		item.viewer = { ...(item.viewer ?? {}), saves };
 	}
 
-	async function removeFromCollection(item: SaveView) {
-		const rkey = item.uri.split('/').pop();
-		feed.removeItem(item.uri); // optimistic
+	function collectionName(uri: string) {
+		if (uri === '') return 'Profile (unsorted)';
+		return collections.items.find((c) => c.uri === uri)?.name ?? 'collection';
+	}
+
+	function removableSaves(item: SaveView) {
+		if (selectedUri) {
+			const save = item.viewer?.saves?.find((s) => s.collectionUri === selectedUri);
+			return [{ collectionUri: selectedUri, saveUri: save?.saveUri ?? item.uri }];
+		}
+		return item.viewer?.saves ?? [];
+	}
+
+	async function removeFromCollection(item: SaveView, collectionUri = selectedUri) {
+		const save = removableSaves(item).find((s) => s.collectionUri === collectionUri);
+		if (!save) return;
+		const remaining = (item.viewer?.saves ?? []).filter((s) => s.saveUri !== save.saveUri);
+		// My library is deduplicated: removing one membership should leave the tile
+		// visible while another membership still exists.
+		if (selectedUri || remaining.length === 0) feed.removeItem(item.uri);
+		else item.viewer = { ...(item.viewer ?? {}), saves: remaining };
 		try {
+			const rkey = save.saveUri.split('/').pop();
 			const res = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
 			if (!res.ok) throw new Error(`${res.status}`);
-			emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
-			toast.success('Removed from collection');
+			emitSaveRemoved({ saveUri: save.saveUri, collectionUri });
+			toast.success(`Removed from ${collectionName(collectionUri)}`);
 		} catch {
 			toast.error('Could not remove from collection');
 			feed.reset();
@@ -528,12 +548,45 @@
 		<Download />
 		Download
 	</Menu.Item>
-	{#if selectedUri && !search && !color && !similar}
+	{#if !search && !color && !similar && removableSaves(item).length > 0}
 		<Menu.Separator />
-		<Menu.Item variant="destructive" onSelect={() => removeFromCollection(item)}>
-			<Trash2 />
-			Remove from collection
-		</Menu.Item>
+		{#if selectedUri || removableSaves(item).length === 1}
+			<Menu.Item
+				variant="destructive"
+				onSelect={() => removeFromCollection(item, removableSaves(item)[0].collectionUri)}
+			>
+				<Trash2 />
+				Remove from {collectionName(removableSaves(item)[0].collectionUri)}
+			</Menu.Item>
+		{:else if sidebar.isMobile}
+			{#each removableSaves(item) as saved}
+				<Menu.Item
+					variant="destructive"
+					onSelect={() => removeFromCollection(item, saved.collectionUri)}
+				>
+					<Trash2 />
+					Remove from {collectionName(saved.collectionUri)}
+				</Menu.Item>
+			{/each}
+		{:else}
+			<Menu.Sub>
+				<Menu.SubTrigger class="gap-2.5 text-destructive focus:text-destructive">
+					<Trash2 />
+					Remove from…
+				</Menu.SubTrigger>
+				<Menu.SubContent class="w-56">
+					{#each removableSaves(item) as saved}
+						<Menu.Item
+							variant="destructive"
+							onSelect={() => removeFromCollection(item, saved.collectionUri)}
+						>
+							<Trash2 />
+							{collectionName(saved.collectionUri)}
+						</Menu.Item>
+					{/each}
+				</Menu.SubContent>
+			</Menu.Sub>
+		{/if}
 	{/if}
 {/snippet}
 
