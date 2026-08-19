@@ -66,7 +66,8 @@
 			refreshing ||
 			feed.loading ||
 			window.scrollY !== 0 ||
-			e.touches.length !== 1
+			e.touches.length !== 1 ||
+			(e.target instanceof Element && e.target.closest('[data-save-detail-overlay]'))
 		)
 			return;
 		pullStartY = e.touches[0].clientY;

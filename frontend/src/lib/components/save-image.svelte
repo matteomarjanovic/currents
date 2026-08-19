@@ -79,6 +79,15 @@
 	let hovering = $state(false);
 	let frozen = $state(false);
 
+	// An <img> keeps painting its previous bitmap until the next src finishes loading.
+	// Replace the node when a save changes so a detail view never shows the wrong image
+	// during that gap. The responsive srcset can still show the smaller rendition first.
+	$effect(() => {
+		void src;
+		frozen = false;
+		hovering = false;
+	});
+
 	// Paint the GIF's first frame onto the canvas once it decodes. A freshly loaded
 	// GIF sits on frame 0, so drawing on `load` captures a static first frame. We only
 	// ever draw (never read pixels back), so a cross-origin CDN image doesn't trip the
@@ -95,35 +104,37 @@
 	}
 </script>
 
-{#if freeze}
-	<div
-		class="relative {wrapperClass}"
-		role="img"
-		aria-label={alt}
-		onpointerenter={() => (hovering = true)}
-		onpointerleave={() => (hovering = false)}
-	>
-		<img
-			bind:this={imgEl}
-			{src}
-			{srcset}
-			sizes={imageSizes}
-			alt=""
-			{loading}
-			class={className}
-			{style}
-			onload={drawFirstFrame}
-		/>
-		<!-- Frozen first frame overlays the animating <img>; hidden on hover to reveal playback. -->
-		<canvas
-			bind:this={canvasEl}
-			aria-hidden="true"
-			class="pointer-events-none absolute inset-0 h-full w-full {overlayFit} transition-opacity duration-150 {frozen &&
-			!hovering
-				? 'opacity-100'
-				: 'opacity-0'}"
-		></canvas>
-	</div>
-{:else}
-	<img {src} {srcset} sizes={imageSizes} {alt} {loading} class={className} {style} />
-{/if}
+{#key src}
+	{#if freeze}
+		<div
+			class="relative {wrapperClass}"
+			role="img"
+			aria-label={alt}
+			onpointerenter={() => (hovering = true)}
+			onpointerleave={() => (hovering = false)}
+		>
+			<img
+				bind:this={imgEl}
+				{src}
+				{srcset}
+				sizes={imageSizes}
+				alt=""
+				{loading}
+				class={className}
+				{style}
+				onload={drawFirstFrame}
+			/>
+			<!-- Frozen first frame overlays the animating <img>; hidden on hover to reveal playback. -->
+			<canvas
+				bind:this={canvasEl}
+				aria-hidden="true"
+				class="pointer-events-none absolute inset-0 h-full w-full {overlayFit} transition-opacity duration-150 {frozen &&
+				!hovering
+					? 'opacity-100'
+					: 'opacity-0'}"
+			></canvas>
+		</div>
+	{:else}
+		<img {src} {srcset} sizes={imageSizes} {alt} {loading} class={className} {style} />
+	{/if}
+{/key}
