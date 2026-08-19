@@ -147,6 +147,7 @@
 	let selectedList = $derived(selectedSaves(feed.items, selected));
 	let selectableCount = $derived(selectableUris(visible).length);
 	let canMove = $derived(ownContext && !!selectedUri && !search && !color && !similar);
+	let canRemove = $derived(ownContext && !!selectedUri && !search && !color && !similar);
 
 	function toggleSelect(item: SaveView) {
 		if (!getImageContent(item)) return; // unsupported content isn't selectable
@@ -228,6 +229,36 @@
 		exitSelect();
 	}
 
+	async function bulkRemove() {
+		const targets = selectedList;
+		let ok = 0;
+		let failed = 0;
+		await runBounded(targets, 4, async (item) => {
+			const save = removableSaves(item).find((s) => s.collectionUri === selectedUri);
+			if (!save) {
+				failed++;
+				return;
+			}
+			feed.removeItem(item.uri);
+			try {
+				const rkey = save.saveUri.split('/').pop();
+				const res = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
+				if (!res.ok) throw new Error(`${res.status}`);
+				emitSaveRemoved({ saveUri: save.saveUri, collectionUri: selectedUri });
+				ok++;
+			} catch {
+				failed++;
+			}
+		});
+		if (ok > 0) toast.success(`Removed ${ok}${failed ? ` · ${failed} failed` : ''}`);
+		else toast.error('Could not remove from collection');
+		if (failed) {
+			feed.reset();
+			feed.loadMore();
+		}
+		exitSelect();
+	}
+
 	// Hand the bulk API up once, as getters — the values behind them are $derived,
 	// so the object stays live without an effect re-assigning it.
 	bulk = {
@@ -240,11 +271,15 @@
 		get canMove() {
 			return canMove;
 		},
+		get canRemove() {
+			return canRemove;
+		},
 		onSelectAll: selectAllLoaded,
 		onClear: () => selected.clear(),
 		onExit: exitSelect,
 		onCopy: bulkCopy,
-		onMove: bulkMove
+		onMove: bulkMove,
+		onRemove: bulkRemove
 	};
 
 	// ── Context-menu actions ──────────────────────────────────────────────────

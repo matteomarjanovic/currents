@@ -22,27 +22,32 @@
 	import ListChecks from '@lucide/svelte/icons/list-checks';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let {
 		saves,
 		selectableCount,
 		canMove,
+		canRemove,
 		ownContext,
 		onSelectAll,
 		onClear,
 		onExit,
 		onCopy,
-		onMove
+		onMove,
+		onRemove
 	}: {
 		saves: SaveView[];
 		selectableCount: number;
 		canMove: boolean;
+		canRemove: boolean;
 		ownContext: boolean;
 		onSelectAll: () => void;
 		onClear: () => void;
 		onExit: () => void;
 		onCopy: (dest: string) => void;
 		onMove: (dest: string) => void;
+		onRemove: () => void;
 	} = $props();
 
 	const sidebar = useSidebar();
@@ -266,6 +271,18 @@
 					</Popover.Root>
 				{/if}
 
+				{#if canRemove}
+					<Button
+						variant="secondary"
+						size="sm"
+						disabled={saves.length === 0}
+						onclick={onRemove}
+					>
+						<Trash2 class="size-4" />
+						Remove from collection
+					</Button>
+				{/if}
+
 				<Button variant="secondary" size="sm" disabled={saves.length === 0} onclick={downloadAll}>
 					<Download class="size-4" />
 					Download
@@ -399,6 +416,11 @@
 						{@render menuRow('Move to collection', FolderInput, () => (mobileView = 'move'), {
 							disabled: saves.length === 0,
 							deeper: true
+						})}
+					{/if}
+					{#if canRemove}
+						{@render menuRow('Remove from collection', Trash2, onRemove, {
+							disabled: saves.length === 0
 						})}
 					{/if}
 					{@render menuRow(

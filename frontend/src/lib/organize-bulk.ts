@@ -7,11 +7,13 @@ export type BulkApi = {
 	readonly saves: SaveView[];
 	readonly selectableCount: number;
 	readonly canMove: boolean;
+	readonly canRemove: boolean;
 	onSelectAll: () => void;
 	onClear: () => void;
 	onExit: () => void;
 	onCopy: (dest: string) => void;
 	onMove: (dest: string) => void;
+	onRemove: () => void;
 };
 
 // Resolve a selection Set of save URIs against a list of loaded saves, preserving
