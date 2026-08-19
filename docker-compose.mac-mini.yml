@@ -25,13 +25,14 @@ services:
         condition: service_started
     environment:
       SESSION_SECRET: ${SESSION_SECRET}
+      COOKIE_SAME_SITE: lax
       DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
-      OAUTH_HOSTNAME: ${DOMAIN}
-      SERVICE_HOSTNAME: ${DOMAIN}
+      OAUTH_HOSTNAME: ${OAUTH_HOSTNAME:-dev.currents.is}
+      SERVICE_HOSTNAME: ${SERVICE_HOSTNAME:-dev.api.currents.is}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
-      FRONTEND_URL: ${FRONTEND_URL}
-      CDN_URL: https://${DOMAIN}
+      FRONTEND_URL: ${FRONTEND_URL:-https://dev.currents.is}
+      CDN_URL: ${CDN_URL:-https://dev.api.currents.is}
       TAP_URL: ws://tap:2480/channel
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
@@ -55,22 +56,49 @@ services:
       TAP_COLLECTION_FILTERS: is.currents.*
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        PUBLIC_APPVIEW_URL: ${PUBLIC_APPVIEW_URL:-https://dev.api.currents.is}
+        PUBLIC_WEB_APPVIEW_URL: ""
+        PUBLIC_POLAR_PRODUCT_MONTHLY: ${PUBLIC_POLAR_PRODUCT_MONTHLY:-}
+        PUBLIC_POLAR_PRODUCT_YEARLY: ${PUBLIC_POLAR_PRODUCT_YEARLY:-}
+    restart: unless-stopped
+    depends_on:
+      - appview
+    environment:
+      APPVIEW_INTERNAL_URL: http://appview:8080
+      HOST: 0.0.0.0
+      ORIGIN: ${ORIGIN:-https://dev.currents.is}
+      PORT: 3000
+
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     depends_on:
       - appview
+      - frontend
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
 
-  cloudflared:
+  cloudflared-appview:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - appview
+    command: tunnel --no-autoupdate --protocol http2 run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_APPVIEW_TUNNEL_TOKEN:?set the dev.api.currents.is tunnel token}
+
+  cloudflared-frontend:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     depends_on:
       - nginx
     command: tunnel --no-autoupdate --protocol http2 run
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+      TUNNEL_TOKEN: ${CLOUDFLARE_FRONTEND_TUNNEL_TOKEN:?set the dev.currents.is tunnel token}
 
   clustering:
     build:
@@ -87,4 +115,6 @@ services:
       INFERENCE_URL: ${INFERENCE_URL:-http://host.docker.internal:8000}
 
 volumes:
+  # Keep this name stable: it is the existing Mac Mini database volume.
   pgdata:
+    name: currents_pgdata
