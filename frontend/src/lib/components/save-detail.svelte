@@ -973,7 +973,7 @@
 {#if related.items.length > 0 || related.loading}
 	<section class="flex flex-col gap-4 p-2 md:p-6">
 		<h2 class="text-lg font-medium">Related</h2>
-		<MasonryGrid items={related.items} loading={related.loading} />
+		<MasonryGrid items={related.items} loading={related.loading} longPressSave />
 		{#if related.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}

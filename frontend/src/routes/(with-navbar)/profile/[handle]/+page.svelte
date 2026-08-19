@@ -254,6 +254,7 @@
 						items={unsorted.items}
 						loading={unsorted.loading}
 						loadMore={unsorted.loadMore}
+						longPressSave
 					/>
 					{#if unsorted.hasMore}
 						<div bind:this={sentinel} class="h-1"></div>

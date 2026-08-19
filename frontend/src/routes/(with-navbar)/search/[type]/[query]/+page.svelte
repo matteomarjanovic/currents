@@ -118,7 +118,7 @@
 
 {#if searchType === 'color'}
 	<!-- What's being searched (hex, text, colored lens) lives in the top bar. -->
-	<MasonryGrid items={saves} loading={search.loading} loadMore={search.loadMore} />
+	<MasonryGrid items={saves} loading={search.loading} loadMore={search.loadMore} longPressSave />
 	{#if !search.loading && loadedType === 'color' && saves.length === 0}
 		<p class="mt-10 text-center text-sm text-muted-foreground">
 			{#if hybridText}
@@ -129,7 +129,7 @@
 		</p>
 	{/if}
 {:else if searchType === 'saves'}
-	<MasonryGrid items={saves} loading={search.loading} loadMore={search.loadMore} />
+	<MasonryGrid items={saves} loading={search.loading} loadMore={search.loadMore} longPressSave />
 {:else if searchType === 'collections'}
 	<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
 		{#each collections as collection (collection.uri)}

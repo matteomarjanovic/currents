@@ -283,7 +283,12 @@
 	{#if scroll.items.length === 0 && !scroll.loading && !scroll.hasMore}
 		<div class="py-12 text-center text-sm text-muted-foreground">No saves yet.</div>
 	{:else}
-		<MasonryGrid items={scroll.items} loading={scroll.loading} loadMore={scroll.loadMore} />
+		<MasonryGrid
+			items={scroll.items}
+			loading={scroll.loading}
+			loadMore={scroll.loadMore}
+			longPressSave
+		/>
 		{#if scroll.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}
