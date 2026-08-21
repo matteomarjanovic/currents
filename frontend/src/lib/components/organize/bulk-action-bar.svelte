@@ -11,6 +11,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Drawer from '$lib/components/ui/drawer';
+	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import BulkAttributionDialog from '$lib/components/bulk-attribution-dialog.svelte';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
@@ -140,7 +141,10 @@
 
 <!-- The destination list, reused by the copy/move popovers and the mobile drawer. -->
 {#snippet destinationList(onSelect: (uri: string) => void)}
-	<div class="max-h-[50vh] overflow-y-auto p-1.5">
+	<div
+		class="max-h-[50vh] touch-auto overflow-y-auto overscroll-contain p-1.5"
+		use:drawerScrollSwipe={() => (mobileView = null)}
+	>
 		<CollectionSelector variant="inline" {onSelect} />
 	</div>
 {/snippet}

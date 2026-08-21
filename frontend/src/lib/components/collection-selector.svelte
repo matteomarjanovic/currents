@@ -27,6 +27,7 @@
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import SaveToast from '$lib/components/save-toast.svelte';
 	import { bunnyImageUrl } from '$lib/image-url';
+	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
 
 	interface Props {
 		item?: SaveView;
@@ -525,7 +526,10 @@
 					{/if}
 				</Drawer.Description>
 			</Drawer.Header>
-			<div class="max-h-[60vh] overflow-y-auto p-1.5">
+			<div
+				class="max-h-[60vh] touch-auto overflow-y-auto overscroll-contain p-1.5"
+				use:drawerScrollSwipe={() => (open = false)}
+			>
 				{@render collectionList()}
 			</div>
 			<Drawer.Footer>

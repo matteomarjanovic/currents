@@ -16,6 +16,7 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Drawer from '$lib/components/ui/drawer';
+	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
 	import { Button } from '$lib/components/ui/button';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { emitSaveRemoved, onSaveRemoved } from '$lib/stores/save-events.svelte';
@@ -851,7 +852,10 @@
 				{drawerMode === 'move' ? 'Pick a destination collection.' : 'Pick one or more collections.'}
 			</Drawer.Description>
 		</Drawer.Header>
-		<div class="max-h-[60vh] overflow-y-auto p-1.5">
+		<div
+			class="max-h-[60vh] touch-auto overflow-y-auto overscroll-contain p-1.5"
+			use:drawerScrollSwipe={() => (drawerOpen = false)}
+		>
 			{#if drawerTarget}
 				{#if drawerMode === 'move'}
 					<CollectionSelector
