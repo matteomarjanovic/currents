@@ -31,6 +31,7 @@
 	import Puzzle from '@lucide/svelte/icons/puzzle';
 	import Smartphone from '@lucide/svelte/icons/smartphone';
 	import Newspaper from '@lucide/svelte/icons/newspaper';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
 	import Settings from '@lucide/svelte/icons/settings';
 	import Bell from '@lucide/svelte/icons/bell';
 	import Heart from '@lucide/svelte/icons/heart';
@@ -243,6 +244,15 @@
 	function openBlog() {
 		if (shouldOpenExternally()) openExternal('/blog');
 		else goto(resolve('/blog'));
+	}
+
+	async function openFeedback() {
+		if (native) {
+			const { Browser } = await import('@capacitor/browser');
+			await Browser.open({ url: 'https://currents.is/feedback' });
+		} else {
+			window.open('https://currents.is/feedback', '_blank', 'noopener');
+		}
 	}
 
 	// /support-us (external Polar checkout) is hidden from the native apps for App Store
@@ -516,6 +526,10 @@
 	<DropdownMenu.Item onclick={openBlog}>
 		<Newspaper class="size-4" />
 		Blog
+	</DropdownMenu.Item>
+	<DropdownMenu.Item onclick={openFeedback}>
+		<MessageSquare class="size-4" />
+		Leave feedback
 	</DropdownMenu.Item>
 	<DropdownMenu.Item onclick={() => openSettings()}>
 		<Settings class="size-4" />
