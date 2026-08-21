@@ -89,7 +89,10 @@
 <svelte:window bind:innerHeight={viewportHeight} />
 
 <div bind:clientWidth={containerWidth}>
-	<BalancedMasonryGrid {frameWidth} {gap}>
+	<!-- Appended frames briefly have the default CSS order before the masonry
+	     observer positions them. Keep that transient reflow from becoming the
+	     browser's scroll anchor and moving the viewport as a page lands. -->
+	<BalancedMasonryGrid {frameWidth} {gap} style="overflow-anchor: none;">
 		{#each visibleItems as item (item.uri)}
 			{@const image = getImageContent(item)}
 			{@const ratio = tileRatio(image?.width, image?.height)}
