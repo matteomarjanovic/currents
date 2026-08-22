@@ -82,6 +82,29 @@ async function touchDrag(page: Page, point: { x: number; y: number }, distance: 
 	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
+async function touchDragAndReverse(
+	page: Page,
+	point: { x: number; y: number },
+	upDistance: number,
+	downDistance: number
+) {
+	const client = await page.context().newCDPSession(page);
+	await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+	for (let step = 1; step <= 8; step++) {
+		await client.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x: point.x, y: point.y - (upDistance * step) / 8 }]
+		});
+	}
+	for (let step = 1; step <= 12; step++) {
+		await client.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x: point.x, y: point.y - upDistance + ((upDistance + downDistance) * step) / 12 }]
+		});
+	}
+	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
 test('long-pressing a tile opens the collection drawer and saves without navigating', async ({
 	page
 }) => {
@@ -124,6 +147,12 @@ test('a scrolled list must be released before a collection row can close the dra
 	const list = page.locator('[data-vaul-drawer] > div.overflow-y-auto');
 	const box = (await list.boundingBox())!;
 	const row = { x: box.x + box.width / 2, y: box.y + 30 };
+	// A gesture that begins at the top but scrolls upward first remains list-owned
+	// when it reverses downward; only lifting the finger resets ownership.
+	await touchDragAndReverse(page, row, 120, 300);
+	await expect(page.getByText('Save to collection')).toBeVisible();
+	await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
+
 	await touchDrag(page, row, -180); // Scroll the list down.
 	await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 	// The gesture that returns the list to its top must not also drag the drawer.

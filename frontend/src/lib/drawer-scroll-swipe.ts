@@ -17,7 +17,7 @@ export function drawerScrollSwipe(node: HTMLElement, onClose: () => void) {
 	let lastY = 0;
 	let claimY = 0;
 	let dragY = 0;
-	let startedAtTop = false;
+	let listOwned = false;
 	let axis: 'undecided' | 'vertical' | 'horizontal' = 'undecided';
 	let claimed = false;
 	let tracking = false;
@@ -58,7 +58,7 @@ export function drawerScrollSwipe(node: HTMLElement, onClose: () => void) {
 		lastY = touch.clientY;
 		claimY = touch.clientY;
 		dragY = 0;
-		startedAtTop = node.scrollTop <= 0;
+		listOwned = node.scrollTop > 0;
 		axis = 'undecided';
 		claimed = false;
 		tracking = true;
@@ -81,9 +81,10 @@ export function drawerScrollSwipe(node: HTMLElement, onClose: () => void) {
 		if (axis === 'horizontal') return;
 
 		if (!claimed) {
-			// A gesture that starts inside a scrolled list belongs to that list until
-			// release, even if it reaches the top edge along the way.
-			if (!startedAtTop || stepY <= 0 || node.scrollTop > 0) return;
+			// Once a gesture scrolls the list, it stays list-owned until release,
+			// even if it began at the top and returns there after reversing direction.
+			if (totalY < 0 || node.scrollTop > 0) listOwned = true;
+			if (listOwned || stepY <= 0) return;
 			claimed = true;
 			claimY = startY;
 		}
