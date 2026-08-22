@@ -29,6 +29,14 @@
 		loadPreferences,
 		setGifAutoplay
 	} from '$lib/stores/preferences.svelte';
+	import {
+		feedPreferences,
+		feedPreferencesLoaded,
+		loadFeedPreferences,
+		setDefaultFeed
+	} from '$lib/stores/feed-preferences.svelte';
+	import type { FeedLevelSlug } from '$lib/feed-levels';
+	import FeedCollectionCombobox from '$lib/components/feed-collection-combobox.svelte';
 	import { Switch } from '$lib/components/ui/switch';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
@@ -38,6 +46,7 @@
 	import CreditCardIcon from '@lucide/svelte/icons/credit-card';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import UserIcon from '@lucide/svelte/icons/user';
+	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 
 	// Settings live in a dialog (not a page) so they open from every mode —
 	// explore's top bar, organize's sidebar, and the blurred-media overlays.
@@ -46,6 +55,7 @@
 
 	const NAV: { key: SettingsSection; name: string; icon: typeof ShieldIcon }[] = [
 		{ key: 'account', name: 'Account', icon: UserIcon },
+		{ key: 'feed', name: 'Feed', icon: ListFilterIcon },
 		{ key: 'subscription', name: 'Subscription', icon: CreditCardIcon },
 		{ key: 'moderation', name: 'Moderation', icon: ShieldIcon }
 	];
@@ -62,6 +72,7 @@
 			if (!isOpen) return;
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 			if (!preferencesLoaded.value) void loadPreferences();
+			if (!feedPreferencesLoaded.value) void loadFeedPreferences();
 			void loadSupporterStatus();
 		});
 	});
@@ -98,6 +109,12 @@
 	const AI_OPTIONS: { val: AiVisibility; label: string }[] = [
 		{ val: 'show', label: 'Show' },
 		{ val: 'hide', label: 'Hide' }
+	];
+
+	const DEFAULT_FEED_OPTIONS: { value: FeedLevelSlug; label: string }[] = [
+		{ value: 'general', label: 'General' },
+		{ value: 'new-worlds', label: 'New worlds' },
+		{ value: 'personal', label: 'Personal' }
 	];
 
 	let portalLoading = $state(false);
@@ -208,12 +225,15 @@
 				>
 					<h2 class="text-base font-semibold md:hidden">Settings</h2>
 					<!-- The nav sidebar is hidden below md; switch sections here instead. -->
-					<div class="inline-flex self-start rounded-md border border-border p-0.5 md:hidden">
+					<div
+						data-testid="settings-mobile-nav"
+						class="grid w-full grid-cols-2 gap-0.5 rounded-md border border-border p-0.5 sm:grid-cols-4 md:hidden"
+					>
 						{#each NAV as item (item.key)}
 							<button
 								type="button"
 								onclick={() => (settingsDialog.section = item.key)}
-								class="rounded px-3 py-1.5 text-xs font-medium transition-colors {section ===
+								class="min-w-0 truncate rounded px-3 py-1.5 text-xs font-medium transition-colors {section ===
 								item.key
 									? 'bg-foreground text-background'
 									: 'text-muted-foreground hover:bg-muted'}"
@@ -302,6 +322,54 @@
 										</button>
 									{/each}
 								</div>
+							</div>
+						</section>
+					{:else if section === 'feed'}
+						<section class="flex flex-col gap-4">
+							<div>
+								<h3 class="text-sm font-medium">Feed preferences</h3>
+								<p class="text-sm text-muted-foreground">
+									Choose what opens in Explore and which collections shape personalization.
+								</p>
+							</div>
+							<div class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-sm font-medium">Default feed</span>
+									<span class="text-xs text-muted-foreground">
+										The feed shown when you enter Explore.
+									</span>
+								</div>
+								<div
+									role="radiogroup"
+									aria-label="Default feed"
+									class="grid grid-cols-3 rounded-md border border-border p-0.5"
+								>
+									{#each DEFAULT_FEED_OPTIONS as option (option.value)}
+										<button
+											type="button"
+											role="radio"
+											aria-checked={feedPreferences.defaultFeed === option.value}
+											disabled={!feedPreferencesLoaded.value}
+											onclick={() => setDefaultFeed(option.value)}
+											class="min-w-0 truncate rounded px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 {feedPreferences.defaultFeed ===
+											option.value
+												? 'bg-foreground text-background'
+												: 'text-muted-foreground hover:bg-muted'}"
+										>
+											{option.label}
+										</button>
+									{/each}
+								</div>
+							</div>
+							<div class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-sm font-medium">Excluded collections</span>
+									<span class="text-xs text-muted-foreground">
+										Images from these collections can still appear, but the collections won't
+										influence personalization.
+									</span>
+								</div>
+								<FeedCollectionCombobox />
 							</div>
 						</section>
 					{:else if section === 'subscription'}

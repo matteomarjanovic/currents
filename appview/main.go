@@ -674,6 +674,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("PUT /api/moderation/prefs", srv.APIPutModerationPrefs)
 	http.HandleFunc("GET /api/preferences", srv.APIGetPreferences)
 	http.HandleFunc("PUT /api/preferences", srv.APIPutPreferences)
+	http.HandleFunc("GET /api/feed/preferences", srv.APIGetFeedPreferences)
+	http.HandleFunc("PUT /api/feed/preferences", srv.APIPutFeedPreferences)
 	http.HandleFunc("GET /api/supporter/status", srv.APISupporterStatus)
 	http.HandleFunc("GET /api/supporter/stats", srv.APISupporterStats)
 	http.HandleFunc("POST /api/supporter/portal", srv.APISupporterPortal)

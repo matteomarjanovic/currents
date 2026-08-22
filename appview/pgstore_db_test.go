@@ -97,7 +97,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(), `
 		TRUNCATE save, collection, "user", follow, favourite_collection,
-			visual_identity, visual_identity_color, cluster, color_trial, seen_feature,
+			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref,
 			label, blob_moderation_state, review_item, report, moderation_event,
 			import_session
 		RESTART IDENTITY CASCADE
@@ -672,6 +672,19 @@ func TestCollectionsByImportance(t *testing.T) {
 			t.Fatalf("embedding length = %d, want 768", len(c.Embedding))
 		}
 	}
+
+	// This one source query feeds both Personal and New worlds. An excluded
+	// collection must be removed before either mode samples its seeds.
+	if err := s.SetFeedPrefs(ctx, viewer, FeedPrefs{ExcludedCollections: []string{small}}); err != nil {
+		t.Fatalf("SetFeedPrefs: %v", err)
+	}
+	got, err = s.GetCollectionsByImportance(ctx, viewer, 10)
+	if err != nil {
+		t.Fatalf("GetCollectionsByImportance after exclusion: %v", err)
+	}
+	if len(got) != 1 || got[0].URI != big {
+		t.Fatalf("collections after excluding small = %v, want only %s", uris(got), big)
+	}
 }
 
 func equalStrings(got, want []string) bool {
@@ -834,6 +847,52 @@ func TestUserPrefs(t *testing.T) {
 	got, _ = s.GetUserPrefs(ctx, did)
 	if !got.GifAutoplay {
 		t.Fatalf("updated gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+}
+
+func TestFeedPrefs(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	did := "did:plc:feedprefsuser"
+
+	got, err := s.GetFeedPrefs(ctx, did)
+	if err != nil {
+		t.Fatalf("GetFeedPrefs(default): %v", err)
+	}
+	if len(got.ExcludedCollections) != 0 {
+		t.Fatalf("default exclusions = %v, want empty", got.ExcludedCollections)
+	}
+	if got.DefaultFeed != "personal" {
+		t.Fatalf("default feed = %q, want personal", got.DefaultFeed)
+	}
+
+	want := []string{
+		"at://did:plc:feedprefsuser/is.currents.feed.collection/one",
+		"at://did:plc:feedprefsuser/is.currents.feed.collection/two",
+	}
+	if err := s.SetFeedPrefs(ctx, did, FeedPrefs{ExcludedCollections: want, DefaultFeed: "new-worlds"}); err != nil {
+		t.Fatalf("SetFeedPrefs: %v", err)
+	}
+	got, err = s.GetFeedPrefs(ctx, did)
+	if err != nil {
+		t.Fatalf("GetFeedPrefs(stored): %v", err)
+	}
+	if !equalStrings(got.ExcludedCollections, want) {
+		t.Fatalf("stored exclusions = %v, want %v", got.ExcludedCollections, want)
+	}
+	if got.DefaultFeed != "new-worlds" {
+		t.Fatalf("stored default feed = %q, want new-worlds", got.DefaultFeed)
+	}
+
+	if err := s.SetFeedPrefs(ctx, did, FeedPrefs{ExcludedCollections: []string{}}); err != nil {
+		t.Fatalf("SetFeedPrefs(clear): %v", err)
+	}
+	got, _ = s.GetFeedPrefs(ctx, did)
+	if len(got.ExcludedCollections) != 0 {
+		t.Fatalf("cleared exclusions = %v, want empty", got.ExcludedCollections)
+	}
+	if got.DefaultFeed != "personal" {
+		t.Fatalf("empty default feed should normalize to personal, got %q", got.DefaultFeed)
 	}
 }
 

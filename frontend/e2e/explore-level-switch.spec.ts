@@ -61,6 +61,9 @@ async function mockApi(page: Page) {
 			});
 		}
 		if (url.includes('/api/me')) return json(me);
+		if (url.includes('/api/feed/preferences')) {
+			return json({ excludedCollections: [], defaultFeed: 'new-worlds' });
+		}
 		if (url.includes('getActorCollections')) return json({ collections });
 		if (url.includes('getFeed')) {
 			const personalized = new URL(url).searchParams.get('personalized');
@@ -88,4 +91,11 @@ test('switching to Personal refetches and shows the personal feed', async ({ pag
 	await expect(page).toHaveURL(/\/explore\/personal/);
 	await expect(page.locator('img[alt="personal-tile-2"]')).toBeVisible();
 	await expect(page.locator('img[alt="general-tile-1"]')).toHaveCount(0);
+});
+
+test('the Explore entry route opens the saved default feed', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/explore');
+
+	await expect(page).toHaveURL(/\/explore\/new-worlds/);
 });

@@ -40,6 +40,8 @@ The `getFeed` endpoint returns the discovery feed. Its behavior depends on the s
 - Positive values = personalized feed based on the viewer's own collection medoids.
 - Negative values = serendipity feed based on nearby cluster medoids that the viewer has not touched.
 
+The account's **default feed** preference only controls which of these modes opens when the user enters Explore. It defaults to Personal and does not alter ranking within a mode.
+
 The feed is implemented as a small set of candidate pools, mixed together with weights derived from `abs(personalized)`. Search does not currently use this signed feed behavior.
 
 ### Global pool (`personalized = 0`)
@@ -65,7 +67,7 @@ Positive personalization builds up to 3 personalized pools from the viewer's own
 	importance = SUM(exp(−0.01 × age_in_days))
 	```
 
-	This is computed over the viewer's saves in each collection. Only collections with a precomputed `canonical_embedding` are eligible. Rather than taking a hard top-3, the feed takes the top `feedCollectionCandidatePool` (5) candidates and **samples 3 without replacement, weighted by importance**, using a per-request seed (see *Refresh variety* below). Bigger/more-recent collections are still favoured, but the selected set rotates between refreshes — and a smaller, less-important collection surfaces sometimes instead of never.
+	This is computed over the viewer's saves in each collection. Collections excluded under **Settings → Feed** are removed before ranking, so they cannot seed either personalized mode. Only collections with a precomputed `canonical_embedding` are eligible. Rather than taking a hard top-3, the feed takes the top `feedCollectionCandidatePool` (5) candidates and **samples 3 without replacement, weighted by importance**, using a per-request seed (see *Refresh variety* below). Bigger/more-recent collections are still favoured, but the selected set rotates between refreshes — and a smaller, less-important collection surfaces sometimes instead of never.
 
 2. Each selected collection contributes its `canonical_embedding`, which is the **medoid** of that collection's saves' embeddings: the real embedding with minimum total cosine distance to all others.
 
@@ -77,7 +79,7 @@ Positive personalization builds up to 3 personalized pools from the viewer's own
 
 Negative personalization starts from the same sampled viewer collections, but swaps in **nearby unexplored cluster medoids** before retrieval:
 
-1. Three of the viewer's collections are sampled exactly as in positive personalization (seed-weighted, from the top-5 candidate pool).
+1. Three of the viewer's non-excluded collections are sampled exactly as in positive personalization (seed-weighted, from the top-5 candidate pool).
 
 2. Daily clustering assigns each visual identity to a cluster and stores a **cluster medoid** (a representative visual identity for that cluster).
 

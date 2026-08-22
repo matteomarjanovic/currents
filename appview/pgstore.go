@@ -1163,6 +1163,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 		`DELETE FROM seen_feature WHERE viewer_did = $1`,
 		`DELETE FROM moderation_pref WHERE viewer_did = $1`,
 		`DELETE FROM user_pref WHERE viewer_did = $1`,
+		`DELETE FROM feed_pref WHERE viewer_did = $1`,
 		`DELETE FROM notification_seen WHERE viewer_did = $1`,
 		`DELETE FROM color_trial WHERE viewer_did = $1`,   // a fresh DID gets a fresh allowance anyway
 		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
@@ -1262,6 +1263,37 @@ func (m *PgStore) SetUserPrefs(ctx context.Context, viewerDID string, p UserPref
 		 ON CONFLICT (viewer_did) DO UPDATE SET
 		     gif_autoplay = EXCLUDED.gif_autoplay, updated_at = now()`,
 		viewerDID, p.GifAutoplay)
+	return err
+}
+
+// GetFeedPrefs returns the user's feed preferences, or the defaults when no
+// row exists yet.
+func (m *PgStore) GetFeedPrefs(ctx context.Context, viewerDID string) (FeedPrefs, error) {
+	p := FeedPrefs{ExcludedCollections: []string{}, DefaultFeed: defaultFeed}
+	err := m.pool.QueryRow(ctx,
+		`SELECT excluded_collections, default_feed FROM feed_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.ExcludedCollections, &p.DefaultFeed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, nil
+	}
+	if err != nil {
+		return FeedPrefs{}, err
+	}
+	return p, nil
+}
+
+func (m *PgStore) SetFeedPrefs(ctx context.Context, viewerDID string, p FeedPrefs) error {
+	if p.DefaultFeed == "" {
+		p.DefaultFeed = defaultFeed
+	}
+	_, err := m.pool.Exec(ctx,
+		`INSERT INTO feed_pref (viewer_did, excluded_collections, default_feed, updated_at)
+		 VALUES ($1, $2, $3, now())
+		 ON CONFLICT (viewer_did) DO UPDATE SET
+		     excluded_collections = EXCLUDED.excluded_collections,
+		     default_feed = EXCLUDED.default_feed,
+		     updated_at = now()`,
+		viewerDID, p.ExcludedCollections, p.DefaultFeed)
 	return err
 }
 
@@ -2944,6 +2976,11 @@ func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID stri
 			WHERE s.author_did = $1
 			  AND s.created_at IS NOT NULL
 			  AND c.canonical_embedding IS NOT NULL
+			  AND NOT EXISTS (
+				  SELECT 1 FROM feed_pref fp
+				  WHERE fp.viewer_did = $1
+				    AND c.uri = ANY(fp.excluded_collections)
+			  )
 			GROUP BY c.uri, c.canonical_embedding
 		)
 		SELECT uri, canonical_embedding, score

@@ -9,6 +9,7 @@ export const FEED_LEVELS = [
 ] as const;
 
 export type FeedLevel = (typeof FEED_LEVELS)[number];
+export type FeedLevelSlug = FeedLevel['slug'];
 
 export const findFeedLevel = (slug: string | undefined): FeedLevel | undefined =>
 	FEED_LEVELS.find((l) => l.slug === slug);

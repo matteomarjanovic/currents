@@ -1,6 +1,6 @@
 // Global open state for the settings dialog, so any surface (top bar, organize
 // sidebar, blurred-media overlays) can open it. Mounted once in the root layout.
-export type SettingsSection = 'moderation' | 'subscription' | 'account';
+export type SettingsSection = 'moderation' | 'subscription' | 'feed' | 'account';
 
 export const settingsDialog = $state({
 	open: false,
