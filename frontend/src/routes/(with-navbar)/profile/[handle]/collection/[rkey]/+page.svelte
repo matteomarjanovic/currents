@@ -15,7 +15,6 @@
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Button } from '$lib/components/ui/button';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import type { CollectionView } from '$lib/types';
 	import { bunnyImageUrl } from '$lib/image-url';
@@ -245,10 +244,6 @@
 	<MasonryGrid items={[]} loading={true} />
 {:else}
 	<div class="mx-auto max-w-5xl">
-		<Button variant="ghost" size="sm" class="mb-1 -ml-2" onclick={() => history.back()}>
-			<ArrowLeft />
-			Back
-		</Button>
 		{#if parent}
 			<span class="mb-1 ml-1 block text-sm text-muted-foreground">
 				Section of

@@ -2,6 +2,7 @@
 	import '../layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onMount, untrack } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
@@ -57,17 +58,21 @@
 		auth.checked = true;
 		if (user) {
 			loadCollections(user.did);
-			if (isHome) goto('/explore');
 		}
 
 		if (!user && !isPublic) {
 			// On native the login entry point is the welcome screen at '/', not the web /login route.
-			goto(native ? '/' : '/login');
+			goto(native ? resolve('/') : resolve('/login'));
 		}
 	});
 
 	$effect(() => {
-		if (auth.checked && auth.user && isHome) goto('/explore');
+		// The home route is only a signed-in entry point, not a distinct history stop. Replacing
+		// it lets browser Back return to the page that preceded Currents instead of bouncing
+		// through / and immediately entering Explore again.
+		if (auth.checked && auth.user && isHome) {
+			goto(resolve('/(with-navbar)/explore'), { replaceState: true });
+		}
 	});
 
 	$effect(() => {

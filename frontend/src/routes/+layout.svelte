@@ -1,12 +1,10 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { afterNavigate } from '$app/navigation';
 	import { dev } from '$app/environment';
 	import { mode } from 'mode-watcher';
 	import { initApp } from '$lib/app-init';
 	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { navHistory } from '$lib/stores/navigation.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
 	import SettingsDialog from '$lib/components/settings-dialog.svelte';
@@ -18,12 +16,6 @@
 	import '$lib/stores/pwa-install.svelte';
 
 	let { children } = $props();
-
-	// `from` is only null on the tab's very first navigation — every navigation after that was
-	// pushed by SvelteKit itself, so the back button is guaranteed to land on Currents.
-	afterNavigate(({ from }) => {
-		if (from) navHistory.hasInternalHistory = true;
-	});
 
 	onMount(() => {
 		initApp().catch((err) => console.warn('initApp failed', err));
