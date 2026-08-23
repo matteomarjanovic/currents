@@ -52,14 +52,17 @@
 			quality: 80
 		};
 	});
+	const isGif = $derived(image.mimeType === 'image/gif');
 	const src = $derived(
-		bunnyImageUrl(image.imageUrl, {
-			...transform,
-			width: Math.min(image.width ?? fallbackWidth, fallbackWidth)
-		})
+		isGif
+			? image.imageUrl
+			: bunnyImageUrl(image.imageUrl, {
+					...transform,
+					width: Math.min(image.width ?? fallbackWidth, fallbackWidth)
+				})
 	);
 	const srcset = $derived(
-		image.width
+		!isGif && image.width
 			? bunnyImageSrcset(image.imageUrl, widths, image.width, transform) || undefined
 			: undefined
 	);
@@ -72,7 +75,7 @@
 
 	// Freeze animated GIFs at their first frame unless the viewer opted into autoplay.
 	// Everything else (and users on the default) takes the plain <img> path — no change.
-	let freeze = $derived(image.mimeType === 'image/gif' && !preferences.gifAutoplay);
+	let freeze = $derived(isGif && !preferences.gifAutoplay);
 
 	let imgEl = $state<HTMLImageElement>();
 	let canvasEl = $state<HTMLCanvasElement>();
