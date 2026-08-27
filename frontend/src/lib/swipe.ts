@@ -49,7 +49,8 @@ export function swipe(node: HTMLElement, options: SwipeOptions) {
 
 	function onTouchMove(e: TouchEvent) {
 		if (!tracking) return;
-		// A second finger means a pinch-zoom, which is the browser's gesture, not ours.
+		// A second finger means pinch-zoom — browser page zoom on web, image focus in the
+		// native shell — so it never belongs to the sequence swipe.
 		if (e.touches.length !== 1) return stop(true);
 		const dx = e.touches[0].clientX - startX;
 		const dy = e.touches[0].clientY - startY;

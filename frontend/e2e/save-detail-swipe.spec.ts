@@ -93,6 +93,58 @@ async function drag(page: Page, dx: number, dy: number) {
 	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
+async function pinch(
+	page: Page,
+	target: ReturnType<Page['locator']>,
+	fromDistance: number,
+	toDistance: number,
+	opensFocus = false
+) {
+	const box = (await target.boundingBox())!;
+	const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const client = await page.context().newCDPSession(page);
+	const points = (distance: number) => [
+		{ id: 1, x: center.x - distance / 2, y: center.y },
+		{ id: 2, x: center.x + distance / 2, y: center.y }
+	];
+
+	await client.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: points(fromDistance)
+	});
+	if (opensFocus) await expect(page.locator('[data-image-focus]')).toBeVisible();
+	for (let i = 1; i <= 5; i++) {
+		const distance = fromDistance + ((toDistance - fromDistance) * i) / 5;
+		await client.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: points(distance)
+		});
+	}
+	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
+async function emulateNativeApp(page: Page) {
+	// Capacitor detects Android from this bridge before its client module initializes.
+	await page.addInitScript(() => {
+		Object.defineProperty(window, 'androidBridge', { value: {}, configurable: true });
+	});
+}
+
+async function focusedScale(page: Page) {
+	const style = await page
+		.locator('[data-image-focus] > [role="presentation"]')
+		.getAttribute('style');
+	return Number(style?.match(/scale\(([^)]+)\)/)?.[1] ?? 0);
+}
+
+async function expectSaveReady(page: Page, rkey: string) {
+	await expect(page).toHaveURL(new RegExp(`/save/${rkey}$`));
+	// replaceState lands one frame before the swipe lock is released. Waiting for both
+	// mirrors a person lifting and setting their finger down again instead of asking CDP
+	// to start the next gesture inside that otherwise unobservable frame.
+	await expect(page.locator('[data-swipe-stage]')).toHaveAttribute('data-swiping', 'false');
+}
+
 async function openFirstSave(page: Page) {
 	await mockApi(page);
 	await page.goto('/explore/general');
@@ -105,13 +157,13 @@ test('swiping moves to the next and previous image of the grid', async ({ page }
 	await openFirstSave(page);
 
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s2$/);
+	await expectSaveReady(page, 's2');
 
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s3$/);
+	await expectSaveReady(page, 's3');
 
 	await drag(page, 140, 0);
-	await expect(page).toHaveURL(/\/save\/s2$/);
+	await expectSaveReady(page, 's2');
 });
 
 test('swiping past the end of the grid stays put', async ({ page }) => {
@@ -130,6 +182,52 @@ test('a vertical drag scrolls instead of changing the image', async ({ page }) =
 	await expect(page).toHaveURL(/\/save\/s1$/);
 });
 
+test('web pinch stays with the browser instead of opening image focus', async ({ page }) => {
+	await openFirstSave(page);
+
+	await pinch(page, page.getByRole('button', { name: 'View image full screen' }), 80, 240);
+	await expect(page.locator('[data-image-focus]')).toHaveCount(0);
+});
+
+test('native pinch opens focus and continuously zooms on the first gesture', async ({ page }) => {
+	await emulateNativeApp(page);
+	await openFirstSave(page);
+
+	await pinch(page, page.getByRole('button', { name: 'View image full screen' }), 80, 240, true);
+	await expect.poll(() => focusedScale(page)).toBeGreaterThan(2.5);
+	await expect(page.getByRole('button', { name: 'Close image viewer' })).toBeVisible();
+
+	await page.getByRole('button', { name: 'Close image viewer' }).tap();
+	await expect(page.locator('[data-image-focus]')).toHaveCount(0);
+	await drag(page, -140, 0);
+	await expectSaveReady(page, 's2');
+});
+
+test('tapping the image opens a dimmed viewer that pinches to zoom in and out', async ({
+	page
+}) => {
+	await openFirstSave(page);
+
+	await page.getByRole('button', { name: 'View image full screen' }).tap();
+	const viewer = page.locator('[data-image-focus]');
+	await expect(viewer).toBeVisible();
+	await expect(viewer.locator('img')).toHaveAttribute('src', /bafy1/);
+	await expect(page.getByRole('dialog')).toHaveClass(/bg-black\/85/);
+
+	await pinch(page, viewer, 80, 240);
+	await expect.poll(() => focusedScale(page)).toBeGreaterThan(2.5);
+
+	await pinch(page, viewer, 240, 40);
+	await expect.poll(() => focusedScale(page)).toBe(1);
+
+	await page.getByRole('button', { name: 'Close image viewer' }).tap();
+	await expect(viewer).toHaveCount(0);
+
+	// Closing focus hands the stage straight back to its existing sequence gesture.
+	await drag(page, -140, 0);
+	await expectSaveReady(page, 's2');
+});
+
 test('the neighbours are rendered either side, loaded and ready to slide in', async ({ page }) => {
 	await openFirstSave(page);
 	const overlay = page.locator('.fixed.inset-0.z-50');
@@ -141,7 +239,7 @@ test('the neighbours are rendered either side, loaded and ready to slide in', as
 	await expect(overlay.locator('img[src*="bafy3"]')).toHaveCount(0);
 
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s2$/);
+	await expectSaveReady(page, 's2');
 
 	// …and from the middle of the run, both sides are there.
 	await expect(overlay.locator('img[src*="bafy1"]')).toHaveCount(1);
@@ -162,13 +260,14 @@ test('the run grows past the page the grid had loaded when the tile was tapped',
 	// s3 ends the page the grid was holding. The grid's own sentinel can't notice — it's
 	// under the overlay — so the detail has to have asked for the next page itself.
 	await drag(page, -140, 0);
+	await expectSaveReady(page, 's2');
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s3$/);
+	await expectSaveReady(page, 's3');
 
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s4$/);
+	await expectSaveReady(page, 's4');
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s5$/);
+	await expectSaveReady(page, 's5');
 });
 
 test('hydrating the open save neither refetches its rail nor repaints the previous image', async ({
@@ -198,7 +297,7 @@ test('hydrating the open save neither refetches its rail nor repaints the previo
 	await expect.poll(() => asked).toEqual(['s1']);
 
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s2$/);
+	await expectSaveReady(page, 's2');
 	await expect.poll(() => asked).toEqual(['s1', 's2']);
 
 	// The swap is what the viewer sees: the centre pane has to be the image the URL says.
@@ -230,9 +329,9 @@ test('back returns to the grid however many images were swiped through', async (
 	await openFirstSave(page);
 
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s2$/);
+	await expectSaveReady(page, 's2');
 	await drag(page, -140, 0);
-	await expect(page).toHaveURL(/\/save\/s3$/);
+	await expectSaveReady(page, 's3');
 
 	await page.goBack();
 	await expect(page).toHaveURL(/\/explore\/general$/);

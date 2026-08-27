@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { goto, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fly } from 'svelte/transition';
@@ -20,6 +21,7 @@
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
+	import ImageFocusDialog from '$lib/components/image-focus-dialog.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
@@ -32,6 +34,7 @@
 	import { extendSaveSequence, neighbourSave, savesAfter } from '$lib/save-sequence.svelte';
 	import { swipe } from '$lib/swipe';
 	import { bunnyImageUrl } from '$lib/image-url';
+	import { isNative } from '$lib/platform';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
@@ -84,6 +87,31 @@
 	});
 	let attributionDialogOpen = $state(false);
 	let reportDialogOpen = $state(false);
+	let imageFocusOpen = $state(false);
+	const native = isNative();
+	type FocusPointer = { id: number; x: number; y: number };
+	let imageFocusDialog: { continuePinch: (pointers: FocusPointer[]) => void } | undefined =
+		$state();
+	const imagePointers = new SvelteMap<number, FocusPointer>();
+
+	function onImagePointerDown(e: PointerEvent) {
+		if (!native || e.pointerType !== 'touch') return;
+		imagePointers.set(e.pointerId, { id: e.pointerId, x: e.clientX, y: e.clientY });
+		if (imagePointers.size !== 2) return;
+		const imageButton = e.currentTarget as HTMLButtonElement;
+		for (const id of imagePointers.keys()) imageButton.setPointerCapture(id);
+		cancelSwipe();
+		imageFocusDialog?.continuePinch([...imagePointers.values()]);
+	}
+
+	function onImagePointerMove(e: PointerEvent) {
+		if (!imagePointers.has(e.pointerId)) return;
+		imagePointers.set(e.pointerId, { id: e.pointerId, x: e.clientX, y: e.clientY });
+	}
+
+	function onImagePointerEnd(e: PointerEvent) {
+		imagePointers.delete(e.pointerId);
+	}
 
 	let viewerAttr = $derived(currentSave.viewer?.attribution);
 	let originalAttr = $derived(image?.attribution);
@@ -186,6 +214,8 @@
 		void currentUri;
 		imagePane?.scrollTo({ top: 0 });
 		imagePaneAtEnd = false;
+		imageFocusOpen = false;
+		imagePointers.clear();
 	});
 
 	function goBack() {
@@ -734,20 +764,35 @@
 <!-- One pane of the mobile swipe track. Takes the save rather than reading the
      current one, because the neighbours either side render through here too — which
      is also why it recomputes its own image state instead of using the deriveds. -->
-{#snippet stagePane(s: SaveView, loading: 'lazy' | 'eager')}
+{#snippet stagePane(s: SaveView, loading: 'lazy' | 'eager', focusable = false)}
 	{@const paneImage = getImageContent(s)}
 	{@const paneLong = isLongImage(paneImage?.width, paneImage?.height)}
 	{#if shouldHide(s.labels)}
 		{@render hiddenState()}
 	{:else if paneImage}
 		<LabeledMedia labels={s.labels} class="flex justify-center">
-			<SaveImage
-				image={paneImage}
-				alt={paneImage.alt ?? s.text ?? ''}
-				{loading}
-				class={paneLong ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
-				style={`${paneImage.width && paneImage.height ? `aspect-ratio: ${paneImage.width} / ${paneImage.height};` : ''}${paneImage.dominantColor ? ` background-color: ${paneImage.dominantColor};` : ''}`}
-			/>
+			<button
+				type="button"
+				class="flex max-w-full justify-center {paneLong ? 'w-full' : ''} {focusable
+					? 'cursor-zoom-in'
+					: 'pointer-events-none'} {focusable && native ? 'touch-pan-y' : ''}"
+				disabled={!focusable}
+				onclick={() => (imageFocusOpen = true)}
+				onpointerdown={focusable ? onImagePointerDown : undefined}
+				onpointermove={focusable ? onImagePointerMove : undefined}
+				onpointerup={focusable ? onImagePointerEnd : undefined}
+				onpointercancel={focusable ? onImagePointerEnd : undefined}
+				aria-label={focusable ? 'View image full screen' : undefined}
+				tabindex={focusable ? 0 : -1}
+			>
+				<SaveImage
+					image={paneImage}
+					alt={paneImage.alt ?? s.text ?? ''}
+					{loading}
+					class={paneLong ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
+					style={`${paneImage.width && paneImage.height ? `aspect-ratio: ${paneImage.width} / ${paneImage.height};` : ''}${paneImage.dominantColor ? ` background-color: ${paneImage.dominantColor};` : ''}`}
+				/>
+			</button>
 		</LabeledMedia>
 	{:else}
 		<div
@@ -847,6 +892,8 @@
 		     the neighbours are absolutely positioned a step out on either side, so they
 		     ride along with the drag without ever affecting that height. -->
 		<div
+			data-swipe-stage
+			data-swiping={swiping}
 			class="relative flex flex-1 items-center justify-center overflow-hidden"
 			bind:clientWidth={stageWidth}
 			use:swipe={{
@@ -862,7 +909,7 @@
 					: ''}"
 				style="transform: translate3d({swipeX}px, 0, 0)"
 			>
-				{@render stagePane(currentSave, 'lazy')}
+				{@render stagePane(currentSave, 'lazy', true)}
 			</div>
 			{#each neighbours as n (n.dir)}
 				<div
@@ -901,6 +948,15 @@
 		</div>
 	</div>
 </div>
+
+{#if image && !hiddenByPrefs}
+	<ImageFocusDialog
+		bind:this={imageFocusDialog}
+		bind:open={imageFocusOpen}
+		{image}
+		alt={image.alt ?? currentSave.text ?? ''}
+	/>
+{/if}
 
 <!-- Mobile floating home button: full wordmark, pinned at top center. -->
 <a
