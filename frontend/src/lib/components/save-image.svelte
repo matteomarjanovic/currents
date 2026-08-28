@@ -105,6 +105,16 @@
 		canvasEl.getContext('2d')?.drawImage(imgEl, 0, 0);
 		frozen = true;
 	}
+
+	// A grid image sits inside a link to its Currents detail view, so the browser's
+	// default URI drag payload points there rather than at the image. Native targets
+	// such as PureRef need the original image URL; keep the browser-provided file and
+	// HTML payloads, but make both standard text representations refer to the source.
+	function handleDragStart(event: DragEvent) {
+		if (!event.dataTransfer) return;
+		event.dataTransfer.setData('text/uri-list', image.imageUrl);
+		event.dataTransfer.setData('text/plain', image.imageUrl);
+	}
 </script>
 
 {#key src}
@@ -126,6 +136,7 @@
 				class={className}
 				{style}
 				onload={drawFirstFrame}
+				ondragstart={handleDragStart}
 			/>
 			<!-- Frozen first frame overlays the animating <img>; hidden on hover to reveal playback. -->
 			<canvas
@@ -138,6 +149,15 @@
 			></canvas>
 		</div>
 	{:else}
-		<img {src} {srcset} sizes={imageSizes} {alt} {loading} class={className} {style} />
+		<img
+			{src}
+			{srcset}
+			sizes={imageSizes}
+			{alt}
+			{loading}
+			class={className}
+			{style}
+			ondragstart={handleDragStart}
+		/>
 	{/if}
 {/key}
