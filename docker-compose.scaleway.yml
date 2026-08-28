@@ -41,6 +41,7 @@ services:
       retries: 10
 
   appview:
+    image: ${APPVIEW_IMAGE:-currents-appview}
     build:
       context: ./appview
     restart: unless-stopped
@@ -103,6 +104,7 @@ services:
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
 
   clustering:
+    image: ${CLUSTERING_IMAGE:-currents-clustering}
     build:
       context: ./clustering
     restart: unless-stopped

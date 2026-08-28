@@ -1,5 +1,10 @@
 # Scaleway Cutover B handoff
 
+> **Superseded on 2026-08-28:** the owner chose to keep the frontend on
+> Netlify until the free tier is exhausted. This remains a historical and
+> future-cutover reference; do not execute its copy-paste prompt unless the
+> owner explicitly resumes Cutover B.
+
 Point-in-time handoff written on 2026-08-17. Revalidate every live fact before
 changing production. `SCALEWAY_MIGRATION.md` remains the architectural and
 rollback authority; this file records the exact checkpoint and the shortest

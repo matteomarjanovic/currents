@@ -1,5 +1,11 @@
 # Migrating Currents to Scaleway
 
+> **Current decision (2026-08-28):** Cutover B is deferred. The web frontend
+> stays on Netlify until its free tier is exhausted; `currents.is` therefore
+> remains the Netlify SSR deployment. Scaleway continues to host the appview,
+> database, TAP, clustering, and inference services. Do not resume the root
+> frontend/OAuth cutover without a new explicit decision.
+
 Moves the public Currents stack off Netlify and the mac mini onto Scaleway,
 while keeping inference isolated on a small CPU instance that can be resized
 independently.
@@ -746,6 +752,9 @@ volume untouched for at least two weeks.
 
 ## 5. Cutover B: SvelteKit SSR and root-domain OAuth
 
+Status: **deferred on 2026-08-28**. Keep the validated configuration and this
+runbook for the eventual Netlify exit, but do not execute this section yet.
+
 Only begin after Cutover A has soaked successfully.
 
 For the exact 2026-08-17 production checkpoint and a copy-paste prompt for a
@@ -903,6 +912,12 @@ cleanup check found zero temporary databases and files afterward.
 
 ## 8. Add CI/CD after the migration is stable
 
+Implementation status (2026-08-28): the workflows and restricted host scripts
+are in the repository. External activation still requires the private registry
+namespace/credentials, the protected GitHub `production` environment, verified
+SSH host keys, and installation of the forced-command deployment user on both
+VMs. The exact checklist is in `deploy/scaleway/CI_CD.md`.
+
 Do this only after both cutovers have soaked, the production backup has passed
 a restore test, and the mac mini rollback window has ended. The migration's
 first production deployments remain manual so CI/CD is not another cutover
@@ -924,9 +939,10 @@ mocked flows are stable and its browser/runtime cost is justified.
 
 ### Image publishing
 
-After CI passes on `main`, build the appview, frontend, inference, and
-clustering images once and push them to a private Scaleway Container Registry
-namespace in `fr-par`.
+After CI passes on `main`, build the appview, inference, and clustering images
+once and push them to a private Scaleway Container Registry namespace in
+`fr-par`. The frontend stays on Netlify and is deployed by Netlify from `main`;
+CI still validates both its SSR and Capacitor artifacts.
 
 - Tag every image with the full Git commit SHA. Never deploy `latest`.
 - Give CI a registry-push credential scoped to this purpose. Give the two VMs
@@ -935,8 +951,9 @@ namespace in `fr-par`.
   the persistent Hugging Face cache and `obj-curr-models` bucket.
 - Pin third-party production images such as Postgres, TAP, and Caddy to explicit
   versions or digests; do not rebuild them in Currents CI.
-- Change the production Compose files from local `build:` entries to image
-  references parameterized by a single `RELEASE_SHA`.
+- Parameterize the application images in the production Compose files with
+  exact registry references. The committed `build:` entries remain only as a
+  manual recovery fallback; the deploy scripts use `--no-build`.
 
 ### Controlled production delivery
 

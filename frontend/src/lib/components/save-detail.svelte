@@ -9,7 +9,6 @@
 	import Logo from '$lib/assets/logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Drawer from '$lib/components/ui/drawer';
-	import * as Avatar from '$lib/components/ui/avatar';
 	import * as Accordion from '$lib/components/ui/accordion';
 	import * as Item from '$lib/components/ui/item';
 	import { Badge } from '$lib/components/ui/badge';
@@ -408,8 +407,6 @@
 		}
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
-
-	let authorName = $derived(currentSave.author.displayName || currentSave.author.handle);
 
 	// A small first page, full pages thereafter. Every swipe resets this list, so the
 	// opening fetch is paid once per image looked at — asking for 50 images that are

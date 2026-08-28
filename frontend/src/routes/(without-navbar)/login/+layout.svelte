@@ -5,7 +5,6 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { ModeWatcher } from 'mode-watcher';
-	import TopBar from '$lib/components/top-bar.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { apiFetch } from '$lib/api';
 

@@ -54,14 +54,11 @@ proposing new work; delete an entry when it ships.
   Related: **`PUT /save/{id}` looks like dead code** — it 302s to `/save`, a
   server-rendered page that no longer exists, and no client calls it. Worth
   deleting in the same pass, after one more grep for external consumers.
-- **Add CI/CD after the Scaleway migration is stable.** GitHub Actions runs on
-  PRs and `main`: appview `go test ./...` twice — plain and with
-  `TEST_DATABASE_URL` against a `pgvector/pgvector` service; frontend check,
-  lint, unit tests, SSR build, and Capacitor build; inference
-  `python -m unittest` without a model download; clustering tests in its Docker
-  image. After a green `main`, build immutable commit-SHA images into a private
-  Scaleway Container Registry. A protected, manually approved production job
-  deploys inference then the main VM over restricted SSH, runs health checks,
-  and retains the previous SHA for image rollback. Keep production app secrets
-  on the VMs, take a DB dump before migrations, and never automate down
-  migrations. Playwright remains optional/later.
+- **Activate the CI/CD bootstrap.** The workflows, exact-SHA Compose image
+  overrides, forced-command host scripts, backup/health gates, and rollback are
+  implemented. Finish the external one-time setup in
+  `deploy/scaleway/CI_CD.md`: private `fr-par` registry with separate push/pull
+  keys, GitHub Actions values, protected `production` environment, verified
+  host keys, and the restricted deployment user on both VMs. Then publish and
+  approve the first release. The frontend stays on Netlify; Playwright remains
+  optional/later.

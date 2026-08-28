@@ -47,6 +47,7 @@
 		onFindSimilar,
 		selectMode = $bindable(false),
 		selected,
+		// eslint-disable-next-line no-useless-assignment -- Svelte writes this binding to the parent.
 		bulk = $bindable(null),
 		ownContext = true,
 		search = null,
@@ -265,6 +266,7 @@
 
 	// Hand the bulk API up once, as getters — the values behind them are $derived,
 	// so the object stays live without an effect re-assigning it.
+	// eslint-disable-next-line no-useless-assignment -- Svelte writes this binding to the parent.
 	bulk = {
 		get saves() {
 			return selectedList;
@@ -605,7 +607,7 @@
 				Remove from {collectionName(removableSaves(item)[0].collectionUri)}
 			</Menu.Item>
 		{:else if sidebar.isMobile}
-			{#each removableSaves(item) as saved}
+			{#each removableSaves(item) as saved (saved.saveUri)}
 				<Menu.Item
 					variant="destructive"
 					onSelect={() => removeFromCollection(item, saved.collectionUri)}
@@ -621,7 +623,7 @@
 					Remove from…
 				</Menu.SubTrigger>
 				<Menu.SubContent class="w-56">
-					{#each removableSaves(item) as saved}
+					{#each removableSaves(item) as saved (saved.saveUri)}
 						<Menu.Item
 							variant="destructive"
 							onSelect={() => removeFromCollection(item, saved.collectionUri)}

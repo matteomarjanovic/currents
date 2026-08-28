@@ -1,0 +1,94 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full commit SHA whose images were published
+        required: true
+        type: string
+      deploy_inference:
+        description: Deploy inference first
+        required: true
+        default: true
+        type: boolean
+      deploy_appview:
+        description: Deploy appview on the main VM
+        required: true
+        default: true
+        type: boolean
+      deploy_clustering:
+        description: Deploy clustering on the main VM
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.release_sha }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://api.currents.is
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      MAIN_DEPLOY_HOST: ${{ vars.MAIN_DEPLOY_HOST }}
+      INFERENCE_DEPLOY_HOST: ${{ vars.INFERENCE_DEPLOY_HOST }}
+      DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+      DEPLOY_APPVIEW: ${{ inputs.deploy_appview }}
+      DEPLOY_CLUSTERING: ${{ inputs.deploy_clustering }}
+    steps:
+      - name: Validate request and environment
+        run: |
+          case "$RELEASE_SHA" in
+            *[!0-9a-f]*|'') echo "release_sha must be a full lowercase commit SHA" >&2; exit 2 ;;
+          esac
+          test "${#RELEASE_SHA}" -eq 40
+          if [ "${{ inputs.deploy_inference }}" != true ] && [ "$DEPLOY_APPVIEW" != true ] && [ "$DEPLOY_CLUSTERING" != true ]; then
+            echo "select at least one service" >&2
+            exit 2
+          fi
+          if [ "${{ inputs.deploy_inference }}" = true ]; then test -n "$INFERENCE_DEPLOY_HOST"; fi
+          if [ "$DEPLOY_APPVIEW" = true ] || [ "$DEPLOY_CLUSTERING" = true ]; then test -n "$MAIN_DEPLOY_HOST"; fi
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+      - name: Configure locked SSH identity
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          install -m 600 /dev/null "$HOME/.ssh/currents-deploy"
+          install -m 600 /dev/null "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$DEPLOY_SSH_KEY" >"$HOME/.ssh/currents-deploy"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" >"$HOME/.ssh/known_hosts"
+      - name: Deploy inference
+        if: inputs.deploy_inference
+        run: >-
+          ssh -i "$HOME/.ssh/currents-deploy"
+          -o BatchMode=yes
+          -o IdentitiesOnly=yes
+          -o StrictHostKeyChecking=yes
+          -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          currents-deploy@"$INFERENCE_DEPLOY_HOST"
+          "deploy $RELEASE_SHA"
+      - name: Deploy main VM services
+        if: inputs.deploy_appview || inputs.deploy_clustering
+        run: |
+          services=""
+          if [ "$DEPLOY_APPVIEW" = true ]; then services="appview"; fi
+          if [ "$DEPLOY_CLUSTERING" = true ]; then
+            if [ -n "$services" ]; then services="$services,clustering"; else services="clustering"; fi
+          fi
+          ssh -i "$HOME/.ssh/currents-deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            currents-deploy@"$MAIN_DEPLOY_HOST" \
+            "deploy $RELEASE_SHA $services"

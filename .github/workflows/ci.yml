@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  appview:
+    name: Appview
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: appview
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: appview/go.mod
+          cache-dependency-path: appview/go.sum
+      - run: go test ./...
+
+  appview-db:
+    name: Appview DB
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18-trixie
+        env:
+          POSTGRES_USER: appview
+          POSTGRES_PASSWORD: appview
+          POSTGRES_DB: appview
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U appview -d appview"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: appview
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: appview/go.mod
+          cache-dependency-path: appview/go.sum
+      - run: go test ./...
+        env:
+          TEST_DATABASE_URL: postgres://appview:appview@localhost:5432/appview_test?sslmode=disable
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CAPAWESOME_TOKEN: ${{ secrets.CAPAWESOME_TOKEN }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - run: npm run test:unit
+      - name: Build Netlify SSR artifact
+        run: npm run build
+        env:
+          DEPLOY_TARGET: netlify
+      - name: Build Capacitor artifact
+        if: env.CAPAWESOME_TOKEN != ''
+        run: npm run build
+        env:
+          CAPACITOR: "1"
+          PUBLIC_INTERACTIVE_WIDGET: overlays-content
+      - name: Report unavailable Capacitor build
+        if: env.CAPAWESOME_TOKEN == ''
+        run: echo "::warning::CAPAWESOME_TOKEN is unavailable; skipping the build that requires the optional private native package."
+
+  inference:
+    name: Inference
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: inference
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: inference/requirements.txt
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt
+      - run: python -m unittest -v
+
+  clustering:
+    name: Clustering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build test image
+        run: docker build --tag currents-clustering-ci ./clustering
+      - name: Run tests in image
+        run: docker run --rm currents-clustering-ci python -m unittest -v

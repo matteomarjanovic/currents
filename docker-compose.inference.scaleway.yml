@@ -1,5 +1,6 @@
 services:
   inference:
+    image: ${INFERENCE_IMAGE:-currents-inference}
     build:
       context: ./inference
     restart: unless-stopped
