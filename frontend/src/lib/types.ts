@@ -25,7 +25,7 @@ export interface CollectionView {
 	createdAt?: string;
 	lastSavedAt?: string;
 	// `favourite` is the AT-URI of the viewer's favourite record (present iff favourited).
-	viewer?: { favourite?: string };
+	viewer?: { favourite?: string; pinned?: boolean };
 }
 
 export interface ActorProfileView {

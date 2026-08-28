@@ -670,6 +670,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/extract-images", srv.APIExtractImages)
 	http.HandleFunc("GET /api/features/seen", srv.APIGetSeenFeatures)
 	http.HandleFunc("POST /api/features/seen/{key}", srv.APIMarkFeatureSeen)
+	http.HandleFunc("PUT /api/collections/pinned", srv.APISetCollectionPinned)
 	http.HandleFunc("GET /api/moderation/prefs", srv.APIGetModerationPrefs)
 	http.HandleFunc("PUT /api/moderation/prefs", srv.APIPutModerationPrefs)
 	http.HandleFunc("GET /api/preferences", srv.APIGetPreferences)

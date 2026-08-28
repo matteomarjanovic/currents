@@ -52,6 +52,25 @@ export function updateCollection(uri: string, patch: Partial<CollectionView>) {
 	collections.items = collections.items.map((c) => (c.uri === uri ? { ...c, ...patch } : c));
 }
 
+export async function setCollectionPinned(uri: string, pinned: boolean): Promise<boolean> {
+	const collection = collections.items.find((c) => c.uri === uri);
+	if (!collection) return false;
+	const previous = !!collection.viewer?.pinned;
+	updateCollection(uri, { viewer: { ...collection.viewer, pinned } });
+	try {
+		const res = await apiFetch('/api/collections/pinned', {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ collectionUri: uri, pinned })
+		});
+		if (!res.ok) throw new Error('pin request failed');
+		return true;
+	} catch {
+		updateCollection(uri, { viewer: { ...collection.viewer, pinned: previous } });
+		return false;
+	}
+}
+
 export function removeCollection(uri: string) {
 	collections.items = collections.items.filter((c) => c.uri !== uri);
 	deletedCollectionUris.add(uri);

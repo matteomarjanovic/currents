@@ -354,6 +354,7 @@ type CollectionRow struct {
 	PreviewBlobs   []string // up to 4; each is "did,cid"
 	FavouriteCount int      // total favourites of this collection across the network
 	FavouriteURI   *string  // AT-URI of the viewer's favourite record; nil if not favourited / unauthenticated
+	Pinned         bool     // whether the viewer pinned this own collection in organize mode
 }
 
 func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limit int, cursor string) ([]CollectionRow, string, error) {
@@ -526,7 +527,11 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			COALESCE(secc.cnt, 0) AS section_count,
 			COALESCE(pa.blobs, ARRAY[]::text[]) AS preview_blobs,
 			(SELECT COUNT(*) FROM favourite_collection WHERE collection_uri = c.uri)::int AS favourite_count,
-			fc.uri AS favourite_uri
+			fc.uri AS favourite_uri,
+			EXISTS (
+				SELECT 1 FROM pinned_collection pc
+				WHERE pc.viewer_did = NULLIF($3, '') AND pc.collection_uri = c.uri
+			) AS pinned
 		FROM cols c
 		LEFT JOIN save_stats ss ON ss.root = c.uri
 		LEFT JOIN section_counts secc ON secc.root = c.uri
@@ -544,7 +549,7 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 	var result []CollectionRow
 	for rows.Next() {
 		var row CollectionRow
-		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.SectionCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI); err != nil {
+		if err := rows.Scan(&row.URI, &row.CID, &row.Name, &row.Description, &row.ParentURI, &row.CreatedAt, &row.LastSavedAt, &row.SaveCount, &row.SectionCount, &row.PreviewBlobs, &row.FavouriteCount, &row.FavouriteURI, &row.Pinned); err != nil {
 			return nil, "", err
 		}
 		result = append(result, row)
@@ -878,8 +883,37 @@ func (m *PgStore) SearchActors(ctx context.Context, q string, limit, offset int)
 }
 
 func (m *PgStore) DeleteCollection(ctx context.Context, uri string) error {
-	_, err := m.pool.Exec(ctx, `DELETE FROM collection WHERE uri = $1`, uri)
-	return err
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM pinned_collection WHERE collection_uri = $1`, uri); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM collection WHERE uri = $1`, uri); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// SetCollectionPinned stores organize-mode pin state in the appview until
+// private AT Protocol data is available. Only indexed collections owned by the
+// viewer can be pinned. Unpinning is idempotent.
+func (m *PgStore) SetCollectionPinned(ctx context.Context, viewerDID, collectionURI string, pinned bool) (bool, error) {
+	if !pinned {
+		_, err := m.pool.Exec(ctx,
+			`DELETE FROM pinned_collection WHERE viewer_did = $1 AND collection_uri = $2`,
+			viewerDID, collectionURI)
+		return true, err
+	}
+	tag, err := m.pool.Exec(ctx, `
+		INSERT INTO pinned_collection (viewer_did, collection_uri, pinned_at)
+		SELECT $1, c.uri, now() FROM collection c
+		WHERE c.uri = $2 AND c.author_did = $1
+		ON CONFLICT (viewer_did, collection_uri) DO UPDATE SET pinned_at = EXCLUDED.pinned_at
+	`, viewerDID, collectionURI)
+	return tag.RowsAffected() > 0, err
 }
 
 // --- Seen features (one-time "new feature" indicators, per user) ---
@@ -1158,6 +1192,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 
 	for _, q := range []string{
 		`DELETE FROM collection WHERE author_did = $1`,
+		`DELETE FROM pinned_collection WHERE viewer_did = $1`,
 		`DELETE FROM favourite_collection WHERE viewer_did = $1`,
 		`DELETE FROM follow WHERE follower_did = $1`,
 		`DELETE FROM seen_feature WHERE viewer_did = $1`,
@@ -1245,8 +1280,8 @@ func (m *PgStore) SetModerationPrefs(ctx context.Context, viewerDID string, p Mo
 func (m *PgStore) GetUserPrefs(ctx context.Context, viewerDID string) (UserPrefs, error) {
 	p := defaultUserPrefs
 	err := m.pool.QueryRow(ctx,
-		`SELECT gif_autoplay FROM user_pref WHERE viewer_did = $1`,
-		viewerDID).Scan(&p.GifAutoplay)
+		`SELECT gif_autoplay, organize_collection_sort FROM user_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.GifAutoplay, &p.OrganizeCollectionSort)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return defaultUserPrefs, nil
 	}
@@ -1257,12 +1292,17 @@ func (m *PgStore) GetUserPrefs(ctx context.Context, viewerDID string) (UserPrefs
 }
 
 func (m *PgStore) SetUserPrefs(ctx context.Context, viewerDID string, p UserPrefs) error {
+	if p.OrganizeCollectionSort == "" {
+		p.OrganizeCollectionSort = defaultUserPrefs.OrganizeCollectionSort
+	}
 	_, err := m.pool.Exec(ctx,
-		`INSERT INTO user_pref (viewer_did, gif_autoplay, updated_at)
-		 VALUES ($1, $2, now())
+		`INSERT INTO user_pref (viewer_did, gif_autoplay, organize_collection_sort, updated_at)
+		 VALUES ($1, $2, $3, now())
 		 ON CONFLICT (viewer_did) DO UPDATE SET
-		     gif_autoplay = EXCLUDED.gif_autoplay, updated_at = now()`,
-		viewerDID, p.GifAutoplay)
+		     gif_autoplay = EXCLUDED.gif_autoplay,
+		     organize_collection_sort = EXCLUDED.organize_collection_sort,
+		     updated_at = now()`,
+		viewerDID, p.GifAutoplay, p.OrganizeCollectionSort)
 	return err
 }
 

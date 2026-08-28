@@ -10,6 +10,8 @@
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { collections, addCollection } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
+	import { preferences, setOrganizeCollectionSort } from '$lib/stores/preferences.svelte';
+	import { orderCollections, type OrganizeCollectionSort } from '$lib/organize-collections';
 	import type { CollectionView } from '$lib/types';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as Collapsible from '$lib/components/ui/collapsible';
@@ -22,6 +24,7 @@
 	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
 	import CollectionActions from '$lib/components/collection-actions.svelte';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
+	import CollectionPinToggle from './collection-pin-toggle.svelte';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
@@ -60,9 +63,6 @@
 		toast.success(`Collection "${collection.name}" created`);
 	}
 
-	// Sort order for collections, sections and favourites. Local UI preference.
-	let sortMode = $state<'name' | 'recent'>('name');
-
 	// Section headings collapse their whole group. Local UI preference.
 	let libraryOpen = $state(true);
 	let favouritesOpen = $state(false);
@@ -78,17 +78,6 @@
 		if (selectedUri && !collections.items.some((c) => c.uri === selectedUri)) goto('/organize');
 	}
 
-	const byName = (a: CollectionView, b: CollectionView) =>
-		a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-	// Most recent activity first (last save, falling back to creation), name as tiebreak.
-	const byRecent = (a: CollectionView, b: CollectionView) => {
-		const ta = a.lastSavedAt ?? a.createdAt ?? '';
-		const tb = b.lastSavedAt ?? b.createdAt ?? '';
-		if (ta === tb) return byName(a, b);
-		return ta < tb ? 1 : -1;
-	};
-	let comparator = $derived(sortMode === 'recent' ? byRecent : byName);
-
 	let roots = $derived(collections.items.filter((c) => !c.parentUri));
 	let sectionsByParent = $derived.by(() => {
 		const m = new Map<string, CollectionView[]>();
@@ -98,7 +87,9 @@
 			arr.push(c);
 			m.set(c.parentUri, arr);
 		}
-		for (const arr of m.values()) arr.sort(comparator);
+		for (const [parent, arr] of m) {
+			m.set(parent, orderCollections(arr, preferences.organizeCollectionSort));
+		}
 		return m;
 	});
 
@@ -114,7 +105,7 @@
 
 	type TreeNode = { root: CollectionView; sections: CollectionView[]; open: boolean };
 	let tree = $derived.by<TreeNode[]>(() => {
-		const sorted = [...roots].sort(comparator);
+		const sorted = orderCollections(roots, preferences.organizeCollectionSort);
 		if (!q) {
 			return sorted.map((root) => ({
 				root,
@@ -137,7 +128,7 @@
 		const list = q
 			? favouriteCollections.items.filter((c) => c.name.toLowerCase().includes(q))
 			: favouriteCollections.items;
-		return [...list].sort(comparator);
+		return orderCollections(list, preferences.organizeCollectionSort);
 	});
 
 	async function handleLogout() {
@@ -199,8 +190,8 @@
 				<DropdownMenu.Content align="end" class="w-44">
 					<DropdownMenu.Label class="py-1.5">Sort by</DropdownMenu.Label>
 					<DropdownMenu.RadioGroup
-						value={sortMode}
-						onValueChange={(v) => (sortMode = v as 'name' | 'recent')}
+						value={preferences.organizeCollectionSort}
+						onValueChange={(v) => setOrganizeCollectionSort(v as OrganizeCollectionSort)}
 					>
 						<DropdownMenu.RadioItem value="name">Alphabetical</DropdownMenu.RadioItem>
 						<DropdownMenu.RadioItem value="recent">Recent activity</DropdownMenu.RadioItem>
@@ -249,19 +240,23 @@
 									}}
 								>
 									<Sidebar.MenuItem>
-										<!-- Right-click actions on the row itself. Desktop only in practice
-										     (touch has no right-click) — on mobile the same menu hangs off the
-										     header breadcrumb of the opened collection. -->
+										<!-- Right-click/long-press actions on the row; the opened collection's
+										     header breadcrumb also exposes them through its "…" button. -->
 										<CollectionActions collection={node.root} variant="context" {onDeleted}>
 											<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
 												{#snippet child({ props })}
 													<a href={hrefFor(node.root.uri)} {...props} onclick={closeMobile}>
-														<Folder />
-														<span>{node.root.name}</span>
+														<Folder
+															class={node.root.viewer?.pinned
+																? 'opacity-0'
+																: 'transition-opacity group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0'}
+														/>
+														<span class="min-w-0 flex-1 truncate">{node.root.name}</span>
 													</a>
 												{/snippet}
 											</Sidebar.MenuButton>
 										</CollectionActions>
+										<CollectionPinToggle collection={node.root} placement="icon" />
 										{#if node.sections.length > 0}
 											<Collapsible.Trigger
 												data-sidebar="menu-action"
@@ -281,10 +276,12 @@
 																	href={hrefFor(section.uri)}
 																	isActive={selectedUri === section.uri}
 																	onclick={closeMobile}
+																	class="pr-8"
 																>
 																	<span>{section.name}</span>
 																</Sidebar.MenuSubButton>
 															</CollectionActions>
+															<CollectionPinToggle collection={section} />
 														</Sidebar.MenuSubItem>
 													{/each}
 												</Sidebar.MenuSub>

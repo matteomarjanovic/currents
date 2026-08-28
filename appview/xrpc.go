@@ -222,6 +222,7 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 
 	type collectionViewerState struct {
 		Favourite string `json:"favourite,omitempty"`
+		Pinned    bool   `json:"pinned,omitempty"`
 	}
 	type collectionView struct {
 		URI            string                 `json:"uri"`
@@ -269,8 +270,11 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
 		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
-		if viewerDID != nil && row.FavouriteURI != nil {
-			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
+		if viewerDID != nil && (row.FavouriteURI != nil || row.Pinned) {
+			cv.Viewer = &collectionViewerState{Pinned: row.Pinned}
+			if row.FavouriteURI != nil {
+				cv.Viewer.Favourite = *row.FavouriteURI
+			}
 		}
 		views = append(views, cv)
 	}

@@ -101,6 +101,10 @@
           "type": "string",
           "format": "at-uri",
           "description": "AT-URI of the viewer's favourite record for this collection, present only when the viewer has favourited it."
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Whether the viewer has pinned this own collection or section in organize mode."
         }
       }
     },

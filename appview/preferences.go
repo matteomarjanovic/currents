@@ -12,13 +12,15 @@ import (
 
 // UserPrefs mirrors the JSON shape consumed by the web client.
 type UserPrefs struct {
-	GifAutoplay bool `json:"gifAutoplay"`
+	GifAutoplay            bool   `json:"gifAutoplay"`
+	OrganizeCollectionSort string `json:"organizeCollectionSort"`
 }
 
 // defaultUserPrefs is returned for users with no stored row. Kept in sync with
-// the DB column defaults in migration 042.
+// the DB column defaults in migrations 042 and 048.
 var defaultUserPrefs = UserPrefs{
-	GifAutoplay: true,
+	GifAutoplay:            true,
+	OrganizeCollectionSort: "name",
 }
 
 func (s *Server) APIGetPreferences(w http.ResponseWriter, r *http.Request) {
@@ -42,10 +44,30 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	var prefs UserPrefs
-	if err := json.NewDecoder(r.Body).Decode(&prefs); err != nil {
+	// Treat PUT as a field-wise update so older mobile clients that only know
+	// gifAutoplay do not reset newer preferences.
+	var patch struct {
+		GifAutoplay            *bool   `json:"gifAutoplay"`
+		OrganizeCollectionSort *string `json:"organizeCollectionSort"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
+	}
+	prefs, err := s.Store.GetUserPrefs(r.Context(), did.String())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("loading preferences: %s", err), http.StatusInternalServerError)
+		return
+	}
+	if patch.GifAutoplay != nil {
+		prefs.GifAutoplay = *patch.GifAutoplay
+	}
+	if patch.OrganizeCollectionSort != nil {
+		if *patch.OrganizeCollectionSort != "name" && *patch.OrganizeCollectionSort != "recent" {
+			http.Error(w, "invalid organizeCollectionSort", http.StatusBadRequest)
+			return
+		}
+		prefs.OrganizeCollectionSort = *patch.OrganizeCollectionSort
 	}
 	if err := s.Store.SetUserPrefs(r.Context(), did.String(), prefs); err != nil {
 		http.Error(w, fmt.Sprintf("saving preferences: %s", err), http.StatusInternalServerError)

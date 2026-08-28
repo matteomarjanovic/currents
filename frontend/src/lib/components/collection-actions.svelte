@@ -6,6 +6,7 @@
 		addCollection,
 		collections,
 		removeCollection,
+		setCollectionPinned,
 		updateCollection
 	} from '$lib/stores/collections.svelte';
 	import type { CollectionView } from '$lib/types';
@@ -21,13 +22,13 @@
 	import FolderInput from '@lucide/svelte/icons/folder-input';
 	import Folder from '@lucide/svelte/icons/folder';
 	import Library from '@lucide/svelte/icons/library';
+	import Pin from '@lucide/svelte/icons/pin';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	interface Props {
 		collection: CollectionView;
 		// `dropdown` renders a "…" trigger button; `context` wraps `children` in a
-		// right-click trigger (desktop sidebar rows — touch has no right-click, which
-		// is why the header carries the dropdown).
+		// right-click/long-press trigger.
 		variant?: 'dropdown' | 'context';
 		children?: Snippet;
 		// Called after the collection's record is deleted, so the caller can navigate
@@ -61,6 +62,14 @@
 	// getActorCollections already rolls the sections' saves into the parent's
 	// count, so the delete warning reads it straight — never sum the sections in.
 	let saveCount = $derived(collection.saveCount ?? 0);
+	let pinned = $derived(!!collection.viewer?.pinned);
+
+	async function togglePinned() {
+		const next = !pinned;
+		if (!(await setCollectionPinned(collection.uri, next))) {
+			toast.error(`Couldn't ${next ? 'pin' : 'unpin'} '${collection.name}'`);
+		}
+	}
 
 	async function move(targetUri: string, targetName: string) {
 		const res = await apiFetch(`/api/collection/${rkey}`, {
@@ -119,6 +128,10 @@
 </script>
 
 {#snippet menuItems(Menu: typeof ContextMenu)}
+	<Menu.Item onSelect={togglePinned}>
+		<Pin class={pinned ? 'fill-current' : ''} />
+		{pinned ? 'Unpin' : 'Pin'}
+	</Menu.Item>
 	<Menu.Item onSelect={() => (editOpen = true)}>
 		<Pencil />
 		Edit

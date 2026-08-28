@@ -96,7 +96,7 @@ func openTestStore(dsn string) (*PgStore, error) {
 func truncateAll(t *testing.T, s *PgStore) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(), `
-		TRUNCATE save, collection, "user", follow, favourite_collection,
+		TRUNCATE save, collection, "user", follow, favourite_collection, pinned_collection,
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref,
 			label, blob_moderation_state, review_item, report, moderation_event,
 			import_session
@@ -386,6 +386,15 @@ func TestGetActorCollectionsPage(t *testing.T) {
 	saveURI := func(rkey string) string { return "at://" + author + "/is.currents.feed.save/" + rkey }
 	seedImageSave(t, s, saveURI("a1"), author, alpha, "blob-a1", 0.9, testBase)
 	seedImageSave(t, s, saveURI("s1"), author, alphaSec1, "blob-s1", 0.8, testBase)
+	if found, err := s.SetCollectionPinned(ctx, author, beta, true); err != nil || !found {
+		t.Fatalf("SetCollectionPinned(root) = (%v, %v), want (true, nil)", found, err)
+	}
+	if found, err := s.SetCollectionPinned(ctx, author, alphaSec1, true); err != nil || !found {
+		t.Fatalf("SetCollectionPinned(section) = (%v, %v), want (true, nil)", found, err)
+	}
+	if found, err := s.SetCollectionPinned(ctx, "did:plc:other", alpha, true); err != nil || found {
+		t.Fatalf("SetCollectionPinned(other's collection) = (%v, %v), want (false, nil)", found, err)
+	}
 
 	// parent="root": only roots, with section counts and rolled-up save counts.
 	roots, _, err := s.GetActorCollectionsPage(ctx, author, "", "root", 50, "")
@@ -404,6 +413,23 @@ func TestGetActorCollectionsPage(t *testing.T) {
 	}
 	if b := byURI[beta]; b.SectionCount != 0 || b.SaveCount != 0 {
 		t.Fatalf("Beta = {sections:%d, saves:%d}, want {0, 0}", b.SectionCount, b.SaveCount)
+	}
+	if byURI[beta].Pinned {
+		t.Fatal("unauthenticated page exposed viewer pin state")
+	}
+
+	// The authenticated owner gets pin state for both roots and sections.
+	owned, _, err := s.GetActorCollectionsPage(ctx, author, author, "", 50, "")
+	if err != nil {
+		t.Fatalf("GetActorCollectionsPage owned: %v", err)
+	}
+	ownedByURI := map[string]CollectionRow{}
+	for _, r := range owned {
+		ownedByURI[r.URI] = r
+	}
+	if !ownedByURI[beta].Pinned || !ownedByURI[alphaSec1].Pinned || ownedByURI[alpha].Pinned {
+		t.Fatalf("pin hydration = beta:%v section:%v alpha:%v, want true true false",
+			ownedByURI[beta].Pinned, ownedByURI[alphaSec1].Pinned, ownedByURI[alpha].Pinned)
 	}
 
 	// No parent filter: roots and sections both appear.
@@ -815,7 +841,7 @@ func TestSaveMimeTypeRoundTrip(t *testing.T) {
 }
 
 // TestUserPrefs pins the general-preferences get/set semantics: a user with no
-// row is on the defaults (gifAutoplay on), and a stored value round-trips.
+// row is on the defaults, and stored values round-trip.
 func TestUserPrefs(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -828,8 +854,11 @@ func TestUserPrefs(t *testing.T) {
 	if !got.GifAutoplay {
 		t.Fatalf("default gifAutoplay = %v, want true", got.GifAutoplay)
 	}
+	if got.OrganizeCollectionSort != "name" {
+		t.Fatalf("default organizeCollectionSort = %q, want name", got.OrganizeCollectionSort)
+	}
 
-	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: false}); err != nil {
+	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: false, OrganizeCollectionSort: "recent"}); err != nil {
 		t.Fatalf("SetUserPrefs: %v", err)
 	}
 	got, err = s.GetUserPrefs(ctx, did)
@@ -839,9 +868,12 @@ func TestUserPrefs(t *testing.T) {
 	if got.GifAutoplay {
 		t.Fatalf("stored gifAutoplay = %v, want false", got.GifAutoplay)
 	}
+	if got.OrganizeCollectionSort != "recent" {
+		t.Fatalf("stored organizeCollectionSort = %q, want recent", got.OrganizeCollectionSort)
+	}
 
 	// Upsert path: flipping back updates the existing row rather than erroring.
-	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: true}); err != nil {
+	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: true, OrganizeCollectionSort: "name"}); err != nil {
 		t.Fatalf("SetUserPrefs(update): %v", err)
 	}
 	got, _ = s.GetUserPrefs(ctx, did)
