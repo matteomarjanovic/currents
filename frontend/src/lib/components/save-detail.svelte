@@ -992,7 +992,7 @@
 				{#if image}
 					<Button
 						variant="outline"
-						class="h-14 flex-col gap-1"
+						class="h-14 flex-col gap-1 pt-1"
 						onclick={() => runImageAction(downloadImage)}
 					>
 						<Download />
@@ -1000,7 +1000,7 @@
 					</Button>
 					<Button
 						variant="outline"
-						class="h-14 flex-col gap-1"
+						class="h-14 flex-col gap-1 pt-1"
 						onclick={() => runImageAction(copyImage)}
 					>
 						<Copy />
@@ -1009,7 +1009,7 @@
 				{/if}
 				<Button
 					variant="outline"
-					class="h-14 flex-col gap-1"
+					class="h-14 flex-col gap-1 pt-1"
 					onclick={() => runImageAction(shareLink)}
 				>
 					<Share2 />
@@ -1017,7 +1017,7 @@
 				</Button>
 				<Button
 					variant="outline"
-					class="h-14 flex-col gap-1"
+					class="h-14 flex-col gap-1 pt-1"
 					onclick={() => runImageAction(copyLink)}
 				>
 					<LinkIcon />
