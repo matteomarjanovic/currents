@@ -1,8 +1,8 @@
 # Scaleway CI/CD
 
 The frontend remains on Netlify. Netlify deploys it from `main`; the workflows
-here validate the web and Capacitor artifacts but publish and deploy only
-appview, inference, and clustering.
+here validate the web artifact but publish and deploy only appview, inference,
+and clustering. Capacitor releases continue to be built locally.
 
 ## Release flow
 
@@ -35,7 +35,6 @@ Set these repository Actions values:
 |---|---|---|
 | Variable | `SCW_REGISTRY` | `rg.fr-par.scw.cloud/<private-namespace>` |
 | Secret | `SCW_REGISTRY_SECRET_KEY` | secret part of the CI push key |
-| Secret | `CAPAWESOME_TOKEN` | existing Capawesome token, so internal CI can build the native artifact |
 
 The publish workflow is deliberately skipped while `SCW_REGISTRY` is absent.
 It uses `nologin` as the registry username, as documented by Scaleway.

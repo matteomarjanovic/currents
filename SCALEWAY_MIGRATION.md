@@ -929,8 +929,8 @@ Add GitHub Actions on pull requests and `main`:
 
 - appview: `go test ./...`, both plain and against a `pgvector/pgvector`
   service using `TEST_DATABASE_URL`;
-- frontend: `npm run check`, `npm run lint`, `npm run test:unit`, and successful
-  builds of both the SSR web artifact and the Capacitor artifact;
+- frontend: `npm run check`, `npm run lint`, `npm run test:unit`, and a
+  successful Netlify SSR web build; Capacitor releases remain local;
 - inference: `python -m unittest -v` without downloading or loading SigLIP2;
 - clustering: its unittest suite in the clustering Docker image.
 
@@ -942,7 +942,7 @@ mocked flows are stable and its browser/runtime cost is justified.
 After CI passes on `main`, build the appview, inference, and clustering images
 once and push them to a private Scaleway Container Registry namespace in
 `fr-par`. The frontend stays on Netlify and is deployed by Netlify from `main`;
-CI still validates both its SSR and Capacitor artifacts.
+CI validates its SSR artifact while Capacitor releases remain local.
 
 - Tag every image with the full Git commit SHA. Never deploy `latest`.
 - Give CI a registry-push credential scoped to this purpose. Give the two VMs
