@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { dev } from '$app/environment';
+	import { afterNavigate } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { initApp } from '$lib/app-init';
-	import { isNative } from '$lib/platform';
+	import { isIos, isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
@@ -16,6 +17,17 @@
 	import '$lib/stores/pwa-install.svelte';
 
 	let { children } = $props();
+
+	afterNavigate(() => {
+		if (!isIos()) return;
+		// SvelteKit switches history entries to manual scroll restoration after mounting.
+		// WKWebView then rejects a back-swipe snapshot when that entry was captured at a
+		// different scroll position, leaving the gesture blank. Let WebKit restore scroll
+		// in the iOS shell too; SvelteKit's later restoration remains a harmless fallback.
+		requestAnimationFrame(() => {
+			history.scrollRestoration = 'auto';
+		});
+	});
 
 	onMount(() => {
 		initApp().catch((err) => console.warn('initApp failed', err));
