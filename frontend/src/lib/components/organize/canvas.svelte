@@ -22,7 +22,8 @@
 	import { emitSaveRemoved, onSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { requireSupporter } from '$lib/stores/supporter.svelte';
-	import { copyLink, copyImage, downloadImage } from '$lib/save-actions';
+	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
+	import { isNative } from '$lib/platform';
 	import { toast } from 'svelte-sonner';
 	import ImageOff from '@lucide/svelte/icons/image-off';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -33,6 +34,7 @@
 	import FolderInput from '@lucide/svelte/icons/folder-input';
 	import Copy from '@lucide/svelte/icons/copy';
 	import LinkIcon from '@lucide/svelte/icons/link';
+	import Share2 from '@lucide/svelte/icons/share-2';
 	import Download from '@lucide/svelte/icons/download';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import SquareCheck from '@lucide/svelte/icons/square-check';
@@ -76,6 +78,7 @@
 	// Item/Sub/Separator API, so one snippet renders into either — passed the matching
 	// namespace so each item wires up to its own parent menu.
 	const dropdownMenu = DropdownMenu as unknown as typeof ContextMenu;
+	const native = isNative();
 
 	// Non-OK responses throw (status attached) so real failures surface as an
 	// error state instead of a fake empty grid — a paid search answering "no
@@ -576,10 +579,17 @@
 		<Copy />
 		Copy image
 	</Menu.Item>
-	<Menu.Item onSelect={() => copyLink(item)}>
-		<LinkIcon />
-		Copy link
-	</Menu.Item>
+	{#if native}
+		<Menu.Item onSelect={() => shareLink(item)}>
+			<Share2 />
+			Share
+		</Menu.Item>
+	{:else}
+		<Menu.Item onSelect={() => copyLink(item)}>
+			<LinkIcon />
+			Copy link
+		</Menu.Item>
+	{/if}
 	<Menu.Item onSelect={() => downloadImage(item)}>
 		<Download />
 		Download

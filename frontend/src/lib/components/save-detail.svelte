@@ -8,6 +8,7 @@
 	import { apiFetch } from '$lib/api';
 	import Logo from '$lib/assets/logo.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as Drawer from '$lib/components/ui/drawer';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import * as Accordion from '$lib/components/ui/accordion';
 	import * as Item from '$lib/components/ui/item';
@@ -34,6 +35,7 @@
 	import { extendSaveSequence, neighbourSave, savesAfter } from '$lib/save-sequence.svelte';
 	import { swipe } from '$lib/swipe';
 	import { bunnyImageUrl } from '$lib/image-url';
+	import { copyImage, copyLink, downloadImage, shareLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
@@ -41,6 +43,11 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Flag from '@lucide/svelte/icons/flag';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Download from '@lucide/svelte/icons/download';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import Share2 from '@lucide/svelte/icons/share-2';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Star from '@lucide/svelte/icons/star';
 	import {
@@ -88,6 +95,7 @@
 	let attributionDialogOpen = $state(false);
 	let reportDialogOpen = $state(false);
 	let imageFocusOpen = $state(false);
+	let actionDrawerOpen = $state(false);
 	const native = isNative();
 	type FocusPointer = { id: number; x: number; y: number };
 	let imageFocusDialog: { continuePinch: (pointers: FocusPointer[]) => void } | undefined =
@@ -215,8 +223,14 @@
 		imagePane?.scrollTo({ top: 0 });
 		imagePaneAtEnd = false;
 		imageFocusOpen = false;
+		actionDrawerOpen = false;
 		imagePointers.clear();
 	});
+
+	function runImageAction(action: (save: SaveView) => Promise<void>) {
+		actionDrawerOpen = false;
+		void action(currentSave);
+	}
 
 	function goBack() {
 		if (onClose) {
@@ -542,18 +556,33 @@
 		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
 
-	{#if sourceLink}
-		<div class="inline-flex items-center gap-1 text-sm text-muted-foreground">
-			<span>Source:</span>
-			<a
-				href={sourceLink.href}
-				target="_blank"
-				rel="noopener noreferrer"
-				class="inline-flex items-center gap-1 hover:text-foreground"
-			>
-				<span class="truncate">{sourceLink.hostname}</span>
-				<ExternalLink class="size-3.5" />
-			</a>
+	{#if sourceLink || native}
+		<div class="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground">
+			{#if sourceLink}
+				<div class="inline-flex min-w-0 items-center gap-1">
+					<span>Source:</span>
+					<a
+						href={sourceLink.href}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="inline-flex min-w-0 items-center gap-1 hover:text-foreground"
+					>
+						<span class="truncate">{sourceLink.hostname}</span>
+						<ExternalLink class="size-3.5 shrink-0" />
+					</a>
+				</div>
+			{/if}
+			{#if native}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="-mr-2 ml-auto shrink-0"
+					onclick={() => (actionDrawerOpen = true)}
+					aria-label="Image actions"
+				>
+					<Ellipsis class="size-4" />
+				</Button>
+			{/if}
 		</div>
 	{/if}
 
@@ -948,6 +977,56 @@
 		</div>
 	</div>
 </div>
+
+{#if native}
+	<Drawer.Root bind:open={actionDrawerOpen}>
+		<Drawer.Content>
+			<Drawer.Header>
+				<Drawer.Title>Image actions</Drawer.Title>
+				<Drawer.Description>Save, copy, or share this image.</Drawer.Description>
+			</Drawer.Header>
+			<div
+				class="grid grid-cols-2 gap-2 px-4"
+				style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+			>
+				{#if image}
+					<Button
+						variant="outline"
+						class="h-14 flex-col gap-1"
+						onclick={() => runImageAction(downloadImage)}
+					>
+						<Download />
+						Download
+					</Button>
+					<Button
+						variant="outline"
+						class="h-14 flex-col gap-1"
+						onclick={() => runImageAction(copyImage)}
+					>
+						<Copy />
+						Copy image
+					</Button>
+				{/if}
+				<Button
+					variant="outline"
+					class="h-14 flex-col gap-1"
+					onclick={() => runImageAction(shareLink)}
+				>
+					<Share2 />
+					Share
+				</Button>
+				<Button
+					variant="outline"
+					class="h-14 flex-col gap-1"
+					onclick={() => runImageAction(copyLink)}
+				>
+					<LinkIcon />
+					Copy link
+				</Button>
+			</div>
+		</Drawer.Content>
+	</Drawer.Root>
+{/if}
 
 {#if image && !hiddenByPrefs}
 	<ImageFocusDialog

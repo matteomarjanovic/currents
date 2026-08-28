@@ -64,6 +64,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Saving to Pictures needs storage permission only on Android 9 and older. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <!-- For the "Take photo" upload option (@capacitor/camera). Gallery uses the system photo picker (no permission). -->
     <uses-permission android:name="android.permission.CAMERA" />
 </manifest>

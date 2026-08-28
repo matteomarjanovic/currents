@@ -1,4 +1,5 @@
 import Capacitor
+import Photos
 import UIKit
 
 @UIApplicationMain
@@ -91,12 +92,176 @@ public class SharedAuthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+// MARK: - Native save actions plugin
+
+// Browser download/clipboard APIs do not hand image files off correctly from a WebView. Keep
+// those operations native so Download writes to Photos and Copy places real image data on the
+// platform clipboard. Link sharing also stays native so it always opens the system share sheet.
+@objc(NativeSaveActionsPlugin)
+public class NativeSaveActionsPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativeSaveActionsPlugin"
+    public let jsName = "NativeSaveActions"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "download", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "copyImage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "copyText", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "shareLink", returnType: CAPPluginReturnPromise)
+    ]
+
+    private struct DownloadedImage {
+        let data: Data
+        let fileExtension: String
+    }
+
+    @objc func download(_ call: CAPPluginCall) {
+        fetchImage(call) { result in
+            switch result {
+            case .failure(let error):
+                call.reject("Could not download image: \(error.localizedDescription)")
+            case .success(let image):
+                let fileURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension(image.fileExtension)
+                do {
+                    try image.data.write(to: fileURL, options: .atomic)
+                } catch {
+                    call.reject("Could not prepare image: \(error.localizedDescription)")
+                    return
+                }
+                PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                    guard status == .authorized || status == .limited else {
+                        try? FileManager.default.removeItem(at: fileURL)
+                        call.reject("Photo library permission was denied")
+                        return
+                    }
+                    PHPhotoLibrary.shared().performChanges({
+                        PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: fileURL)
+                    }) { saved, error in
+                        try? FileManager.default.removeItem(at: fileURL)
+                        if saved {
+                            call.resolve()
+                        } else {
+                            call.reject("Could not save image: \(error?.localizedDescription ?? "Unknown error")")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @objc func copyImage(_ call: CAPPluginCall) {
+        fetchImage(call) { result in
+            switch result {
+            case .failure(let error):
+                call.reject("Could not download image: \(error.localizedDescription)")
+            case .success(let downloaded):
+                guard let image = UIImage(data: downloaded.data) else {
+                    call.reject("Downloaded file is not a supported image")
+                    return
+                }
+                DispatchQueue.main.async {
+                    UIPasteboard.general.image = image
+                    call.resolve()
+                }
+            }
+        }
+    }
+
+    @objc func copyText(_ call: CAPPluginCall) {
+        guard let text = call.getString("text") else {
+            call.reject("text is required")
+            return
+        }
+        DispatchQueue.main.async {
+            UIPasteboard.general.string = text
+            call.resolve()
+        }
+    }
+
+    @objc func shareLink(_ call: CAPPluginCall) {
+        guard let value = call.getString("url"), let url = URL(string: value),
+              url.scheme == "http" || url.scheme == "https" else {
+            call.reject("A valid URL is required")
+            return
+        }
+        DispatchQueue.main.async {
+            guard let presenter = self.bridge?.viewController else {
+                call.reject("Could not open share sheet")
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let popover = sheet.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            sheet.completionWithItemsHandler = { _, _, _, _ in call.resolve() }
+            presenter.present(sheet, animated: true)
+        }
+    }
+
+    private func fetchImage(
+        _ call: CAPPluginCall,
+        completion: @escaping (Result<DownloadedImage, Error>) -> Void
+    ) {
+        guard let value = call.getString("url"), let url = URL(string: value),
+              url.scheme == "http" || url.scheme == "https" else {
+            completion(.failure(NativeSaveActionError.invalidURL))
+            return
+        }
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  let data, !data.isEmpty else {
+                completion(.failure(NativeSaveActionError.downloadFailed))
+                return
+            }
+            let mime = response?.mimeType?.lowercased() ?? ""
+            guard mime.hasPrefix("image/") else {
+                completion(.failure(NativeSaveActionError.notImage))
+                return
+            }
+            completion(.success(DownloadedImage(data: data, fileExtension: Self.extensionForMime(mime))))
+        }.resume()
+    }
+
+    private static func extensionForMime(_ mime: String) -> String {
+        switch mime {
+        case "image/jpeg": return "jpg"
+        case "image/png": return "png"
+        case "image/gif": return "gif"
+        case "image/webp": return "webp"
+        case "image/heic", "image/heif": return "heic"
+        case "image/avif": return "avif"
+        default: return "jpg"
+        }
+    }
+
+    private enum NativeSaveActionError: LocalizedError {
+        case invalidURL
+        case downloadFailed
+        case notImage
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidURL: return "A valid image URL is required"
+            case .downloadFailed: return "The image request failed"
+            case .notImage: return "The response is not an image"
+            }
+        }
+    }
+}
+
 // The storyboard's root view controller (see Base.lproj/Main.storyboard) — the documented spot
 // to register locally defined Capacitor plugins with the bridge.
 @objc(MainViewController)
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(SharedAuthPlugin())
+        bridge?.registerPluginInstance(NativeSaveActionsPlugin())
         // Enable the native edge-swipe-back gesture. It drives the WKWebView's back/forward
         // list, which SvelteKit's client-side navigations populate via the History API.
         webView?.allowsBackForwardNavigationGestures = true

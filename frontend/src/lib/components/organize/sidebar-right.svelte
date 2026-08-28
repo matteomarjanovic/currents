@@ -17,13 +17,15 @@
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
-	import { copyLink, copyImage, downloadImage } from '$lib/save-actions';
+	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
+	import { isNative } from '$lib/platform';
 	import X from '@lucide/svelte/icons/x';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Copy from '@lucide/svelte/icons/copy';
 	import LinkIcon from '@lucide/svelte/icons/link';
+	import Share2 from '@lucide/svelte/icons/share-2';
 	import Download from '@lucide/svelte/icons/download';
 
 	let {
@@ -41,6 +43,7 @@
 	} = $props();
 
 	const sidebar = Sidebar.useSidebar();
+	const native = isNative();
 
 	let tab = $state('details');
 
@@ -193,15 +196,27 @@
 							<Copy class="size-4" />
 						</Button>
 					{/if}
-					<Button
-						variant="outline"
-						size="icon-sm"
-						aria-label="Copy link"
-						title="Copy link"
-						onclick={() => copyLink(save)}
-					>
-						<LinkIcon class="size-4" />
-					</Button>
+					{#if native}
+						<Button
+							variant="outline"
+							size="icon-sm"
+							aria-label="Share link"
+							title="Share"
+							onclick={() => shareLink(save)}
+						>
+							<Share2 class="size-4" />
+						</Button>
+					{:else}
+						<Button
+							variant="outline"
+							size="icon-sm"
+							aria-label="Copy link"
+							title="Copy link"
+							onclick={() => copyLink(save)}
+						>
+							<LinkIcon class="size-4" />
+						</Button>
+					{/if}
 					{#if image}
 						<Button
 							variant="outline"
