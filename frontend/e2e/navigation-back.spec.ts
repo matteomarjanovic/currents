@@ -78,6 +78,23 @@ test('collection has one back control and it returns to the profile', async ({ p
 	await expect(page).toHaveURL(new RegExp(`/profile/${me.handle}$`));
 });
 
+test('collection navigation from a scrolled profile starts at the top', async ({ page }) => {
+	await mockApi(page);
+	await page.goto(`/profile/${me.handle}`);
+	await expect(page.getByText('Architecture', { exact: true })).toBeVisible();
+
+	await page.locator('main').evaluate((el) => (el.style.minHeight = '3000px'));
+	await page.evaluate(() => window.scrollTo(0, 900));
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(900);
+
+	await page
+		.getByText('Architecture', { exact: true })
+		.evaluate((el) => (el.closest('a') as HTMLAnchorElement).click());
+
+	await expect(page).toHaveURL(/\/collection\/architecture$/);
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test('collection back can return to the site that opened Currents', async ({ page }) => {
 	await mockApi(page, false);
 	await page.goto('data:text/html,<title>Previous site</title>Previous site');

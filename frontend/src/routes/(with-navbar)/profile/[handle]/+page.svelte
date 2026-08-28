@@ -97,7 +97,9 @@
 
 	// The server-rendered response is intentionally public. Once the browser discovers a viewer,
 	// rerun this universal load once so follow/favourite viewer state is hydrated with their cookie.
-	let viewerHydrated = false;
+	// During client navigation auth is already known and the load was authenticated; invalidating
+	// there would supersede the navigation before SvelteKit performs its normal scroll reset.
+	let viewerHydrated = untrack(() => !!auth.user);
 	$effect(() => {
 		if (!auth.user || viewerHydrated) return;
 		viewerHydrated = true;

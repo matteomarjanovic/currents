@@ -99,8 +99,9 @@
 	});
 
 	// Refresh the universal load once after browser auth is known so viewer-specific favourite
-	// and save state replaces the public server-rendered response.
-	let viewerHydrated = false;
+	// and save state replaces the public server-rendered response. A client navigation already
+	// loaded with auth; invalidating it here would cancel SvelteKit's pending scroll reset.
+	let viewerHydrated = untrack(() => !!auth.user);
 	$effect(() => {
 		if (!auth.user || viewerHydrated) return;
 		viewerHydrated = true;
