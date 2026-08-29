@@ -128,6 +128,8 @@ jobs:
           printf '%s\n' "$REGISTRY_PULL_SECRET_KEY" | ssh -i "$HOME/.ssh/currents-deploy" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             currents-deploy@"$INFERENCE_DEPLOY_HOST" \
@@ -143,6 +145,8 @@ jobs:
           printf '%s\n' "$REGISTRY_PULL_SECRET_KEY" | ssh -i "$HOME/.ssh/currents-deploy" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             currents-deploy@"$MAIN_DEPLOY_HOST" \

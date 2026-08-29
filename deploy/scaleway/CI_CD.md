@@ -22,6 +22,9 @@ takes a fresh Object Storage database dump first. A dirty migration stops the
 script without attempting an unsafe automatic rollback; down migrations are
 never run.
 
+The workflow sends SSH keepalives while the backup runs, so a quiet but healthy
+backup cannot be mistaken for a dropped deployment connection.
+
 ## One-time registry setup
 
 Create a private Container Registry namespace in `fr-par` and two separate IAM
