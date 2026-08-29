@@ -58,7 +58,5 @@ proposing new work; delete an entry when it ships.
   overrides, forced-command host scripts, backup/health gates, and rollback are
   implemented. Finish the external one-time setup in
   `deploy/scaleway/CI_CD.md`: private `fr-par` registry with separate push/pull
-  keys, GitHub Actions values, protected `production` environment, verified
-  host keys, and the restricted deployment user on both VMs. Then publish and
-  approve the first release. The frontend stays on Netlify; Playwright remains
-  optional/later.
+  keys and GitHub Actions values. Then publish and deploy the first release.
+  The frontend stays on Netlify; Playwright remains optional/later.

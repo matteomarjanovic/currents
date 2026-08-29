@@ -1,6 +1,9 @@
 name: Deploy production
 
 on:
+  workflow_run:
+    workflows: [Publish images]
+    types: [completed]
   workflow_dispatch:
     inputs:
       release_sha:
@@ -31,20 +34,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    name: Determine deployment services
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.services.outputs.release_sha }}
+      deploy_inference: ${{ steps.services.outputs.inference }}
+      deploy_appview: ${{ steps.services.outputs.appview }}
+      deploy_clustering: ${{ steps.services.outputs.clustering }}
+      has_services: ${{ steps.services.outputs.has_services }}
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.release_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 2
+      - id: services
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            case "$RELEASE_SHA" in
+              *[!0-9a-f]*|'') echo "release_sha must be a full lowercase commit SHA" >&2; exit 2 ;;
+            esac
+            test "${#RELEASE_SHA}" -eq 40
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+            if [ "${{ inputs.deploy_inference }}" = true ] || [ "${{ inputs.deploy_appview }}" = true ] || [ "${{ inputs.deploy_clustering }}" = true ]; then
+              has_services=true
+            else
+              has_services=false
+            fi
+            {
+              printf 'release_sha=%s\n' "$RELEASE_SHA"
+              printf 'inference=%s\n' "${{ inputs.deploy_inference }}"
+              printf 'appview=%s\n' "${{ inputs.deploy_appview }}"
+              printf 'clustering=%s\n' "${{ inputs.deploy_clustering }}"
+              printf 'has_services=%s\n' "$has_services"
+            } >> "$GITHUB_OUTPUT"
+          else
+            bash .github/scripts/release-services.sh "$RELEASE_SHA"
+          fi
+
   deploy:
-    name: Deploy ${{ inputs.release_sha }}
+    name: Deploy ${{ needs.changes.outputs.release_sha }}
+    needs: changes
+    if: needs.changes.outputs.has_services == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://api.currents.is
     env:
-      RELEASE_SHA: ${{ inputs.release_sha }}
+      RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
       MAIN_DEPLOY_HOST: ${{ vars.MAIN_DEPLOY_HOST }}
       INFERENCE_DEPLOY_HOST: ${{ vars.INFERENCE_DEPLOY_HOST }}
       DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
-      DEPLOY_APPVIEW: ${{ inputs.deploy_appview }}
-      DEPLOY_CLUSTERING: ${{ inputs.deploy_clustering }}
+      DEPLOY_INFERENCE: ${{ needs.changes.outputs.deploy_inference }}
+      DEPLOY_APPVIEW: ${{ needs.changes.outputs.deploy_appview }}
+      DEPLOY_CLUSTERING: ${{ needs.changes.outputs.deploy_clustering }}
     steps:
       - name: Validate request and environment
         run: |
@@ -52,11 +105,11 @@ jobs:
             *[!0-9a-f]*|'') echo "release_sha must be a full lowercase commit SHA" >&2; exit 2 ;;
           esac
           test "${#RELEASE_SHA}" -eq 40
-          if [ "${{ inputs.deploy_inference }}" != true ] && [ "$DEPLOY_APPVIEW" != true ] && [ "$DEPLOY_CLUSTERING" != true ]; then
+          if [ "$DEPLOY_INFERENCE" != true ] && [ "$DEPLOY_APPVIEW" != true ] && [ "$DEPLOY_CLUSTERING" != true ]; then
             echo "select at least one service" >&2
             exit 2
           fi
-          if [ "${{ inputs.deploy_inference }}" = true ]; then test -n "$INFERENCE_DEPLOY_HOST"; fi
+          if [ "$DEPLOY_INFERENCE" = true ]; then test -n "$INFERENCE_DEPLOY_HOST"; fi
           if [ "$DEPLOY_APPVIEW" = true ] || [ "$DEPLOY_CLUSTERING" = true ]; then test -n "$MAIN_DEPLOY_HOST"; fi
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
@@ -68,7 +121,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" >"$HOME/.ssh/currents-deploy"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" >"$HOME/.ssh/known_hosts"
       - name: Deploy inference
-        if: inputs.deploy_inference
+        if: env.DEPLOY_INFERENCE == 'true'
         run: >-
           ssh -i "$HOME/.ssh/currents-deploy"
           -o BatchMode=yes
@@ -78,7 +131,7 @@ jobs:
           currents-deploy@"$INFERENCE_DEPLOY_HOST"
           "deploy $RELEASE_SHA"
       - name: Deploy main VM services
-        if: inputs.deploy_appview || inputs.deploy_clustering
+        if: env.DEPLOY_APPVIEW == 'true' || env.DEPLOY_CLUSTERING == 'true'
         run: |
           services=""
           if [ "$DEPLOY_APPVIEW" = true ]; then services="appview"; fi

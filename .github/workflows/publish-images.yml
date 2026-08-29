@@ -10,6 +10,11 @@ on:
         description: Full commit SHA from main (defaults to the current main SHA)
         required: false
         type: string
+      force_all:
+        description: Publish every service (first release or recovery)
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -19,8 +24,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish ${{ matrix.image }}
+  changes:
+    name: Determine release services
     if: >-
       vars.SCW_REGISTRY != '' &&
       (github.event_name == 'workflow_dispatch' ||
@@ -28,24 +33,41 @@ jobs:
         github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: currents-appview
-            context: appview
-          - image: currents-inference
-            context: inference
-          - image: currents-clustering
-            context: clustering
+    outputs:
+      release_sha: ${{ steps.services.outputs.release_sha }}
+      has_services: ${{ steps.services.outputs.has_services }}
+      matrix: ${{ steps.services.outputs.matrix }}
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.release_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 2
+      - id: services
+        run: |
+          if [ "${{ inputs.force_all }}" = true ]; then
+            bash .github/scripts/release-services.sh "$RELEASE_SHA" --all
+          else
+            bash .github/scripts/release-services.sh "$RELEASE_SHA"
+          fi
+
+  publish:
+    name: Publish ${{ matrix.image }}
+    needs: changes
+    if: needs.changes.outputs.has_services == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    env:
+      RELEASE_SHA: ${{ needs.changes.outputs.release_sha }}
       SCW_REGISTRY: ${{ vars.SCW_REGISTRY }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ env.RELEASE_SHA }}
-          fetch-depth: 0
+          fetch-depth: 2
       - name: Validate release
         run: |
           case "$RELEASE_SHA" in

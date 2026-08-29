@@ -912,16 +912,11 @@ cleanup check found zero temporary databases and files afterward.
 
 ## 8. Add CI/CD after the migration is stable
 
-Implementation status (2026-08-28): the workflows and restricted host scripts
-are in the repository. External activation still requires the private registry
-namespace/credentials, the protected GitHub `production` environment, verified
-SSH host keys, and installation of the forced-command deployment user on both
-VMs. The exact checklist is in `deploy/scaleway/CI_CD.md`.
-
-Do this only after both cutovers have soaked, the production backup has passed
-a restore test, and the mac mini rollback window has ended. The migration's
-first production deployments remain manual so CI/CD is not another cutover
-variable.
+Implementation status (2026-08-29): CI, automatic selective production
+deployment, the `main`-restricted GitHub `production` environment, verified
+SSH host keys, and the forced-command deployment users are in place. External
+activation still requires the private registry namespace and its separate
+push/pull credentials. The exact checklist is in `deploy/scaleway/CI_CD.md`.
 
 ### Continuous integration
 
@@ -939,8 +934,8 @@ mocked flows are stable and its browser/runtime cost is justified.
 
 ### Image publishing
 
-After CI passes on `main`, build the appview, inference, and clustering images
-once and push them to a private Scaleway Container Registry namespace in
+After CI passes on `main`, build and push changed appview, inference, and
+clustering images to a private Scaleway Container Registry namespace in
 `fr-par`. The frontend stays on Netlify and is deployed by Netlify from `main`;
 CI validates its SSR artifact while Capacitor releases remain local.
 
@@ -955,11 +950,11 @@ CI validates its SSR artifact while Capacitor releases remain local.
   exact registry references. The committed `build:` entries remain only as a
   manual recovery fallback; the deploy scripts use `--no-build`.
 
-### Controlled production delivery
+### Automatic production delivery
 
-Use a protected GitHub `production` environment and require approval before
-the deploy job receives its secrets. The first version deploys over SSH; it
-does not need Kubernetes, a self-hosted runner, or an agent on either VM.
+Use a GitHub `production` environment restricted to `main`, without an
+approval gate. The deploy runs over SSH; it does not need Kubernetes, a
+self-hosted runner, or an agent on either VM.
 
 - Create a non-root deployment user whose SSH key is forced to run one
   root-owned deploy script. Do not give it an interactive shell or general
@@ -981,9 +976,10 @@ does not need Kubernetes, a self-hosted runner, or an agent on either VM.
   affected application services. If a forward database migration makes that
   unsafe, stop automatic rollback and require a manual recovery decision.
 
-Start as continuous **delivery**: merges publish immutable images, while the
-production rollout requires approval. Automatic deployment on every `main`
-push can be reconsidered only after the approved workflow has proved reliable.
+After CI, publish and deploy only services whose source changed. A green
+`main` change under `appview/`, `inference/`, or `clustering/` deploys its
+exact-SHA image automatically. Appview migrations are included: staging is the
+manual validation gate before merge.
 
 ## Ops notes
 

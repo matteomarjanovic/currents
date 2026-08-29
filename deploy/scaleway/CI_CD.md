@@ -8,10 +8,11 @@ and clustering. Capacitor releases continue to be built locally.
 
 1. `.github/workflows/ci.yml` runs on pull requests and `main`.
 2. A green `main` run starts `publish-images.yml`, which builds ARM64 images
-   tagged with the full commit SHA in the private `fr-par` registry.
-3. `deploy-production.yml` is started manually with that SHA. The protected
-   `production` environment withholds its SSH secrets until approval.
-4. Inference is deployed first when selected. The main host then recreates
+   only for changed services, tagged with the full commit SHA in the private
+   `fr-par` registry.
+3. A successful image publish starts `deploy-production.yml`. It deploys those
+   same changed services automatically.
+4. Inference is deployed first when it changed. The main host then recreates
    only appview and/or clustering; DB, TAP, Caddy, and the Netlify frontend are
    never recreated by the release.
 
@@ -95,9 +96,8 @@ can execute the forced command, but the key cannot open an interactive shell.
 
 ## GitHub production environment
 
-Create an environment named `production`, add a required reviewer, prevent
-self-review when another reviewer is available, and restrict it to `main`.
-Add:
+Create an environment named `production`, leave its protection rules empty so
+deployments remain automatic, and restrict it to `main`. Add:
 
 | Kind | Name | Value |
 |---|---|---|
@@ -115,12 +115,17 @@ Protect `main` with the five CI job names: `Appview`, `Appview DB`, `Frontend`,
 
 ## First release
 
-After the settings and both hosts are ready:
+After the settings and both hosts are ready, establish the first image set:
 
-1. Run **Publish images** manually for the current full `main` SHA.
+1. Run **Publish images** manually for the current full `main` SHA with
+   **Publish every service** selected.
 2. Confirm all three exact-SHA tags exist in the registry.
-3. Run **Deploy production** with that SHA and approve the `production` gate.
+3. Run **Deploy production** with that SHA once.
 4. Verify `/var/lib/currents-releases/*.current` and the public checks.
+
+After that baseline release, every green `main` change under `appview/`,
+`inference/`, or `clustering/` deploys automatically. An appview migration is
+therefore released automatically after its staging validation and CI pass.
 
 The production Compose files keep their local `build:` definitions as a manual
 recovery fallback. Automated deploys always set the exact registry image and
