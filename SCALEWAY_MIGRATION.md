@@ -912,12 +912,13 @@ cleanup check found zero temporary databases and files afterward.
 
 ## 8. Add CI/CD after the migration is stable
 
-Implementation status (2026-08-29): CI, automatic selective production
-deployment, the `main`-restricted GitHub `production` environment, verified
-SSH host keys, and the forced-command deployment users are in place. External
-activation requires the private registry namespace and its push credential.
-The deploy workflow uses the separate pull credential when configured. The
-exact checklist is in `deploy/scaleway/CI_CD.md`.
+Implementation status (2026-08-29): CI/CD is live. The `main`-restricted
+GitHub `production` environment, private registry, separate publisher/puller
+credentials, verified SSH host keys, and forced-command deployment users are
+in place. The first complete release
+(`46a1151eab1eacdfd5c65a9e07d0e527423c373d`) passed its appview migration,
+inference health, public API, and Netlify checks. The exact operational
+checklist is in `deploy/scaleway/CI_CD.md`.
 
 ### Continuous integration
 

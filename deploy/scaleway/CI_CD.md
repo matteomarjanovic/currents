@@ -120,6 +120,9 @@ Protect `main` with the five CI job names: `Appview`, `Appview DB`, `Frontend`,
 
 ## First release
 
+The initial baseline release completed on 2026-08-29 at
+`46a1151eab1eacdfd5c65a9e07d0e527423c373d`.
+
 After the settings and both hosts are ready, establish the first image set:
 
 1. Run **Publish images** manually for the current full `main` SHA with
