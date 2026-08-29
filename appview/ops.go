@@ -2,43 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
-	"net/http"
-	"time"
 )
-
-type backgroundMetricsResponse struct {
-	Now         string         `json:"now"`
-	ProcessMode string         `json:"processMode"`
-	Saves       map[string]any `json:"saves"`
-}
-
-func (s *Server) BackgroundStatus(w http.ResponseWriter, r *http.Request) {
-	metrics, err := s.Store.GetBackgroundMetrics(r.Context())
-	if err != nil {
-		http.Error(w, "could not load background metrics", http.StatusInternalServerError)
-		return
-	}
-
-	response := backgroundMetricsResponse{
-		Now:         time.Now().UTC().Format(time.RFC3339),
-		ProcessMode: s.ProcessMode,
-		Saves: map[string]any{
-			"missingVisualIdentityCount":       metrics.Saves.MissingVisualIdentityCount,
-			"distinctMissingBlobCidCount":      metrics.Saves.DistinctMissingBlobCIDCount,
-			"collectionsMissingEmbeddingCount": metrics.Saves.CollectionsMissingEmbeddingCount,
-		},
-	}
-	if metrics.Saves.OldestMissingCreatedAt != nil {
-		response.Saves["oldestMissingCreatedAt"] = metrics.Saves.OldestMissingCreatedAt.UTC().Format(time.RFC3339)
-		age := int64(time.Since(*metrics.Saves.OldestMissingCreatedAt).Seconds())
-		response.Saves["oldestMissingAgeSec"] = age
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
 
 func runRepairPass(ctx context.Context, handler *TapHandler) (RepairStats, error) {
 	blobCIDs, err := handler.Store.ListMissingVisualIdentityBlobCIDs(ctx)

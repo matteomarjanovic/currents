@@ -43,7 +43,10 @@ type Server struct {
 	// TapAdminPassword authenticates TAP admin calls and the event channel
 	// (Basic auth, username "admin"); empty means TAP runs without auth.
 	TapAdminPassword string
-	WipeWorker       *PdsWipeWorker
+	// OpsReportingSecret verifies HMAC-signed host capacity reports. An empty
+	// value leaves the ingestion endpoint disabled.
+	OpsReportingSecret string
+	WipeWorker         *PdsWipeWorker
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

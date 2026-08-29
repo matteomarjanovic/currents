@@ -1,0 +1,11 @@
+[Unit]
+Description=Report Currents host capacity to the admin dashboard
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/currents/ops.env
+ExecStart=/usr/local/sbin/currents-report-host-metrics
+Nice=10

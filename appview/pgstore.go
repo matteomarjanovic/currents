@@ -1203,6 +1203,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 		`DELETE FROM color_trial WHERE viewer_did = $1`,   // a fresh DID gets a fresh allowance anyway
 		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
 		`DELETE FROM polar_subscription WHERE did = $1`,   // only non-active rows reach here
+		`DELETE FROM admin WHERE did = $1`,
 		`DELETE FROM moderator WHERE did = $1`,
 	} {
 		if _, err := tx.Exec(ctx, q, did); err != nil {

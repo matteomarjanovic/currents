@@ -30,6 +30,7 @@ All options can be set via flags or environment variables.
 | `HIDDEN_DIDS` | `--hidden-dids` | No | Comma-separated author DIDs to filter from feed/search/related. Emergency lever — moderation-driven takedowns go through the labeler |
 | `LABELER_DID` | `--labeler-did` | No | DID of the moderation labeler, e.g. `did:web:moderation.currents.is`. Required when `LABELER_SIGNING_KEY` is set |
 | `LABELER_SIGNING_KEY` | `--labeler-signing-key` | No | Multibase-encoded secp256k1 private key for signing labels. Unset → labeler disabled (no label issuance; XRPC label endpoints return empty) |
+| `OPS_REPORTING_SECRET` | `--ops-reporting-secret` | No | HMAC secret for trusted host-capacity reports. Unset disables the ingestion endpoint. |
 
 The HTTP server also now uses explicit timeouts (`ReadHeaderTimeout=10s`, `ReadTimeout=30s`, `WriteTimeout=60s`, `IdleTimeout=60s`) instead of the Go defaults.
 
@@ -117,14 +118,14 @@ If the inference server is unreachable, the save is still stored and enrichment 
 
 ## Background Operations
 
-`GET /debug/background` returns live backlog metrics from PostgreSQL, including:
+The admin dashboard's `GET /api/admin/overview` returns live backlog metrics from PostgreSQL, including:
 
 - saves missing `visual_identity_id`
 - distinct blob CIDs still missing enrichment
 - collections whose `canonical_embedding` is still missing even though resolved save embeddings exist
 - oldest unresolved save age
 
-There is also a tiny built-in monitoring page at `/ops` that polls `/debug/background` and renders the same metrics in the appview web UI.
+It also combines the latest host snapshots, scheduled backup/UMAP/clustering runs, PostgreSQL capacity, and a short inference health check. It is gated by the separate `admin` table.
 
 Run a one-shot repair/backfill pass with:
 
@@ -206,19 +207,26 @@ See **`MODERATION.md`** for the full pipeline.
 | `GET` | `/xrpc/com.atproto.label.subscribeLabels` | — | WebSocket: streams the label backlog from `cursor` then live updates. Atproto frame format (CBOR header + body) |
 | `POST` | `/xrpc/com.atproto.moderation.createReport` | Required | Accepts `com.atproto.repo.strongRef` subjects only (record-level reports). Creates a `report` row and a `review_item` |
 
-### Moderation admin (gated by `moderator` table)
+### Moderation (gated by `moderator` table)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/api/me/role` | Optional | Returns `{role: "admin"|"reviewer"|null}` for the session DID |
-| `GET` | `/api/admin/queue` | Moderator | Pending review items (`?category=`, `?priority=high`, `?limit=`, `?offset=`) |
-| `GET` | `/api/admin/queue/{id}` | Moderator | Detail: scores, blob state, sibling saves, active labels, audit events |
-| `POST` | `/api/admin/queue/{id}/confirm` | Moderator | Body `{val}`: issue canonical label on every URI sharing the blob; negate suspected |
-| `POST` | `/api/admin/queue/{id}/takedown` | Moderator | Body `{notes?}`: set `harm_state='blocked'`; issue `!hide` on every URI sharing the blob |
-| `POST` | `/api/admin/queue/{id}/dismiss` | Moderator | Negate suspected labels; mark item dismissed |
-| `POST` | `/api/admin/labels/negate` | Moderator | Body `{uri, val, blobCid?, notes?}`: issue a negation row on every URI sharing the blob; resolve pending `label_applied` items |
-| `POST` | `/api/admin/labels/apply` | Moderator | Body `{blobCid, val}`: issue a canonical label on every URI sharing the blob; clear suspected; notify owners |
-| `GET` | `/api/admin/history` | Moderator | Blobs with moderation activity, newest first (`?q=` blob CID prefix or save URI substring, `?limit=`, `?offset=`) |
-| `GET` | `/api/admin/blob/{cid}` | Moderator | Blob detail: preview, blob state, sibling saves, active labels, audit events |
+| `GET` | `/api/me/role` | Optional | Returns `{admin: boolean, moderatorRole: "admin"|"reviewer"|null}` for the session DID |
+| `GET` | `/api/moderation/queue` | Moderator | Pending review items (`?category=`, `?priority=high`, `?limit=`, `?offset=`) |
+| `GET` | `/api/moderation/queue/{id}` | Moderator | Detail: scores, blob state, sibling saves, active labels, audit events |
+| `POST` | `/api/moderation/queue/{id}/confirm` | Moderator | Body `{val}`: issue canonical label on every URI sharing the blob; negate suspected |
+| `POST` | `/api/moderation/queue/{id}/takedown` | Moderator | Body `{notes?}`: set `harm_state='blocked'`; issue `!hide` on every URI sharing the blob |
+| `POST` | `/api/moderation/queue/{id}/dismiss` | Moderator | Negate suspected labels; mark item dismissed |
+| `POST` | `/api/moderation/labels/negate` | Moderator | Body `{uri, val, blobCid?, notes?}`: issue a negation row on every URI sharing the blob; resolve pending `label_applied` items |
+| `POST` | `/api/moderation/labels/apply` | Moderator | Body `{blobCid, val}`: issue a canonical label on every URI sharing the blob; clear suspected; notify owners |
+| `GET` | `/api/moderation/history` | Moderator | Blobs with moderation activity, newest first (`?q=` blob CID prefix or save URI substring, `?limit=`, `?offset=`) |
+| `GET` | `/api/moderation/blob/{cid}` | Moderator | Blob detail: preview, blob state, sibling saves, active labels, audit events |
+
+### Platform admin (gated by `admin` table)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/admin/overview` | Admin | Current service, pipeline, capacity, and scheduled-job state |
+| `GET` | `/api/admin/stats` | Admin | Registration analytics |
 
 See **`MODERATION.md`** for the architecture, label vocabulary, and code locations; **`MODERATION_DEPLOYMENT.md`** for keypair generation, DNS setup, and publishing the `app.bsky.labeler.service` record.

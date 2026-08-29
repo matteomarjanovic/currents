@@ -41,7 +41,7 @@
 		params.set('limit', String(limit));
 		params.set('offset', String(off));
 		try {
-			const res = await apiFetch(`/api/admin/history?${params}`);
+			const res = await apiFetch(`/api/moderation/history?${params}`);
 			if (!res.ok) {
 				error = `Failed to load history (${res.status})`;
 				blobs = [];
@@ -114,7 +114,7 @@
 </script>
 
 <svelte:head>
-	<title>History · Admin · Currents</title>
+	<title>History · Moderation · Currents</title>
 </svelte:head>
 
 <div class="flex flex-col gap-4">
@@ -151,7 +151,7 @@
 			{#each blobs as blob (blob.blobCid)}
 				<li>
 					<a
-						href={`/admin/history/${blob.blobCid}`}
+						href={`/moderation/history/${blob.blobCid}`}
 						class="group flex items-stretch gap-3 overflow-hidden rounded-lg border border-border bg-card transition-colors hover:bg-muted/40"
 					>
 						<div class="relative h-28 w-28 flex-shrink-0 overflow-hidden bg-muted">

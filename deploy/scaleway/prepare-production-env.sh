@@ -63,6 +63,7 @@ copy_key LABELER_SIGNING_KEY "$production_source" 0
 copy_key POLAR_WEBHOOK_SECRET "$production_source" 0
 copy_key POLAR_ACCESS_TOKEN "$production_source" 0
 copy_key POLAR_SERVER "$production_source" 1
+copy_key OPS_REPORTING_SECRET "$production_source" 1
 copy_key S3_ACCESS_KEY "$storage_source" 1
 copy_key S3_SECRET_KEY "$storage_source" 1
 copy_key MODELS_S3_BUCKET "$storage_source" 1

@@ -39,11 +39,48 @@ type InferenceClient struct {
 	client  *http.Client
 }
 
+type InferenceQueueHealth struct {
+	Pending int `json:"pending"`
+	Max     int `json:"max"`
+}
+
+type InferenceHealth struct {
+	Status string `json:"status"`
+	Device string `json:"device"`
+	DType  string `json:"dtype"`
+	Model  string `json:"model"`
+	UMAP   bool   `json:"umap"`
+	Queues struct {
+		Text  InferenceQueueHealth `json:"text"`
+		Image InferenceQueueHealth `json:"image"`
+	} `json:"queues"`
+}
+
 func NewInferenceClient(baseURL string) *InferenceClient {
 	return &InferenceClient{
 		baseURL: baseURL,
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+func (c *InferenceClient) Health(ctx context.Context) (InferenceHealth, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/health", nil)
+	if err != nil {
+		return InferenceHealth{}, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return InferenceHealth{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return InferenceHealth{}, fmt.Errorf("inference server returned %d", resp.StatusCode)
+	}
+	var health InferenceHealth
+	if err := json.NewDecoder(resp.Body).Decode(&health); err != nil {
+		return InferenceHealth{}, fmt.Errorf("decoding inference health: %w", err)
+	}
+	return health, nil
 }
 
 // ImageEmbedding holds the result of an /embed/image call.

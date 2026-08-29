@@ -68,7 +68,7 @@ Endpoints: `POST /embed/image`, `POST /embed/text`, `POST /analyze/image`, `GET 
 
 ## Moderation
 
-Currents ships with a first-class atproto labeler. New saves are auto-classified for NSFW / violence / AI-generated content inside the same SigLIP2 pass that produces the embedding, suspect content lands in an admin review queue at `/admin/queue`, and reviewer decisions produce signed labels exposed via `com.atproto.label.subscribeLabels` / `queryLabels` so Bluesky clients honor them too.
+Currents ships with a first-class atproto labeler. New saves are auto-classified for NSFW / violence / AI-generated content inside the same SigLIP2 pass that produces the embedding, suspect content lands in the moderation review queue at `/moderation/queue`, and reviewer decisions produce signed labels exposed via `com.atproto.label.subscribeLabels` / `queryLabels` so Bluesky clients honor them too.
 
 - Architecture deep-dive: **[`MODERATION.md`](MODERATION.md)**
 - Deployment walkthrough (keypair, DNS, publishing the service record): **[`MODERATION_DEPLOYMENT.md`](MODERATION_DEPLOYMENT.md)**

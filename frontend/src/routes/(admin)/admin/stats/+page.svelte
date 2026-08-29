@@ -93,7 +93,9 @@
 	{#if loading}
 		<div class="py-10 text-center text-sm text-muted-foreground">Loading…</div>
 	{:else if error}
-		<div class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+		>
 			{error}
 		</div>
 	{:else}
@@ -128,7 +130,8 @@
 					</Select.Trigger>
 					<Select.Content class="rounded-xl">
 						{#each granularities as g (g.value)}
-							<Select.Item value={g.value} label={g.label} class="rounded-lg">{g.label}</Select.Item>
+							<Select.Item value={g.value} label={g.label} class="rounded-lg">{g.label}</Select.Item
+							>
 						{/each}
 					</Select.Content>
 				</Select.Root>
@@ -187,7 +190,8 @@
 					</Select.Trigger>
 					<Select.Content class="rounded-xl">
 						{#each granularities as g (g.value)}
-							<Select.Item value={g.value} label={g.label} class="rounded-lg">{g.label}</Select.Item>
+							<Select.Item value={g.value} label={g.label} class="rounded-lg">{g.label}</Select.Item
+							>
 						{/each}
 					</Select.Content>
 				</Select.Root>

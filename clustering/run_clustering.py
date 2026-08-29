@@ -7,6 +7,7 @@ and atomically swaps in the new cluster assignments.
 import os
 import logging
 from datetime import date
+from datetime import datetime, timezone
 
 import hdbscan
 import joblib
@@ -14,6 +15,8 @@ import numpy as np
 import psycopg2
 from psycopg2.extras import execute_batch
 from pgvector.psycopg2 import register_vector
+
+from operations import record_job_run
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -31,54 +34,67 @@ def get_conn():
 
 
 def run_clustering():
-    if not os.path.exists(UMAP_PATH):
-        log.warning("No UMAP model at %s — skipping clustering (run train_umap.py first)", UMAP_PATH)
-        return
-
-    reducer = joblib.load(UMAP_PATH)
-    log.info("Loaded UMAP model from %s", UMAP_PATH)
-
-    _backfill_umap(reducer)
-
-    log.info("Loading all UMAP embeddings for clustering")
-    conn = get_conn()
+    started_at = datetime.now(timezone.utc)
     try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, umap_embedding
-                FROM visual_identity
-                WHERE umap_embedding IS NOT NULL
-            """)
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+        if not os.path.exists(UMAP_PATH):
+            log.warning("No UMAP model at %s — skipping clustering (run train_umap.py first)", UMAP_PATH)
+            record_job_run("clustering", "success", started_at, {"skipped": "no_model"})
+            return
 
-    if len(rows) < MIN_POINTS:
-        log.info("Only %d points available — skipping clustering (need %d)", len(rows), MIN_POINTS)
-        return
+        reducer = joblib.load(UMAP_PATH)
+        log.info("Loaded UMAP model from %s", UMAP_PATH)
 
-    vi_ids = [r[0] for r in rows]
-    X = np.array([r[1] for r in rows], dtype=np.float32)
-    log.info("Clustering %d points in 50-dim UMAP space", len(vi_ids))
+        _backfill_umap(reducer)
 
-    clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=10,
-        min_samples=5,
-        metric="euclidean",
-        core_dist_n_jobs=-1,
-        approx_min_span_tree=True,
-    )
-    labels = clusterer.fit_predict(X)
+        log.info("Loading all UMAP embeddings for clustering")
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, umap_embedding
+                    FROM visual_identity
+                    WHERE umap_embedding IS NOT NULL
+                """)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
 
-    unique_labels = set(labels) - {-1}
-    noise_count   = int(np.sum(labels == -1))
-    log.info("Found %d clusters, %d noise points", len(unique_labels), noise_count)
+        if len(rows) < MIN_POINTS:
+            log.info("Only %d points available — skipping clustering (need %d)", len(rows), MIN_POINTS)
+            record_job_run("clustering", "success", started_at, {"points": len(rows), "skipped": "too_few_points"})
+            return
 
-    if not unique_labels:
-        log.warning("No clusters found — skipping DB write")
-        return
+        vi_ids = [r[0] for r in rows]
+        X = np.array([r[1] for r in rows], dtype=np.float32)
+        log.info("Clustering %d points in 50-dim UMAP space", len(vi_ids))
 
-    _write_clusters(vi_ids, X, labels, unique_labels)
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=10,
+            min_samples=5,
+            metric="euclidean",
+            core_dist_n_jobs=-1,
+            approx_min_span_tree=True,
+        )
+        labels = clusterer.fit_predict(X)
+
+        unique_labels = set(labels) - {-1}
+        noise_count   = int(np.sum(labels == -1))
+        log.info("Found %d clusters, %d noise points", len(unique_labels), noise_count)
+
+        if not unique_labels:
+            log.warning("No clusters found — skipping DB write")
+            record_job_run("clustering", "success", started_at, {"points": len(rows), "clusters": 0, "noise": noise_count})
+            return
+
+        _write_clusters(vi_ids, X, labels, unique_labels)
+    except Exception as e:
+        record_job_run("clustering", "failed", started_at, {"error": str(e)[:1000]})
+        raise
+    record_job_run("clustering", "success", started_at, {
+        "points": len(rows),
+        "clusters": len(unique_labels),
+        "noise": noise_count,
+    })
 
 
 def _backfill_umap(reducer):

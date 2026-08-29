@@ -12,7 +12,7 @@ type registrationBucketView struct {
 	Count int    `json:"count"`
 }
 
-// APIAdminStats returns registration analytics for the /stats dashboard: the
+// APIAdminStats returns registration analytics for the /admin/stats dashboard: the
 // total number of indexed users plus per-UTC-day new-registration buckets. The
 // client re-buckets the daily series to week/month granularities and derives
 // the cumulative trend, so one query serves every view.

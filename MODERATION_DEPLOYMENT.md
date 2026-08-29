@@ -143,7 +143,13 @@ Both should include a `verificationMethod[]` entry with id ending `#atproto_labe
 INSERT INTO moderator (did, role) VALUES ('did:plc:your-did-here', 'admin');
 ```
 
-That DID can now visit `/admin/queue`. To revoke:
+That DID can now visit `/moderation/queue`. Platform-dashboard access is a separate grant:
+
+```sql
+INSERT INTO admin (did) VALUES ('did:plc:your-did-here');
+```
+
+To revoke moderation access:
 
 ```sql
 UPDATE moderator SET disabled_at = now() WHERE did = 'did:plc:...';

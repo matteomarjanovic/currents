@@ -315,6 +315,11 @@ func main() {
 				Value:   "production",
 				EnvVars: []string{"POLAR_SERVER"},
 			},
+			&cli.StringFlag{
+				Name:    "ops-reporting-secret",
+				Usage:   "HMAC secret accepted from trusted host capacity reporters; empty disables reporting",
+				EnvVars: []string{"OPS_REPORTING_SECRET"},
+			},
 		},
 	}
 	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -568,6 +573,7 @@ func runServer(cctx *cli.Context) error {
 		PolarWebhookSecret:    cctx.String("polar-webhook-secret"),
 		TapAdminURL:           cctx.String("tap-admin-url"),
 		TapAdminPassword:      cctx.String("tap-admin-password"),
+		OpsReportingSecret:    cctx.String("ops-reporting-secret"),
 		WipeWorker:            wipeWorker,
 	}
 	if token := cctx.String("polar-access-token"); token != "" {
@@ -587,18 +593,19 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/me/role", srv.APIMeRole)
 	http.HandleFunc("GET /api/profile/import-bluesky", srv.APIImportBlueskyProfile)
 	http.HandleFunc("PUT /api/profile", srv.UpdateProfile)
-	http.HandleFunc("GET /debug/background", srv.BackgroundStatus)
+	http.HandleFunc("POST /internal/ops/snapshot", srv.APIOperationsHostSnapshot)
 
-	http.HandleFunc("GET /api/admin/queue", srv.requireModerator(srv.APIAdminQueue))
-	http.HandleFunc("GET /api/admin/queue/{id}", srv.requireModerator(srv.APIAdminQueueDetail))
-	http.HandleFunc("POST /api/admin/queue/{id}/apply-label", srv.requireModerator(srv.APIAdminQueueApplyLabel))
-	http.HandleFunc("POST /api/admin/queue/{id}/takedown", srv.requireModerator(srv.APIAdminQueueTakedown))
-	http.HandleFunc("POST /api/admin/queue/{id}/dismiss", srv.requireModerator(srv.APIAdminQueueDismiss))
-	http.HandleFunc("POST /api/admin/labels/negate", srv.requireModerator(srv.APIAdminNegateLabel))
-	http.HandleFunc("POST /api/admin/labels/apply", srv.requireModerator(srv.APIAdminApplyLabel))
-	http.HandleFunc("GET /api/admin/history", srv.requireModerator(srv.APIAdminHistory))
-	http.HandleFunc("GET /api/admin/blob/{cid}", srv.requireModerator(srv.APIAdminBlobDetail))
-	http.HandleFunc("GET /api/admin/stats", srv.requireModerator(srv.APIAdminStats))
+	http.HandleFunc("GET /api/moderation/queue", srv.requireModerator(srv.APIAdminQueue))
+	http.HandleFunc("GET /api/moderation/queue/{id}", srv.requireModerator(srv.APIAdminQueueDetail))
+	http.HandleFunc("POST /api/moderation/queue/{id}/apply-label", srv.requireModerator(srv.APIAdminQueueApplyLabel))
+	http.HandleFunc("POST /api/moderation/queue/{id}/takedown", srv.requireModerator(srv.APIAdminQueueTakedown))
+	http.HandleFunc("POST /api/moderation/queue/{id}/dismiss", srv.requireModerator(srv.APIAdminQueueDismiss))
+	http.HandleFunc("POST /api/moderation/labels/negate", srv.requireModerator(srv.APIAdminNegateLabel))
+	http.HandleFunc("POST /api/moderation/labels/apply", srv.requireModerator(srv.APIAdminApplyLabel))
+	http.HandleFunc("GET /api/moderation/history", srv.requireModerator(srv.APIAdminHistory))
+	http.HandleFunc("GET /api/moderation/blob/{cid}", srv.requireModerator(srv.APIAdminBlobDetail))
+	http.HandleFunc("GET /api/admin/overview", srv.requireAdmin(srv.APIAdminOverview))
+	http.HandleFunc("GET /api/admin/stats", srv.requireAdmin(srv.APIAdminStats))
 
 	http.HandleFunc("GET /api/me/attestations", srv.APIMeListAttestations)
 	http.HandleFunc("POST /api/me/attestations/{id}/confirm", srv.APIMeAttestationConfirm)

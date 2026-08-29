@@ -13,6 +13,7 @@ inference shares the models directory and needs no bucket round-trip).
 import os
 import logging
 import urllib.request
+from datetime import datetime, timezone
 
 import joblib
 import numpy as np
@@ -20,6 +21,8 @@ import psycopg2
 from psycopg2.extras import execute_batch
 from pgvector.psycopg2 import register_vector
 from umap import UMAP
+
+from operations import record_job_run
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -41,50 +44,61 @@ def get_conn():
 
 
 def train_umap():
-    log.info("Sampling embeddings for UMAP training (limit=%d)", TRAIN_LIMIT)
-    conn = get_conn()
+    started_at = datetime.now(timezone.utc)
     try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT embedding
-                FROM visual_identity
-                WHERE embedding IS NOT NULL
-                ORDER BY random()
-                LIMIT %s
-            """, (TRAIN_LIMIT,))
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+        log.info("Sampling embeddings for UMAP training (limit=%d)", TRAIN_LIMIT)
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT embedding
+                    FROM visual_identity
+                    WHERE embedding IS NOT NULL
+                    ORDER BY random()
+                    LIMIT %s
+                """, (TRAIN_LIMIT,))
+                rows = cur.fetchall()
+        finally:
+            conn.close()
 
-    if not rows:
-        log.warning("No embeddings found — skipping UMAP training")
-        return
+        if not rows:
+            log.warning("No embeddings found — skipping UMAP training")
+            record_job_run("umap_train", "success", started_at, {"sampled": 0, "skipped": True})
+            return
 
-    X = np.array([r[0] for r in rows], dtype=np.float32)
-    log.info("Training UMAP on %d embeddings (input_dim=%d)", len(X), X.shape[1])
+        X = np.array([r[0] for r in rows], dtype=np.float32)
+        log.info("Training UMAP on %d embeddings (input_dim=%d)", len(X), X.shape[1])
 
-    reducer = UMAP(
-        n_components=50,
-        n_neighbors=15,
-        min_dist=0.1,
-        metric="cosine",
-        random_state=42,
-        low_memory=True,
-    )
-    reducer.fit(X)
-    log.info("UMAP training complete")
+        reducer = UMAP(
+            n_components=50,
+            n_neighbors=15,
+            min_dist=0.1,
+            metric="cosine",
+            random_state=42,
+            low_memory=True,
+        )
+        reducer.fit(X)
+        log.info("UMAP training complete")
 
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    tmp_path = UMAP_PATH + ".tmp"
-    # compress: the pynndescent index pickles to ~1 GB uncompressed; zlib-3
-    # shrinks it several-fold and joblib.load handles it transparently.
-    joblib.dump(reducer, tmp_path, compress=3)
-    os.replace(tmp_path, UMAP_PATH)
-    log.info("UMAP model saved to %s", UMAP_PATH)
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        tmp_path = UMAP_PATH + ".tmp"
+        # compress: the pynndescent index pickles to ~1 GB uncompressed; zlib-3
+        # shrinks it several-fold and joblib.load handles it transparently.
+        joblib.dump(reducer, tmp_path, compress=3)
+        os.replace(tmp_path, UMAP_PATH)
+        log.info("UMAP model saved to %s", UMAP_PATH)
 
-    _publish_model()
-    _reproject_all(reducer)
-    _notify_inference()
+        _publish_model()
+        reprojected = _reproject_all(reducer)
+        _notify_inference()
+    except Exception as e:
+        record_job_run("umap_train", "failed", started_at, {"error": str(e)[:1000]})
+        raise
+    record_job_run("umap_train", "success", started_at, {
+        "sampled": len(rows),
+        "reprojected": reprojected,
+        "modelBytes": os.path.getsize(UMAP_PATH),
+    })
 
 
 def _reproject_all(reducer: UMAP):
@@ -130,6 +144,7 @@ def _reproject_all(reducer: UMAP):
         conn.close()
 
     log.info("Re-projection complete: %d rows updated", updated)
+    return updated
 
 
 def _publish_model():

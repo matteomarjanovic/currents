@@ -60,7 +60,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await apiFetch(`/api/admin/blob/${cid}`);
+			const res = await apiFetch(`/api/moderation/blob/${cid}`);
 			if (!res.ok) {
 				error = res.status === 404 ? 'Not found' : `Load failed (${res.status})`;
 				detail = null;
@@ -81,7 +81,7 @@
 		if (!detail) return;
 		submitting = true;
 		try {
-			const res = await apiFetch(`/api/admin/labels/apply`, {
+			const res = await apiFetch(`/api/moderation/labels/apply`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ blobCid: detail.blobCid, val })
@@ -106,7 +106,7 @@
 		if (!detail || !detail.saves?.length) return;
 		submitting = true;
 		try {
-			const res = await apiFetch(`/api/admin/labels/negate`, {
+			const res = await apiFetch(`/api/moderation/labels/negate`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ uri: detail.saves[0].uri, val, blobCid: detail.blobCid })
@@ -143,12 +143,12 @@
 </script>
 
 <svelte:head>
-	<title>History · Admin · Currents</title>
+	<title>History · Moderation · Currents</title>
 </svelte:head>
 
 <div class="flex flex-col gap-4">
 	<div class="flex items-center gap-2">
-		<Button variant="ghost" size="sm" onclick={() => goto('/admin/history')}>
+		<Button variant="ghost" size="sm" onclick={() => goto('/moderation/history')}>
 			<ArrowLeft class="size-4" />
 			Back to history
 		</Button>

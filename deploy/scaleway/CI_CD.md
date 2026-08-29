@@ -138,3 +138,39 @@ therefore released automatically after its staging validation and CI pass.
 The production Compose files keep their local `build:` definitions as a manual
 recovery fallback. Automated deploys always set the exact registry image and
 use `--no-build`.
+
+## Admin capacity reporting
+
+The private `/admin` dashboard receives a signed snapshot from each production
+VM once per minute. It is deliberately a one-way report: the dashboard never
+gets SSH or Docker credentials.
+
+Generate one shared value with `openssl rand -hex 32`. Add it as
+`OPS_REPORTING_SECRET` to the production source used by
+`prepare-production-env.sh`, regenerate the main VM compose environment, and
+put the same value in `/etc/currents/ops.env` on both hosts. The file is
+root-only (`install -d -m 700 /etc/currents`; `install -m 600 /dev/null
+/etc/currents/ops.env`) and has this shape:
+
+```sh
+OPS_REPORT_URL=https://api.currents.is/internal/ops/snapshot
+OPS_REPORTING_SECRET=<the shared random value>
+OPS_HOST=main                         # inference on the inference VM
+OPS_DISK_PATH=/mnt/pgdata             # /opt/currents-inference on inference
+# Inference VM only:
+OPS_MODEL_VERSION_FILE=/opt/currents-inference/models/.umap_model.joblib.version
+```
+
+Copy the four host-metrics files from `deploy/scaleway/` onto each VM and, as
+root, run:
+
+```sh
+./install-host-metrics.sh /path/to/deploy/scaleway
+systemctl start currents-host-metrics.service
+systemctl status currents-host-metrics.timer
+```
+
+The appview ingestion route stays disabled until its own
+`OPS_REPORTING_SECRET` is present. The backup, UMAP-training, and daily
+clustering jobs record their last terminal run in PostgreSQL; the first
+pre-migration backup may have no dashboard row, which is expected.

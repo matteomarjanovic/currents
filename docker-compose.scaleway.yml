@@ -70,6 +70,7 @@ services:
       POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-}
       POLAR_ACCESS_TOKEN: ${POLAR_ACCESS_TOKEN:-}
       POLAR_SERVER: ${POLAR_SERVER:-production}
+      OPS_REPORTING_SECRET: ${OPS_REPORTING_SECRET:-}
 
   frontend:
     build:

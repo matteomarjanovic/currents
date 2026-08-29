@@ -106,7 +106,7 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await apiFetch(`/api/admin/queue/${id}`);
+			const res = await apiFetch(`/api/moderation/queue/${id}`);
 			if (!res.ok) {
 				error = res.status === 404 ? 'Not found' : `Load failed (${res.status})`;
 				detail = null;
@@ -130,7 +130,7 @@
 		if (!detail) return;
 		submitting = true;
 		try {
-			const res = await apiFetch(`/api/admin/queue/${id}/${action}`, {
+			const res = await apiFetch(`/api/moderation/queue/${id}/${action}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: body ? JSON.stringify(body) : undefined
@@ -148,7 +148,7 @@
 			);
 			takedownDialogOpen = false;
 			applyLabelDialogOpen = false;
-			goto('/admin/queue');
+			goto('/moderation/queue');
 		} catch (e) {
 			toast.error(String(e));
 		} finally {
@@ -175,12 +175,12 @@
 </script>
 
 <svelte:head>
-	<title>Review · Admin · Currents</title>
+	<title>Review · Moderation · Currents</title>
 </svelte:head>
 
 <div class="flex flex-col gap-4">
 	<div class="flex items-center gap-2">
-		<Button variant="ghost" size="sm" onclick={() => goto('/admin/queue')}>
+		<Button variant="ghost" size="sm" onclick={() => goto('/moderation/queue')}>
 			<ArrowLeft class="size-4" />
 			Back to queue
 		</Button>

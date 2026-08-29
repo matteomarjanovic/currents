@@ -13,6 +13,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY train_umap.py run_clustering.py test_clustering.py test_train_umap.py crontab ./
+COPY operations.py train_umap.py run_clustering.py test_clustering.py test_operations.py test_train_umap.py crontab ./
 
 CMD ["/usr/local/bin/supercronic", "/app/crontab"]

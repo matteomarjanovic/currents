@@ -1,0 +1,10 @@
+[Unit]
+Description=Report Currents host capacity every minute
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

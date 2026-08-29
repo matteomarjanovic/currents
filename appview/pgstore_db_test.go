@@ -99,7 +99,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 		TRUNCATE save, collection, "user", follow, favourite_collection, pinned_collection,
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref,
 			label, blob_moderation_state, review_item, report, moderation_event,
-			import_session
+			import_session, admin, operations_job_run, operations_host_snapshot
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {
@@ -108,6 +108,56 @@ func truncateAll(t *testing.T, s *PgStore) {
 }
 
 var testBase = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+func TestAdminOperationsAccess(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const did = "did:plc:operator"
+
+	allowed, err := s.IsAdmin(ctx, did)
+	if err != nil || allowed {
+		t.Fatalf("ungranted admin = %v, %v; want false, nil", allowed, err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO admin (did) VALUES ($1)`, did); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = s.IsAdmin(ctx, did)
+	if err != nil || !allowed {
+		t.Fatalf("granted admin = %v, %v; want true, nil", allowed, err)
+	}
+
+	payload := json.RawMessage(`{"host":"main","memory":{"totalBytes":8}}`)
+	if err := s.UpsertOperationsHostSnapshot(ctx, "main", payload); err != nil {
+		t.Fatal(err)
+	}
+	hosts, err := s.LatestOperationsHostSnapshots(ctx)
+	if err != nil || len(hosts) != 1 || hosts[0].Host != "main" {
+		t.Fatalf("host snapshots = %#v, %v", hosts, err)
+	}
+	var savedPayload map[string]any
+	if err := json.Unmarshal(hosts[0].Payload, &savedPayload); err != nil || savedPayload["host"] != "main" {
+		t.Fatalf("saved host payload = %s, %v", hosts[0].Payload, err)
+	}
+
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO operations_job_run (job, status, started_at, finished_at, details)
+		VALUES
+			('postgres_backup', 'success', now() - interval '2 hours', now() - interval '2 hours', '{}'),
+			('postgres_backup', 'failed', now() - interval '1 hour', now() - interval '1 hour', '{}'),
+			('clustering', 'success', now() - interval '1 hour', now() - interval '1 hour', '{"points": 123}')
+	`); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := s.LatestOperationsJobRuns(ctx)
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("latest operations runs = %#v, %v", runs, err)
+	}
+	for _, run := range runs {
+		if run.Job == "postgres_backup" && run.Status != "failed" {
+			t.Fatalf("backup run = %q; want latest failed run", run.Status)
+		}
+	}
+}
 
 func seedCollection(t *testing.T, s *PgStore, uri, author, name, parentURI string, createdAt time.Time) {
 	t.Helper()

@@ -35,13 +35,36 @@ func (s *Server) requireModerator(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// APIMeRole reports whether the session DID has a moderator role assigned.
-// Always 200; clients read role==null as "not a moderator" to gate the admin UI.
+// requireAdmin gates a handler on the session DID having an active platform-admin row.
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		did, _, _ := s.currentSessionDID(r)
+		if did == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		allowed, err := s.Store.IsAdmin(r.Context(), did.String())
+		if err != nil {
+			slog.Error("IsAdmin", "err", err)
+			http.Error(w, "internal", http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// APIMeRole reports the session's independent platform-admin and moderation grants.
+// Always 200 so client route layouts can redirect unauthorised sessions themselves.
 func (s *Server) APIMeRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	resp := map[string]any{"admin": false, "moderatorRole": nil}
 	did, _, _ := s.currentSessionDID(r)
 	if did == nil {
-		json.NewEncoder(w).Encode(map[string]any{"role": nil})
+		json.NewEncoder(w).Encode(resp)
 		return
 	}
 	role, err := s.Store.IsModerator(r.Context(), did.String())
@@ -50,9 +73,15 @@ func (s *Server) APIMeRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal", http.StatusInternalServerError)
 		return
 	}
-	resp := map[string]any{"role": nil}
+	admin, err := s.Store.IsAdmin(r.Context(), did.String())
+	if err != nil {
+		slog.Error("IsAdmin", "err", err)
+		http.Error(w, "internal", http.StatusInternalServerError)
+		return
+	}
+	resp["admin"] = admin
 	if role != "" {
-		resp["role"] = role
+		resp["moderatorRole"] = role
 	}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -81,7 +110,7 @@ type reviewItemView struct {
 	Priority   int      `json:"priority"`
 	Status     string   `json:"status"`
 	CreatedAt  string   `json:"createdAt"`
-	PreviewURL string `json:"previewUrl,omitempty"`
+	PreviewURL string   `json:"previewUrl,omitempty"`
 	// LabelVal is the specific atproto label val for label_applied items
 	// (e.g. "porn", "nudity", "sexual", "graphic-media", "currents-ai-generated").
 	LabelVal string `json:"labelVal,omitempty"`
@@ -128,11 +157,12 @@ func toReviewItemView(it ReviewItemRow, cdnBaseURL string) reviewItemView {
 
 // APIAdminQueue lists pending review items.
 // Query params:
-//   ?source=ai|report|label_applied      (optional; empty = all)
-//   ?category=nsfw|violence|other        (optional; empty = all)
-//   ?order=priority|oldest|newest        (optional; default = priority)
-//   ?limit=50                            (default 50, max 200)
-//   ?offset=0                            (default 0)
+//
+//	?source=ai|report|label_applied      (optional; empty = all)
+//	?category=nsfw|violence|other        (optional; empty = all)
+//	?order=priority|oldest|newest        (optional; default = priority)
+//	?limit=50                            (default 50, max 200)
+//	?offset=0                            (default 0)
 func (s *Server) APIAdminQueue(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	category := r.URL.Query().Get("category")
@@ -319,7 +349,7 @@ func toModerationEventView(e ModerationEventRow) map[string]any {
 	return v
 }
 
-// moderatedBlobView is one card in the /admin/history blob list.
+// moderatedBlobView is one card in the /moderation/history blob list.
 type moderatedBlobView struct {
 	BlobCID       string `json:"blobCid"`
 	LatestAction  string `json:"latestAction"`
@@ -331,7 +361,7 @@ type moderatedBlobView struct {
 
 // APIAdminHistory lists every blob with moderation activity, newest action
 // first, searchable by blob CID prefix or save URI substring (?q=). Powers the
-// /admin/history blob-centric label-management view.
+// /moderation/history blob-centric label-management view.
 func (s *Server) APIAdminHistory(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit := 50
@@ -457,7 +487,7 @@ func (s *Server) APIAdminBlobDetail(w http.ResponseWriter, r *http.Request) {
 
 // APIAdminApplyLabel attaches a canonical label to every save sharing a blob,
 // keyed by blob CID (no review_item). Blob-centric twin of APIAdminQueueApplyLabel,
-// used by the /admin/history detail view. Negation goes through APIAdminNegateLabel.
+// used by the /moderation/history detail view. Negation goes through APIAdminNegateLabel.
 func (s *Server) APIAdminApplyLabel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		BlobCID string `json:"blobCid"`
@@ -511,10 +541,10 @@ func (s *Server) APIAdminApplyLabel(w http.ResponseWriter, r *http.Request) {
 // applyLabelAllowedVals is the set of label values an admin may attach via the
 // generic apply-label endpoint. Excludes `!hide` (use takedown for that).
 var applyLabelAllowedVals = map[string]bool{
-	"porn":          true,
-	"sexual":        true,
-	"nudity":        true,
-	"graphic-media": true,
+	"porn":           true,
+	"sexual":         true,
+	"nudity":         true,
+	"graphic-media":  true,
 	LabelAIGenerated: true,
 }
 

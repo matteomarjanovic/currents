@@ -50,7 +50,7 @@ TAP record arrives ─────► │  /embed/image        │ ──► │
                                                                     │
               ┌────────────────────────────────────────┬────────────┴──────────────────┐
               ▼                                        ▼                               ▼
-        XRPC label hydration               Admin UI (/admin/queue)             Bluesky clients
+        XRPC label hydration             Moderation UI (/moderation/queue)      Bluesky clients
         (every save returns                Moderator triages flags,            (subscribe to our
          a labels[] array)                 confirms or takes down              labeler DID)
               │
@@ -178,8 +178,8 @@ So a taken-down save is invisible from discovery, from any collection's listing,
 
 ### A moderator triages an item
 
-1. Moderator signs into Currents normally; the `/admin/+layout.svelte` fetches `/api/me/role` and gates the route on the `moderator` table.
-2. `/admin/queue` lists pending `review_item`s; `/admin/queue/[id]` shows scores, sibling saves (all URIs sharing the blob), active labels, audit events.
+1. Moderator signs into Currents normally; the `/moderation/+layout.svelte` fetches `/api/me/role` and gates the route on the `moderator` table.
+2. `/moderation/queue` lists pending `review_item`s; `/moderation/queue/[id]` shows scores, sibling saves (all URIs sharing the blob), active labels, audit events.
 3. Moderator picks an action:
    - **Confirm** (NSFW only — body `{val: "porn" | "sexual" | "nudity"}`): the chosen canonical label is issued on every URI sharing the blob, the `currents-nsfw-suspected` label is negated on every URI, the item is marked `resolved`. For violence, the val is fixed to `graphic-media`.
    - **Take down**: `SetHarmState(blocked)`, `!hide` issued on every URI, suspected label negated, item `resolved`. Read queries immediately filter the blob.
@@ -356,7 +356,7 @@ These came up during design and were deferred — links to where they'd land lat
 - **Account-level actions** (suspending an actor). Schema would extend `moderator_event` and add an `actor_state` table. Read queries would need a `WHERE NOT EXISTS (suspended_actor ...)` filter, similar to the blob-blocked filter.
 - **CSAM pipeline.** Needs separate legal review, separate retention policy, dedicated hash-matching against IWF / NCMEC lists. Should never enter the normal `review_item` queue.
 - **EU DSA transparency reporting.** Non-engineering.
-- **Admin extras:** `/admin/reports`, `/admin/blob/[cid]`, `/admin/events`, `/admin/ai-generated`. Each needs a backend endpoint (`GET /api/admin/reports` etc.) plus a Svelte route. Backend pattern is in [`admin.go`](appview/admin.go); UI pattern is in [`(admin)/admin/queue`](frontend/src/routes/(admin)/admin/queue/).
+- **Moderation extras:** `/moderation/reports`, `/moderation/blob/[cid]`, `/moderation/events`, `/moderation/ai-generated`. Each needs a backend endpoint (`GET /api/moderation/reports` etc.) plus a Svelte route. Backend pattern is in [`admin.go`](appview/admin.go); UI pattern is in [`(admin)/moderation/queue`](frontend/src/routes/(admin)/moderation/queue/).
 - **Appeal flow** for creators disputing an auto-applied `currents-ai-generated` label — the plan is a "Not AI?" button on owned saves that creates a `manual` `review_item`.
 - **One-shot CLI to publish `app.bsky.labeler.service`** — not built; use existing atproto tools (see [`MODERATION_DEPLOYMENT.md`](MODERATION_DEPLOYMENT.md)).
 - **Per-head threshold tuning.** Uniform constants today; revisit when eval sets exist.

@@ -9,26 +9,28 @@
 
 	let { children } = $props();
 
-	let admin = $state(false);
+	let moderatorRole = $state<string | null>(null);
 	let checked = $state(false);
 
 	onMount(async () => {
 		try {
-			const res = await apiFetch('/api/me/role');
+			const res = await apiFetch(`/api/me/role`);
 			if (res.ok) {
-				const data = (await res.json()) as { admin: boolean };
-				admin = data.admin;
+				const data = (await res.json()) as { moderatorRole: string | null };
+				moderatorRole = data.moderatorRole;
 			}
 		} catch {
-			// appview unreachable; treat as no grant
+			// appview unreachable; treat as no role
 		}
 		checked = true;
-		if (!admin) goto('/');
+		if (!moderatorRole) {
+			goto('/');
+		}
 	});
 
 	const navLinks = [
-		{ href: '/admin', label: 'Overview', exact: true },
-		{ href: '/admin/stats', label: 'Stats', exact: false }
+		{ href: '/moderation/queue', label: 'Queue' },
+		{ href: '/moderation/history', label: 'History' }
 	];
 </script>
 
@@ -38,7 +40,7 @@
 	<div class="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
 		Loading…
 	</div>
-{:else if !admin}
+{:else if !moderatorRole}
 	<div class="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
 		Redirecting…
 	</div>
@@ -47,12 +49,12 @@
 		<header class="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
 			<div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
 				<div class="flex items-center gap-4">
-					<a href="/admin" class="text-sm font-semibold tracking-tight">Currents · admin</a>
+					<a href="/moderation/queue" class="text-sm font-semibold tracking-tight"
+						>Currents · moderation</a
+					>
 					<nav class="flex items-center gap-1 text-sm">
 						{#each navLinks as link (link.href)}
-							{@const active = link.exact
-								? page.url.pathname === link.href
-								: page.url.pathname.startsWith(link.href)}
+							{@const active = page.url.pathname.startsWith(link.href)}
 							<a
 								href={link.href}
 								class="rounded-md px-2 py-1 transition-colors hover:bg-muted {active
@@ -64,7 +66,7 @@
 						{/each}
 					</nav>
 				</div>
-				<span class="text-xs text-muted-foreground">admin</span>
+				<span class="text-xs text-muted-foreground">{moderatorRole}</span>
 			</div>
 		</header>
 		<main class="mx-auto max-w-6xl px-4 py-6">

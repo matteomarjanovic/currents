@@ -69,7 +69,7 @@
 		params.set('limit', String(limit));
 		params.set('offset', String(off));
 		try {
-			const res = await apiFetch(`/api/admin/queue?${params}`);
+			const res = await apiFetch(`/api/moderation/queue?${params}`);
 			if (!res.ok) {
 				error = `Failed to load queue (${res.status})`;
 				items = [];
@@ -115,7 +115,7 @@
 </script>
 
 <svelte:head>
-	<title>Queue · Admin · Currents</title>
+	<title>Queue · Moderation · Currents</title>
 </svelte:head>
 
 <div class="flex flex-col gap-4">
@@ -167,7 +167,7 @@
 			{#each items as item (item.id)}
 				<li>
 					<a
-						href={`/admin/queue/${item.id}`}
+						href={`/moderation/queue/${item.id}`}
 						class="group flex items-stretch gap-3 overflow-hidden rounded-lg border border-border bg-card transition-colors hover:bg-muted/40"
 					>
 						<div class="relative h-28 w-28 flex-shrink-0 overflow-hidden bg-muted">
