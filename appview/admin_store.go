@@ -101,6 +101,7 @@ func (m *PgStore) AdminPoolMetrics() AdminPoolMetrics {
 }
 
 func (m *PgStore) LatestOperationsJobRuns(ctx context.Context) ([]OperationsJobRun, error) {
+	runs := make([]OperationsJobRun, 0)
 	rows, err := m.pool.Query(ctx, `
 		SELECT DISTINCT ON (job) job, status, started_at, finished_at, details
 		FROM operations_job_run
@@ -111,7 +112,6 @@ func (m *PgStore) LatestOperationsJobRuns(ctx context.Context) ([]OperationsJobR
 	}
 	defer rows.Close()
 
-	var runs []OperationsJobRun
 	for rows.Next() {
 		var run OperationsJobRun
 		if err := rows.Scan(&run.Job, &run.Status, &run.StartedAt, &run.FinishedAt, &run.Details); err != nil {
@@ -123,6 +123,7 @@ func (m *PgStore) LatestOperationsJobRuns(ctx context.Context) ([]OperationsJobR
 }
 
 func (m *PgStore) LatestOperationsHostSnapshots(ctx context.Context) ([]OperationsHostSnapshot, error) {
+	snapshots := make([]OperationsHostSnapshot, 0)
 	rows, err := m.pool.Query(ctx, `
 		SELECT host, reported_at, payload
 		FROM operations_host_snapshot
@@ -133,7 +134,6 @@ func (m *PgStore) LatestOperationsHostSnapshots(ctx context.Context) ([]Operatio
 	}
 	defer rows.Close()
 
-	var snapshots []OperationsHostSnapshot
 	for rows.Next() {
 		var snapshot OperationsHostSnapshot
 		if err := rows.Scan(&snapshot.Host, &snapshot.ReportedAt, &snapshot.Payload); err != nil {

@@ -107,11 +107,11 @@
 	}
 
 	function host(name: Host['host']): Host | undefined {
-		return overview?.hosts.find((item) => item.host === name);
+		return overview?.hosts?.find((item) => item.host === name);
 	}
 
 	function job(name: string): Job | undefined {
-		return overview?.jobs.find((item) => item.job === name);
+		return overview?.jobs?.find((item) => item.job === name);
 	}
 
 	function stale(reportedAt: string): boolean {

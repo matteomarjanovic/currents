@@ -114,6 +114,15 @@ func TestAdminOperationsAccess(t *testing.T) {
 	ctx := context.Background()
 	const did = "did:plc:operator"
 
+	emptyRuns, err := s.LatestOperationsJobRuns(ctx)
+	if err != nil || emptyRuns == nil || len(emptyRuns) != 0 {
+		t.Fatalf("empty operations runs = %#v, %v; want non-nil empty slice", emptyRuns, err)
+	}
+	emptyHosts, err := s.LatestOperationsHostSnapshots(ctx)
+	if err != nil || emptyHosts == nil || len(emptyHosts) != 0 {
+		t.Fatalf("empty host snapshots = %#v, %v; want non-nil empty slice", emptyHosts, err)
+	}
+
 	allowed, err := s.IsAdmin(ctx, did)
 	if err != nil || allowed {
 		t.Fatalf("ungranted admin = %v, %v; want false, nil", allowed, err)
