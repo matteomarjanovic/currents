@@ -46,6 +46,23 @@ case "$SCW_REGISTRY" in
 	*/) fail 'SCW_REGISTRY must not end with a slash' ;;
 esac
 
+registry_config=$(mktemp -d)
+cleanup_registry_config() {
+	rm -f "$registry_config/config.json"
+	rmdir "$registry_config" 2>/dev/null || true
+}
+trap cleanup_registry_config EXIT HUP INT TERM
+chmod 700 "$registry_config"
+IFS= read -r registry_key || fail 'registry credential is missing'
+[ -n "$registry_key" ] || fail 'registry credential is missing'
+printf '%s\n' "$registry_key" |
+	docker --config "$registry_config" login "$SCW_REGISTRY" -u nologin --password-stdin
+unset registry_key
+
+registry_docker() {
+	docker --config "$registry_config" "$@"
+}
+
 exec 9>"$lock_file"
 flock -n 9 || fail 'another main-VM release is active'
 mkdir -p "$state_dir"
@@ -208,11 +225,11 @@ deploy_clustering() {
 }
 
 case "$services" in
-	appview) docker pull "$SCW_REGISTRY/currents-appview:$release_sha" ;;
-	clustering) docker pull "$SCW_REGISTRY/currents-clustering:$release_sha" ;;
+	appview) registry_docker pull "$SCW_REGISTRY/currents-appview:$release_sha" ;;
+	clustering) registry_docker pull "$SCW_REGISTRY/currents-clustering:$release_sha" ;;
 	appview,clustering)
-		docker pull "$SCW_REGISTRY/currents-appview:$release_sha"
-		docker pull "$SCW_REGISTRY/currents-clustering:$release_sha"
+		registry_docker pull "$SCW_REGISTRY/currents-appview:$release_sha"
+		registry_docker pull "$SCW_REGISTRY/currents-clustering:$release_sha"
 		;;
 esac
 

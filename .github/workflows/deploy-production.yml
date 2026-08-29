@@ -95,6 +95,7 @@ jobs:
       INFERENCE_DEPLOY_HOST: ${{ vars.INFERENCE_DEPLOY_HOST }}
       DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.PRODUCTION_KNOWN_HOSTS }}
+      REGISTRY_PULL_SECRET_KEY: ${{ secrets.SCW_REGISTRY_PULL_SECRET_KEY || secrets.SCW_REGISTRY_SECRET_KEY }}
       DEPLOY_INFERENCE: ${{ needs.changes.outputs.deploy_inference }}
       DEPLOY_APPVIEW: ${{ needs.changes.outputs.deploy_appview }}
       DEPLOY_CLUSTERING: ${{ needs.changes.outputs.deploy_clustering }}
@@ -113,6 +114,7 @@ jobs:
           if [ "$DEPLOY_APPVIEW" = true ] || [ "$DEPLOY_CLUSTERING" = true ]; then test -n "$MAIN_DEPLOY_HOST"; fi
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$REGISTRY_PULL_SECRET_KEY"
       - name: Configure locked SSH identity
         run: |
           install -d -m 700 "$HOME/.ssh"
@@ -122,14 +124,14 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" >"$HOME/.ssh/known_hosts"
       - name: Deploy inference
         if: env.DEPLOY_INFERENCE == 'true'
-        run: >-
-          ssh -i "$HOME/.ssh/currents-deploy"
-          -o BatchMode=yes
-          -o IdentitiesOnly=yes
-          -o StrictHostKeyChecking=yes
-          -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          currents-deploy@"$INFERENCE_DEPLOY_HOST"
-          "deploy $RELEASE_SHA"
+        run: |
+          printf '%s\n' "$REGISTRY_PULL_SECRET_KEY" | ssh -i "$HOME/.ssh/currents-deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            currents-deploy@"$INFERENCE_DEPLOY_HOST" \
+            "deploy $RELEASE_SHA"
       - name: Deploy main VM services
         if: env.DEPLOY_APPVIEW == 'true' || env.DEPLOY_CLUSTERING == 'true'
         run: |
@@ -138,7 +140,7 @@ jobs:
           if [ "$DEPLOY_CLUSTERING" = true ]; then
             if [ -n "$services" ]; then services="$services,clustering"; else services="clustering"; fi
           fi
-          ssh -i "$HOME/.ssh/currents-deploy" \
+          printf '%s\n' "$REGISTRY_PULL_SECRET_KEY" | ssh -i "$HOME/.ssh/currents-deploy" \
             -o BatchMode=yes \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \

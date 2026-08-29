@@ -54,9 +54,9 @@ proposing new work; delete an entry when it ships.
   Related: **`PUT /save/{id}` looks like dead code** — it 302s to `/save`, a
   server-rendered page that no longer exists, and no client calls it. Worth
   deleting in the same pass, after one more grep for external consumers.
-- **Activate the CI/CD bootstrap.** The workflows, exact-SHA Compose image
-  overrides, forced-command host scripts, backup/health gates, and rollback are
-  implemented. Finish the external one-time setup in
-  `deploy/scaleway/CI_CD.md`: private `fr-par` registry with separate push/pull
-  keys and GitHub Actions values. Then publish and deploy the first release.
-  The frontend stays on Netlify; Playwright remains optional/later.
+- **Activate the CI/CD bootstrap.** The registry namespace, GitHub publisher
+  credential, and registry address are now configured. Install the updated
+  restricted host scripts, then publish and deploy the first release. Add the
+  separate production pull secret afterwards; deployments temporarily fall back
+  to the publisher credential. The frontend stays on Netlify; Playwright
+  remains optional/later.

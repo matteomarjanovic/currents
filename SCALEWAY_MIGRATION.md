@@ -915,8 +915,9 @@ cleanup check found zero temporary databases and files afterward.
 Implementation status (2026-08-29): CI, automatic selective production
 deployment, the `main`-restricted GitHub `production` environment, verified
 SSH host keys, and the forced-command deployment users are in place. External
-activation still requires the private registry namespace and its separate
-push/pull credentials. The exact checklist is in `deploy/scaleway/CI_CD.md`.
+activation requires the private registry namespace and its push credential.
+The deploy workflow uses the separate pull credential when configured. The
+exact checklist is in `deploy/scaleway/CI_CD.md`.
 
 ### Continuous integration
 
@@ -940,8 +941,9 @@ clustering images to a private Scaleway Container Registry namespace in
 CI validates its SSR artifact while Capacitor releases remain local.
 
 - Tag every image with the full Git commit SHA. Never deploy `latest`.
-- Give CI a registry-push credential scoped to this purpose. Give the two VMs
-  a separate pull credential; do not copy the CI credential to production.
+- Give CI a registry-push credential scoped to this purpose. Give the deploy
+  environment a separate pull credential; it is passed to the forced release
+  command only for the pull and is never persisted on either VM.
 - Keep model files out of the inference image. They continue to arrive through
   the persistent Hugging Face cache and `obj-curr-models` bucket.
 - Pin third-party production images such as Postgres, TAP, and Caddy to explicit

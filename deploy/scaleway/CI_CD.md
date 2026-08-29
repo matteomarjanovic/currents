@@ -30,27 +30,29 @@ API keys:
 - a CI key that can push images;
 - a production key that can only pull images.
 
-Set these repository Actions values:
+Set these Actions values:
 
 | Kind | Name | Value |
 |---|---|---|
 | Variable | `SCW_REGISTRY` | `rg.fr-par.scw.cloud/<private-namespace>` |
 | Secret | `SCW_REGISTRY_SECRET_KEY` | secret part of the CI push key |
+| Production-environment secret | `SCW_REGISTRY_PULL_SECRET_KEY` | secret part of the VM pull key |
 
 The publish workflow is deliberately skipped while `SCW_REGISTRY` is absent.
 It uses `nologin` as the registry username, as documented by Scaleway.
 
-On each VM, log root's Docker client into the registry with the separate pull
-key, then create a root-only registry file:
+On each VM, create a root-only registry file:
 
 ```sh
-printf '%s\n' '<pull-secret-key>' | docker login rg.fr-par.scw.cloud -u nologin --password-stdin
 install -m 600 -o root -g root /dev/null /opt/currents/.env.registry
 # Add exactly: SCW_REGISTRY=rg.fr-par.scw.cloud/<private-namespace>
 ```
 
-Do not put either registry key in the repository or the normal application env
-files.
+Each release passes the production pull key to its restricted deploy command on
+standard input. The host uses a temporary Docker config only for exact-tag
+pulls, then erases it; no registry key is persisted on either VM. Until the
+separate environment secret is added, deployments fall back to the CI key, so
+the first deployment can proceed but this fallback should be short-lived.
 
 ## One-time restricted SSH setup
 
