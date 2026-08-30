@@ -10,6 +10,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Camera from '@lucide/svelte/icons/camera';
@@ -38,7 +39,13 @@
 
 	let staged = $state<Staged[]>([]);
 	// undefined = nothing chosen yet; '' = the profile (unsorted, no collection).
-	let selectedCollectionUri = $state<string | undefined>(undefined);
+	let pickedCollectionUri = $state<string | undefined>(undefined);
+	let rememberedCollectionUri = $derived(
+		collections.items.some((collection) => collection.uri === collections.lastUsedUri)
+			? collections.lastUsedUri
+			: undefined
+	);
+	let selectedCollectionUri = $derived(pickedCollectionUri ?? rememberedCollectionUri);
 	let selectedSelfLabels = $state<Set<string>>(new Set());
 	let uploading = $state(false);
 	let completed = $state(false);
@@ -391,14 +398,14 @@
 			<CollectionSelector
 				variant="popover"
 				selectedUri={selectedCollectionUri}
-				onSelect={(uri) => (selectedCollectionUri = uri)}
+				onSelect={(uri) => (pickedCollectionUri = uri)}
 			/>
 		</div>
 		<div class="md:hidden">
 			<CollectionSelector
 				variant="drawer"
 				selectedUri={selectedCollectionUri}
-				onSelect={(uri) => (selectedCollectionUri = uri)}
+				onSelect={(uri) => (pickedCollectionUri = uri)}
 			/>
 		</div>
 		<div class="flex justify-end">

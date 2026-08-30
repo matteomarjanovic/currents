@@ -28,6 +28,10 @@
 	import SaveToast from '$lib/components/save-toast.svelte';
 	import { bunnyImageUrl } from '$lib/image-url';
 	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
+	import {
+		orderCollectionSelectorEntries,
+		orderCollectionSelectorSections
+	} from '$lib/collection-selector-order';
 
 	interface Props {
 		item?: SaveView;
@@ -69,22 +73,16 @@
 	);
 	let syncedItemUri = $state<string | null>(null);
 
-	// Ordering snapshot: the collection URIs the item was already saved in when the
-	// list last opened. Kept separate from the reactive `localSaves` (which drives
-	// live checkmarks) so copying into a new collection doesn't reorder the list
-	// under the cursor; refreshed on the open edge below, and at mount — which is how
-	// the inline submenu/drawer variants reopen (their host unmounts them on close).
-	let savedSnapshot = $state(new Set(untrack(() => localSaves.map((s) => s.collectionUri))));
-	function snapshotSaved() {
-		savedSnapshot = new Set(localSaves.map((s) => s.collectionUri));
-	}
-
 	let userSelectedUri = $state<string | null>(null);
+	let rememberedCollectionUri = $derived(
+		collections.items.some((collection) => collection.uri === collections.lastUsedUri)
+			? collections.lastUsedUri
+			: undefined
+	);
 	let selectedCollectionUri = $derived(
 		pickerMode
-			? selectedUri
-			: (userSelectedUri ??
-					toTopLevel(localSaves[0]?.collectionUri ?? collections.lastUsedUri ?? ''))
+			? (selectedUri ?? rememberedCollectionUri)
+			: (userSelectedUri ?? rememberedCollectionUri ?? localSaves[0]?.collectionUri ?? '')
 	);
 
 	$effect(() => {
@@ -101,13 +99,8 @@
 	let createParent = $state<CollectionView | null>(null);
 	// When set, the list shows this collection's sections instead of the roots.
 	let drillParent = $state<CollectionView | null>(null);
-	let wasOpen = false;
 	$effect(() => {
 		onOpenChange?.(open);
-		// Re-snapshot on the open edge only, so newly-saved collections rise to the top
-		// on reopen but never mid-open. (untrack: don't depend on localSaves here.)
-		if (open && !wasOpen) untrack(snapshotSaved);
-		wasOpen = open;
 	});
 	// Always start back at the top level when the picker reopens.
 	$effect(() => {
@@ -123,21 +116,8 @@
 	function isSavedIn(uri: string): string | null {
 		return localSaves.find((s) => s.collectionUri === uri)?.saveUri ?? null;
 	}
-
-	// Resolve a collection URI to its top-level parent (sub-collections → parent).
-	function toTopLevel(uri: string): string {
-		const c = collections.items.find((x) => x.uri === uri);
-		return c?.parentUri ? c.parentUri : uri;
-	}
-
-	// Most recent activity first: newest of {created, last save}.
-	function activityTs(c: CollectionView): number {
-		const saved = c.lastSavedAt ? Date.parse(c.lastSavedAt) : 0;
-		const created = c.createdAt ? Date.parse(c.createdAt) : 0;
-		return Math.max(saved, created);
-	}
-	function byRecentSave(a: CollectionView, b: CollectionView): number {
-		return activityTs(b) - activityTs(a);
+	function showRowCheck(uri: string): boolean {
+		return pickerMode ? selectedCollectionUri === uri : !!isSavedIn(uri);
 	}
 
 	let childrenByParent = $derived.by(() => {
@@ -151,30 +131,12 @@
 		}
 		return m;
 	});
-	// A root counts as "saved" for ordering if the item was in it — or any of its
-	// sections — when the list opened (read from the frozen snapshot, not live state).
-	function inSavedSnapshotTree(root: CollectionView): boolean {
-		if (savedSnapshot.has(root.uri)) return true;
-		return (childrenByParent.get(root.uri) ?? []).some((c) => savedSnapshot.has(c.uri));
-	}
-	// Saved-in collections first, then the rest — each group keeping recent-activity order.
-	function savedFirst(list: CollectionView[], isSaved: (c: CollectionView) => boolean) {
-		const saved: CollectionView[] = [];
-		const rest: CollectionView[] = [];
-		for (const c of list) (isSaved(c) ? saved : rest).push(c);
-		return [...saved, ...rest];
-	}
-	let rootCollections = $derived(
-		savedFirst(
-			collections.items.filter((c) => !c.parentUri).sort(byRecentSave),
-			inSavedSnapshotTree
-		)
+	let topLevelEntries = $derived(
+		orderCollectionSelectorEntries(collections.items, collections.lastUsedUri)
 	);
 	let drillSections = $derived(
 		drillParent
-			? savedFirst([...(childrenByParent.get(drillParent.uri) ?? [])].sort(byRecentSave), (c) =>
-					savedSnapshot.has(c.uri)
-				)
+			? orderCollectionSelectorSections(collections.items, drillParent.uri, collections.lastUsedUri)
 			: []
 	);
 
@@ -182,10 +144,22 @@
 		return childrenByParent.get(uri)?.length ?? 0;
 	}
 
+	function sectionSubtitle(section: CollectionView): string {
+		const parent = collections.items.find((collection) => collection.uri === section.parentUri);
+		return parent ? `Section in ${parent.name}` : 'Section';
+	}
+
 	// A root is "saved" if the item is in it directly or in any of its sections.
 	function isSavedInTree(root: CollectionView): boolean {
 		if (isSavedIn(root.uri)) return true;
 		return (childrenByParent.get(root.uri) ?? []).some((c) => !!isSavedIn(c.uri));
+	}
+	function showTreeCheck(root: CollectionView): boolean {
+		if (!pickerMode) return isSavedInTree(root);
+		if (selectedCollectionUri === root.uri) return true;
+		return (childrenByParent.get(root.uri) ?? []).some(
+			(section) => section.uri === selectedCollectionUri
+		);
 	}
 
 	function openCreate(parent: CollectionView | null) {
@@ -351,7 +325,7 @@
 			<span class="truncate {bold ? 'font-medium' : ''}">{col.name}</span>
 			<span class="text-xs text-muted-foreground">{subtitle}</span>
 		</span>
-		{#if isSavedIn(col.uri)}
+		{#if showRowCheck(col.uri)}
 			<Check class="size-4 shrink-0" />
 		{/if}
 	</button>
@@ -372,7 +346,7 @@
 				{n === 1 ? 'section' : 'sections'}
 			</span>
 		</span>
-		{#if isSavedInTree(root)}
+		{#if showTreeCheck(root)}
 			<Check class="size-4 shrink-0 text-muted-foreground" />
 		{/if}
 		<ChevronRight class="size-4 shrink-0 text-muted-foreground" />
@@ -415,7 +389,7 @@
 				<span class="truncate">Profile</span>
 				<span class="text-xs text-muted-foreground">Save without a collection</span>
 			</span>
-			{#if isSavedIn(UNSORTED_URI)}
+			{#if showRowCheck(UNSORTED_URI)}
 				<Check class="size-4 shrink-0" />
 			{/if}
 		</button>
@@ -431,11 +405,13 @@
 				<span class="text-xs text-muted-foreground">Group your saves</span>
 			</span>
 		</button>
-		{#each rootCollections as root (root.uri)}
-			{#if sectionCount(root.uri) > 0}
-				{@render navRow(root)}
+		{#each topLevelEntries as entry (entry.uri)}
+			{#if entry.parentUri}
+				{@render saveRow(entry, sectionSubtitle(entry), false)}
+			{:else if sectionCount(entry.uri) > 0}
+				{@render navRow(entry)}
 			{:else}
-				{@render saveRow(root, 'Public', false)}
+				{@render saveRow(entry, 'Public', false)}
 			{/if}
 		{/each}
 	{/if}
