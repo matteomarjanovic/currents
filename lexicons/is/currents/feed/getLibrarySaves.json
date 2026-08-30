@@ -4,10 +4,15 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "List all of the authenticated viewer's saved images across every collection (deduplicated by image). Requires authentication.",
+      "description": "List all of an actor's saved images across collections and unsorted saves, deduplicated by image. Auth is optional when actor is provided; otherwise the authenticated viewer is used.",
       "parameters": {
         "type": "params",
         "properties": {
+          "actor": {
+            "type": "string",
+            "format": "at-identifier",
+            "description": "DID or handle of the actor whose images to list. Defaults to the authenticated viewer."
+          },
           "limit": {
             "type": "integer",
             "minimum": 1,

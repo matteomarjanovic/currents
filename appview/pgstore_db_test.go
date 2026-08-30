@@ -501,6 +501,45 @@ func TestGetActorCollectionsPage(t *testing.T) {
 	}
 }
 
+// TestGetLibrarySavesPage pins the profile All tab: collection and unsorted
+// images share one newest-first stream, duplicate image bytes appear once using
+// their newest save, and pagination does not repeat them.
+func TestGetLibrarySavesPage(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	author := "did:plc:author"
+	collection := "at://" + author + "/is.currents.feed.collection/alpha"
+	seedCollection(t, s, collection, author, "Alpha", "", testBase)
+
+	saveURI := func(rkey string) string { return "at://" + author + "/is.currents.feed.save/" + rkey }
+	seedImageSave(t, s, saveURI("duplicate-old"), author, collection, "blob-duplicate", 0.9, testBase.Add(1*time.Hour))
+	seedImageSave(t, s, saveURI("collection-only"), author, collection, "blob-collection", 0.9, testBase.Add(2*time.Hour))
+	seedImageSave(t, s, saveURI("unsorted-only"), author, "", "blob-unsorted", 0.9, testBase.Add(3*time.Hour))
+	seedImageSave(t, s, saveURI("duplicate-new"), author, "", "blob-duplicate", 0.9, testBase.Add(4*time.Hour))
+
+	first, cursor, err := s.GetLibrarySavesPage(ctx, author, "", 2, "")
+	if err != nil {
+		t.Fatalf("GetLibrarySavesPage first: %v", err)
+	}
+	if len(first) != 2 || first[0].URI != saveURI("duplicate-new") || first[1].URI != saveURI("unsorted-only") {
+		t.Fatalf("first page = %#v, want newest duplicate then unsorted-only", first)
+	}
+	if cursor == "" {
+		t.Fatal("first page cursor is empty")
+	}
+
+	second, nextCursor, err := s.GetLibrarySavesPage(ctx, author, "", 2, cursor)
+	if err != nil {
+		t.Fatalf("GetLibrarySavesPage second: %v", err)
+	}
+	if len(second) != 1 || second[0].URI != saveURI("collection-only") {
+		t.Fatalf("second page = %#v, want collection-only", second)
+	}
+	if nextCursor != "" {
+		t.Fatalf("second page cursor = %q, want empty", nextCursor)
+	}
+}
+
 // TestActiveLabelSemantics pins what the label indexes serve: the latest row
 // per (src, uri/blob, val) decides activeness, so a negation hides a label and
 // a re-application after negation revives it.

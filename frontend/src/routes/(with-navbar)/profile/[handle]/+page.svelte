@@ -19,9 +19,9 @@
 	let { data }: { data: PageData } = $props();
 
 	let profile = $state<ActorProfileView | null>(untrack(() => data.profile));
-	let collections = $state<CollectionView[]>(untrack(() => data.collections));
 	let editOpen = $state(false);
 	let activeImport = $state(false);
+	let activeTab = $state('collections');
 
 	const isOwner = $derived(!!auth.user && !!profile && auth.user.did === profile.did);
 	const notFound = $derived(!profile);
@@ -38,27 +38,42 @@
 	);
 	const canonical = $derived(page.url.origin + page.url.pathname);
 
-	// Show only root collections as cards, most recent activity first:
-	// newest of {created, last save}.
-	const activityTs = (c: (typeof collections)[number]) =>
-		Math.max(
-			c.lastSavedAt ? Date.parse(c.lastSavedAt) : 0,
-			c.createdAt ? Date.parse(c.createdAt) : 0
-		);
-	const roots = $derived(
-		collections
-			.filter((c) => !deletedCollectionUris.has(c.uri))
-			.sort((a, b) => activityTs(b) - activityTs(a))
+	const collectionScroll = useInfiniteScroll<CollectionView>(
+		async (cursor) => {
+			const handle = page.params.handle ?? '';
+			const params = new URLSearchParams({ actor: handle, parent: 'root', limit: '16' });
+			if (cursor) params.set('cursor', cursor);
+			const res = await apiFetch(`/xrpc/is.currents.feed.getActorCollections?${params}`);
+			if (!res.ok) return { items: [], cursor: undefined };
+			const data = await res.json();
+			return { items: data.collections ?? [], cursor: data.cursor };
+		},
+		(c) => c.uri,
+		{
+			items: untrack(() => data.collections),
+			cursor: untrack(() => data.collectionsCursor)
+		}
 	);
 
-	// Collections vs. Unsorted (saves in no collection — profile-only). Unsorted is
-	// fetched lazily the first time its tab is opened.
-	let activeTab = $state('collections');
+	// The endpoint already returns root collections newest-first. Keep that order
+	// while appending pages so scrolling never makes cards jump around.
+	const roots = $derived(collectionScroll.items.filter((c) => !deletedCollectionUris.has(c.uri)));
+
+	// Image tabs are fetched lazily the first time they are opened.
 	const unsorted = useInfiniteScroll(async (cursor) => {
 		const handle = page.params.handle ?? '';
 		const params = new URLSearchParams({ actor: handle, limit: '50' });
 		if (cursor) params.set('cursor', cursor);
 		const res = await apiFetch(`/xrpc/is.currents.feed.getUnsortedSaves?${params}`);
+		if (!res.ok) return { items: [], cursor: undefined };
+		const data = await res.json();
+		return { items: data.saves ?? [], cursor: data.cursor };
+	});
+	const all = useInfiniteScroll(async (cursor) => {
+		const handle = page.params.handle ?? '';
+		const params = new URLSearchParams({ actor: handle, limit: '50' });
+		if (cursor) params.set('cursor', cursor);
+		const res = await apiFetch(`/xrpc/is.currents.feed.getLibrarySaves?${params}`);
 		if (!res.ok) return { items: [], cursor: undefined };
 		const data = await res.json();
 		return { items: data.saves ?? [], cursor: data.cursor };
@@ -69,6 +84,7 @@
 	onMount(() =>
 		onSaveRemoved(({ saveUri, collectionUri }) => {
 			if (collectionUri === '') unsorted.removeItem(saveUri);
+			all.removeItem(saveUri);
 		})
 	);
 
@@ -88,9 +104,10 @@
 		const next = data;
 		untrack(() => {
 			profile = next.profile;
-			collections = next.collections;
+			collectionScroll.reset({ items: next.collections, cursor: next.collectionsCursor });
 			activeTab = 'collections';
 			unsorted.reset();
+			all.reset();
 			favourites.reset();
 		});
 	});
@@ -125,10 +142,15 @@
 		})();
 	});
 
-	// Load the first page of unsorted saves / favourites the first time each tab is opened.
+	// Load the first page of each lazy tab the first time it is opened.
 	$effect(() => {
 		if (activeTab === 'unsorted' && unsorted.items.length === 0 && unsorted.hasMore) {
 			unsorted.loadMore();
+		}
+	});
+	$effect(() => {
+		if (activeTab === 'all' && all.items.length === 0 && all.hasMore) {
+			all.loadMore();
 		}
 	});
 	$effect(() => {
@@ -137,16 +159,42 @@
 		}
 	});
 
-	let sentinel: HTMLDivElement | undefined = $state(undefined);
+	let collectionSentinel: HTMLDivElement | undefined = $state(undefined);
 	$effect(() => {
-		if (!sentinel) return;
+		if (!collectionSentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting) unsorted.loadMore();
+				if (entries[0].isIntersecting && activeTab === 'collections') collectionScroll.loadMore();
+			},
+			{ rootMargin: '0px' }
+		);
+		observer.observe(collectionSentinel);
+		return () => observer.disconnect();
+	});
+
+	let unsortedSentinel: HTMLDivElement | undefined = $state(undefined);
+	$effect(() => {
+		if (!unsortedSentinel) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting && activeTab === 'unsorted') unsorted.loadMore();
 			},
 			{ rootMargin: '400px' }
 		);
-		observer.observe(sentinel);
+		observer.observe(unsortedSentinel);
+		return () => observer.disconnect();
+	});
+
+	let allSentinel: HTMLDivElement | undefined = $state(undefined);
+	$effect(() => {
+		if (!allSentinel) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting && activeTab === 'all') all.loadMore();
+			},
+			{ rootMargin: '400px' }
+		);
+		observer.observe(allSentinel);
 		return () => observer.disconnect();
 	});
 
@@ -155,7 +203,7 @@
 		if (!favSentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting) favourites.loadMore();
+				if (entries[0].isIntersecting && activeTab === 'favourites') favourites.loadMore();
 			},
 			{ rootMargin: '400px' }
 		);
@@ -232,12 +280,13 @@
 				<Tabs.List variant="line" class="w-fit">
 					<Tabs.Trigger value="collections">Collections</Tabs.Trigger>
 					<Tabs.Trigger value="unsorted">Unsorted</Tabs.Trigger>
+					<Tabs.Trigger value="all">All</Tabs.Trigger>
 					<Tabs.Trigger value="favourites">Favourite collections</Tabs.Trigger>
 				</Tabs.List>
 			</div>
 
 			<Tabs.Content value="collections" class="mt-4">
-				{#if roots.length === 0}
+				{#if roots.length === 0 && !collectionScroll.loading && !collectionScroll.hasMore}
 					<div class="py-12 text-center text-sm text-muted-foreground">No collections yet.</div>
 				{:else}
 					<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -245,6 +294,9 @@
 							<CollectionCard collection={c} sectionCount={c.sectionCount ?? 0} />
 						{/each}
 					</div>
+					{#if collectionScroll.hasMore}
+						<div bind:this={collectionSentinel} class="h-1"></div>
+					{/if}
 				{/if}
 			</Tabs.Content>
 
@@ -259,7 +311,23 @@
 						longPressSave
 					/>
 					{#if unsorted.hasMore}
-						<div bind:this={sentinel} class="h-1"></div>
+						<div bind:this={unsortedSentinel} class="h-1"></div>
+					{/if}
+				{/if}
+			</Tabs.Content>
+
+			<Tabs.Content value="all" class="mt-4">
+				{#if all.items.length === 0 && !all.loading && !all.hasMore}
+					<div class="py-12 text-center text-sm text-muted-foreground">No saves yet.</div>
+				{:else}
+					<MasonryGrid
+						items={all.items}
+						loading={all.loading}
+						loadMore={all.loadMore}
+						longPressSave
+					/>
+					{#if all.hasMore}
+						<div bind:this={allSentinel} class="h-1"></div>
 					{/if}
 				{/if}
 			</Tabs.Content>

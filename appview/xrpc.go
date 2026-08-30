@@ -899,10 +899,30 @@ func (s *Server) XRPCGetLibrarySaves(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": err.Error()})
 		return
 	}
-	if viewerDID == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": "authentication required"})
+
+	actorParam := r.URL.Query().Get("actor")
+	var actorDID syntax.DID
+	if actorParam == "" {
+		if viewerDID == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "AuthRequired", "message": "authentication required"})
+			return
+		}
+		actorDID = *viewerDID
+	} else if parsed, err := syntax.ParseDID(actorParam); err == nil {
+		actorDID = parsed
+	} else if handle, err := syntax.ParseHandle(actorParam); err == nil {
+		ident, err := s.Dir.LookupHandle(r.Context(), handle)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "NotFound", "message": "actor not found"})
+			return
+		}
+		actorDID = ident.DID
+	} else {
+		http.Error(w, `{"error":"InvalidRequest","message":"invalid actor"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -914,19 +934,23 @@ func (s *Server) XRPCGetLibrarySaves(w http.ResponseWriter, r *http.Request) {
 	}
 	cursor := r.URL.Query().Get("cursor")
 
-	viewerStr := viewerDID.String()
+	viewerStr := ""
+	if viewerDID != nil {
+		viewerStr = viewerDID.String()
+	}
+	actorStr := actorDID.String()
 
-	// Every row shares the same author (the viewer). Hydrate the profile once.
-	author := profileView{DID: viewerStr}
-	if row, err := s.Store.GetActorByDID(r.Context(), viewerStr); err == nil && row != nil {
+	// Every row shares the same author. Hydrate the profile once.
+	author := profileView{DID: actorStr}
+	if row, err := s.Store.GetActorByDID(r.Context(), actorStr); err == nil && row != nil {
 		author.Handle = row.Handle
 		author.DisplayName = row.DisplayName
 		author.Avatar = row.Avatar
-	} else if ident, err := s.Dir.LookupDID(r.Context(), *viewerDID); err == nil {
+	} else if ident, err := s.Dir.LookupDID(r.Context(), actorDID); err == nil {
 		author.Handle = ident.Handle.String()
 	}
 
-	saveRows, nextCursor, err := s.Store.GetLibrarySavesPage(r.Context(), viewerStr, viewerStr, limit, cursor)
+	saveRows, nextCursor, err := s.Store.GetLibrarySavesPage(r.Context(), actorStr, viewerStr, limit, cursor)
 	if err != nil {
 		slog.Error("GetLibrarySavesPage", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -935,7 +959,7 @@ func (s *Server) XRPCGetLibrarySaves(w http.ResponseWriter, r *http.Request) {
 
 	views := make([]saveView, 0, len(saveRows))
 	for _, row := range saveRows {
-		views = append(views, buildSaveView(row, author, true, s.CDNBaseURL))
+		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
 	}
 	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getLibrarySaves", "err", err)
