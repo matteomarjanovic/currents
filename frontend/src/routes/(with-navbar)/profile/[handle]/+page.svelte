@@ -12,6 +12,7 @@
 	import ProfileEditDialog from '$lib/components/profile-edit-dialog.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import PullToRefresh from '$lib/components/pull-to-refresh.svelte';
 	import type { ActorProfileView, CollectionView } from '$lib/types';
 	import { bunnyImageUrl } from '$lib/image-url';
 	import type { PageData } from './$types';
@@ -222,6 +223,37 @@
 			};
 		}
 	}
+
+	async function refreshProfile() {
+		const handle = page.params.handle ?? '';
+		const profileRequest = apiFetch(
+			`/xrpc/is.currents.actor.getProfile?actor=${encodeURIComponent(handle)}`
+		)
+			.then(async (res) => {
+				if (res.ok) profile = await res.json();
+			})
+			.catch(() => {});
+
+		let tabRequest: Promise<void>;
+		switch (activeTab) {
+			case 'unsorted':
+				unsorted.reset();
+				tabRequest = unsorted.loadMore();
+				break;
+			case 'all':
+				all.reset();
+				tabRequest = all.loadMore();
+				break;
+			case 'favourites':
+				favourites.reset();
+				tabRequest = favourites.loadMore();
+				break;
+			default:
+				collectionScroll.reset();
+				tabRequest = collectionScroll.loadMore();
+		}
+		await Promise.all([profileRequest, tabRequest]);
+	}
 </script>
 
 <svelte:head>
@@ -242,6 +274,17 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl pb-16">
+	<PullToRefresh
+		label="profile"
+		disabled={activeTab === 'collections'
+			? collectionScroll.loading
+			: activeTab === 'unsorted'
+				? unsorted.loading
+				: activeTab === 'all'
+					? all.loading
+					: favourites.loading}
+		onRefresh={refreshProfile}
+	/>
 	{#if notFound || !profile}
 		<div class="py-24 text-center">
 			<h1 class="text-lg font-medium text-foreground">Profile not found</h1>

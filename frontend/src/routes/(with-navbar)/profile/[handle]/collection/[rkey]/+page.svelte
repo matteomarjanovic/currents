@@ -9,6 +9,7 @@
 	import { onSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
+	import PullToRefresh from '$lib/components/pull-to-refresh.svelte';
 	import CollectionHeader from '$lib/components/collection-header.svelte';
 	import CollectionCard from '$lib/components/collection-card.svelte';
 	import CollectionEditDialog from '$lib/components/collection-edit-dialog.svelte';
@@ -179,6 +180,10 @@
 		return `/profile/${handle}/collection/${rkey}`;
 	}
 
+	function refreshCollection() {
+		return invalidateAll();
+	}
+
 	const pageTitle = $derived((collection?.name || 'Collection') + ' · Currents');
 	const description = $derived(
 		(
@@ -210,6 +215,8 @@
 	<meta name="twitter:title" content={pageTitle} />
 	<meta name="twitter:description" content={description} />
 </svelte:head>
+
+<PullToRefresh label="collection" disabled={scroll.loading} onRefresh={refreshCollection} />
 
 {#if notFound}
 	<div class="mx-auto max-w-5xl">
