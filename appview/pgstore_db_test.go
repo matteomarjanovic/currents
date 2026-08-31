@@ -955,8 +955,13 @@ func TestUserPrefs(t *testing.T) {
 	if got.OrganizeCollectionSort != "name" {
 		t.Fatalf("default organizeCollectionSort = %q, want name", got.OrganizeCollectionSort)
 	}
+	if got.SaveSuggestionMode != "recommended-then-last-used" {
+		t.Fatalf("default saveSuggestionMode = %q, want recommended-then-last-used", got.SaveSuggestionMode)
+	}
 
-	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: false, OrganizeCollectionSort: "recent"}); err != nil {
+	if err := s.SetUserPrefs(ctx, did, UserPrefs{
+		GifAutoplay: false, OrganizeCollectionSort: "recent", SaveSuggestionMode: "recommended",
+	}); err != nil {
 		t.Fatalf("SetUserPrefs: %v", err)
 	}
 	got, err = s.GetUserPrefs(ctx, did)
@@ -969,6 +974,9 @@ func TestUserPrefs(t *testing.T) {
 	if got.OrganizeCollectionSort != "recent" {
 		t.Fatalf("stored organizeCollectionSort = %q, want recent", got.OrganizeCollectionSort)
 	}
+	if got.SaveSuggestionMode != "recommended" {
+		t.Fatalf("stored saveSuggestionMode = %q, want recommended", got.SaveSuggestionMode)
+	}
 
 	// Upsert path: flipping back updates the existing row rather than erroring.
 	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: true, OrganizeCollectionSort: "name"}); err != nil {
@@ -977,6 +985,81 @@ func TestUserPrefs(t *testing.T) {
 	got, _ = s.GetUserPrefs(ctx, did)
 	if !got.GifAutoplay {
 		t.Fatalf("updated gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+}
+
+func TestSuggestedCollections(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	viewer := "did:plc:suggestionviewer"
+	source := "did:plc:suggestionsource"
+	collectionURI := func(rkey string) string {
+		return "at://" + viewer + "/is.currents.feed.collection/" + rkey
+	}
+
+	flowers := collectionURI("flowers")
+	carsRoot := collectionURI("cars")
+	carsSection := collectionURI("sports-cars")
+	empty := collectionURI("empty")
+	seedCollection(t, s, flowers, viewer, "Flowers", "", testBase)
+	seedCollection(t, s, carsRoot, viewer, "Cars", "", testBase)
+	seedCollection(t, s, carsSection, viewer, "Sports cars", carsRoot, testBase)
+	seedCollection(t, s, empty, viewer, "Empty", "", testBase)
+
+	flowerEmbedding := make([]float32, 768)
+	flowerEmbedding[0] = 1
+	carEmbedding := make([]float32, 768)
+	carEmbedding[1] = 1
+	if err := s.UpdateCollectionEmbedding(ctx, flowers, flowerEmbedding); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateCollectionEmbedding(ctx, carsSection, carEmbedding); err != nil {
+		t.Fatal(err)
+	}
+	// Another account's exact match must never be eligible.
+	other := "at://did:plc:other/is.currents.feed.collection/exact"
+	seedCollection(t, s, other, "did:plc:other", "Other", "", testBase)
+	if err := s.UpdateCollectionEmbedding(ctx, other, flowerEmbedding); err != nil {
+		t.Fatal(err)
+	}
+
+	seed := func(rkey, blob string, embedding []float32) string {
+		t.Helper()
+		uri := "at://" + source + "/is.currents.feed.save/" + rkey
+		viID, err := s.CreateVI(ctx, source, blob, embedding, nil, nil)
+		if err != nil {
+			t.Fatalf("CreateVI(%s): %v", rkey, err)
+		}
+		quality := float32(0.5)
+		if err := s.UpsertSave(ctx, UpsertSaveParams{
+			URI: uri, AuthorDID: source, CollectionURI: "", PdsBlobCID: blob,
+			ContentNSID: "is.currents.content.image", CreatedAt: &testBase,
+			VisualIdentityID: &viID, QualityScore: &quality,
+		}); err != nil {
+			t.Fatalf("UpsertSave(%s): %v", rkey, err)
+		}
+		return uri
+	}
+
+	flowerImage := make([]float32, 768)
+	flowerImage[0], flowerImage[1] = 0.9, 0.1
+	carImage := make([]float32, 768)
+	carImage[0], carImage[1] = 0.1, 0.9
+	flowerSave := seed("flower", "blob-flower", flowerImage)
+	carSave := seed("car", "blob-car", carImage)
+
+	got, err := s.GetSuggestedCollections(ctx, viewer, []string{flowerSave, carSave, "at://missing"})
+	if err != nil {
+		t.Fatalf("GetSuggestedCollections: %v", err)
+	}
+	if got[flowerSave] != flowers {
+		t.Fatalf("flower suggestion = %q, want %q", got[flowerSave], flowers)
+	}
+	if got[carSave] != carsSection {
+		t.Fatalf("car suggestion = %q, want section %q", got[carSave], carsSection)
+	}
+	if _, ok := got["at://missing"]; ok {
+		t.Fatal("missing save unexpectedly received a suggestion")
 	}
 }
 

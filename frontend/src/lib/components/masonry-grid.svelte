@@ -14,7 +14,7 @@
 		linkToDetail?: boolean;
 		// Forwarded to each ImageCard; shows an always-visible Save button on mobile.
 		mobileSave?: boolean;
-		// Forwarded to each ImageCard; long-pressing a tile opens the collection drawer.
+		// Forwarded to each ImageCard; long-pressing a tile opens Quick actions.
 		longPressSave?: boolean;
 		// This grid's own "load the next page". Passing it lets the detail view keep
 		// swiping past what was on screen when the tile was tapped: it asks for another

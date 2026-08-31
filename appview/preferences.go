@@ -14,6 +14,7 @@ import (
 type UserPrefs struct {
 	GifAutoplay            bool   `json:"gifAutoplay"`
 	OrganizeCollectionSort string `json:"organizeCollectionSort"`
+	SaveSuggestionMode     string `json:"saveSuggestionMode"`
 }
 
 // defaultUserPrefs is returned for users with no stored row. Kept in sync with
@@ -21,6 +22,11 @@ type UserPrefs struct {
 var defaultUserPrefs = UserPrefs{
 	GifAutoplay:            true,
 	OrganizeCollectionSort: "name",
+	SaveSuggestionMode:     "recommended-then-last-used",
+}
+
+func validSaveSuggestionMode(mode string) bool {
+	return mode == "last-used" || mode == "recommended" || mode == "recommended-then-last-used"
 }
 
 func (s *Server) APIGetPreferences(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +55,7 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 	var patch struct {
 		GifAutoplay            *bool   `json:"gifAutoplay"`
 		OrganizeCollectionSort *string `json:"organizeCollectionSort"`
+		SaveSuggestionMode     *string `json:"saveSuggestionMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -68,6 +75,13 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prefs.OrganizeCollectionSort = *patch.OrganizeCollectionSort
+	}
+	if patch.SaveSuggestionMode != nil {
+		if !validSaveSuggestionMode(*patch.SaveSuggestionMode) {
+			http.Error(w, "invalid saveSuggestionMode", http.StatusBadRequest)
+			return
+		}
+		prefs.SaveSuggestionMode = *patch.SaveSuggestionMode
 	}
 	if err := s.Store.SetUserPrefs(r.Context(), did.String(), prefs); err != nil {
 		http.Error(w, fmt.Sprintf("saving preferences: %s", err), http.StatusInternalServerError)

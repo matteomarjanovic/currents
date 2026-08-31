@@ -22,6 +22,7 @@
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
 	import ImageFocusDialog from '$lib/components/image-focus-dialog.svelte';
+	import ImageActionGrid from '$lib/components/image-action-grid.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
@@ -34,7 +35,6 @@
 	import { extendSaveSequence, neighbourSave, savesAfter } from '$lib/save-sequence.svelte';
 	import { swipe } from '$lib/swipe';
 	import { bunnyImageUrl } from '$lib/image-url';
-	import { copyImage, copyLink, downloadImage, shareLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
@@ -42,11 +42,7 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Flag from '@lucide/svelte/icons/flag';
-	import Copy from '@lucide/svelte/icons/copy';
-	import Download from '@lucide/svelte/icons/download';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
-	import LinkIcon from '@lucide/svelte/icons/link';
-	import Share2 from '@lucide/svelte/icons/share-2';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Star from '@lucide/svelte/icons/star';
 	import {
@@ -225,11 +221,6 @@
 		actionDrawerOpen = false;
 		imagePointers.clear();
 	});
-
-	function runImageAction(action: (save: SaveView) => Promise<void>) {
-		actionDrawerOpen = false;
-		void action(currentSave);
-	}
 
 	function goBack() {
 		if (onClose) {
@@ -553,7 +544,7 @@
 		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
 
-	{#if sourceLink || native}
+	{#if sourceLink || isMobile.current}
 		<div class="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground">
 			{#if sourceLink}
 				<div class="inline-flex min-w-0 items-center gap-1">
@@ -569,11 +560,11 @@
 					</a>
 				</div>
 			{/if}
-			{#if native}
+			{#if isMobile.current}
 				<Button
-					variant="ghost"
+					variant="outline"
 					size="icon-sm"
-					class="-mr-2 ml-auto shrink-0"
+					class="ml-auto shrink-0"
 					onclick={() => (actionDrawerOpen = true)}
 					aria-label="Image actions"
 				>
@@ -975,51 +966,15 @@
 	</div>
 </div>
 
-{#if native}
+{#if isMobile.current}
 	<Drawer.Root bind:open={actionDrawerOpen}>
 		<Drawer.Content>
 			<Drawer.Header>
 				<Drawer.Title>Image actions</Drawer.Title>
 				<Drawer.Description>Save, copy, or share this image.</Drawer.Description>
 			</Drawer.Header>
-			<div
-				class="grid grid-cols-2 gap-2 px-4"
-				style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
-			>
-				{#if image}
-					<Button
-						variant="outline"
-						class="h-14 flex-col gap-1 pt-1"
-						onclick={() => runImageAction(downloadImage)}
-					>
-						<Download />
-						Download
-					</Button>
-					<Button
-						variant="outline"
-						class="h-14 flex-col gap-1 pt-1"
-						onclick={() => runImageAction(copyImage)}
-					>
-						<Copy />
-						Copy image
-					</Button>
-				{/if}
-				<Button
-					variant="outline"
-					class="h-14 flex-col gap-1 pt-1"
-					onclick={() => runImageAction(shareLink)}
-				>
-					<Share2 />
-					Share
-				</Button>
-				<Button
-					variant="outline"
-					class="h-14 flex-col gap-1 pt-1"
-					onclick={() => runImageAction(copyLink)}
-				>
-					<LinkIcon />
-					Copy link
-				</Button>
+			<div class="px-4" style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)">
+				<ImageActionGrid item={currentSave} onAction={() => (actionDrawerOpen = false)} />
 			</div>
 		</Drawer.Content>
 	</Drawer.Root>

@@ -189,6 +189,16 @@ test('web pinch stays with the browser instead of opening image focus', async ({
 	await expect(page.locator('[data-image-focus]')).toHaveCount(0);
 });
 
+test('mobile web exposes the image actions drawer', async ({ page }) => {
+	await openFirstSave(page);
+
+	await page.getByRole('button', { name: 'Image actions' }).tap();
+	await expect(page.getByText('Image actions', { exact: true })).toBeVisible();
+	for (const action of ['Download', 'Copy image', 'Share', 'Copy link']) {
+		await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
+	}
+});
+
 test('native pinch opens focus and continuously zooms on the first gesture', async ({ page }) => {
 	await emulateNativeApp(page);
 	await openFirstSave(page);

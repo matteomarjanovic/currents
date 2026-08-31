@@ -13,8 +13,18 @@
 	import Download from '@lucide/svelte/icons/download';
 	import { findFeedLevel } from '$lib/feed-levels';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { preferences } from '$lib/stores/preferences.svelte';
+	import {
+		endExploreSaveSession,
+		startExploreSaveSession
+	} from '$lib/stores/save-suggestions.svelte';
 
 	const level = $derived(findFeedLevel(page.params.level));
+
+	onMount(() => {
+		startExploreSaveSession(preferences.saveSuggestionMode);
+		return endExploreSaveSession;
+	});
 
 	// Unknown slugs and auth-only feeds for logged-out visitors fall back to general.
 	$effect(() => {

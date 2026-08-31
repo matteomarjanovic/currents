@@ -1281,8 +1281,8 @@ func (m *PgStore) SetModerationPrefs(ctx context.Context, viewerDID string, p Mo
 func (m *PgStore) GetUserPrefs(ctx context.Context, viewerDID string) (UserPrefs, error) {
 	p := defaultUserPrefs
 	err := m.pool.QueryRow(ctx,
-		`SELECT gif_autoplay, organize_collection_sort FROM user_pref WHERE viewer_did = $1`,
-		viewerDID).Scan(&p.GifAutoplay, &p.OrganizeCollectionSort)
+		`SELECT gif_autoplay, organize_collection_sort, save_suggestion_mode FROM user_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.GifAutoplay, &p.OrganizeCollectionSort, &p.SaveSuggestionMode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return defaultUserPrefs, nil
 	}
@@ -1296,14 +1296,18 @@ func (m *PgStore) SetUserPrefs(ctx context.Context, viewerDID string, p UserPref
 	if p.OrganizeCollectionSort == "" {
 		p.OrganizeCollectionSort = defaultUserPrefs.OrganizeCollectionSort
 	}
+	if p.SaveSuggestionMode == "" {
+		p.SaveSuggestionMode = defaultUserPrefs.SaveSuggestionMode
+	}
 	_, err := m.pool.Exec(ctx,
-		`INSERT INTO user_pref (viewer_did, gif_autoplay, organize_collection_sort, updated_at)
-		 VALUES ($1, $2, $3, now())
+		`INSERT INTO user_pref (viewer_did, gif_autoplay, organize_collection_sort, save_suggestion_mode, updated_at)
+		 VALUES ($1, $2, $3, $4, now())
 		 ON CONFLICT (viewer_did) DO UPDATE SET
 		     gif_autoplay = EXCLUDED.gif_autoplay,
 		     organize_collection_sort = EXCLUDED.organize_collection_sort,
+		     save_suggestion_mode = EXCLUDED.save_suggestion_mode,
 		     updated_at = now()`,
-		viewerDID, p.GifAutoplay, p.OrganizeCollectionSort)
+		viewerDID, p.GifAutoplay, p.OrganizeCollectionSort, p.SaveSuggestionMode)
 	return err
 }
 
@@ -2990,6 +2994,76 @@ type CollectionImportance struct {
 	URI       string
 	Embedding []float32
 	Score     float64
+}
+
+// GetSuggestedCollections chooses the viewer collection or section whose
+// canonical embedding is closest to each requested save's visual identity.
+// The per-viewer candidate set is small, so this is an exact scan rather than
+// an approximate global-index search with an author filter.
+func (m *PgStore) GetSuggestedCollections(ctx context.Context, viewerDID string, saveURIs []string) (map[string]string, error) {
+	collections, err := m.pool.Query(ctx, `
+		SELECT uri, canonical_embedding
+		FROM collection
+		WHERE author_did = $1
+		  AND canonical_embedding IS NOT NULL
+		ORDER BY uri
+	`, viewerDID)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []CollectionImportance
+	for collections.Next() {
+		var candidate CollectionImportance
+		var vec pgvector.Vector
+		if err := collections.Scan(&candidate.URI, &vec); err != nil {
+			collections.Close()
+			return nil, err
+		}
+		candidate.Embedding = vec.Slice()
+		candidates = append(candidates, candidate)
+	}
+	if err := collections.Err(); err != nil {
+		collections.Close()
+		return nil, err
+	}
+	collections.Close()
+
+	result := make(map[string]string, len(saveURIs))
+	if len(candidates) == 0 || len(saveURIs) == 0 {
+		return result, nil
+	}
+
+	rows, err := m.pool.Query(ctx, `
+		SELECT wanted.uri, vi.embedding
+		FROM unnest($1::text[]) WITH ORDINALITY AS wanted(uri, ord)
+		JOIN save s ON s.uri = wanted.uri
+		JOIN visual_identity vi ON vi.id = s.visual_identity_id
+		WHERE vi.embedding IS NOT NULL
+		ORDER BY wanted.ord
+	`, saveURIs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var saveURI string
+		var vec pgvector.Vector
+		if err := rows.Scan(&saveURI, &vec); err != nil {
+			return nil, err
+		}
+		embedding := vec.Slice()
+		bestURI := ""
+		var bestDistance float32
+		for _, candidate := range candidates {
+			distance := cosineDistance(embedding, candidate.Embedding)
+			if bestURI == "" || distance < bestDistance {
+				bestURI = candidate.URI
+				bestDistance = distance
+			}
+		}
+		result[saveURI] = bestURI
+	}
+	return result, rows.Err()
 }
 
 type VisualIdentityEmbedding struct {

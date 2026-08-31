@@ -1,5 +1,6 @@
 import { apiFetch } from '$lib/api';
 import type { OrganizeCollectionSort } from '$lib/organize-collections';
+import { DEFAULT_SAVE_SUGGESTION_MODE, type SaveSuggestionMode } from '$lib/save-suggestion';
 
 // Reactive viewer preferences for UI/rendering behavior. Server-backed so they
 // follow the user across browsers and devices (web + mobile). Distinct from
@@ -9,12 +10,14 @@ interface Prefs {
 	// and play on hover (see save-image.svelte).
 	gifAutoplay: boolean;
 	organizeCollectionSort: OrganizeCollectionSort;
+	saveSuggestionMode: SaveSuggestionMode;
 }
 
-// Defaults mirror the appview DB column defaults (migrations 042 and 048).
+// Defaults mirror the appview DB column defaults (migrations 042, 048, and 050).
 const DEFAULTS: Prefs = {
 	gifAutoplay: true,
-	organizeCollectionSort: 'name'
+	organizeCollectionSort: 'name',
+	saveSuggestionMode: DEFAULT_SAVE_SUGGESTION_MODE
 };
 
 export const preferences = $state<Prefs>({ ...DEFAULTS });
@@ -29,6 +32,13 @@ export async function loadPreferences() {
 		if (data.organizeCollectionSort === 'name' || data.organizeCollectionSort === 'recent') {
 			preferences.organizeCollectionSort = data.organizeCollectionSort;
 		}
+		if (
+			data.saveSuggestionMode === 'last-used' ||
+			data.saveSuggestionMode === 'recommended' ||
+			data.saveSuggestionMode === 'recommended-then-last-used'
+		) {
+			preferences.saveSuggestionMode = data.saveSuggestionMode;
+		}
 		preferencesLoaded.value = true;
 	} catch {
 		// best-effort; the defaults remain in effect until a later load
@@ -42,7 +52,8 @@ async function persist() {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				gifAutoplay: preferences.gifAutoplay,
-				organizeCollectionSort: preferences.organizeCollectionSort
+				organizeCollectionSort: preferences.organizeCollectionSort,
+				saveSuggestionMode: preferences.saveSuggestionMode
 			})
 		});
 	} catch {
@@ -57,5 +68,10 @@ export function setGifAutoplay(val: boolean) {
 
 export function setOrganizeCollectionSort(val: OrganizeCollectionSort) {
 	preferences.organizeCollectionSort = val; // optimistic
+	void persist();
+}
+
+export function setSaveSuggestionMode(val: SaveSuggestionMode) {
+	preferences.saveSuggestionMode = val; // optimistic
 	void persist();
 }

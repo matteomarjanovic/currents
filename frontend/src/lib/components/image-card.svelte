@@ -10,6 +10,7 @@
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
+	import MobileQuickActionsDrawer from '$lib/components/mobile-quick-actions-drawer.svelte';
 
 	interface Props {
 		item: SaveView;
@@ -19,8 +20,8 @@
 		// The hover overlay needs a pointer; opt into an always-visible Save button
 		// (bottom-right, opens the collection drawer) on mobile viewports.
 		mobileSave?: boolean;
-		// Opt into long-press-to-save on touch: holding the tile opens the collection
-		// drawer directly instead of requiring a trip through the detail view first.
+		// Opt into touch actions: holding the tile opens Quick actions, whose save
+		// controls include Quick Save and the full collection picker.
 		longPressSave?: boolean;
 		// Called just before the detail view opens, so the grid can record the run of
 		// images this tile came from (see $lib/save-sequence).
@@ -36,7 +37,7 @@
 	}: Props = $props();
 
 	let dropdownOpen = $state(false);
-	let longPressDrawerOpen = $state(false);
+	let quickActionsOpen = $state(false);
 	let suppressNextClick = false;
 	let href = $derived.by(() => {
 		const rkey = item.uri.split('/').pop() ?? '';
@@ -68,7 +69,7 @@
 		}
 		if (!collections.loaded) return;
 		suppressNextClick = true;
-		longPressDrawerOpen = true;
+		quickActionsOpen = true;
 	}
 
 	function handleClick(e: MouseEvent) {
@@ -177,16 +178,11 @@
 		{/snippet}
 	</LabeledMedia>
 	{#if longPressSave && auth.user && collections.loaded}
-		<CollectionSelector
+		<MobileQuickActionsDrawer
 			{item}
-			variant="drawer"
-			bind:open={longPressDrawerOpen}
+			bind:open={quickActionsOpen}
 			onSavesChange={handleSavesChange}
-		>
-			{#snippet trigger({ props })}
-				<button {...props} type="button" class="hidden" tabindex={-1} aria-hidden="true"></button>
-			{/snippet}
-		</CollectionSelector>
+		/>
 	{/if}
 	{#if mobileSave && auth.user && collections.loaded}
 		<div class="absolute right-1.5 bottom-1.5 md:hidden">

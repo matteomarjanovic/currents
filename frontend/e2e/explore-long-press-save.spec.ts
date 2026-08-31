@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
 // Explore is the one grid where a tile is a link to the detail view, so a normal
-// tap has to keep navigating — long-pressing is the only way to reach the
-// collection drawer without a trip through the detail view first.
+// tap has to keep navigating — long-pressing is the only way to reach Quick
+// actions without a trip through the detail view first.
 
 const APPVIEW = 'https://api-dev.currents.is';
 const me = { did: 'did:plc:test', handle: 'test.bsky.social', displayName: 'Tester' };
@@ -10,7 +10,7 @@ const collections = Array.from({ length: 30 }, (_, i) => ({
 	uri: `at://did:plc:test/is.currents.collection/c${i}`,
 	author: { did: me.did, handle: me.handle, displayName: me.displayName },
 	name: i === 0 ? 'Test Collection' : `Test Collection ${i + 1}`,
-	previews: [],
+	previews: i === 0 ? [{ url: `${APPVIEW}/img/${me.did}/collection-preview` }] : [],
 	saveCount: 1,
 	createdAt: '2026-01-01T00:00:00Z'
 }));
@@ -99,13 +99,15 @@ async function touchDragAndReverse(
 	for (let step = 1; step <= 12; step++) {
 		await client.send('Input.dispatchTouchEvent', {
 			type: 'touchMove',
-			touchPoints: [{ x: point.x, y: point.y - upDistance + ((upDistance + downDistance) * step) / 12 }]
+			touchPoints: [
+				{ x: point.x, y: point.y - upDistance + ((upDistance + downDistance) * step) / 12 }
+			]
 		});
 	}
 	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 
-test('long-pressing a tile opens the collection drawer and saves without navigating', async ({
+test('long-pressing a tile opens Quick actions and quick-saves without navigating', async ({
 	page
 }) => {
 	await mockApi(page);
@@ -117,11 +119,34 @@ test('long-pressing a tile opens the collection drawer and saves without navigat
 	// every mount) and lose the gesture when it tore the tile down mid-press.
 	await longPress(page, page.locator('a.block').first());
 
-	await expect(page.getByText('Save to collection')).toBeVisible();
+	await expect(page.getByText('Quick actions', { exact: true })).toBeVisible();
+	for (const action of ['Download', 'Copy image', 'Share', 'Copy link']) {
+		await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
+	}
 	await expect(page).toHaveURL(/\/explore\/general/);
 
+	const quickSave = page.getByRole('button', {
+		name: 'Quick save to Test Collection',
+		exact: true
+	});
+	await expect(quickSave.locator('img')).toHaveCount(1);
+	await expect(
+		quickSave.locator('span').filter({ hasText: 'Test Collection' }).last()
+	).toBeVisible();
+	await quickSave.click();
+	await expect(page.getByText('Quick actions', { exact: true })).toBeHidden();
+});
+
+test('Save somewhere else turns Quick actions into the collection selector', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/explore/general');
+	await page.waitForSelector('a.block img', { timeout: 10_000 });
+	await longPress(page, page.locator('a.block').first());
+
+	await page.getByRole('button', { name: 'Save somewhere else', exact: true }).click();
+	await expect(page.getByText('Save somewhere else', { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'Test Collection Public', exact: true }).click();
-	await expect(page.getByText('Save to collection')).toBeHidden();
+	await expect(page.getByText('Save somewhere else', { exact: true })).toBeHidden();
 });
 
 test('a short tap still opens the detail view instead of the drawer', async ({ page }) => {
@@ -132,7 +157,7 @@ test('a short tap still opens the detail view instead of the drawer', async ({ p
 	await page.locator('a.block').first().tap();
 
 	await expect(page.locator('.fixed.inset-0.z-50').first()).toBeVisible();
-	await expect(page.getByText('Save to collection')).not.toBeVisible();
+	await expect(page.getByText('Quick actions', { exact: true })).not.toBeVisible();
 });
 
 test('a scrolled list must be released before a collection row can close the drawer', async ({
@@ -142,6 +167,7 @@ test('a scrolled list must be released before a collection row can close the dra
 	await page.goto('/explore/general');
 	await page.waitForSelector('a.block img', { timeout: 10_000 });
 	await longPress(page, page.locator('a.block').first());
+	await page.getByRole('button', { name: 'Save somewhere else', exact: true }).click();
 	await page.waitForTimeout(600); // Vaul's opening animation is intentionally not draggable.
 
 	const list = page.locator('[data-vaul-drawer] > div.overflow-y-auto');
@@ -150,18 +176,18 @@ test('a scrolled list must be released before a collection row can close the dra
 	// A gesture that begins at the top but scrolls upward first remains list-owned
 	// when it reverses downward; only lifting the finger resets ownership.
 	await touchDragAndReverse(page, row, 120, 300);
-	await expect(page.getByText('Save to collection')).toBeVisible();
+	await expect(page.getByText('Save somewhere else', { exact: true })).toBeVisible();
 	await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
 
 	await touchDrag(page, row, -180); // Scroll the list down.
 	await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 	// The gesture that returns the list to its top must not also drag the drawer.
 	await touchDrag(page, row, 420);
-	await expect(page.getByText('Save to collection')).toBeVisible();
+	await expect(page.getByText('Save somewhere else', { exact: true })).toBeVisible();
 	await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(0);
 
 	// A fresh gesture that begins at the top owns the drawer.
 	await touchDrag(page, row, 260);
 
-	await expect(page.getByText('Save to collection')).toBeHidden();
+	await expect(page.getByText('Save somewhere else', { exact: true })).toBeHidden();
 });

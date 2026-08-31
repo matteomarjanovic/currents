@@ -7,7 +7,8 @@
 	import { isIos, isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
-	import { loadPreferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
+	import { loadPreferences, preferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
+	import { setExploreSaveSuggestionMode } from '$lib/stores/save-suggestions.svelte';
 	import SettingsDialog from '$lib/components/settings-dialog.svelte';
 	import SupporterDialog from '$lib/components/supporter-dialog.svelte';
 	import SupporterThanksDialog from '$lib/components/supporter-thanks-dialog.svelte';
@@ -68,6 +69,10 @@
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 			if (!preferencesLoaded.value) void loadPreferences();
 		});
+	});
+
+	$effect(() => {
+		setExploreSaveSuggestionMode(preferences.saveSuggestionMode);
 	});
 
 	// Hide the native splash only once the first content is ready (the route layouts gate rendering

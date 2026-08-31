@@ -29,6 +29,12 @@
 	import { bunnyImageUrl } from '$lib/image-url';
 	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
 	import {
+		exploreSaveSuggestions,
+		queueExploreSaveSuggestion,
+		recordExploreSaveDestination
+	} from '$lib/stores/save-suggestions.svelte';
+	import { needsImageRecommendation, resolveQuickSaveDestination } from '$lib/save-suggestion';
+	import {
 		orderCollectionSelectorEntries,
 		orderCollectionSelectorSections
 	} from '$lib/collection-selector-order';
@@ -37,7 +43,7 @@
 		item?: SaveView;
 		// `inline` renders only the collection list (no trigger/wrapper) — for embedding
 		// in a context-menu submenu or a custom drawer.
-		variant?: 'popover' | 'drawer' | 'inline';
+		variant?: 'popover' | 'drawer' | 'inline' | 'quick';
 		// Style of the popover trigger button. Defaults to the translucent `glass`
 		// (good over imagery, e.g. card tiles); pass a solid variant on plain
 		// backgrounds where glass would blend in (e.g. the save-detail sidebar).
@@ -79,11 +85,46 @@
 			? collections.lastUsedUri
 			: undefined
 	);
+	let recommendedCollectionUri = $derived.by(() => {
+		if (!item) return undefined;
+		const uri = exploreSaveSuggestions.bySaveUri.get(item.uri);
+		return typeof uri === 'string' && collections.items.some((collection) => collection.uri === uri)
+			? uri
+			: undefined;
+	});
+	let sessionCollectionUri = $derived(
+		exploreSaveSuggestions.sessionUri &&
+			collections.items.some((collection) => collection.uri === exploreSaveSuggestions.sessionUri)
+			? exploreSaveSuggestions.sessionUri
+			: undefined
+	);
+	let quickSaveCollectionUri = $derived(
+		resolveQuickSaveDestination({
+			active: !!item && exploreSaveSuggestions.active,
+			mode: exploreSaveSuggestions.mode,
+			sessionUri: sessionCollectionUri,
+			recommendedUri: recommendedCollectionUri,
+			lastUsedUri: rememberedCollectionUri
+		})
+	);
 	let selectedCollectionUri = $derived(
 		pickerMode
 			? (selectedUri ?? rememberedCollectionUri)
-			: (userSelectedUri ?? rememberedCollectionUri ?? localSaves[0]?.collectionUri ?? '')
+			: (userSelectedUri ?? quickSaveCollectionUri ?? localSaves[0]?.collectionUri ?? '')
 	);
+	let recommendationPending = $derived(
+		!!item &&
+			needsImageRecommendation({
+				active: exploreSaveSuggestions.active,
+				mode: exploreSaveSuggestions.mode,
+				sessionUri: sessionCollectionUri
+			}) &&
+			!exploreSaveSuggestions.bySaveUri.has(item.uri)
+	);
+
+	$effect(() => {
+		if (item && recommendationPending) queueExploreSaveSuggestion(item.uri);
+	});
 
 	$effect(() => {
 		if (!item) return;
@@ -167,12 +208,16 @@
 		open = false;
 		createOpen = true;
 	}
+	let selectedCollection = $derived(
+		collections.items.find((collection) => collection.uri === selectedCollectionUri)
+	);
 
 	let selectedName = $derived(
-		selectedCollectionUri === UNSORTED_URI
-			? 'Profile (unsorted)'
-			: (collections.items.find((c) => c.uri === selectedCollectionUri)?.name ??
-					'Select collection')
+		recommendationPending
+			? 'Finding a collection…'
+			: selectedCollectionUri === UNSORTED_URI
+				? 'Profile (unsorted)'
+				: (selectedCollection?.name ?? 'Select collection')
 	);
 
 	function isSavedInSelected() {
@@ -204,6 +249,7 @@
 					: s
 			);
 			onSavesChange?.(localSaves);
+			recordExploreSaveDestination(collectionUri);
 			const collectionName =
 				collectionUri === UNSORTED_URI
 					? 'your profile'
@@ -448,6 +494,7 @@
 		{#if !pickerMode && !trigger}
 			<Toggle
 				size="default"
+				disabled={recommendationPending}
 				pressed={!!isSavedInSelected()}
 				onPressedChange={handleButtonClick}
 				class="border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
@@ -456,6 +503,35 @@
 			</Toggle>
 		{/if}
 	</div>
+{:else if variant === 'quick'}
+	<Toggle
+		size="lg"
+		disabled={recommendationPending}
+		pressed={!!isSavedInSelected()}
+		onPressedChange={handleButtonClick}
+		aria-label={recommendationPending
+			? 'Finding a Quick Save destination'
+			: `Quick save to ${selectedName}`}
+		class="h-auto min-h-14 w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-foreground hover:bg-muted aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
+	>
+		<span class="flex min-w-0 items-center justify-center gap-2.5">
+			{#if recommendationPending}
+				<span class="size-9 shrink-0 rounded-md bg-muted"></span>
+			{:else if selectedCollection}
+				{@render preview(selectedCollection)}
+			{:else if selectedCollectionUri === UNSORTED_URI}
+				<span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+					<User class="size-4 text-muted-foreground" />
+				</span>
+			{:else}
+				<span class="size-9 shrink-0 rounded-md bg-muted"></span>
+			{/if}
+			<span class="flex min-w-0 flex-col items-start text-left">
+				<span class="max-w-full truncate text-sm font-medium">{selectedName}</span>
+				<span class="text-xs text-muted-foreground">Quick save</span>
+			</span>
+		</span>
+	</Toggle>
 {:else if variant === 'inline'}
 	{@render collectionList()}
 {:else}

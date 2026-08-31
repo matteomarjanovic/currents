@@ -27,8 +27,10 @@
 		preferences,
 		preferencesLoaded,
 		loadPreferences,
-		setGifAutoplay
+		setGifAutoplay,
+		setSaveSuggestionMode
 	} from '$lib/stores/preferences.svelte';
+	import type { SaveSuggestionMode } from '$lib/save-suggestion';
 	import {
 		feedPreferences,
 		feedPreferencesLoaded,
@@ -115,6 +117,29 @@
 		{ value: 'general', label: 'General' },
 		{ value: 'new-worlds', label: 'New worlds' },
 		{ value: 'personal', label: 'Personal' }
+	];
+
+	const SAVE_SUGGESTION_OPTIONS: {
+		value: SaveSuggestionMode;
+		label: string;
+		description: string;
+	}[] = [
+		{
+			value: 'recommended-then-last-used',
+			label: 'Match, then follow my choice',
+			description:
+				'Recommend by image; in Explore, follow your choices after the first save until you leave.'
+		},
+		{
+			value: 'recommended',
+			label: 'Match every image',
+			description: 'Recommend the collection or section that best matches each image.'
+		},
+		{
+			value: 'last-used',
+			label: 'Always use my last choice',
+			description: 'Use your latest collection or section as the Quick Save destination.'
+		}
 	];
 
 	let portalLoading = $state(false);
@@ -358,6 +383,40 @@
 										>
 											{option.label}
 										</button>
+									{/each}
+								</div>
+							</div>
+							<div class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+								<div class="flex flex-col gap-0.5">
+									<span class="text-sm font-medium">Quick Save destination</span>
+									<span class="text-xs text-muted-foreground">
+										Choose how Currents picks a collection or section for Quick Save. The latest
+										choice still stays at the top of the collection menu.
+									</span>
+								</div>
+								<div
+									role="radiogroup"
+									aria-label="Quick Save destination"
+									class="flex flex-col gap-1"
+								>
+									{#each SAVE_SUGGESTION_OPTIONS as option (option.value)}
+										<label
+											class="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 transition-colors has-checked:bg-muted has-disabled:cursor-default has-disabled:opacity-50"
+										>
+											<input
+												type="radio"
+												name="save-suggestion-mode"
+												value={option.value}
+												checked={preferences.saveSuggestionMode === option.value}
+												disabled={!preferencesLoaded.value}
+												onchange={() => setSaveSuggestionMode(option.value)}
+												class="mt-0.5 size-4 shrink-0 accent-foreground"
+											/>
+											<span class="flex flex-col gap-0.5">
+												<span class="text-xs font-medium">{option.label}</span>
+												<span class="text-xs text-muted-foreground">{option.description}</span>
+											</span>
+										</label>
 									{/each}
 								</div>
 							</div>
