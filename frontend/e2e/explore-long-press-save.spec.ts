@@ -120,7 +120,7 @@ test('long-pressing a tile opens Quick actions and quick-saves without navigatin
 	await longPress(page, page.locator('a.block').first());
 
 	await expect(page.getByText('Quick actions', { exact: true })).toBeVisible();
-	for (const action of ['Download', 'Copy image', 'Share', 'Copy link']) {
+	for (const action of ['Download', 'Copy image', 'Share', 'Copy link', 'Hide', 'Report']) {
 		await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
 	}
 	await expect(page).toHaveURL(/\/explore\/general/);
@@ -135,6 +135,49 @@ test('long-pressing a tile opens Quick actions and quick-saves without navigatin
 	).toBeVisible();
 	await quickSave.click();
 	await expect(page.getByText('Quick actions', { exact: true })).toBeHidden();
+});
+
+test('desktop: right-clicking a tile opens the same image actions', async ({ page }) => {
+	await mockApi(page);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/explore/general');
+	await page.waitForSelector('a.block img', { timeout: 10_000 });
+
+	await page.locator('a.block').first().click({ button: 'right' });
+
+	for (const action of ['Download', 'Copy image', 'Share', 'Copy link', 'Hide', 'Report']) {
+		await expect(page.getByRole('menuitem', { name: action, exact: true })).toBeVisible();
+	}
+	await expect(page.getByText('Quick actions', { exact: true })).not.toBeVisible();
+});
+
+test('hiding an image removes it from the active feed', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/explore/general');
+	await page.waitForSelector('a.block img', { timeout: 10_000 });
+	await longPress(page, page.locator('a.block').first());
+
+	const hidden = page.waitForRequest((request) => request.url().includes('/api/feed/hidden'));
+	await page.getByRole('button', { name: 'Hide', exact: true }).click();
+	await hidden;
+
+	await expect(page.locator('a.block img')).toHaveCount(0);
+});
+
+test('desktop: detail uses the overflow menu for report and other image actions', async ({
+	page
+}) => {
+	await mockApi(page);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/explore/general');
+	await page.waitForSelector('a.block img', { timeout: 10_000 });
+	await page.locator('a.block').first().click();
+
+	await expect(page.getByText('Report', { exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Image actions' }).click();
+	for (const action of ['Download', 'Copy image', 'Share', 'Copy link', 'Hide', 'Report']) {
+		await expect(page.getByRole('menuitem', { name: action, exact: true })).toBeVisible();
+	}
 });
 
 test('Save somewhere else turns Quick actions into the collection selector', async ({ page }) => {

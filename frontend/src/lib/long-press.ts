@@ -11,6 +11,7 @@ interface LongPressOptions {
 // so the feel matches across the app.
 export function longpress(node: HTMLElement, options: LongPressOptions) {
 	let timer: ReturnType<typeof setTimeout> | null = null;
+	let pointerType = '';
 
 	function clear() {
 		if (timer !== null) {
@@ -20,13 +21,16 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
 	}
 
 	function onPointerDown(e: PointerEvent) {
+		pointerType = e.pointerType;
 		if (!options.enabled || e.pointerType === 'mouse') return;
 		clear();
 		timer = setTimeout(() => options.onLongPress(), DURATION_MS);
 	}
 
 	function onContextMenu(e: Event) {
-		if (!options.enabled || e.defaultPrevented) return;
+		// Mouse right-click belongs to the desktop context menu wrapped around the
+		// card. A touch/pen contextmenu is another way browsers signal a long press.
+		if (!options.enabled || pointerType === 'mouse') return;
 		// Some devices/browsers signal the long-press via `contextmenu` instead of
 		// (or before) our own timer completing — fire from here too, matching
 		// bits-ui's ContextMenuTrigger. Clearing the timer first keeps this from
@@ -35,13 +39,14 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
 		clear();
 		options.onLongPress();
 		e.preventDefault();
+		e.stopPropagation();
 	}
 
 	node.addEventListener('pointerdown', onPointerDown);
 	node.addEventListener('pointerup', clear);
 	node.addEventListener('pointercancel', clear);
 	node.addEventListener('pointermove', clear);
-	node.addEventListener('contextmenu', onContextMenu);
+	node.addEventListener('contextmenu', onContextMenu, true);
 
 	return {
 		update(newOptions: LongPressOptions) {
@@ -53,7 +58,7 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
 			node.removeEventListener('pointerup', clear);
 			node.removeEventListener('pointercancel', clear);
 			node.removeEventListener('pointermove', clear);
-			node.removeEventListener('contextmenu', onContextMenu);
+			node.removeEventListener('contextmenu', onContextMenu, true);
 		}
 	};
 }

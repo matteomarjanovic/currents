@@ -97,7 +97,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(), `
 		TRUNCATE save, collection, "user", follow, favourite_collection, pinned_collection,
-			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref,
+			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref, hidden_feed_image,
 			label, blob_moderation_state, review_item, report, moderation_event,
 			import_session, admin, operations_job_run, operations_host_snapshot
 		RESTART IDENTITY CASCADE
@@ -731,6 +731,81 @@ func TestGlobalFeedJunkFilter(t *testing.T) {
 	}
 	if got := feedURIs(); !got[unscoredURI] {
 		t.Fatal("re-scored image missing from the feed after SetVIJunkScore")
+	}
+}
+
+func TestHiddenFeedImageFiltersAllFeedModes(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const (
+		author = "did:plc:author"
+		viewer = "did:plc:viewer"
+	)
+	emb := make([]float32, 768)
+	emb[0] = 1
+	quality := float32(0.5)
+
+	seed := func(rkey, blob string, vector []float32) (string, string) {
+		t.Helper()
+		uri := "at://" + author + "/is.currents.feed.save/" + rkey
+		viID, err := s.CreateVI(ctx, author, blob, vector, nil, nil)
+		if err != nil {
+			t.Fatalf("CreateVI(%s): %v", rkey, err)
+		}
+		if err := s.UpsertSave(ctx, UpsertSaveParams{
+			URI: uri, AuthorDID: author, CollectionURI: "", PdsBlobCID: blob,
+			ContentNSID: "is.currents.content.image", CreatedAt: &testBase,
+			VisualIdentityID: &viID, QualityScore: &quality,
+		}); err != nil {
+			t.Fatalf("UpsertSave(%s): %v", rkey, err)
+		}
+		if err := s.SetVICanonicalSave(ctx, viID, uri); err != nil {
+			t.Fatalf("SetVICanonicalSave(%s): %v", rkey, err)
+		}
+		return uri, viID
+	}
+
+	hiddenURI, hiddenVI := seed("hidden", "blob-hidden", emb)
+	visibleEmbedding := make([]float32, 768)
+	visibleEmbedding[1] = 1
+	visibleURI, _ := seed("visible", "blob-visible", visibleEmbedding)
+
+	found, err := s.HideFeedImage(ctx, viewer, hiddenURI)
+	if err != nil || !found {
+		t.Fatalf("HideFeedImage = %v, %v; want true, nil", found, err)
+	}
+	if found, err := s.HideFeedImage(ctx, viewer, hiddenURI); err != nil || !found {
+		t.Fatalf("idempotent HideFeedImage = %v, %v; want true, nil", found, err)
+	}
+
+	global, err := s.GetGlobalFeedSaves(ctx, viewer, false, 10, 0)
+	if err != nil {
+		t.Fatalf("GetGlobalFeedSaves: %v", err)
+	}
+	if len(global) != 1 || global[0].URI != visibleURI {
+		t.Fatalf("global feed = %#v; want only %s", global, visibleURI)
+	}
+
+	personalized, err := s.SearchSavesByEmbedding(ctx, emb, viewer, false, 10, 0)
+	if err != nil {
+		t.Fatalf("SearchSavesByEmbedding: %v", err)
+	}
+	if len(personalized) != 1 || personalized[0].URI != visibleURI {
+		t.Fatalf("personalized feed = %#v; want only %s", personalized, visibleURI)
+	}
+
+	search, err := s.SearchSavesPageByEmbedding(ctx, emb, viewer, false, 10, 0)
+	if err != nil {
+		t.Fatalf("SearchSavesPageByEmbedding: %v", err)
+	}
+	seenHidden := false
+	for _, row := range search.Rows {
+		if row.URI == hiddenURI {
+			seenHidden = true
+		}
+	}
+	if !seenHidden {
+		t.Fatalf("ordinary search unexpectedly filtered visual identity %s", hiddenVI)
 	}
 }
 

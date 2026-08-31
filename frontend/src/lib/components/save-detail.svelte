@@ -23,6 +23,7 @@
 	import SaveImage from '$lib/components/save-image.svelte';
 	import ImageFocusDialog from '$lib/components/image-focus-dialog.svelte';
 	import ImageActionGrid from '$lib/components/image-action-grid.svelte';
+	import ImageActionMenu from '$lib/components/image-action-menu.svelte';
 	import MasonryGrid from '$lib/components/masonry-grid.svelte';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
@@ -41,7 +42,6 @@
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
-	import Flag from '@lucide/svelte/icons/flag';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Star from '@lucide/svelte/icons/star';
@@ -525,54 +525,46 @@
 	{/if}
 {/snippet}
 
-{#snippet reportButton(extra: string)}
-	{#if auth.user && !isOwnSave}
-		<Button
-			variant="link"
-			size="sm"
-			class="gap-1 px-0 text-xs text-muted-foreground hover:text-foreground {extra}"
-			onclick={() => (reportDialogOpen = true)}
-		>
-			<Flag class="size-3" />
-			Report
-		</Button>
-	{/if}
-{/snippet}
-
-{#snippet info(showReport: boolean)}
+{#snippet info()}
 	{#if currentSave.text}
 		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
 	{/if}
 
-	{#if sourceLink || isMobile.current}
-		<div class="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground">
-			{#if sourceLink}
-				<div class="inline-flex min-w-0 items-center gap-1">
-					<span>Source:</span>
-					<a
-						href={sourceLink.href}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex min-w-0 items-center gap-1 hover:text-foreground"
-					>
-						<span class="truncate">{sourceLink.hostname}</span>
-						<ExternalLink class="size-3.5 shrink-0" />
-					</a>
-				</div>
-			{/if}
-			{#if isMobile.current}
-				<Button
-					variant="outline"
-					size="icon-sm"
-					class="ml-auto shrink-0"
-					onclick={() => (actionDrawerOpen = true)}
-					aria-label="Image actions"
+	<div class="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground">
+		{#if sourceLink}
+			<div class="inline-flex min-w-0 items-center gap-1">
+				<span>Source:</span>
+				<a
+					href={sourceLink.href}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex min-w-0 items-center gap-1 hover:text-foreground"
 				>
-					<Ellipsis class="size-4" />
-				</Button>
-			{/if}
-		</div>
-	{/if}
+					<span class="truncate">{sourceLink.hostname}</span>
+					<ExternalLink class="size-3.5 shrink-0" />
+				</a>
+			</div>
+		{/if}
+		{#if isMobile.current}
+			<Button
+				variant="outline"
+				size="icon-sm"
+				class="ml-auto shrink-0"
+				onclick={() => (actionDrawerOpen = true)}
+				aria-label="Image actions"
+			>
+				<Ellipsis class="size-4" />
+			</Button>
+		{:else}
+			<div class="ml-auto">
+				<ImageActionMenu
+					item={currentSave}
+					variant="dropdown"
+					onReport={() => (reportDialogOpen = true)}
+				/>
+			</div>
+		{/if}
+	</div>
 
 	{#if showDual}
 		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -602,10 +594,6 @@
 		>
 			{hasViewerAttr ? 'Edit attribution' : '+ Add attribution'}
 		</Button>
-	{/if}
-
-	{#if showReport}
-		{@render reportButton('self-start')}
 	{/if}
 
 	{#if canEditLabels}
@@ -824,7 +812,7 @@
 <div bind:this={desktopHero} class="hidden h-screen md:flex">
 	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6 pt-20">
 		{@render saveControl()}
-		{@render info(true)}
+		{@render info()}
 		{@render imageCollectionsSection()}
 		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
 			<p>Scroll down to view related images</p>
@@ -896,11 +884,10 @@
 		class="flex min-h-dvh flex-col gap-4 p-2"
 		style="padding-top: calc(env(safe-area-inset-top) + 1rem)"
 	>
-		<div bind:this={topControls} class="flex items-center justify-between gap-2">
+		<div bind:this={topControls} class="flex items-center gap-2">
 			<Button variant="ghost" size="icon-sm" onclick={goBack} aria-label="Go back">
 				<ArrowLeft class="size-4" />
 			</Button>
-			{@render reportButton('')}
 		</div>
 		<!-- The image stage is also the swipe surface: dragging it sideways moves to the
 		     next/previous image of the grid this view was opened from. Scoped to here
@@ -941,7 +928,7 @@
 			{/each}
 		</div>
 		<div class="flex flex-col gap-4">
-			{@render info(false)}
+			{@render info()}
 			{@render imageCollectionsSection()}
 		</div>
 		<!-- Pinned to the bottom of the stage — the bottom of the viewport until the
@@ -971,10 +958,14 @@
 		<Drawer.Content>
 			<Drawer.Header>
 				<Drawer.Title>Image actions</Drawer.Title>
-				<Drawer.Description>Save, copy, or share this image.</Drawer.Description>
+				<Drawer.Description>Save, share, hide, or report this image.</Drawer.Description>
 			</Drawer.Header>
 			<div class="px-4" style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)">
-				<ImageActionGrid item={currentSave} onAction={() => (actionDrawerOpen = false)} />
+				<ImageActionGrid
+					item={currentSave}
+					onAction={() => (actionDrawerOpen = false)}
+					onReport={() => (reportDialogOpen = true)}
+				/>
 			</div>
 		</Drawer.Content>
 	</Drawer.Root>
@@ -1096,6 +1087,4 @@
 	/>
 {/if}
 
-{#if auth.user && !isOwnSave}
-	<ReportDialog bind:open={reportDialogOpen} save={currentSave} />
-{/if}
+<ReportDialog bind:open={reportDialogOpen} save={currentSave} />

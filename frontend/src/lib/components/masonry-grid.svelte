@@ -6,6 +6,7 @@
 	import ImageCard from '$lib/components/image-card.svelte';
 	import { setSaveSequence, syncSaveSequence } from '$lib/save-sequence.svelte';
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
+	import { isHiddenFeedImage } from '$lib/stores/hidden-feed-images.svelte';
 
 	interface Props {
 		items: SaveView[];
@@ -16,6 +17,9 @@
 		mobileSave?: boolean;
 		// Forwarded to each ImageCard; long-pressing a tile opens Quick actions.
 		longPressSave?: boolean;
+		// The Explore feed opts into the viewer's newly hidden image set so a
+		// successful action removes the tile immediately without affecting other grids.
+		discoveryFeed?: boolean;
 		// This grid's own "load the next page". Passing it lets the detail view keep
 		// swiping past what was on screen when the tile was tapped: it asks for another
 		// page as the viewer nears the end of the run, since this grid's scroll sentinel
@@ -29,12 +33,15 @@
 		linkToDetail = true,
 		mobileSave = false,
 		longPressSave = false,
+		discoveryFeed = false,
 		loadMore
 	}: Props = $props();
 
 	// Drop saves the viewer has set to "hide" before the grid sees them: no
 	// card is rendered, no Frame reserved, and the <img> is never fetched.
-	let visibleItems = $derived(items.filter((i) => !shouldHide(i.labels)));
+	let visibleItems = $derived(
+		items.filter((i) => !shouldHide(i.labels) && (!discoveryFeed || !isHiddenFeedImage(i)))
+	);
 
 	// Identity for this grid instance, so the store can tell whether the run it holds is
 	// still ours to extend.

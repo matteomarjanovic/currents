@@ -183,6 +183,7 @@ See **`MODERATION.md`** for the full pipeline.
 | `POST` | `/save/{id}` | Required | Update save |
 | `POST` | `/save/{id}/delete` | Required | Delete save |
 | `GET` | `/feed` | — | Feed explorer page (try getFeed, no auth required) |
+| `POST` | `/api/feed/hidden` | Required | Hide the visual identity behind `{uri}` from the viewer's discovery feeds |
 | `GET` | `/img/{did}/{cid}` | — | Blob image proxy (long-cache) |
 
 ### XRPC (AT Protocol)

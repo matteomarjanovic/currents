@@ -1199,6 +1199,7 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 		`DELETE FROM moderation_pref WHERE viewer_did = $1`,
 		`DELETE FROM user_pref WHERE viewer_did = $1`,
 		`DELETE FROM feed_pref WHERE viewer_did = $1`,
+		`DELETE FROM hidden_feed_image WHERE viewer_did = $1`,
 		`DELETE FROM notification_seen WHERE viewer_did = $1`,
 		`DELETE FROM color_trial WHERE viewer_did = $1`,   // a fresh DID gets a fresh allowance anyway
 		`DELETE FROM import_session WHERE owner_did = $1`, // CASCADE → import_job → import_item
@@ -2597,7 +2598,7 @@ func (m *PgStore) queryANNSavePage(ctx context.Context, query string, args []any
 // SearchSavesByEmbedding returns saves whose visual identity is nearest to the given embedding,
 // ordered by cosine distance. Offset-based pagination; pass offset=0 for the first page.
 func (m *PgStore) SearchSavesByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) ([]SaveRow, error) {
-	page, err := m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, limit, limit, offset)
+	page, err := m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, true, limit, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -2645,10 +2646,10 @@ const saveRowProjection = `
 	COALESCE(s.mime_type, '')`
 
 func (m *PgStore) SearchSavesPageByEmbedding(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, offset int) (annSavePage, error) {
-	return m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, limit, searchSavesQueryLimit(limit, excludeViewerSaves), offset)
+	return m.searchSavesByEmbeddingPage(ctx, embedding, viewerDID, excludeViewerSaves, false, limit, searchSavesQueryLimit(limit, excludeViewerSaves), offset)
 }
 
-func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves bool, limit, fetchLimit, offset int) (annSavePage, error) {
+func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []float32, viewerDID string, excludeViewerSaves, excludeHidden bool, limit, fetchLimit, offset int) (annSavePage, error) {
 	vec := pgvector.NewVector(embedding)
 	applyExclude := excludeViewerSaves && viewerDID != ""
 	excludeClause := ""
@@ -2656,6 +2657,13 @@ func (m *PgStore) searchSavesByEmbeddingPage(ctx context.Context, embedding []fl
 		excludeClause = `AND NOT EXISTS (
 			SELECT 1 FROM save v
 			WHERE v.author_did = $3 AND v.pds_blob_cid = s.pds_blob_cid
+		)`
+	}
+	if excludeHidden && viewerDID != "" {
+		excludeClause += `
+		AND NOT EXISTS (
+			SELECT 1 FROM hidden_feed_image h
+			WHERE h.viewer_did = $3 AND h.visual_identity_id = vi.id
 		)`
 	}
 	query := `
@@ -3259,6 +3267,27 @@ func (m *PgStore) GetNearestClusterMedoid(ctx context.Context, embedding []float
 // actually seen. Tuning this needs no re-scoring; scores stay in the DB.
 const feedJunkScoreMax = 0.5
 
+// HideFeedImage suppresses the visual identity behind saveURI from this
+// viewer's discovery feeds. The visual identity key makes the preference hold
+// across resaves of the same image.
+func (m *PgStore) HideFeedImage(ctx context.Context, viewerDID, saveURI string) (bool, error) {
+	var found bool
+	err := m.pool.QueryRow(ctx, `
+		WITH target AS (
+			SELECT visual_identity_id
+			FROM save
+			WHERE uri = $2 AND visual_identity_id IS NOT NULL
+		), hidden AS (
+			INSERT INTO hidden_feed_image (viewer_did, visual_identity_id)
+			SELECT $1, visual_identity_id FROM target
+			ON CONFLICT DO NOTHING
+			RETURNING 1
+		)
+		SELECT EXISTS (SELECT 1 FROM target)
+	`, viewerDID, saveURI).Scan(&found)
+	return found, err
+}
+
 // GetGlobalFeedSaves returns saves from across the network, ranked by a
 // time-decayed popularity score: saver_count * exp(-0.1 * age_in_days) —
 // distinct savers, so one user saving an image into many collections doesn't
@@ -3318,6 +3347,10 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 		JOIN save s ON s.uri = vi.canonical_save_uri
 		WHERE s.author_did <> ALL($4)
 		  AND (vi.junk_score IS NULL OR vi.junk_score < $5)
+		  AND ($1 = '' OR NOT EXISTS (
+		      SELECT 1 FROM hidden_feed_image h
+		      WHERE h.viewer_did = $1 AND h.visual_identity_id = vi.id
+		  ))
 		  AND s.created_at IS NOT NULL
 		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
 		  ` + excludeClause + `

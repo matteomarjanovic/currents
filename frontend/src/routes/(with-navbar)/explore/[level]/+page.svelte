@@ -150,7 +150,13 @@
 		</div>
 	</div>
 {:else}
-	<MasonryGrid items={feed.items} loading={feed.loading} loadMore={feed.loadMore} longPressSave />
+	<MasonryGrid
+		items={feed.items}
+		loading={feed.loading}
+		loadMore={feed.loadMore}
+		longPressSave
+		discoveryFeed
+	/>
 	{#if feed.hasMore}
 		<div bind:this={sentinel} class="h-1"></div>
 	{/if}

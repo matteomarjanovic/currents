@@ -3,6 +3,7 @@
 	import * as Drawer from '$lib/components/ui/drawer';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import ImageActionGrid from '$lib/components/image-action-grid.svelte';
+	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
 	import type { SaveView } from '$lib/types';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -18,6 +19,7 @@
 	} = $props();
 
 	let view = $state<'actions' | 'collections'>('actions');
+	let reportOpen = $state(false);
 
 	$effect(() => {
 		if (!open) view = 'actions';
@@ -34,10 +36,14 @@
 		{#if view === 'actions'}
 			<Drawer.Header>
 				<Drawer.Title>Quick actions</Drawer.Title>
-				<Drawer.Description>Save, copy, or share this image.</Drawer.Description>
+				<Drawer.Description>Save, share, hide, or report this image.</Drawer.Description>
 			</Drawer.Header>
 			<div class="px-4">
-				<ImageActionGrid {item} onAction={() => (open = false)} />
+				<ImageActionGrid
+					{item}
+					onAction={() => (open = false)}
+					onReport={() => (reportOpen = true)}
+				/>
 			</div>
 			<div
 				class="mt-4 flex flex-col gap-2 border-t border-border px-4 pt-4"
@@ -70,3 +76,5 @@
 		{/if}
 	</Drawer.Content>
 </Drawer.Root>
+
+<ReportDialog bind:open={reportOpen} save={item} />

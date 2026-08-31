@@ -11,6 +11,7 @@
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
 	import MobileQuickActionsDrawer from '$lib/components/mobile-quick-actions-drawer.svelte';
+	import ImageActionMenu from '$lib/components/image-action-menu.svelte';
 
 	interface Props {
 		item: SaveView;
@@ -85,14 +86,6 @@
 		pushState(href, { save: $state.snapshot(item) });
 	}
 
-	// Android Chrome exposes a native link-preview drag on a held image card. The
-	// card already has its own touch interactions, so don't let the anchor open a
-	// second long-press affordance underneath them. Save-enabled cards let their
-	// contextmenu event bubble to the long-press action below instead.
-	function suppressLinkPreview(e: Event) {
-		if (!longPressSave) e.preventDefault();
-	}
-
 	// Keep viewer save state on the item in sync so the snapshot pushed to the
 	// detail view reflects saves made here (drives the "Add attribution" button).
 	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
@@ -130,53 +123,49 @@
 	style={tileStyle}
 	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
 >
-	<LabeledMedia labels={item.labels}>
-		{#if linkToDetail}
-			<a
-				{href}
-				class="block"
-				draggable={false}
-				onclick={handleClick}
-				oncontextmenu={suppressLinkPreview}
-			>
-				{@render media()}
-			</a>
-		{:else}
-			<div class="block">{@render media()}</div>
-		{/if}
-		{#snippet overlay()}
-			{#if auth.user && collections.loaded}
-				<div
-					class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
-						? 'opacity-100'
-						: 'opacity-0 group-hover:opacity-100'}"
-				>
-					<div
-						class="transition-transform duration-300 {dropdownOpen
-							? 'pointer-events-auto translate-y-0'
-							: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
-					>
-						<CollectionSelector
-							{item}
-							variant="popover"
-							onOpenChange={(o) => (dropdownOpen = o)}
-							onSavesChange={handleSavesChange}
-						/>
-					</div>
-				</div>
-			{:else if auth.checked}
-				<div
-					class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-				>
-					<div
-						class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-hover:pointer-events-auto group-hover:translate-y-0"
-					>
-						<Button size="sm" variant="default" onclick={promptLogin}>Save</Button>
-					</div>
-				</div>
+	<ImageActionMenu {item} variant="context">
+		<LabeledMedia labels={item.labels}>
+			{#if linkToDetail}
+				<a {href} class="block" draggable={false} onclick={handleClick}>
+					{@render media()}
+				</a>
+			{:else}
+				<div class="block">{@render media()}</div>
 			{/if}
-		{/snippet}
-	</LabeledMedia>
+			{#snippet overlay()}
+				{#if auth.user && collections.loaded}
+					<div
+						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
+							? 'opacity-100'
+							: 'opacity-0 group-hover:opacity-100'}"
+					>
+						<div
+							class="transition-transform duration-300 {dropdownOpen
+								? 'pointer-events-auto translate-y-0'
+								: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
+						>
+							<CollectionSelector
+								{item}
+								variant="popover"
+								onOpenChange={(o) => (dropdownOpen = o)}
+								onSavesChange={handleSavesChange}
+							/>
+						</div>
+					</div>
+				{:else if auth.checked}
+					<div
+						class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+					>
+						<div
+							class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-hover:pointer-events-auto group-hover:translate-y-0"
+						>
+							<Button size="sm" variant="default" onclick={promptLogin}>Save</Button>
+						</div>
+					</div>
+				{/if}
+			{/snippet}
+		</LabeledMedia>
+	</ImageActionMenu>
 	{#if longPressSave && auth.user && collections.loaded}
 		<MobileQuickActionsDrawer
 			{item}

@@ -194,7 +194,7 @@ test('mobile web exposes the image actions drawer', async ({ page }) => {
 
 	await page.getByRole('button', { name: 'Image actions' }).tap();
 	await expect(page.getByText('Image actions', { exact: true })).toBeVisible();
-	for (const action of ['Download', 'Copy image', 'Share', 'Copy link']) {
+	for (const action of ['Download', 'Copy image', 'Share', 'Copy link', 'Hide', 'Report']) {
 		await expect(page.getByRole('button', { name: action, exact: true })).toBeVisible();
 	}
 });

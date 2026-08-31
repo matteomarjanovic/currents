@@ -685,6 +685,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/save-suggestions", srv.APIGetSaveSuggestions)
 	http.HandleFunc("GET /api/feed/preferences", srv.APIGetFeedPreferences)
 	http.HandleFunc("PUT /api/feed/preferences", srv.APIPutFeedPreferences)
+	http.HandleFunc("POST /api/feed/hidden", srv.APIHideFeedImage)
 	http.HandleFunc("GET /api/supporter/status", srv.APISupporterStatus)
 	http.HandleFunc("GET /api/supporter/stats", srv.APISupporterStats)
 	http.HandleFunc("POST /api/supporter/portal", srv.APISupporterPortal)
