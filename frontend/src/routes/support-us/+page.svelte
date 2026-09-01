@@ -86,7 +86,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6 md:px-8 md:py-10">
-	<article class="flex flex-col gap-10 text-[15px] leading-7 text-foreground/90">
+	<article class="flex flex-col gap-10 text-base leading-7 text-foreground/90">
 		<section class="flex flex-col gap-4">
 			<h1
 				class="flex items-center gap-3 text-3xl leading-tight font-semibold tracking-tight text-foreground md:text-4xl"
