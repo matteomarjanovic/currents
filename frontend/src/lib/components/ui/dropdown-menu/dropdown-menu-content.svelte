@@ -3,6 +3,7 @@
 	import DropdownMenuPortal from './dropdown-menu-portal.svelte';
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
 	import type { ComponentProps } from 'svelte';
+	import MenuDismissSurface from '$lib/components/ui/menu-dismiss-surface.svelte';
 
 	let {
 		ref = $bindable(null),
@@ -10,6 +11,8 @@
 		align = 'start',
 		portalProps,
 		class: className,
+		child: customChild,
+		children,
 		...restProps
 	}: DropdownMenuPrimitive.ContentProps & {
 		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DropdownMenuPortal>>;
@@ -17,15 +20,6 @@
 </script>
 
 <DropdownMenuPortal {...portalProps}>
-	<!-- On touch, Bits UI waits for the outside click before it closes a menu. Without
-	     a surface to receive that click, it reaches whatever sits behind the menu
-	     (often an image card) first. The surface makes an outside tap a dismissal
-	     only; the primitive still receives it at document level and closes itself. -->
-	<div
-		class="pointer-events-none fixed inset-0 z-40"
-		data-menu-dismiss-surface="dropdown"
-		aria-hidden="true"
-	></div>
 	<DropdownMenuPrimitive.Content
 		bind:ref
 		data-slot="dropdown-menu-content"
@@ -36,11 +30,21 @@
 			className
 		)}
 		{...restProps}
-	/>
+	>
+		{#snippet child({ props, wrapperProps, open })}
+			<!-- Mount the click-through guard only while this content is present. -->
+			<MenuDismissSurface
+				{open}
+				onDismiss={() =>
+					ref?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))}
+			/>
+			{#if customChild}
+				{@render customChild({ props, wrapperProps, open })}
+			{:else}
+				<div {...wrapperProps}>
+					<div {...props}>{@render children?.()}</div>
+				</div>
+			{/if}
+		{/snippet}
+	</DropdownMenuPrimitive.Content>
 </DropdownMenuPortal>
-
-<style>
-	:global(body:has([data-slot='dropdown-menu-content'][data-state='open']) [data-menu-dismiss-surface='dropdown']) {
-		pointer-events: auto;
-	}
-</style>

@@ -203,6 +203,26 @@ test('a short tap still opens the detail view instead of the drawer', async ({ p
 	await expect(page.getByText('Quick actions', { exact: true })).not.toBeVisible();
 });
 
+test('an outside tap dismisses a menu without opening the image behind it', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/explore/general');
+	const image = page.locator('a.block').first();
+	await expect(image).toBeVisible();
+
+	await page.getByRole('button', { name: 'Menu', exact: true }).tap();
+	await expect(page.locator('[data-slot="dropdown-menu-content"][data-state="open"]')).toHaveCount(
+		1
+	);
+	const box = (await image.boundingBox())!;
+	await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+
+	await expect(page.locator('[data-slot="dropdown-menu-content"][data-state="open"]')).toHaveCount(
+		0
+	);
+	await expect(page).toHaveURL(/\/explore\/general$/);
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(0);
+});
+
 test('a scrolled list must be released before a collection row can close the drawer', async ({
 	page
 }) => {

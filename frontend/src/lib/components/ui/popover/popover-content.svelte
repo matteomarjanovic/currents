@@ -1,15 +1,18 @@
 <script lang="ts">
-	import { Popover as PopoverPrimitive } from "bits-ui";
-	import PopoverPortal from "./popover-portal.svelte";
-	import { cn, type WithoutChildrenOrChild } from "$lib/utils.js";
-	import type { ComponentProps } from "svelte";
+	import { Popover as PopoverPrimitive } from 'bits-ui';
+	import PopoverPortal from './popover-portal.svelte';
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import type { ComponentProps } from 'svelte';
+	import MenuDismissSurface from '$lib/components/ui/menu-dismiss-surface.svelte';
 
 	let {
 		ref = $bindable(null),
 		class: className,
 		sideOffset = 4,
-		align = "center",
+		align = 'center',
 		portalProps,
+		child: customChild,
+		children,
 		...restProps
 	}: PopoverPrimitive.ContentProps & {
 		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof PopoverPortal>>;
@@ -17,27 +20,30 @@
 </script>
 
 <PopoverPortal {...portalProps}>
-	<!-- Keep outside taps from leaking through a touch-dismissed popover. -->
-	<div
-		class="pointer-events-none fixed inset-0 z-40"
-		data-menu-dismiss-surface="popover"
-		aria-hidden="true"
-	></div>
 	<PopoverPrimitive.Content
 		bind:ref
 		data-slot="popover-content"
 		{sideOffset}
 		{align}
 		class={cn(
-			"bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/5 dark:ring-foreground/10 flex flex-col gap-4 rounded-3xl p-4 text-sm shadow-lg ring-1 duration-100 data-[side=inline-start]:slide-in-from-right-2 data-[side=inline-end]:slide-in-from-left-2 z-50 w-72 origin-(--transform-origin) outline-hidden",
+			'z-50 flex w-72 origin-(--transform-origin) flex-col gap-4 rounded-3xl bg-popover p-4 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/5 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
 			className
 		)}
 		{...restProps}
-	/>
+	>
+		{#snippet child({ props, wrapperProps, open })}
+			<MenuDismissSurface
+				{open}
+				onDismiss={() =>
+					ref?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))}
+			/>
+			{#if customChild}
+				{@render customChild({ props, wrapperProps, open })}
+			{:else}
+				<div {...wrapperProps}>
+					<div {...props}>{@render children?.()}</div>
+				</div>
+			{/if}
+		{/snippet}
+	</PopoverPrimitive.Content>
 </PopoverPortal>
-
-<style>
-	:global(body:has([data-slot='popover-content'][data-state='open']) [data-menu-dismiss-surface='popover']) {
-		pointer-events: auto;
-	}
-</style>
