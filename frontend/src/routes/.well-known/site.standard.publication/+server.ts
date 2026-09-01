@@ -2,7 +2,8 @@ import { STANDARD_SITE_DID, STANDARD_SITE_PUBLICATION_RKEY } from '$lib/standard
 
 export const prerender = true;
 
-// Standard.site verification: must resolve to the publication record's at:// URI.
+// Standard.site verification: must resolve to the publication record's at:// URI. The blog
+// publication also exposes this response at /.well-known/site.standard.publication/blog.
 // https://standard.site/docs/verification
 export function GET() {
 	if (!STANDARD_SITE_PUBLICATION_RKEY) return new Response(null, { status: 404 });

@@ -3,7 +3,5 @@
 // (@currents.is on Bluesky), not written by the appview.
 export const STANDARD_SITE_DID = 'did:plc:jaur46k6ijyfvl4lojza7eic';
 
-// The site.standard.publication record's rkey. Empty until the publication record below has
-// actually been published — the .well-known endpoint 404s and the discovery <link> is omitted
-// until this is filled in.
+// The site.standard.publication record's rkey.
 export const STANDARD_SITE_PUBLICATION_RKEY = '3mqhdiel4vn22';
