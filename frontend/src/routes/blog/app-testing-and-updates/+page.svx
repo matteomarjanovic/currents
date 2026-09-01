@@ -1,0 +1,31 @@
+---
+title: Mobile app beta testing, and a few other things
+description:
+    Currents is now available for beta testing on mobile! We also share some other updates and improvements we've been working on, and with a preview of what's coming.
+date: '2026-09-01'
+standardSiteRkey: '3muhyqf6taki5'
+---
+
+To all the users and fans of Currents: you can now sign up for testing the **mobile apps**! They're ready to use, but we need your help to refine the details. They've been requested by a lot of people, so we can't wait to finally publish them to the stores.   
+
+To sign up for being a tester, DM us to [our Bluesky account](https://bsky.app/profile/currents.is).   
+
+Some stuff we've been working on lately, in random order, are:
+
+- **feed refresh**: the feeds were a bit static, now you just need to refresh the page to get new suggested images, making it easier to discover more   
+- **new "Feed" section in settings**: this currently has the option to select a default feed to see when opening the explore page (between *personal*, *general* and *new worlds*), and to select some collections you don't want to influence your feeds recommendations   
+- **bulk operations in organize mode**: you can now select multiple images to move or copy them across collections, delete them, or do other operations like adding labels or attribution in bulk   
+- **pinch to zoom**: when an image is opened, you can pinch to zoom on mobile, to view also the smallest details   
+- **swipe to navigate**: after opening an image in explore mode on mobile, you can swipe left or right to see the next or previous image in the feed. This was an highly requested feature!   
+- **quick actions on mobile**: if an image is long pressed, a quick actions drawer will open to make it quicker to do something with that   
+- **pin collections in organize mode**: if you often manage references in the same collections, they can be pinned at the top of the list in the left sidebar in organize mode, to find them more easily.   
+   
+And many more: to check all the features and bug fixes we're working on, and to add any feedback about the app (both web and mobile), visit [our UserInput board](https://userinput.app/d/did:plc:jaur46k6ijyfvl4lojza7eic/3mrrnbm64ln2l).   
+
+In the weeks to come, we'll focus on fixing bugs and adding small adjustments that keep being suggested to us by our users. In parallel, we'll put effort in improving the **browser extension** and its compatibility with many websites where you usually find inspiration; so, if you notice the extension doesn't pair well with a website you use, this is the best moment to tell us.   
+
+Another important thing we'll improve is **interoperability with other Atmosphere apps**, which is one of the best aspects of this amazing ecosystem.   
+
+Finally, we'd like to thank our **600+ users**, and especially our 3 paying supporters, this is being a really cool journey. Currents is now running in the cloud, if you want to be an early supporter and help cover the infrastructure expenses, visit our [supporter page](https://currents.is/support-us). You'll also get very useful features, like the search in your own library and the color search, and more will come in the next weeks and months (profile page customization? 🤭).   
+
+We have a lot of exciting ideas and we can't wait to make them real and available to you all. In the meantime, enjoy Currents!   
