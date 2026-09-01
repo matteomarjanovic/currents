@@ -3,7 +3,7 @@ title: Mobile app beta testing, and a few other things
 description:
     Currents is now available for beta testing on mobile! We also share some other updates and improvements we've been working on, and with a preview of what's coming.
 date: '2026-09-01'
-standardSiteRkey: '3muhyqf6taki5'
+standardSiteRkey: '3mui5w2m7lkdw'
 ---
 
 To all the users and fans of Currents: you can now sign up for testing the **mobile apps**! They're ready to use, but we need your help to refine the details. They've been requested by a lot of people, so we can't wait to finally publish them to the stores.   
