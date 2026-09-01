@@ -17,6 +17,15 @@
 </script>
 
 <DropdownMenuPortal {...portalProps}>
+	<!-- On touch, Bits UI waits for the outside click before it closes a menu. Without
+	     a surface to receive that click, it reaches whatever sits behind the menu
+	     (often an image card) first. The surface makes an outside tap a dismissal
+	     only; the primitive still receives it at document level and closes itself. -->
+	<div
+		class="pointer-events-none fixed inset-0 z-40"
+		data-menu-dismiss-surface="dropdown"
+		aria-hidden="true"
+	></div>
 	<DropdownMenuPrimitive.Content
 		bind:ref
 		data-slot="dropdown-menu-content"
@@ -29,3 +38,9 @@
 		{...restProps}
 	/>
 </DropdownMenuPortal>
+
+<style>
+	:global(body:has([data-slot='dropdown-menu-content'][data-state='open']) [data-menu-dismiss-surface='dropdown']) {
+		pointer-events: auto;
+	}
+</style>

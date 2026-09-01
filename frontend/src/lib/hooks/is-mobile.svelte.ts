@@ -7,3 +7,9 @@ export class IsMobile extends MediaQuery {
 		super(`max-width: ${breakpoint - 1}px`);
 	}
 }
+
+export class HasCoarsePointer extends MediaQuery {
+	constructor() {
+		super('(hover: none) and (pointer: coarse)');
+	}
+}

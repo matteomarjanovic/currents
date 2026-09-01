@@ -16,6 +16,13 @@
 </script>
 
 <ContextMenuPortal {...portalProps}>
+	<!-- See dropdown-menu-content: a touch outside a floating menu should dismiss
+	     it, never activate the page underneath it. -->
+	<div
+		class="pointer-events-none fixed inset-0 z-40"
+		data-menu-dismiss-surface="context"
+		aria-hidden="true"
+	></div>
 	<ContextMenuPrimitive.Content
 		bind:ref
 		data-slot="context-menu-content"
@@ -26,3 +33,9 @@
 		{...restProps}
 	/>
 </ContextMenuPortal>
+
+<style>
+	:global(body:has([data-slot='context-menu-content'][data-state='open']) [data-menu-dismiss-surface='context']) {
+		pointer-events: auto;
+	}
+</style>

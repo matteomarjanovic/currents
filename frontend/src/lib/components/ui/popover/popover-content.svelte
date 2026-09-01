@@ -17,6 +17,12 @@
 </script>
 
 <PopoverPortal {...portalProps}>
+	<!-- Keep outside taps from leaking through a touch-dismissed popover. -->
+	<div
+		class="pointer-events-none fixed inset-0 z-40"
+		data-menu-dismiss-surface="popover"
+		aria-hidden="true"
+	></div>
 	<PopoverPrimitive.Content
 		bind:ref
 		data-slot="popover-content"
@@ -29,3 +35,9 @@
 		{...restProps}
 	/>
 </PopoverPortal>
+
+<style>
+	:global(body:has([data-slot='popover-content'][data-state='open']) [data-menu-dismiss-surface='popover']) {
+		pointer-events: auto;
+	}
+</style>

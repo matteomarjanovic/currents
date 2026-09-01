@@ -3,6 +3,7 @@
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { longpress } from '$lib/long-press';
+	import { HasCoarsePointer } from '$lib/hooks/is-mobile.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -40,6 +41,7 @@
 	let dropdownOpen = $state(false);
 	let quickActionsOpen = $state(false);
 	let suppressNextClick = false;
+	const hasCoarsePointer = new HasCoarsePointer();
 	let href = $derived.by(() => {
 		const rkey = item.uri.split('/').pop() ?? '';
 		return `/profile/${item.author.handle}/save/${rkey}`;
@@ -123,7 +125,13 @@
 	style={tileStyle}
 	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
 >
-	<ImageActionMenu {item} variant="context">
+	<!-- The quick-actions drawer owns touch long-press. Keep the desktop context-menu
+	     recognizer off at mobile widths or iOS can open both surfaces for one hold. -->
+	<ImageActionMenu
+		{item}
+		variant="context"
+		contextDisabled={longPressSave && hasCoarsePointer.current}
+	>
 		<LabeledMedia labels={item.labels}>
 			{#if linkToDetail}
 				<a {href} class="block" draggable={false} onclick={handleClick}>
