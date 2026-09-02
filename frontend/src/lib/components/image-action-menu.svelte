@@ -20,11 +20,13 @@
 	let {
 		item,
 		variant,
+		contextDisabled = false,
 		children,
 		onReport
 	}: {
 		item: SaveView;
 		variant: 'context' | 'dropdown';
+		contextDisabled?: boolean;
 		children?: Snippet;
 		onReport?: () => void;
 	} = $props();
@@ -75,7 +77,7 @@
 	</Menu.Item>
 {/snippet}
 
-{#if variant === 'context'}
+{#if variant === 'context' && !contextDisabled}
 	<ContextMenu.Root bind:open={menuOpen}>
 		<ContextMenu.Trigger>
 			{#snippet child({ props })}
@@ -88,6 +90,8 @@
 			</ContextMenu.Content>
 		{/if}
 	</ContextMenu.Root>
+{:else if variant === 'context'}
+	{@render children?.()}
 {:else}
 	<DropdownMenu.Root bind:open={menuOpen}>
 		<DropdownMenu.Trigger>

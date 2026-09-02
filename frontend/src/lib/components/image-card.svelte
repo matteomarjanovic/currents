@@ -3,6 +3,7 @@
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { longpress } from '$lib/long-press';
+	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
@@ -45,6 +46,7 @@
 	let quickActionsOpen = $state(false);
 	let quickActionsMounted = $state(false);
 	let suppressNextClick = false;
+	const native = isNative();
 	let href = $derived.by(() => {
 		const rkey = item.uri.split('/').pop() ?? '';
 		return `/profile/${item.author.handle}/save/${rkey}`;
@@ -151,7 +153,9 @@
 	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
 	use:prepareDesktopControls
 >
-	<ImageActionMenu {item} variant="context">
+	<!-- Native Capacitor builds use the touch actions drawer for long-presses. The
+	     desktop context-menu recognizer would otherwise open a second surface on iOS. -->
+	<ImageActionMenu {item} variant="context" contextDisabled={native}>
 		<LabeledMedia labels={item.labels}>
 			{#if linkToDetail}
 				<a {href} class="block" draggable={false} onclick={handleClick}>
