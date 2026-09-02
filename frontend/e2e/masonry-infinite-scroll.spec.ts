@@ -28,7 +28,10 @@ function makeSave(i: number) {
 
 const firstPage = Array.from({ length: 20 }, (_, i) => makeSave(i));
 const secondPage = Array.from({ length: 20 }, (_, i) => makeSave(i + firstPage.length));
-const responsiveSecondPage = Array.from({ length: 50 }, (_, i) => makeSave(i + firstPage.length));
+const authedFirstPage = Array.from({ length: 50 }, (_, i) => makeSave(i));
+const responsiveSecondPage = Array.from({ length: 50 }, (_, i) =>
+	makeSave(i + authedFirstPage.length)
+);
 
 async function mockApi(page: Page, waitForSecondPage: Promise<void>) {
 	await page.route(`${APPVIEW}/**`, async (route) => {
@@ -116,7 +119,7 @@ async function mockAuthedApi(page: Page, waitForSecondSuggestions: Promise<void>
 		if (url.includes('getFeed')) {
 			return url.includes('cursor=')
 				? json({ feed: responsiveSecondPage, cursor: null })
-				: json({ feed: firstPage, cursor: 'next' });
+				: json({ feed: authedFirstPage, cursor: 'next' });
 		}
 		if (url.includes('/api/supporter/status')) {
 			return json({ active: true, subscribed: false, colorTrialsLeft: 5 });
@@ -142,21 +145,23 @@ test('appending a masonry page preserves the scroll position', async ({ page }) 
 	const waitForSecondPage = new Promise<void>((resolve) => (releaseSecondPage = resolve));
 	await mockApi(page, waitForSecondPage);
 	await page.goto('/explore/general');
-	await expect(page.locator('img[alt="tile-19"]')).toBeVisible();
+	await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
 
 	const grid = page.locator('div[style*="grid-template-columns"]').first();
+	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(21);
 	await grid.evaluate((element) => {
 		const sentinel = element.parentElement?.nextElementSibling;
 		if (!sentinel) throw new Error('missing infinite-scroll sentinel');
 		const sentinelTop = sentinel.getBoundingClientRect().top + window.scrollY;
 		window.scrollTo(0, sentinelTop - window.innerHeight - 200);
 	});
+	await expect(page.locator('img[alt="tile-19"]')).toBeVisible();
 	await expect(grid.locator('[data-slot="skeleton"]')).toHaveCount(2);
 
 	const before = await page.evaluate(() => window.scrollY);
 	releaseSecondPage();
-	await expect(page.locator('img[alt="tile-39"]')).toBeVisible();
 	await expect(grid.locator('[data-slot="skeleton"]')).toHaveCount(0);
+	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(41);
 	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 
 	const after = await page.evaluate(() => window.scrollY);
@@ -173,8 +178,14 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 	const suggestionBatches = await mockAuthedApi(page, waitForSecondSuggestions);
 	await page.goto('/explore/general');
 	await expect.poll(() => suggestionBatches.length).toBe(1);
-	await expect(page.locator('img[alt="tile-19"]')).toBeAttached();
+	await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
 	await expect(page.locator('[data-menu-dismiss-surface]')).toHaveCount(0);
+	const grid = page.locator('div[style*="grid-template-columns"]').first();
+	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(51);
+	// Approximate a slower production client. Appending the next page must add all
+	// frame geometry without constructing all 50 off-screen interactive cards.
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
 
 	await page.evaluate(() => {
 		const target = window as typeof window & { frameGaps?: number[] };
@@ -188,7 +199,6 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 		requestAnimationFrame(tick);
 	});
 
-	const grid = page.locator('div[style*="grid-template-columns"]').first();
 	await grid.evaluate((element) => {
 		const sentinel = element.parentElement?.nextElementSibling;
 		if (!sentinel) throw new Error('missing infinite-scroll sentinel');
@@ -196,6 +206,19 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 		window.scrollTo(0, sentinelTop - window.innerHeight - 200);
 	});
 	await expect.poll(() => suggestionBatches.length).toBe(2);
+	const appendFrameGap = await page.evaluate(() => {
+		const target = window as typeof window & { frameGaps?: number[] };
+		const max = Math.max(0, ...(target.frameGaps ?? []));
+		target.frameGaps = [];
+		return max;
+	});
+	await page.waitForTimeout(500);
+	const nearbyCardFrameGap = await page.evaluate(() => {
+		const target = window as typeof window & { frameGaps?: number[] };
+		const max = Math.max(0, ...(target.frameGaps ?? []));
+		target.frameGaps = [];
+		return max;
+	});
 
 	await page.getByLabel('Adjust personalization').click();
 	await expect(page.getByRole('menu')).toBeVisible();
@@ -204,11 +227,16 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 	await expect(page.locator('[data-menu-dismiss-surface]')).toHaveCount(0);
 	releaseSecondSuggestions();
 
-	await expect(page.locator('img[alt="tile-69"]')).toBeAttached();
 	await expect(grid.locator('[data-slot="skeleton"]')).toHaveCount(0);
-	expect(suggestionBatches.map((batch) => batch.length)).toEqual([20, 50]);
-	const maxFrameGap = await page.evaluate(() =>
+	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(101);
+	const mountedCards = await page.locator('a.block img').count();
+	expect(mountedCards).toBeGreaterThan(0);
+	expect(mountedCards).toBeLessThan(100);
+	expect(suggestionBatches.map((batch) => batch.length)).toEqual([50, 50]);
+	const interactionFrameGap = await page.evaluate(() =>
 		Math.max(0, ...((window as typeof window & { frameGaps?: number[] }).frameGaps ?? []))
 	);
-	expect(maxFrameGap).toBeLessThan(150);
+	expect(appendFrameGap).toBeLessThan(250);
+	expect(nearbyCardFrameGap).toBeLessThan(250);
+	expect(interactionFrameGap).toBeLessThan(1000);
 });

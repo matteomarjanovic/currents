@@ -61,11 +61,15 @@ export function recordExploreSaveDestination(uri: string) {
 }
 
 export function queueExploreSaveSuggestion(saveUri: string) {
-	if (!saveUri || requested.has(saveUri) || !needsImageRecommendation(exploreSaveSuggestions)) {
-		return;
+	queueExploreSaveSuggestions([saveUri]);
+}
+
+export function queueExploreSaveSuggestions(saveUris: string[]) {
+	if (!needsImageRecommendation(exploreSaveSuggestions)) return;
+	for (const saveUri of saveUris) {
+		if (saveUri && !requested.has(saveUri)) queued.add(saveUri);
 	}
-	queued.add(saveUri);
-	if (flushTimer === undefined) flushTimer = setTimeout(flush, 0);
+	if (queued.size > 0 && flushTimer === undefined) flushTimer = setTimeout(flush, 0);
 }
 
 async function flush() {

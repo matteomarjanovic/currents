@@ -180,7 +180,7 @@
 			(entries) => {
 				if (entries[0].isIntersecting && activeTab === 'unsorted') unsorted.loadMore();
 			},
-			{ rootMargin: '400px' }
+			{ rootMargin: '1200px 0px' }
 		);
 		observer.observe(unsortedSentinel);
 		return () => observer.disconnect();
@@ -193,7 +193,7 @@
 			(entries) => {
 				if (entries[0].isIntersecting && activeTab === 'all') all.loadMore();
 			},
-			{ rootMargin: '400px' }
+			{ rootMargin: '1200px 0px' }
 		);
 		observer.observe(allSentinel);
 		return () => observer.disconnect();
@@ -206,7 +206,7 @@
 			(entries) => {
 				if (entries[0].isIntersecting && activeTab === 'favourites') favourites.loadMore();
 			},
-			{ rootMargin: '400px' }
+			{ rootMargin: '1200px 0px' }
 		);
 		observer.observe(favSentinel);
 		return () => observer.disconnect();

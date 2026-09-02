@@ -105,7 +105,7 @@
 			(entries) => {
 				if (entries[0].isIntersecting) search.loadMore();
 			},
-			{ rootMargin: '400px' }
+			{ rootMargin: '1200px 0px' }
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();

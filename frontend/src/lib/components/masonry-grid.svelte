@@ -7,6 +7,10 @@
 	import { setSaveSequence, syncSaveSequence } from '$lib/save-sequence.svelte';
 	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import { isHiddenFeedImage } from '$lib/stores/hidden-feed-images.svelte';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { queueExploreSaveSuggestions } from '$lib/stores/save-suggestions.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { onDestroy, untrack } from 'svelte';
 
 	interface Props {
 		items: SaveView[];
@@ -46,12 +50,49 @@
 	// Identity for this grid instance, so the store can tell whether the run it holds is
 	// still ours to extend.
 	const gridId = {};
+	// Preserve server-rendered/initial cards. Pages appended after mount get the
+	// viewport-driven treatment below; initial SSR markup must hydrate unchanged.
+	const initiallyRendered = new Set(untrack(() => items.map((item) => item.uri)));
+	// Frames are cheap and give the masonry its complete geometry immediately. The
+	// interactive card subtree is not: defer it until the frame is near enough to
+	// be seen, then keep it mounted so card state survives scrolling away and back.
+	const nearby = new SvelteSet<string>();
+	const observedUris = new WeakMap<Element, string>();
+	let cardObserver: IntersectionObserver | undefined;
+
+	function renderNearViewport(node: HTMLElement, uri: string) {
+		if (!('IntersectionObserver' in window)) {
+			nearby.add(uri);
+			return;
+		}
+		observedUris.set(node, uri);
+		cardObserver ??= new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (!entry.isIntersecting) continue;
+					const itemUri = observedUris.get(entry.target);
+					if (itemUri) nearby.add(itemUri);
+					cardObserver?.unobserve(entry.target);
+				}
+			},
+			{ rootMargin: '800px 0px' }
+		);
+		cardObserver.observe(node);
+		return {
+			destroy() {
+				cardObserver?.unobserve(node);
+			}
+		};
+	}
+
+	onDestroy(() => cardObserver?.disconnect());
 
 	// Feed newly loaded items into the run while we own it. Only grids that can load
 	// more take part: the detail's related rail refills with a different image's saves
 	// on every swipe, and that must never leak into the run being swiped through.
 	$effect(() => {
 		if (loadMore) syncSaveSequence(gridId, visibleItems);
+		if (auth.user) queueExploreSaveSuggestions(visibleItems.map((item) => item.uri));
 	});
 
 	let containerWidth = $state<number | undefined>();
@@ -100,20 +141,31 @@
 	     observer positions them. Keep that transient reflow from becoming the
 	     browser's scroll anchor and moving the viewport as a page lands. -->
 	<BalancedMasonryGrid {frameWidth} {gap} style="overflow-anchor: none;">
-		{#each visibleItems as item (item.uri)}
+		{#each visibleItems as item, i (item.uri)}
 			{@const image = getImageContent(item)}
 			{@const ratio = tileRatio(image?.width, image?.height)}
-			<Frame width={ratio.width} height={ratio.height}>
-				<!-- Hand the detail view the images either side of this one, so it can be
-				     swiped through on touch. Same list the user is looking at, minus what
-				     their moderation prefs hide. -->
-				<ImageCard
-					{item}
-					{linkToDetail}
-					{mobileSave}
-					{longPressSave}
-					onOpen={() => setSaveSequence(gridId, visibleItems, loadMore)}
-				/>
+			<!-- The frame owns its size, so off-screen contents can be skipped without
+			     changing masonry geometry or the scroll position. -->
+			<Frame width={ratio.width} height={ratio.height} style="content-visibility: auto;">
+				<div
+					class="h-full w-full overflow-hidden rounded-lg"
+					style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+					use:renderNearViewport={item.uri}
+				>
+					{#if initiallyRendered.has(item.uri) || i < skeletonCount || nearby.has(item.uri)}
+						<!-- Hand the detail view the images either side of this one, so it can be
+						     swiped through on touch. Same list the user is looking at, minus what
+						     their moderation prefs hide. -->
+						<ImageCard
+							{item}
+							{linkToDetail}
+							{mobileSave}
+							{longPressSave}
+							preloadControls={nearby.has(item.uri)}
+							onOpen={() => setSaveSequence(gridId, visibleItems, loadMore)}
+						/>
+					{/if}
+				</div>
 			</Frame>
 		{/each}
 		{#if loading && items.length === 0}

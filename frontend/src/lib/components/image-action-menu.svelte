@@ -30,6 +30,7 @@
 	} = $props();
 
 	const dropdownMenu = DropdownMenu as unknown as typeof ContextMenu;
+	let menuOpen = $state(false);
 	let reportOpen = $state(false);
 
 	function run(action: (save: SaveView) => Promise<void>) {
@@ -75,18 +76,20 @@
 {/snippet}
 
 {#if variant === 'context'}
-	<ContextMenu.Root>
+	<ContextMenu.Root bind:open={menuOpen}>
 		<ContextMenu.Trigger>
 			{#snippet child({ props })}
 				<div {...props}>{@render children?.()}</div>
 			{/snippet}
 		</ContextMenu.Trigger>
-		<ContextMenu.Content class="w-52">
-			{@render menuItems(ContextMenu)}
-		</ContextMenu.Content>
+		{#if menuOpen}
+			<ContextMenu.Content class="w-52">
+				{@render menuItems(ContextMenu)}
+			</ContextMenu.Content>
+		{/if}
 	</ContextMenu.Root>
 {:else}
-	<DropdownMenu.Root>
+	<DropdownMenu.Root bind:open={menuOpen}>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
 				<Button {...props} variant="outline" size="icon-sm" aria-label="Image actions">
@@ -94,9 +97,11 @@
 				</Button>
 			{/snippet}
 		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end" class="w-52">
-			{@render menuItems(dropdownMenu)}
-		</DropdownMenu.Content>
+		{#if menuOpen}
+			<DropdownMenu.Content align="end" class="w-52">
+				{@render menuItems(dropdownMenu)}
+			</DropdownMenu.Content>
+		{/if}
 	</DropdownMenu.Root>
 {/if}
 

@@ -124,7 +124,7 @@ test('the tile menu Select enters the mode with that tile picked, and Copy resav
 
 	// Copy to a collection: resave the one selected save into it.
 	await page.getByRole('button', { name: 'Copy' }).click();
-	await page.getByRole('button', { name: 'Interiors' }).click();
+	await page.getByRole('button', { name: 'Interiors Public', exact: true }).click();
 
 	await expect.poll(() => calls.resave.length).toBeGreaterThan(0);
 	const body = JSON.parse(calls.resave[0]);

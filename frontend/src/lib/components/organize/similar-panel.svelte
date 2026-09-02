@@ -41,7 +41,7 @@
 			(entries) => {
 				if (entries[0].isIntersecting) related.loadMore();
 			},
-			{ root: scrollEl, rootMargin: '600px' }
+			{ root: scrollEl, rootMargin: '1200px 0px' }
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();

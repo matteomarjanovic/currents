@@ -116,6 +116,7 @@ test('Quick Save recommends, follows successful choices, and resets after leavin
 
 	const first = card(page, 1);
 	await expect(first).toBeVisible();
+	await expect(first.getByRole('button', { name: 'Flowers', exact: true })).toBeAttached();
 	await first.hover();
 	await expect(first.getByRole('button', { name: 'Flowers', exact: true })).toBeVisible();
 
@@ -134,8 +135,9 @@ test('Quick Save recommends, follows successful choices, and resets after leavin
 	// Its own recommendation is Landscapes, but the successful Flowers save now wins.
 	await expect(second.getByRole('button', { name: 'Flowers', exact: true })).toBeVisible();
 	await second.getByRole('button', { name: 'Flowers', exact: true }).click();
-	await page.getByRole('button', { name: /Cars Public.*section/ }).click();
-	await page.getByRole('button', { name: 'Sports Cars Public', exact: true }).click();
+	const secondMenu = page.locator('[data-slot="popover-content"]:visible');
+	await secondMenu.getByRole('button', { name: /Cars Public.*section/ }).click();
+	await secondMenu.getByRole('button', { name: 'Sports Cars Public', exact: true }).click();
 	await expect.poll(() => resaves.at(-1)?.collectionUri).toBe(SPORTS_CARS);
 
 	const third = card(page, 3);

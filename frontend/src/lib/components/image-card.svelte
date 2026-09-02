@@ -24,6 +24,8 @@
 		// Opt into touch actions: holding the tile opens Quick actions, whose save
 		// controls include Quick Save and the full collection picker.
 		longPressSave?: boolean;
+		// Pre-mount desktop controls before the user hovers so their first reveal can animate.
+		preloadControls?: boolean;
 		// Called just before the detail view opens, so the grid can record the run of
 		// images this tile came from (see $lib/save-sequence).
 		onOpen?: () => void;
@@ -34,11 +36,14 @@
 		linkToDetail = true,
 		mobileSave = false,
 		longPressSave = false,
+		preloadControls = false,
 		onOpen
 	}: Props = $props();
 
 	let dropdownOpen = $state(false);
+	let desktopControlsMounted = $state(false);
 	let quickActionsOpen = $state(false);
+	let quickActionsMounted = $state(false);
 	let suppressNextClick = false;
 	let href = $derived.by(() => {
 		const rkey = item.uri.split('/').pop() ?? '';
@@ -70,6 +75,7 @@
 		}
 		if (!collections.loaded) return;
 		suppressNextClick = true;
+		quickActionsMounted = true;
 		quickActionsOpen = true;
 	}
 
@@ -86,6 +92,23 @@
 		pushState(href, { save: $state.snapshot(item) });
 	}
 
+	function prepareDesktopControls(node: HTMLElement) {
+		function onPointerEnter(event: PointerEvent) {
+			if (event.pointerType === 'mouse') desktopControlsMounted = true;
+		}
+		function onFocusIn() {
+			desktopControlsMounted = true;
+		}
+		node.addEventListener('pointerenter', onPointerEnter);
+		node.addEventListener('focusin', onFocusIn);
+		return {
+			destroy() {
+				node.removeEventListener('pointerenter', onPointerEnter);
+				node.removeEventListener('focusin', onFocusIn);
+			}
+		};
+	}
+
 	// Keep viewer save state on the item in sync so the snapshot pushed to the
 	// detail view reflects saves made here (drives the "Add attribution" button).
 	function handleSavesChange(saves: { collectionUri: string; saveUri: string }[]) {
@@ -93,6 +116,10 @@
 	}
 
 	let anySaved = $derived((item.viewer?.saves ?? []).length > 0);
+
+	$effect(() => {
+		if (preloadControls) desktopControlsMounted = true;
+	});
 </script>
 
 {#snippet media()}
@@ -122,6 +149,7 @@
 	class="group relative overflow-hidden rounded-lg"
 	style={tileStyle}
 	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
+	use:prepareDesktopControls
 >
 	<ImageActionMenu {item} variant="context">
 		<LabeledMedia labels={item.labels}>
@@ -133,7 +161,7 @@
 				<div class="block">{@render media()}</div>
 			{/if}
 			{#snippet overlay()}
-				{#if auth.user && collections.loaded}
+				{#if auth.user && collections.loaded && desktopControlsMounted}
 					<div
 						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
 							? 'opacity-100'
@@ -166,7 +194,7 @@
 			{/snippet}
 		</LabeledMedia>
 	</ImageActionMenu>
-	{#if longPressSave && auth.user && collections.loaded}
+	{#if longPressSave && auth.user && collections.loaded && quickActionsMounted}
 		<MobileQuickActionsDrawer
 			{item}
 			bind:open={quickActionsOpen}
