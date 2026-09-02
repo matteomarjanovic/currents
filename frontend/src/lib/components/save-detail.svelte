@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { goto, replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -404,8 +404,10 @@
 	// all below the fold competes with the one the viewer is actually looking at (and
 	// with the neighbours being warmed for the next swipe). The sentinel sits under a
 	// viewport-tall stage, so a short first page doesn't immediately page itself in.
-	const RELATED_FIRST_PAGE = 12;
+	const RELATED_FIRST_PAGE = 20;
 	const RELATED_PAGE = 50;
+	let relatedScrollStarted = $state(false);
+	let relatedPrefetchRequested = $state(false);
 
 	const related = useInfiniteScroll(async (cursor) => {
 		const params = new URLSearchParams({
@@ -422,8 +424,29 @@
 		void currentUri;
 		untrack(() => {
 			related.reset();
+			relatedScrollStarted = false;
+			relatedPrefetchRequested = false;
 			related.loadMore();
 		});
+	});
+
+	// A detail overlay owns its scroll container, so the window does not tell the
+	// related rail that the viewer has started moving. The first real scroll asks
+	// for the next page immediately; later pages use the sentinel's larger lead.
+	onMount(() => {
+		const target = document.querySelector<HTMLElement>('[data-save-detail-overlay]') ?? window;
+		const onScroll = () => {
+			const top = target instanceof HTMLElement ? target.scrollTop : window.scrollY;
+			if (top > 0) relatedScrollStarted = true;
+		};
+		target.addEventListener('scroll', onScroll, { passive: true });
+		return () => target.removeEventListener('scroll', onScroll);
+	});
+
+	$effect(() => {
+		if (!relatedScrollStarted || relatedPrefetchRequested || related.items.length === 0) return;
+		relatedPrefetchRequested = true;
+		void related.loadMore();
 	});
 
 	let sentinel: HTMLDivElement | undefined = $state();
@@ -432,9 +455,9 @@
 		if (!sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting) related.loadMore();
+				if (relatedPrefetchRequested && entries[0].isIntersecting) related.loadMore();
 			},
-			{ rootMargin: '400px' }
+			{ rootMargin: '1200px 0px' }
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();

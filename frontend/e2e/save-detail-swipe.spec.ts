@@ -39,7 +39,7 @@ const secondPage = [makeSave(4), makeSave(5), makeSave(6)];
 // `hydrate` serves feed items without viewer state, which is what makes the detail view
 // fetch the open save again to fill it in. That second, later object is the thing that
 // used to race the swipe, so any test about the swap needs it.
-async function mockApi(page: Page, { paginate = false, hydrate = false } = {}) {
+async function mockApi(page: Page, { paginate = false, hydrate = false, related = false } = {}) {
 	const asFeedItem = (s: ReturnType<typeof makeSave>) =>
 		hydrate ? { ...s, viewer: undefined } : s;
 	await page.route(APPVIEW_ROUTE, (route) => {
@@ -66,7 +66,13 @@ async function mockApi(page: Page, { paginate = false, hydrate = false } = {}) {
 			const uri = decodeURIComponent(new URL(url).searchParams.get('uris') ?? '');
 			return json({ saves: [...feed, ...secondPage].filter((s) => s.uri === uri) });
 		}
-		if (url.includes('getRelatedSaves')) return json({ saves: [] });
+		if (url.includes('getRelatedSaves')) {
+			if (!related) return json({ saves: [] });
+			const limit = new URL(url).searchParams.get('limit');
+			return limit === '20'
+				? json({ saves: Array.from({ length: 20 }, (_, i) => makeSave(i + 10)), cursor: 'page-2' })
+				: json({ saves: Array.from({ length: 50 }, (_, i) => makeSave(i + 30)), cursor: null });
+		}
 		if (url.includes('getImageCollections')) return json({ collections: [] });
 		if (url.includes('features/seen')) return json({ seen: [] });
 		if (url.includes('moderation/prefs')) return json({ adult: 'blur', aiGenerated: 'show' });
@@ -319,7 +325,7 @@ test('hydrating the open save neither refetches its rail nor repaints the previo
 
 test('the related rail opens with a small page and keeps full pages after', async ({ page }) => {
 	const limits: string[] = [];
-	await mockApi(page);
+	await mockApi(page, { related: true });
 	page.on('request', (r) => {
 		if (r.url().includes('getRelatedSaves')) {
 			limits.push(new URL(r.url()).searchParams.get('limit') ?? '');
@@ -330,9 +336,14 @@ test('the related rail opens with a small page and keeps full pages after', asyn
 	await page.waitForSelector('a.block img', { timeout: 10_000 });
 	await page.locator('a.block:has(img[src*="bafy1"])').tap();
 
-	// The opening fetch is paid again on every swipe, so it stays small; the sentinel
-	// asks for full pages once the viewer actually scrolls into the rail.
-	await expect.poll(() => limits).toEqual(['12']);
+	// The opening fetch is paid again on every swipe, so it stays small. The first
+	// detail scroll immediately asks for a full page, before the rail is exhausted.
+	await expect.poll(() => limits).toEqual(['20']);
+	await page.locator('[data-save-detail-overlay]').evaluate((element) => {
+		element.scrollTop = 1;
+		element.dispatchEvent(new Event('scroll'));
+	});
+	await expect.poll(() => limits).toEqual(['20', '50']);
 });
 
 test('back returns to the grid however many images were swiped through', async ({ page }) => {
