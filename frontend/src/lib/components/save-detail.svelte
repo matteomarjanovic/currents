@@ -434,13 +434,22 @@
 	// related rail that the viewer has started moving. The first real scroll asks
 	// for the next page immediately; later pages use the sentinel's larger lead.
 	onMount(() => {
-		const target = document.querySelector<HTMLElement>('[data-save-detail-overlay]') ?? window;
-		const onScroll = () => {
-			const top = target instanceof HTMLElement ? target.scrollTop : window.scrollY;
-			if (top > 0) relatedScrollStarted = true;
+		const onScroll = (event: Event) => {
+			const target = event.target;
+			if (
+				target === document ||
+				target === window ||
+				(target instanceof Element && target.closest('[data-save-detail-overlay]'))
+			) {
+				relatedScrollStarted = true;
+			}
 		};
-		target.addEventListener('scroll', onScroll, { passive: true });
-		return () => target.removeEventListener('scroll', onScroll);
+		document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+		window.addEventListener('scroll', onScroll, { passive: true });
+		return () => {
+			document.removeEventListener('scroll', onScroll, true);
+			window.removeEventListener('scroll', onScroll);
+		};
 	});
 
 	$effect(() => {
@@ -453,11 +462,12 @@
 
 	$effect(() => {
 		if (!sentinel) return;
+		const root = document.querySelector<HTMLElement>('[data-save-detail-overlay]');
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (relatedPrefetchRequested && entries[0].isIntersecting) related.loadMore();
 			},
-			{ rootMargin: '1200px 0px' }
+			{ root, rootMargin: '1200px 0px' }
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();
