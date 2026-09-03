@@ -73,7 +73,7 @@ printf '%s\n' \
 	"OAUTH_HOSTNAME=$oauth_hostname" \
 	'SERVICE_HOSTNAME=api.currents.is' \
 	'FRONTEND_URL=https://currents.is' \
-	'CDN_URL=https://api.currents.is' \
+	'CDN_URL=https://cdn.currents.is' \
 	'INFERENCE_URL=http://172.16.8.2:8000' \
 	'ORIGIN=https://currents.is' \
 	"CADDYFILE=$caddyfile" \

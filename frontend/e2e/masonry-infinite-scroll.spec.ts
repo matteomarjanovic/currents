@@ -168,6 +168,44 @@ test('appending a masonry page preserves the scroll position', async ({ page }) 
 	expect(after).toBeCloseTo(before, 0);
 });
 
+test('scrolling still paginates if masonry misses its intersection update', async ({ page }) => {
+	await page.addInitScript(() => {
+		// Reproduce browsers that do not deliver the sentinel callback after a
+		// masonry reflow. The feed should still use its scroll-position fallback.
+		Object.defineProperty(window, 'IntersectionObserver', {
+			configurable: true,
+			value: class {
+				observe() {}
+				unobserve() {}
+				disconnect() {}
+				takeRecords() {
+					return [];
+				}
+			}
+		});
+	});
+
+	let releaseSecondPage!: () => void;
+	const waitForSecondPage = new Promise<void>((resolve) => (releaseSecondPage = resolve));
+	await mockApi(page, waitForSecondPage);
+	await page.goto('/explore/general');
+	await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
+
+	const grid = page.locator('div[style*="grid-template-columns"]').first();
+	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(21);
+	await grid.evaluate((element) => {
+		const sentinel = element.parentElement?.nextElementSibling;
+		if (!sentinel) throw new Error('missing infinite-scroll sentinel');
+		const sentinelTop = sentinel.getBoundingClientRect().top + window.scrollY;
+		window.scrollTo(0, sentinelTop - window.innerHeight - 200);
+	});
+	await expect(grid.locator('[data-slot="skeleton"]')).toHaveCount(2);
+
+	releaseSecondPage();
+	await expect(grid.locator('[data-slot="skeleton"]')).toHaveCount(0);
+	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(41);
+});
+
 test('a signed-in page append keeps the feed interactive and suggestions batched', async ({
 	page
 }) => {
@@ -239,4 +277,38 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 	expect(appendFrameGap).toBeLessThan(250);
 	expect(nearbyCardFrameGap).toBeLessThan(250);
 	expect(interactionFrameGap).toBeLessThan(1000);
+});
+
+test.describe('masonry column breakpoints', () => {
+	test.use({ viewport: { width: 2561, height: 900 }, isMobile: false, hasTouch: false });
+
+	test('uses eight columns above full HD at non-aligned widths', async ({ page }) => {
+		let releaseSecondPage!: () => void;
+		const waitForSecondPage = new Promise<void>((resolve) => (releaseSecondPage = resolve));
+		await mockApi(page, waitForSecondPage);
+		await page.goto('/explore/general');
+
+		const grid = page.locator('div[style*="grid-template-columns"]').first();
+		await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
+		await expect
+			.poll(() => grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length))
+			.toBe(8);
+
+		releaseSecondPage();
+	});
+});
+
+test.describe('full HD masonry grid', () => {
+	test.use({ viewport: { width: 1920, height: 900 }, isMobile: false, hasTouch: false });
+
+	test('uses seven columns at full HD', async ({ page }) => {
+		await mockApi(page, Promise.resolve());
+		await page.goto('/explore/general');
+
+		const grid = page.locator('div[style*="grid-template-columns"]').first();
+		await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
+		await expect
+			.poll(() => grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length))
+			.toBe(7);
+	});
 });

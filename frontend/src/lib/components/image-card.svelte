@@ -3,6 +3,7 @@
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { longpress } from '$lib/long-press';
+	import { isImageNavigationBlocked } from '$lib/image-navigation-guard';
 	import { isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
@@ -82,6 +83,10 @@
 	}
 
 	function handleClick(e: MouseEvent) {
+		if (isImageNavigationBlocked()) {
+			e.preventDefault();
+			return;
+		}
 		if (suppressNextClick) {
 			suppressNextClick = false;
 			e.preventDefault();

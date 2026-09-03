@@ -55,6 +55,18 @@
 	);
 
 	let sentinel: HTMLDivElement = $state(undefined!);
+	const feedLoadAhead = 1200;
+
+	function loadFeedIfNearEnd() {
+		if (
+			!sentinel ||
+			!feed.hasMore ||
+			feed.loading ||
+			sentinel.getBoundingClientRect().top > window.innerHeight + feedLoadAhead
+		)
+			return;
+		void feed.loadMore();
+	}
 
 	function refreshFeed() {
 		feed.reset();
@@ -85,12 +97,35 @@
 		if (!sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting) feed.loadMore();
+				if (entries[0].isIntersecting) void feed.loadMore();
 			},
-			{ rootMargin: '1200px 0px' }
+			{ rootMargin: `${feedLoadAhead}px 0px` }
 		);
 		observer.observe(sentinel);
-		return () => observer.disconnect();
+
+		// IntersectionObserver can miss a target whose position changes during the
+		// masonry reflow. Keep the same early-load threshold as a cheap fallback on
+		// scroll/resize, and check once more after Svelte and masonry have painted.
+		const check = () => loadFeedIfNearEnd();
+		window.addEventListener('scroll', check, { passive: true });
+		window.addEventListener('resize', check);
+		const frame = requestAnimationFrame(check);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('scroll', check);
+			window.removeEventListener('resize', check);
+			cancelAnimationFrame(frame);
+		};
+	});
+
+	// A page landing changes the sentinel's position without necessarily changing
+	// its intersection state. Re-check after each append so the next request is not
+	// dependent on a later viewport resize.
+	$effect(() => {
+		void feed.items.length;
+		if (!sentinel) return;
+		const frame = requestAnimationFrame(loadFeedIfNearEnd);
+		return () => cancelAnimationFrame(frame);
 	});
 
 	// The sentinel's observer above covers the initial load; this effect only

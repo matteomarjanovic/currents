@@ -119,6 +119,9 @@
 	});
 </script>
 
-<div bind:this={container} class="flex h-full w-full items-center justify-center overflow-hidden">
+<div
+	bind:this={container}
+	class="pointer-events-none flex h-full w-full items-center justify-center overflow-hidden"
+>
 	<canvas bind:this={canvas} class="block max-h-full max-w-full"></canvas>
 </div>

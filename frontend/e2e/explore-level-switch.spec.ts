@@ -85,12 +85,29 @@ test('switching to Personal refetches and shows the personal feed', async ({ pag
 	await page.waitForSelector('a.block img', { timeout: 10_000 });
 	await expect(page.locator('img[alt="general-tile-1"]')).toBeVisible();
 
-	await page.getByRole('button', { name: 'Adjust personalization' }).click();
-	await page.getByRole('menuitemradio', { name: 'Personal' }).click();
+	await page.getByRole('button', { name: 'Adjust personalization' }).tap();
+	await page.getByRole('menuitemradio', { name: 'Personal' }).tap();
 
 	await expect(page).toHaveURL(/\/explore\/personal/);
 	await expect(page.locator('img[alt="personal-tile-2"]')).toBeVisible();
 	await expect(page.locator('img[alt="general-tile-1"]')).toHaveCount(0);
+});
+
+test('opening the feed picker does not open the image beneath it', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/explore/general');
+	await expect(page.locator('a.block img')).toBeVisible();
+
+	await page.getByRole('button', { name: 'Adjust personalization' }).tap();
+	// Android can deliver the touch's compatibility click to the tile at the same
+	// screen coordinates after opening the picker. It must be ignored.
+	await page.locator('a.block').first().dispatchEvent('click', { detail: 1 });
+
+	await expect(page.locator('[data-slot="dropdown-menu-content"][data-state="open"]')).toHaveCount(
+		1
+	);
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(0);
+	await expect(page).toHaveURL(/\/explore\/general$/);
 });
 
 test('the Explore entry route opens the saved default feed', async ({ page }) => {

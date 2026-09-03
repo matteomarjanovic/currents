@@ -96,12 +96,21 @@
 	});
 
 	let containerWidth = $state<number | undefined>();
+	let viewportWidth = $state<number | undefined>();
 	let viewportHeight = $state<number | undefined>();
 	const gap = 16;
+	const minFrameWidth = 200;
+	const fullHDWidth = 1920;
+	let maxColumns = $derived(viewportWidth !== undefined && viewportWidth > fullHDWidth ? 8 : 7);
 	let frameWidth = $derived(
 		containerWidth !== undefined && containerWidth < 624
 			? Math.max(120, Math.floor((containerWidth - gap - 2) / 2))
-			: 200
+			: containerWidth !== undefined
+				? Math.max(
+						minFrameWidth,
+						Math.floor((containerWidth - (maxColumns - 1) * gap) / maxColumns)
+					)
+				: minFrameWidth
 	);
 
 	const skeletonShapes: Array<[number, number]> = [
@@ -134,7 +143,7 @@
 	});
 </script>
 
-<svelte:window bind:innerHeight={viewportHeight} />
+<svelte:window bind:innerWidth={viewportWidth} bind:innerHeight={viewportHeight} />
 
 <div bind:clientWidth={containerWidth}>
 	<!-- Appended frames briefly have the default CSS order before the masonry

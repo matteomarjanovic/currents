@@ -8,13 +8,23 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loginPrompt } from '$lib/stores/login-prompt.svelte';
 	import { FEED_LEVELS, findFeedLevel } from '$lib/feed-levels';
+	import { blockImageNavigation } from '$lib/image-navigation-guard';
 
 	// The active level comes from the route; default to general if the slug is unknown.
 	const selected = $derived(findFeedLevel(page.params.level) ?? FEED_LEVELS[1]);
 
 	let open = $state(false);
 
+	function preventTouchClickThrough(event: TouchEvent) {
+		// Bits UI opens this menu from pointerup. Android Chrome can still emit a
+		// compatibility click afterwards, then re-hit-test it against the image grid.
+		// Cancelling touchstart leaves the pointer events intact but suppresses that click.
+		blockImageNavigation();
+		event.preventDefault();
+	}
+
 	function selectLevel(slug: string) {
+		blockImageNavigation();
 		const level = findFeedLevel(slug)!;
 		// General is the only feed open to logged-out visitors; the rest need auth.
 		if (!auth.user && level.value !== 0) {
@@ -34,6 +44,8 @@
 				variant="glass"
 				class="h-auto cursor-pointer gap-2 rounded-full p-0.5 transition-transform duration-100 aria-expanded:scale-95 md:pl-3"
 				aria-label="Adjust personalization"
+				onpointerdowncapture={blockImageNavigation}
+				ontouchstart={preventTouchClickThrough}
 			>
 				<ChevronUp
 					class="hidden size-4 text-foreground/60 transition-transform duration-200 md:block {open
