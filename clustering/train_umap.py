@@ -23,6 +23,7 @@ from pgvector.psycopg2 import register_vector
 from umap import UMAP
 
 from operations import record_job_run
+from vector_rows import as_array
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def train_umap():
             record_job_run("umap_train", "success", started_at, {"sampled": 0, "skipped": True})
             return
 
-        X = np.array([r[0] for r in rows], dtype=np.float32)
+        X = as_array(rows, 0)
         log.info("Training UMAP on %d embeddings (input_dim=%d)", len(X), X.shape[1])
 
         reducer = UMAP(
@@ -128,7 +129,7 @@ def _reproject_all(reducer: UMAP):
                 break
 
             ids  = [r[0] for r in rows]
-            embs = np.array([r[1] for r in rows], dtype=np.float32)
+            embs = as_array(rows, 1)
             reduced = reducer.transform(embs)
 
             with conn.cursor() as cur:

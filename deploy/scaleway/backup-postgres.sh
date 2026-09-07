@@ -17,10 +17,15 @@ cleanup() {
 record_run() {
 	run_status=$1
 	details=$2
-	docker exec currents-db-1 psql -v ON_ERROR_STOP=1 -U appview -d appview \
+	if ! docker exec -i currents-db-1 psql -v ON_ERROR_STOP=1 -U appview -d appview \
 		-v run_status="$run_status" -v started_at="$started_at" -v details="$details" \
-		-c "INSERT INTO operations_job_run (job, status, started_at, finished_at, details) VALUES ('postgres_backup', :'run_status', :'started_at'::timestamptz, now(), :'details'::jsonb)" \
-		>/dev/null 2>&1 || true
+		>/dev/null <<'SQL'
+INSERT INTO operations_job_run (job, status, started_at, finished_at, details)
+VALUES ('postgres_backup', :'run_status', :'started_at'::timestamptz, now(), :'details'::jsonb);
+SQL
+	then
+		echo "Could not record PostgreSQL backup run" >&2
+	fi
 }
 
 finish() {

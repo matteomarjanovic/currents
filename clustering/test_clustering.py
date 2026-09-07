@@ -10,8 +10,20 @@ import unittest
 os.environ.setdefault("DATABASE_URL", "postgres://unused")  # read at import time
 
 import numpy as np
+from pgvector import Vector
 
 import run_clustering
+from vector_rows import as_array
+
+
+class VectorRowsTests(unittest.TestCase):
+    def test_pgvector_rows_become_float32_array(self):
+        rows = [(1, Vector([1, 2])), (2, Vector([3, 4]))]
+
+        result = as_array(rows, 1)
+
+        np.testing.assert_array_equal(result, [[1, 2], [3, 4]])
+        self.assertEqual(result.dtype, np.float32)
 
 
 class FindMedoidTests(unittest.TestCase):

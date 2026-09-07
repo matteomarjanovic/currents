@@ -17,6 +17,7 @@ from psycopg2.extras import execute_batch
 from pgvector.psycopg2 import register_vector
 
 from operations import record_job_run
+from vector_rows import as_array
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ def run_clustering():
             return
 
         vi_ids = [r[0] for r in rows]
-        X = np.array([r[1] for r in rows], dtype=np.float32)
+        X = as_array(rows, 1)
         log.info("Clustering %d points in 50-dim UMAP space", len(vi_ids))
 
         clusterer = hdbscan.HDBSCAN(
@@ -114,7 +115,7 @@ def _backfill_umap(reducer):
 
         log.info("Backfilling %d missing UMAP embeddings", len(rows))
         ids  = [r[0] for r in rows]
-        embs = np.array([r[1] for r in rows], dtype=np.float32)
+        embs = as_array(rows, 1)
         reduced = reducer.transform(embs)
 
         with conn.cursor() as cur:

@@ -1,5 +1,5 @@
 psycopg2-binary
-pgvector
+pgvector==0.5.0
 umap-learn
 hdbscan
 numpy
