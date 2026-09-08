@@ -746,7 +746,7 @@
 			type="button"
 			onclick={() => (searchCommandOpen = true)}
 			class="fixed left-1/2 z-10 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-baseline gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3 py-1.5 text-sm text-foreground shadow-sm backdrop-blur-sm md:hidden"
-			style="bottom: calc(env(safe-area-inset-bottom) + 4.625rem)"
+			style="bottom: calc(env(safe-area-inset-bottom) + 4.25rem)"
 		>
 			{@render searchQuery()}
 		</button>
@@ -754,7 +754,7 @@
 	<div
 		bind:this={bottomBarEl}
 		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 scale-[1.08] md:hidden"
-		style="bottom: calc(env(safe-area-inset-bottom) + 1.375rem)"
+		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
 	>
 		{#if !user}
 			{@render loginButton('default')}
