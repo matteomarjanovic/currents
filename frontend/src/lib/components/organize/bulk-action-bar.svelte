@@ -76,6 +76,32 @@
 	type MobileView = 'menu' | 'copy' | 'move' | 'labels';
 	let mobileView = $state<MobileView | null>(null);
 
+	let actionScroller = $state<HTMLDivElement>();
+	let actionScrollLeft = $state(false);
+	let actionScrollRight = $state(false);
+
+	function updateActionFades() {
+		const el = actionScroller;
+		if (!el) return;
+		actionScrollLeft = el.scrollLeft > 1;
+		actionScrollRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+	}
+
+	$effect(() => {
+		const el = actionScroller;
+		if (!el) return;
+		el.addEventListener('scroll', updateActionFades, { passive: true });
+		const observer = new ResizeObserver(updateActionFades);
+		observer.observe(el);
+		if (el.firstElementChild) observer.observe(el.firstElementChild);
+		const frame = requestAnimationFrame(updateActionFades);
+		return () => {
+			cancelAnimationFrame(frame);
+			el.removeEventListener('scroll', updateActionFades);
+			observer.disconnect();
+		};
+	});
+
 	function pick(dest: string) {
 		if (mobileView === 'move') onMove(dest);
 		else if (mobileView === 'copy') onCopy(dest);
@@ -216,10 +242,11 @@
 	     component is. A local transition would simply never play. -->
 	<div
 		transition:slide|global={{ duration: 200, easing: cubicOut }}
+		data-bulk-action-bar
 		class="mt-2 shrink-0 rounded-2xl bg-popover/95 shadow-sm backdrop-blur-sm"
 	>
-		<div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 p-3">
-			<div class="flex items-center gap-3 text-sm">
+		<div class="mx-auto flex max-w-5xl flex-nowrap items-center gap-2 overflow-hidden p-3">
+			<div class="flex shrink-0 items-center gap-3 text-sm whitespace-nowrap">
 				<span class="font-medium">{saves.length} selected</span>
 				<button
 					type="button"
@@ -240,92 +267,122 @@
 				{/if}
 			</div>
 
-			<div class="flex items-center gap-1.5">
-				<Popover.Root bind:open={copyOpen}>
-					<Popover.Trigger>
-						{#snippet child({ props })}
-							<Button {...props} variant="secondary" size="sm" disabled={saves.length === 0}>
-								<FolderPlus class="size-4" />
-								Copy
-							</Button>
-						{/snippet}
-					</Popover.Trigger>
-					<Popover.Content align="end" side="top" class="w-72 overflow-hidden p-0">
-						{@render destinationList((uri) => {
-							onCopy(uri);
-							copyOpen = false;
-						})}
-					</Popover.Content>
-				</Popover.Root>
+			<div class="relative min-w-0 flex-1">
+				<div
+					bind:this={actionScroller}
+					data-bulk-action-scroll
+					class="scrollbar-hide min-w-0 overflow-x-auto overscroll-x-contain"
+				>
+					<div class="flex w-max min-w-full items-center justify-end gap-1.5 px-1">
+						<Popover.Root bind:open={copyOpen}>
+							<Popover.Trigger>
+								{#snippet child({ props })}
+									<Button {...props} variant="secondary" size="sm" disabled={saves.length === 0}>
+										<FolderPlus class="size-4" />
+										Copy
+									</Button>
+								{/snippet}
+							</Popover.Trigger>
+							<Popover.Content align="end" side="top" class="w-72 overflow-hidden p-0">
+								{@render destinationList((uri) => {
+									onCopy(uri);
+									copyOpen = false;
+								})}
+							</Popover.Content>
+						</Popover.Root>
 
-				{#if canMove}
-					<Popover.Root bind:open={moveOpen}>
-						<Popover.Trigger>
-							{#snippet child({ props })}
-								<Button {...props} variant="secondary" size="sm" disabled={saves.length === 0}>
-									<FolderInput class="size-4" />
-									Move
-								</Button>
-							{/snippet}
-						</Popover.Trigger>
-						<Popover.Content align="end" side="top" class="w-72 overflow-hidden p-0">
-							{@render destinationList((uri) => {
-								onMove(uri);
-								moveOpen = false;
-							})}
-						</Popover.Content>
-					</Popover.Root>
-				{/if}
+						{#if canMove}
+							<Popover.Root bind:open={moveOpen}>
+								<Popover.Trigger>
+									{#snippet child({ props })}
+										<Button {...props} variant="secondary" size="sm" disabled={saves.length === 0}>
+											<FolderInput class="size-4" />
+											Move
+										</Button>
+									{/snippet}
+								</Popover.Trigger>
+								<Popover.Content align="end" side="top" class="w-72 overflow-hidden p-0">
+									{@render destinationList((uri) => {
+										onMove(uri);
+										moveOpen = false;
+									})}
+								</Popover.Content>
+							</Popover.Root>
+						{/if}
 
-				{#if canRemove}
-					<Button variant="secondary" size="sm" disabled={saves.length === 0} onclick={onRemove}>
-						<Trash2 class="size-4" />
-						{removeLabel}
-					</Button>
-				{/if}
-
-				<Button variant="secondary" size="sm" disabled={saves.length === 0} onclick={downloadAll}>
-					<Download class="size-4" />
-					Download
-				</Button>
-
-				{#if ownContext}
-					<Button
-						variant="secondary"
-						size="sm"
-						disabled={blobCids.length === 0}
-						onclick={() => (attributionOpen = true)}
-					>
-						<Quote class="size-4" />
-						Attribution
-					</Button>
-					<Popover.Root bind:open={labelsOpen}>
-						<Popover.Trigger>
-							{#snippet child({ props })}
-								<Button {...props} variant="secondary" size="sm" disabled={saves.length === 0}>
-									<Tag class="size-4" />
-									Labels
-								</Button>
-							{/snippet}
-						</Popover.Trigger>
-						<Popover.Content align="end" side="top" class="w-72">
-							{@render labelBody()}
+						{#if canRemove}
 							<Button
+								variant="secondary"
 								size="sm"
-								class="mt-1 w-full"
-								disabled={applying || chosen.size === 0}
-								onclick={applyLabels}
+								disabled={saves.length === 0}
+								onclick={onRemove}
 							>
-								{applying ? 'Applying…' : `Apply to ${saves.length}`}
+								<Trash2 class="size-4" />
+								{removeLabel}
 							</Button>
-						</Popover.Content>
-					</Popover.Root>
-				{/if}
+						{/if}
 
-				<Button variant="ghost" size="sm" onclick={onExit}>
-					<X class="size-4" />
-					Cancel
-				</Button>
+						<Button
+							variant="secondary"
+							size="sm"
+							disabled={saves.length === 0}
+							onclick={downloadAll}
+						>
+							<Download class="size-4" />
+							Download
+						</Button>
+
+						{#if ownContext}
+							<Button
+								variant="secondary"
+								size="sm"
+								disabled={blobCids.length === 0}
+								onclick={() => (attributionOpen = true)}
+							>
+								<Quote class="size-4" />
+								Attribution
+							</Button>
+							<Popover.Root bind:open={labelsOpen}>
+								<Popover.Trigger>
+									{#snippet child({ props })}
+										<Button {...props} variant="secondary" size="sm" disabled={saves.length === 0}>
+											<Tag class="size-4" />
+											Labels
+										</Button>
+									{/snippet}
+								</Popover.Trigger>
+								<Popover.Content align="end" side="top" class="w-72">
+									{@render labelBody()}
+									<Button
+										size="sm"
+										class="mt-1 w-full"
+										disabled={applying || chosen.size === 0}
+										onclick={applyLabels}
+									>
+										{applying ? 'Applying…' : `Apply to ${saves.length}`}
+									</Button>
+								</Popover.Content>
+							</Popover.Root>
+						{/if}
+
+						<Button variant="ghost" size="sm" onclick={onExit}>
+							<X class="size-4" />
+							Cancel
+						</Button>
+					</div>
+				</div>
+				{#if actionScrollLeft}
+					<div
+						data-bulk-action-fade="left"
+						class="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-popover via-popover/90 to-transparent"
+					></div>
+				{/if}
+				{#if actionScrollRight}
+					<div
+						data-bulk-action-fade="right"
+						class="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-popover via-popover/90 to-transparent"
+					></div>
+				{/if}
 			</div>
 		</div>
 	</div>

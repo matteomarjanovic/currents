@@ -123,3 +123,34 @@ test('search in one owned collection offers direct remove and move', async ({ pa
 	});
 	await expect.poll(() => calls.deleted).toContain('interiors');
 });
+
+test('desktop bulk actions stay on one line and fade the scroll edges', async ({ page }) => {
+	const calls: Calls = { resave: [], deleted: [] };
+	await mockApi(page, calls, [{ collectionUri: INTERIORS, saveUri: saveUri('interiors') }]);
+	await page.setViewportSize({ width: 800, height: 800 });
+	await page.goto('/organize');
+	await search(page, [INTERIORS]);
+
+	await page.getByRole('button', { name: 'Select' }).click();
+	await page.locator('[data-uri]').first().click();
+	const bar = page.locator('[data-bulk-action-bar]');
+	const scroller = page.locator('[data-bulk-action-scroll]');
+	await expect(bar).toBeVisible();
+	await expect(scroller).toHaveCSS('overflow-x', 'auto');
+	await expect
+		.poll(() => scroller.evaluate((el) => ({ width: el.clientWidth, scroll: el.scrollWidth })))
+		.toEqual(expect.objectContaining({ scroll: expect.any(Number) }));
+	const dimensions = await scroller.evaluate((el) => ({
+		width: el.clientWidth,
+		scroll: el.scrollWidth
+	}));
+	expect(dimensions.scroll).toBeGreaterThan(dimensions.width);
+	await expect(page.locator('[data-bulk-action-fade="right"]')).toBeVisible();
+
+	await scroller.evaluate((el) => {
+		el.scrollLeft = el.scrollWidth;
+		el.dispatchEvent(new Event('scroll'));
+	});
+	await expect(page.locator('[data-bulk-action-fade="left"]')).toBeVisible();
+	await expect(page.locator('[data-bulk-action-fade="right"]')).toBeHidden();
+});
