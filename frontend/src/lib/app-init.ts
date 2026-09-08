@@ -1,6 +1,6 @@
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
-import { isNative } from './platform';
+import { isIos, isNative } from './platform';
 import { mirrorAuthToken, setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
 import { loadCollections } from './stores/collections.svelte';
@@ -22,6 +22,19 @@ function emit(ev: DeepLinkEvent) {
 	for (const cb of listeners) cb(ev);
 }
 
+async function applyIosFontScale(): Promise<void> {
+	try {
+		const { AccessibilityPreferences } =
+			await import('@capawesome/capacitor-accessibility-preferences');
+		const { fontScale } = await AccessibilityPreferences.getPreferences();
+		// Tailwind's rem scale assumes the browser's 16px default. WKWebView does not
+		// apply Dynamic Type to that root size, so reproduce it from the native value.
+		document.documentElement.style.fontSize = `${16 * fontScale}px`;
+	} catch (err) {
+		console.warn('Could not apply the iOS font-size preference', err);
+	}
+}
+
 export async function initApp(): Promise<void> {
 	if (initialized) return;
 	initialized = true;
@@ -34,6 +47,14 @@ export async function initApp(): Promise<void> {
 	const { App } = await import('@capacitor/app');
 	// Status-bar icon color is handled reactively from the app theme in the root +layout.svelte
 	// (via @capacitor-community/safe-area). The splash is hidden from there too, once content paints.
+	if (isIos()) {
+		void applyIosFontScale();
+		// Control Center makes the app inactive without necessarily backgrounding it.
+		// Re-read on activation so its per-app text-size slider takes effect immediately.
+		App.addListener('appStateChange', ({ isActive }) => {
+			if (isActive) void applyIosFontScale();
+		});
+	}
 
 	App.addListener('appUrlOpen', async (event) => {
 		try {

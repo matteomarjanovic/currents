@@ -134,7 +134,8 @@ keystore.properties
 - `@capawesome-team/capacitor-secure-preferences` is a **paid Capawesome Insiders** plugin. Confirm
   the Insiders license covers **production distribution** (not just dev). `CAPAWESOME_TOKEN` is only
   needed at install/build time, not at runtime.
-- All other plugins (`send-intent`, `@capacitor/*`, `@capacitor-community/safe-area`) are MIT/free.
+- All other plugins (`send-intent`, `@capacitor/*`, `@capacitor-community/safe-area`,
+  `@capawesome/capacitor-accessibility-preferences`) are MIT/free.
 
 ## 7. Play Console
 
