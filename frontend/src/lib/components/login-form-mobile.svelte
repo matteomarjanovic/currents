@@ -200,9 +200,13 @@
 									id="handle-{id}"
 									name="username"
 									type="text"
+									inputmode="url"
 									placeholder="handle.bsky.social"
 									required
 									autocomplete="off"
+									autocapitalize="none"
+									autocorrect="off"
+									spellcheck={false}
 									bind:value={handle}
 									oninput={onInput}
 									onkeydown={onKeydown}
