@@ -72,6 +72,8 @@
 		landing?: boolean;
 	} = $props();
 
+	const android = isAndroid();
+
 	const SEARCH_TYPES = [
 		{ value: 'saves', label: 'Images' },
 		{ value: 'collections', label: 'Collections' },
@@ -754,7 +756,7 @@
 	{/if}
 	<div
 		class="fixed left-1/2 z-10 -translate-x-1/2 md:hidden"
-		style="bottom: calc(env(safe-area-inset-bottom) - 1rem)"
+		style="bottom: calc(env(safe-area-inset-bottom) - {android ? 0 : 1}rem)"
 	>
 		<div bind:this={bottomBarEl} class="{glassGroup} flex scale-[1.08]">
 			{#if !user}
