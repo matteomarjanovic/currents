@@ -28,6 +28,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="currents" android:host="oauth-callback" />
             </intent-filter>
+
+            <!-- Move from the disposable share-target activity into the normal app task
+                 when the user continues to organize the saves. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="currents" android:host="organize" />
+            </intent-filter>
         </activity>
 
         <!-- Share target: receives images/links shared from other apps (send-intent plugin),

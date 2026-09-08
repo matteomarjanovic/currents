@@ -55,8 +55,10 @@
 			? 'your profile'
 			: (collections.items.find((c) => c.uri === savedUri)?.name ?? 'your collection')
 	);
-	let organizeHref = $derived(
-		savedUri ? `${resolve('/organize')}?c=${encodeURIComponent(savedUri)}` : resolve('/organize')
+	// The Android share plugin hosts this route in a disposable activity. A deep link
+	// transfers organize mode to MainActivity, which survives normal app switching.
+	let organizeLaunchHref = $derived(
+		savedUri ? `currents://organize?c=${encodeURIComponent(savedUri)}` : 'currents://organize'
 	);
 
 	let pending = $state<PendingShare | null>(null);
@@ -317,7 +319,7 @@
 				</p>
 			</div>
 			<div class="flex w-full max-w-xs flex-col gap-2">
-				<Button href={organizeHref} class="w-full">Add details in organize</Button>
+				<Button href={organizeLaunchHref} class="w-full">Add details in organize</Button>
 				<Button variant="outline" class="w-full" onclick={leave}>Done</Button>
 			</div>
 		</div>

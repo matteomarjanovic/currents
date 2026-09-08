@@ -1,3 +1,5 @@
+import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import { isNative } from './platform';
 import { mirrorAuthToken, setAuthToken } from './auth-storage';
 import { auth } from './stores/auth.svelte';
@@ -37,8 +39,19 @@ export async function initApp(): Promise<void> {
 		try {
 			const url = new URL(event.url);
 			if (url.protocol !== 'currents:') return;
-			// currents://oauth-callback?token=...&handle=...
 			const path = (url.host || url.pathname.replace(/^\/+/, '')).split('/')[0];
+			// Leave Android's disposable share activity for the normal app task before
+			// entering organize mode, so switching apps doesn't destroy the details screen.
+			if (path === 'organize') {
+				const collectionUri = url.searchParams.get('c');
+				await goto(
+					collectionUri
+						? `${resolve('/organize')}?c=${encodeURIComponent(collectionUri)}`
+						: resolve('/organize')
+				);
+				return;
+			}
+			// currents://oauth-callback?token=...&handle=...
 			if (path !== 'oauth-callback') return;
 			const token = url.searchParams.get('token');
 			const handle = url.searchParams.get('handle') ?? undefined;
