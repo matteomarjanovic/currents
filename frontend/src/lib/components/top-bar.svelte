@@ -44,6 +44,7 @@
 	import InstallAppDialog from '$lib/components/install-app-dialog.svelte';
 	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
+	import PersonalizationButton from '$lib/components/personalization-button-v3.svelte';
 	import SearchCommand from '$lib/components/search-command.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
 	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
@@ -752,12 +753,12 @@
 		</button>
 	{/if}
 	<div
-		bind:this={bottomBarEl}
-		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 scale-[1.08] md:hidden"
-		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+		class="fixed left-1/2 z-10 -translate-x-1/2 md:hidden"
+		style="bottom: calc(env(safe-area-inset-bottom) - 1rem)"
 	>
-		{#if !user}
-			{@render loginButton('default')}
+		<div bind:this={bottomBarEl} class="{glassGroup} flex scale-[1.08]">
+			{#if !user}
+				{@render loginButton('default')}
 			<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
 			     bg-input/50 would read as a pressed state inside the glass pill. The
 			     asymmetric padding is optical, not arithmetic: the chevron already
@@ -766,8 +767,8 @@
 			<ThemeToggle
 				class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
 			/>
-		{:else}
-			{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
+			{:else}
+				{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
 			<DropdownMenu.Root
 				bind:open={() => openMenu === 'burger-mobile', (v) => toggleMenu('burger-mobile', v)}
 			>
@@ -810,8 +811,17 @@
 					bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
 				/>
 			{/if}
+			{/if}
+			{@render searchButton('ghost', '', false)}
+		</div>
+		{#if page.route.id === '/(with-navbar)/explore/[level]'}
+			<div
+				class="absolute top-1/2 left-[calc(100%+1rem)]"
+				style="transform: translateY(calc(-50% + 0.125rem))"
+			>
+				<PersonalizationButton />
+			</div>
 		{/if}
-		{@render searchButton('ghost', '', false)}
 	</div>
 {/if}
 
