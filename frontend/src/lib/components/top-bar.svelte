@@ -72,7 +72,8 @@
 		landing?: boolean;
 	} = $props();
 
-	const android = isAndroid();
+	// Android and web need the raised mobile bar; iOS keeps extra room for its native layout.
+	const raisedMobileBar = isAndroid() || !isNative();
 
 	const SEARCH_TYPES = [
 		{ value: 'saves', label: 'Images' },
@@ -789,7 +790,7 @@
 	{/if}
 	<div
 		class="fixed z-10 -translate-x-1/2 md:hidden"
-		style="left: {centerMobileControls ? `calc(50% - ${flowCenterOffset}px)` : '50%'}; bottom: calc(env(safe-area-inset-bottom) - {android ? -0.5 : 1}rem)"
+		style="left: {centerMobileControls ? `calc(50% - ${flowCenterOffset}px)` : '50%'}; bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
 	>
 		<div bind:this={bottomBarEl} class="{glassGroup} flex scale-[1.08]">
 			{#if !user}
