@@ -40,6 +40,7 @@
 	// links. Find-similar lives in `?sim=<sourceUri>` so it gets its own history entry —
 	// back returns to the prior view. Both empty = the "My library" root.
 	let selectedUri = $derived(page.url.searchParams.get('c') ?? '');
+	let unsorted = $derived(!selectedUri && page.url.searchParams.get('unsorted') === '1');
 	let similarUri = $derived(page.url.searchParams.get('sim') ?? '');
 
 	// Text (ephemeral `searchQuery`) and color (URL `?color=`, below) can combine
@@ -53,6 +54,7 @@
 	let search = $derived(searchQuery ? { query: searchQuery, collections: [...scope] } : null);
 	$effect(() => {
 		void selectedUri;
+		void unsorted;
 		untrack(() => {
 			searchQuery = null;
 			scope.clear();
@@ -112,6 +114,7 @@
 	function simHref(uri: string) {
 		const p = new URLSearchParams();
 		if (selectedUri) p.set('c', selectedUri);
+		if (unsorted) p.set('unsorted', '1');
 		p.set('sim', uri);
 		return `/organize?${p}`;
 	}
@@ -130,6 +133,7 @@
 	function colorHref(hex: string) {
 		const p = new URLSearchParams();
 		if (selectedUri) p.set('c', selectedUri);
+		if (unsorted) p.set('unsorted', '1');
 		p.set('color', hex.replace('#', '').toLowerCase());
 		return `/organize?${p}`;
 	}
@@ -146,6 +150,9 @@
 
 	function hrefFor(uri: string) {
 		return uri ? `/organize?c=${encodeURIComponent(uri)}` : '/organize';
+	}
+	function sourceHref() {
+		return unsorted ? '/organize?unsorted=1' : hrefFor(selectedUri);
 	}
 
 	// Library search and find-similar are supporter-tier features (enforced
@@ -196,10 +203,9 @@
 	// The image detail panel opens on tile click. The selection is scoped to the
 	// collection it was made in, so switching collections closes the panel for free
 	// (selectedSave derives to null once the collection no longer matches).
-	let selection = $state<{ collectionUri: string; save: SaveView } | null>(null);
-	let selectedSave = $derived(
-		selection && selection.collectionUri === selectedUri ? selection.save : null
-	);
+	let sourceKey = $derived(unsorted ? 'unsorted' : selectedUri);
+	let selection = $state<{ source: string; save: SaveView } | null>(null);
+	let selectedSave = $derived(selection && selection.source === sourceKey ? selection.save : null);
 	// The panel's X closes it, and so should Android's back button — otherwise back
 	// leaves organize mode with the (full-screen, on mobile) panel still open.
 	$effect(() => {
@@ -233,6 +239,7 @@
 	});
 	$effect(() => {
 		void selectedUri;
+		void unsorted;
 		void similarUri;
 		void colorParam;
 		void searchQuery;
@@ -249,7 +256,13 @@
 </script>
 
 <svelte:head>
-	<title>{selected ? selected.name + ' · Organize · Currents' : 'Organize · Currents'}</title>
+	<title>
+		{selected
+			? selected.name + ' · Organize · Currents'
+			: unsorted
+				? 'Unsorted · Organize · Currents'
+				: 'Organize · Currents'}
+	</title>
 </svelte:head>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -300,7 +313,7 @@
      background at the bottom. dvh tracks the live viewport (and can't jitter here,
      since the page itself never scrolls). -->
 <Sidebar.Provider class="h-dvh overflow-hidden">
-	<OrganizeSidebarLeft {selectedUri} />
+	<OrganizeSidebarLeft {selectedUri} {unsorted} />
 	<!-- The inset must stay a direct sibling of the sidebar: its gutter margins come
 	     from `peer-data-[variant=inset]` classes, and Tailwind's peer-* is a sibling
 	     combinator, so wrapping it would silently drop them. So the inset keeps the
@@ -341,7 +354,7 @@
 							type="button"
 							onclick={() => {
 								searchQuery = null;
-								goto(hrefFor(selectedUri));
+								goto(sourceHref());
 							}}
 							class="rounded p-1 text-muted-foreground hover:bg-muted"
 							aria-label="Clear search"
@@ -407,7 +420,7 @@
 							<button
 								type="button"
 								class="shrink-0 rounded transition-opacity hover:opacity-75"
-								onclick={() => (selection = { collectionUri: selectedUri, save: source })}
+								onclick={() => (selection = { source: sourceKey, save: source })}
 								aria-label="Show image details"
 							>
 								<img
@@ -458,7 +471,7 @@
 						</Popover.Root>
 						<button
 							type="button"
-							onclick={() => goto(hrefFor(selectedUri))}
+							onclick={() => goto(sourceHref())}
 							class="rounded p-1 text-muted-foreground hover:bg-muted"
 							aria-label="Clear find similar"
 						>
@@ -515,7 +528,7 @@
 						</Popover.Root>
 						<button
 							type="button"
-							onclick={() => goto(hrefFor(selectedUri))}
+							onclick={() => goto(sourceHref())}
 							class="rounded p-1 text-muted-foreground hover:bg-muted"
 							aria-label="Clear color search"
 						>
@@ -529,7 +542,15 @@
 					     actions menu off-screen. -->
 						<Breadcrumb.Root class="min-w-0">
 							<Breadcrumb.List class="flex-nowrap">
-								{#if selected}
+								{#if unsorted}
+									<Breadcrumb.Item>
+										<Breadcrumb.Link href="/organize">My library</Breadcrumb.Link>
+									</Breadcrumb.Item>
+									<Breadcrumb.Separator />
+									<Breadcrumb.Item>
+										<Breadcrumb.Page>Unsorted</Breadcrumb.Page>
+									</Breadcrumb.Item>
+								{:else if selected}
 									<!-- On mobile the ancestors collapse into a single "…" menu — always,
 								     even when "My library" is the only one, so the header keeps the
 								     same shape in a collection and in a section. Desktop shows the
@@ -642,6 +663,7 @@
 
 			<OrganizeCanvas
 				{selectedUri}
+				{unsorted}
 				{search}
 				{similar}
 				color={colorSearch}
@@ -650,7 +672,7 @@
 				selected={bulkSelected}
 				{ownContext}
 				selectedSaveUri={selectedSave?.uri ?? null}
-				onSelectSave={(s) => (selection = { collectionUri: selectedUri, save: s })}
+				onSelectSave={(s) => (selection = { source: sourceKey, save: s })}
 				onFindSimilar={findSimilar}
 			/>
 		</div>
@@ -681,7 +703,7 @@
 		canSearch={() => requireSupporter(() => (searchOpen = true))}
 		onSearch={(q, cols) => {
 			// Text search is ephemeral; drop any find-similar or color search from the URL.
-			if (similarUri || colorParam) goto(hrefFor(selectedUri));
+			if (similarUri || colorParam) goto(sourceHref());
 			scope.clear();
 			if (q) for (const c of cols) scope.add(c);
 			searchQuery = q || null;

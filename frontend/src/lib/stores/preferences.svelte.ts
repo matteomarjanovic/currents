@@ -2,6 +2,9 @@ import { apiFetch } from '$lib/api';
 import type { OrganizeCollectionSort } from '$lib/organize-collections';
 import { DEFAULT_SAVE_SUGGESTION_MODE, type SaveSuggestionMode } from '$lib/save-suggestion';
 
+export type LastSaveRemovalAction = 'move-to-profile' | 'delete';
+export type LastSaveRemovalPreference = 'ask' | LastSaveRemovalAction;
+
 // Reactive viewer preferences for UI/rendering behavior. Server-backed so they
 // follow the user across browsers and devices (web + mobile). Distinct from
 // moderation-prefs, which gate content visibility.
@@ -11,13 +14,15 @@ interface Prefs {
 	gifAutoplay: boolean;
 	organizeCollectionSort: OrganizeCollectionSort;
 	saveSuggestionMode: SaveSuggestionMode;
+	lastSaveRemovalAction: LastSaveRemovalPreference;
 }
 
-// Defaults mirror the appview DB column defaults (migrations 042, 048, and 050).
+// Defaults mirror the appview DB column defaults (migrations 042, 048, 050, and 052).
 const DEFAULTS: Prefs = {
 	gifAutoplay: true,
 	organizeCollectionSort: 'name',
-	saveSuggestionMode: DEFAULT_SAVE_SUGGESTION_MODE
+	saveSuggestionMode: DEFAULT_SAVE_SUGGESTION_MODE,
+	lastSaveRemovalAction: 'ask'
 };
 
 export const preferences = $state<Prefs>({ ...DEFAULTS });
@@ -39,6 +44,13 @@ export async function loadPreferences() {
 		) {
 			preferences.saveSuggestionMode = data.saveSuggestionMode;
 		}
+		if (
+			data.lastSaveRemovalAction === 'ask' ||
+			data.lastSaveRemovalAction === 'move-to-profile' ||
+			data.lastSaveRemovalAction === 'delete'
+		) {
+			preferences.lastSaveRemovalAction = data.lastSaveRemovalAction;
+		}
 		preferencesLoaded.value = true;
 	} catch {
 		// best-effort; the defaults remain in effect until a later load
@@ -53,7 +65,8 @@ async function persist() {
 			body: JSON.stringify({
 				gifAutoplay: preferences.gifAutoplay,
 				organizeCollectionSort: preferences.organizeCollectionSort,
-				saveSuggestionMode: preferences.saveSuggestionMode
+				saveSuggestionMode: preferences.saveSuggestionMode,
+				lastSaveRemovalAction: preferences.lastSaveRemovalAction
 			})
 		});
 	} catch {
@@ -73,5 +86,10 @@ export function setOrganizeCollectionSort(val: OrganizeCollectionSort) {
 
 export function setSaveSuggestionMode(val: SaveSuggestionMode) {
 	preferences.saveSuggestionMode = val; // optimistic
+	void persist();
+}
+
+export function setLastSaveRemovalAction(val: LastSaveRemovalPreference) {
+	preferences.lastSaveRemovalAction = val; // optimistic
 	void persist();
 }

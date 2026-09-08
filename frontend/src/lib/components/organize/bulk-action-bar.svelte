@@ -30,6 +30,7 @@
 		selectableCount,
 		canMove,
 		canRemove,
+		removeLabel,
 		ownContext,
 		onSelectAll,
 		onClear,
@@ -42,6 +43,7 @@
 		selectableCount: number;
 		canMove: boolean;
 		canRemove: boolean;
+		removeLabel: string;
 		ownContext: boolean;
 		onSelectAll: () => void;
 		onClear: () => void;
@@ -276,14 +278,9 @@
 				{/if}
 
 				{#if canRemove}
-					<Button
-						variant="secondary"
-						size="sm"
-						disabled={saves.length === 0}
-						onclick={onRemove}
-					>
+					<Button variant="secondary" size="sm" disabled={saves.length === 0} onclick={onRemove}>
 						<Trash2 class="size-4" />
-						Remove from collection
+						{removeLabel}
 					</Button>
 				{/if}
 
@@ -423,7 +420,7 @@
 						})}
 					{/if}
 					{#if canRemove}
-						{@render menuRow('Remove from collection', Trash2, onRemove, {
+						{@render menuRow(removeLabel, Trash2, onRemove, {
 							disabled: saves.length === 0
 						})}
 					{/if}

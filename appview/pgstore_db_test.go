@@ -1033,9 +1033,13 @@ func TestUserPrefs(t *testing.T) {
 	if got.SaveSuggestionMode != "recommended-then-last-used" {
 		t.Fatalf("default saveSuggestionMode = %q, want recommended-then-last-used", got.SaveSuggestionMode)
 	}
+	if got.LastSaveRemovalAction != "ask" {
+		t.Fatalf("default lastSaveRemovalAction = %q, want ask", got.LastSaveRemovalAction)
+	}
 
 	if err := s.SetUserPrefs(ctx, did, UserPrefs{
 		GifAutoplay: false, OrganizeCollectionSort: "recent", SaveSuggestionMode: "recommended",
+		LastSaveRemovalAction: "move-to-profile",
 	}); err != nil {
 		t.Fatalf("SetUserPrefs: %v", err)
 	}
@@ -1052,6 +1056,9 @@ func TestUserPrefs(t *testing.T) {
 	if got.SaveSuggestionMode != "recommended" {
 		t.Fatalf("stored saveSuggestionMode = %q, want recommended", got.SaveSuggestionMode)
 	}
+	if got.LastSaveRemovalAction != "move-to-profile" {
+		t.Fatalf("stored lastSaveRemovalAction = %q, want move-to-profile", got.LastSaveRemovalAction)
+	}
 
 	// Upsert path: flipping back updates the existing row rather than erroring.
 	if err := s.SetUserPrefs(ctx, did, UserPrefs{GifAutoplay: true, OrganizeCollectionSort: "name"}); err != nil {
@@ -1060,6 +1067,9 @@ func TestUserPrefs(t *testing.T) {
 	got, _ = s.GetUserPrefs(ctx, did)
 	if !got.GifAutoplay {
 		t.Fatalf("updated gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+	if got.LastSaveRemovalAction != "ask" {
+		t.Fatalf("updated lastSaveRemovalAction = %q, want ask", got.LastSaveRemovalAction)
 	}
 }
 

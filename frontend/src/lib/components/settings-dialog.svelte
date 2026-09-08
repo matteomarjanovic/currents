@@ -28,7 +28,9 @@
 		preferencesLoaded,
 		loadPreferences,
 		setGifAutoplay,
-		setSaveSuggestionMode
+		setSaveSuggestionMode,
+		setLastSaveRemovalAction,
+		type LastSaveRemovalPreference
 	} from '$lib/stores/preferences.svelte';
 	import type { SaveSuggestionMode } from '$lib/save-suggestion';
 	import {
@@ -139,6 +141,28 @@
 			value: 'last-used',
 			label: 'Always use my last choice',
 			description: 'Use your latest collection or section as the Quick Save destination.'
+		}
+	];
+
+	const LAST_SAVE_REMOVAL_OPTIONS: {
+		value: LastSaveRemovalPreference;
+		label: string;
+		description: string;
+	}[] = [
+		{
+			value: 'ask',
+			label: 'Ask every time',
+			description: 'Show a choice before the image would disappear from your library.'
+		},
+		{
+			value: 'move-to-profile',
+			label: 'Move to Profile',
+			description: 'Keep the image in your Unsorted saves.'
+		},
+		{
+			value: 'delete',
+			label: 'Delete permanently',
+			description: 'Remove the image without keeping it elsewhere.'
 		}
 	];
 
@@ -521,6 +545,41 @@
 										onCheckedChange={setGifAutoplay}
 										aria-label="Autoplay GIFs"
 									/>
+								</div>
+								<div class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+									<div class="flex flex-col gap-0.5">
+										<span class="text-sm font-medium">Removing an image's last collection save</span
+										>
+										<span class="text-xs text-muted-foreground">
+											This applies when the image is not saved in another collection or in your
+											Unsorted saves.
+										</span>
+									</div>
+									<div
+										role="radiogroup"
+										aria-label="Last collection save"
+										class="flex flex-col gap-1"
+									>
+										{#each LAST_SAVE_REMOVAL_OPTIONS as option (option.value)}
+											<label
+												class="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 transition-colors has-checked:bg-muted has-disabled:cursor-default has-disabled:opacity-50"
+											>
+												<input
+													type="radio"
+													name="last-save-removal-action"
+													value={option.value}
+													checked={preferences.lastSaveRemovalAction === option.value}
+													disabled={!preferencesLoaded.value}
+													onchange={() => setLastSaveRemovalAction(option.value)}
+													class="mt-0.5 size-4 shrink-0 accent-foreground"
+												/>
+												<span class="flex flex-col gap-0.5">
+													<span class="text-xs font-medium">{option.label}</span>
+													<span class="text-xs text-muted-foreground">{option.description}</span>
+												</span>
+											</label>
+										{/each}
+									</div>
 								</div>
 							</section>
 

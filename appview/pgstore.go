@@ -1282,8 +1282,9 @@ func (m *PgStore) SetModerationPrefs(ctx context.Context, viewerDID string, p Mo
 func (m *PgStore) GetUserPrefs(ctx context.Context, viewerDID string) (UserPrefs, error) {
 	p := defaultUserPrefs
 	err := m.pool.QueryRow(ctx,
-		`SELECT gif_autoplay, organize_collection_sort, save_suggestion_mode FROM user_pref WHERE viewer_did = $1`,
-		viewerDID).Scan(&p.GifAutoplay, &p.OrganizeCollectionSort, &p.SaveSuggestionMode)
+		`SELECT gif_autoplay, organize_collection_sort, save_suggestion_mode, last_save_removal_action
+		 FROM user_pref WHERE viewer_did = $1`,
+		viewerDID).Scan(&p.GifAutoplay, &p.OrganizeCollectionSort, &p.SaveSuggestionMode, &p.LastSaveRemovalAction)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return defaultUserPrefs, nil
 	}
@@ -1300,15 +1301,19 @@ func (m *PgStore) SetUserPrefs(ctx context.Context, viewerDID string, p UserPref
 	if p.SaveSuggestionMode == "" {
 		p.SaveSuggestionMode = defaultUserPrefs.SaveSuggestionMode
 	}
+	if p.LastSaveRemovalAction == "" {
+		p.LastSaveRemovalAction = defaultUserPrefs.LastSaveRemovalAction
+	}
 	_, err := m.pool.Exec(ctx,
-		`INSERT INTO user_pref (viewer_did, gif_autoplay, organize_collection_sort, save_suggestion_mode, updated_at)
-		 VALUES ($1, $2, $3, $4, now())
+		`INSERT INTO user_pref (viewer_did, gif_autoplay, organize_collection_sort, save_suggestion_mode, last_save_removal_action, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, now())
 		 ON CONFLICT (viewer_did) DO UPDATE SET
 		     gif_autoplay = EXCLUDED.gif_autoplay,
 		     organize_collection_sort = EXCLUDED.organize_collection_sort,
 		     save_suggestion_mode = EXCLUDED.save_suggestion_mode,
+		     last_save_removal_action = EXCLUDED.last_save_removal_action,
 		     updated_at = now()`,
-		viewerDID, p.GifAutoplay, p.OrganizeCollectionSort, p.SaveSuggestionMode)
+		viewerDID, p.GifAutoplay, p.OrganizeCollectionSort, p.SaveSuggestionMode, p.LastSaveRemovalAction)
 	return err
 }
 

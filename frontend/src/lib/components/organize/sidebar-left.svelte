@@ -36,7 +36,8 @@
 	import Settings from '@lucide/svelte/icons/settings';
 	import LogOut from '@lucide/svelte/icons/log-out';
 
-	let { selectedUri = '' }: { selectedUri?: string } = $props();
+	let { selectedUri = '', unsorted = false }: { selectedUri?: string; unsorted?: boolean } =
+		$props();
 
 	// Picking a collection navigates within /organize (no remount), so the mobile
 	// offcanvas sheet would stay open over the result — close it explicitly.
@@ -230,6 +231,16 @@
 				<Collapsible.Content>
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
+							<Sidebar.MenuItem>
+								<Sidebar.MenuButton isActive={unsorted} class="h-8">
+									{#snippet child({ props })}
+										<a href="/organize?unsorted=1" {...props} onclick={closeMobile}>
+											<UserIcon />
+											<span>Profile (Unsorted)</span>
+										</a>
+									{/snippet}
+								</Sidebar.MenuButton>
+							</Sidebar.MenuItem>
 							{#each tree as node (node.root.uri)}
 								<Collapsible.Root
 									class="group/collapsible"

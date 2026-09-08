@@ -8,6 +8,7 @@ export type BulkApi = {
 	readonly selectableCount: number;
 	readonly canMove: boolean;
 	readonly canRemove: boolean;
+	readonly removeLabel: string;
 	onSelectAll: () => void;
 	onClear: () => void;
 	onExit: () => void;

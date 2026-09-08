@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { apiFetch } from '$lib/api';
 	import { resaveWithFallback } from '$lib/resave';
 	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -38,6 +37,9 @@
 		orderCollectionSelectorEntries,
 		orderCollectionSelectorSections
 	} from '$lib/collection-selector-order';
+	import { preferences, type LastSaveRemovalAction } from '$lib/stores/preferences.svelte';
+	import { askLastSaveRemoval } from '$lib/stores/save-removal-dialog.svelte';
+	import { removalAction, removeSaveRecord } from '$lib/save-removal';
 
 	interface Props {
 		item?: SaveView;
@@ -270,30 +272,53 @@
 	}
 
 	async function unsave(saveUri: string, collectionUri: string) {
+		let action = removalAction(
+			localSaves,
+			saveUri,
+			collectionUri,
+			preferences.lastSaveRemovalAction
+		);
+		if (action === 'ask') {
+			const choice = await askLastSaveRemoval();
+			if (!choice) return;
+			action = choice;
+		}
+
 		const prev = localSaves;
-		localSaves = localSaves.filter((s) => s.saveUri !== saveUri);
+		localSaves = [
+			...localSaves.filter((s) => s.saveUri !== saveUri),
+			...(action === 'move-to-profile'
+				? [{ collectionUri: UNSORTED_URI, saveUri: OPTIMISTIC_URI }]
+				: [])
+		];
 		onSavesChange?.(localSaves);
 		try {
-			const rkey = saveUri.split('/').pop()!;
-			const res = await apiFetch(`/api/save/${rkey}`, {
-				method: 'DELETE'
-			});
-			if (!res.ok) {
-				if (res.status === 401) {
-					auth.user = null;
-					promptLogin();
-				}
-				throw new Error(`unsave: ${res.status}`);
+			const movedSaveUri = await removeSaveRecord(
+				item?.uri ?? saveUri,
+				saveUri,
+				action as LastSaveRemovalAction
+			);
+			if (movedSaveUri) {
+				localSaves = localSaves.map((save) =>
+					save.saveUri === OPTIMISTIC_URI ? { ...save, saveUri: movedSaveUri } : save
+				);
+				onSavesChange?.(localSaves);
 			}
 			const collectionName =
 				collectionUri === UNSORTED_URI
 					? 'your profile'
 					: (collections.items.find((c) => c.uri === collectionUri)?.name ?? 'collection');
-			toast.success(`Removed from ${collectionName}`);
+			toast.success(
+				action === 'move-to-profile' ? 'Moved to your profile' : `Removed from ${collectionName}`
+			);
 			// Let an open collection / unsorted grid drop this image without a refetch.
 			emitSaveRemoved({ saveUri, collectionUri });
 		} catch (e) {
 			console.error('unsave failed', e);
+			if (e instanceof Error && e.message.includes('401')) {
+				auth.user = null;
+				promptLogin();
+			}
 			localSaves = prev;
 			onSavesChange?.(localSaves);
 		}

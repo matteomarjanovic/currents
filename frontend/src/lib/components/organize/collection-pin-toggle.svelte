@@ -37,7 +37,7 @@
 	data-sidebar={placement === 'action' ? 'menu-action' : undefined}
 	size="sm"
 	class={cn(
-		'pointer-events-none absolute z-10 size-6 min-w-0 bg-transparent p-0 opacity-0 hover:bg-transparent aria-pressed:bg-transparent data-[state=on]:pointer-events-auto data-[state=on]:opacity-100',
+		'pointer-events-none absolute size-6 min-w-0 bg-transparent p-0 opacity-0 hover:bg-transparent aria-pressed:bg-transparent data-[state=on]:pointer-events-auto data-[state=on]:opacity-100',
 		placement === 'icon'
 			? 'top-1 left-2 group-focus-within/menu-item:pointer-events-auto group-focus-within/menu-item:opacity-100 group-hover/menu-item:pointer-events-auto group-hover/menu-item:opacity-100'
 			: 'top-0.5 right-1 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100',

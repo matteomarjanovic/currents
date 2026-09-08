@@ -16,6 +16,11 @@
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { preferences, type LastSaveRemovalAction } from '$lib/stores/preferences.svelte';
+	import { askLastSaveRemoval } from '$lib/stores/save-removal-dialog.svelte';
+	import { removalAction, removeSaveRecord } from '$lib/save-removal';
+	import { emitSaveRemoved } from '$lib/stores/save-events.svelte';
+	import { toast } from 'svelte-sonner';
 	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
 	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
@@ -27,6 +32,7 @@
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import Share2 from '@lucide/svelte/icons/share-2';
 	import Download from '@lucide/svelte/icons/download';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let {
 		save,
@@ -103,11 +109,50 @@
 	let savedIn = $derived.by(() => {
 		const known = [...collections.items, ...favouriteCollections.items];
 		return (save.viewer?.saves ?? []).map((s) => {
-			if (s.collectionUri === '') return { uri: '', name: 'Unsorted' };
+			if (s.collectionUri === '') return { uri: '', name: 'Unsorted', saveUri: s.saveUri };
 			const c = known.find((x) => x.uri === s.collectionUri);
-			return { uri: s.collectionUri, name: c?.name ?? 'Untitled collection' };
+			return {
+				uri: s.collectionUri,
+				name: c?.name ?? 'Untitled collection',
+				saveUri: s.saveUri
+			};
 		});
 	});
+
+	let removingSaveUri = $state<string | null>(null);
+	async function removeFrom(entry: { uri: string; name: string; saveUri: string }) {
+		if (removingSaveUri) return;
+		const saves = save.viewer?.saves ?? [];
+		let action = removalAction(saves, entry.saveUri, entry.uri, preferences.lastSaveRemovalAction);
+		if (action === 'ask') {
+			const choice = await askLastSaveRemoval();
+			if (!choice) return;
+			action = choice;
+		}
+		removingSaveUri = entry.saveUri;
+		try {
+			const movedSaveUri = await removeSaveRecord(
+				entry.saveUri,
+				entry.saveUri,
+				action as LastSaveRemovalAction
+			);
+			const remaining = [
+				...saves.filter((candidate) => candidate.saveUri !== entry.saveUri),
+				...(movedSaveUri ? [{ collectionUri: '', saveUri: movedSaveUri }] : [])
+			];
+			onSavesChange?.(remaining);
+			emitSaveRemoved({ saveUri: entry.saveUri, collectionUri: entry.uri });
+			toast.success(
+				action === 'move-to-profile'
+					? 'Moved to your profile'
+					: `Removed from ${entry.uri === '' ? 'your profile' : entry.name}`
+			);
+		} catch {
+			toast.error(`Could not remove from ${entry.uri === '' ? 'your profile' : entry.name}`);
+		} finally {
+			removingSaveUri = null;
+		}
+	}
 
 	let createdAt = $derived.by(() => {
 		try {
@@ -253,8 +298,20 @@
 						Saved in
 					</h3>
 					<div class="flex flex-wrap items-center gap-1.5">
-						{#each savedIn as c (c.uri)}
-							<Badge variant="secondary" class="font-normal">{c.name}</Badge>
+						{#each savedIn as c (c.saveUri)}
+							<Badge variant="secondary" class="gap-1 py-0.5 pr-0.5 font-normal">
+								<span class="pl-0.5">{c.name}</span>
+								<button
+									type="button"
+									disabled={removingSaveUri !== null}
+									onclick={() => removeFrom(c)}
+									aria-label="Remove from {c.name}"
+									title="Remove from {c.name}"
+									class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-destructive disabled:opacity-50"
+								>
+									<Trash2 class="size-3" />
+								</button>
+							</Badge>
 						{/each}
 						<CollectionSelector
 							item={save}

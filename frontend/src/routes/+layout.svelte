@@ -12,6 +12,7 @@
 	import SettingsDialog from '$lib/components/settings-dialog.svelte';
 	import SupporterDialog from '$lib/components/supporter-dialog.svelte';
 	import SupporterThanksDialog from '$lib/components/supporter-thanks-dialog.svelte';
+	import SaveRemovalDialog from '$lib/components/save-removal-dialog.svelte';
 	import { supporterGate } from '$lib/stores/supporter.svelte';
 	// Side-effect import: registers the beforeinstallprompt listener on every page so the
 	// one-shot event is captured even before the top bar (which offers "Install app") mounts.
@@ -130,3 +131,6 @@
 <!-- Post-checkout thank-you, opened from $lib/polar.ts wherever the checkout
      was started (paywall dialog, settings, support page). -->
 <SupporterThanksDialog />
+
+<!-- Last-copy guard shared by collection menus and organize mode. -->
+<SaveRemovalDialog />

@@ -20,11 +20,20 @@
 	import { Button } from '$lib/components/ui/button';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import { emitSaveRemoved, onSaveRemoved } from '$lib/stores/save-events.svelte';
+	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { requireSupporter } from '$lib/stores/supporter.svelte';
 	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
 	import { toast } from 'svelte-sonner';
+	import { preferences, type LastSaveRemovalAction } from '$lib/stores/preferences.svelte';
+	import { askLastSaveRemoval } from '$lib/stores/save-removal-dialog.svelte';
+	import {
+		isLastCollectionSave,
+		removalAction,
+		removeSaveRecord,
+		saveLocationsInScope
+	} from '$lib/save-removal';
 	import ImageOff from '@lucide/svelte/icons/image-off';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
@@ -42,6 +51,7 @@
 
 	let {
 		selectedUri = '',
+		unsorted = false,
 		selectedSaveUri = null,
 		onSelectSave,
 		onFindSimilar,
@@ -55,6 +65,7 @@
 		color = null
 	}: {
 		selectedUri?: string;
+		unsorted?: boolean;
 		selectedSaveUri?: string | null;
 		onSelectSave: (save: SaveView) => void;
 		onFindSimilar: (save: SaveView) => void;
@@ -116,6 +127,11 @@
 			if (cursor) params.set('cursor', cursor);
 			return fetchSavesPage(`/xrpc/is.currents.feed.searchLibrarySaves?${params}`);
 		}
+		if (unsorted) {
+			const params = new URLSearchParams({ actor: auth.user!.did, limit: '50' });
+			if (cursor) params.set('cursor', cursor);
+			return fetchSavesPage(`/xrpc/is.currents.feed.getUnsortedSaves?${params}`);
+		}
 		if (selectedUri) {
 			const params = new URLSearchParams({ collection: selectedUri, limit: '50' });
 			if (cursor) params.set('cursor', cursor);
@@ -133,6 +149,7 @@
 	// always something to load now (similar / search / collection / library).
 	$effect(() => {
 		void selectedUri;
+		void unsorted;
 		void search;
 		void similar;
 		void color;
@@ -143,6 +160,28 @@
 	});
 
 	let visible = $derived(feed.items.filter((i) => !shouldHide(i.labels)));
+	// Search, color, hybrid, and find-similar all expose the same collection filter
+	// shape. null means a regular collection/library view; [] means search across the
+	// whole library.
+	let resultCollectionScope = $derived(
+		search?.collections ?? color?.collections ?? similar?.collections ?? null
+	);
+	let inSearchResults = $derived(resultCollectionScope !== null);
+	let removalScope = $derived(
+		resultCollectionScope ?? (unsorted ? [''] : selectedUri ? [selectedUri] : ([] as string[]))
+	);
+	// Moving needs one unambiguous source, and that source must be the viewer's own
+	// collection (search filters may also contain favourited collections).
+	let singleSourceUri = $derived.by<string | null>(() => {
+		if (!inSearchResults) {
+			if (unsorted) return '';
+			return ownContext && selectedUri ? selectedUri : null;
+		}
+		if (removalScope.length !== 1) return null;
+		return collections.items.some((collection) => collection.uri === removalScope[0])
+			? removalScope[0]
+			: null;
+	});
 
 	// ── Multi-select ──────────────────────────────────────────────────────────
 	// The mode flag and the selected URI set are owned by the page (its header
@@ -151,8 +190,16 @@
 	// the action bar.
 	let selectedList = $derived(selectedSaves(feed.items, selected));
 	let selectableCount = $derived(selectableUris(visible).length);
-	let canMove = $derived(ownContext && !!selectedUri && !search && !color && !similar);
-	let canRemove = $derived(ownContext && !!selectedUri && !search && !color && !similar);
+	let canMove = $derived(singleSourceUri !== null);
+	let canRemove = $derived(
+		singleSourceUri !== null &&
+			selectedList.some((item) =>
+				removableSaves(item).some((save) => save.collectionUri === singleSourceUri)
+			)
+	);
+	let removeLabel = $derived(
+		singleSourceUri === '' ? 'Remove from Profile' : 'Remove from collection'
+	);
 
 	function toggleSelect(item: SaveView) {
 		if (!getImageContent(item)) return; // unsupported content isn't selectable
@@ -205,7 +252,8 @@
 	}
 
 	async function bulkMove(dest: string) {
-		if (dest === selectedUri) {
+		const sourceCollectionUri = singleSourceUri;
+		if (sourceCollectionUri === null || dest === sourceCollectionUri) {
 			exitSelect();
 			return;
 		}
@@ -213,17 +261,24 @@
 		let ok = 0;
 		let failed = 0;
 		await runBounded(targets, 4, async (item) => {
-			const rkey = item.uri.split('/').pop();
+			const source = removableSaves(item).find(
+				(save) => save.collectionUri === sourceCollectionUri
+			);
+			if (!source) {
+				failed++;
+				return;
+			}
+			const rkey = source.saveUri.split('/').pop();
 			const alreadyInDest = item.viewer?.saves?.some((s) => s.collectionUri === dest);
 			try {
 				if (!alreadyInDest) {
-					const res = await resaveWithFallback(item.uri, dest);
+					const res = await resaveWithFallback(source.saveUri, dest);
 					if (!res.ok) throw new Error(`resave: ${res.status}`);
 				}
 				const del = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
 				if (!del.ok) throw new Error(`delete: ${del.status}`);
-				feed.removeItem(item.uri);
-				emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
+				feed.removeItem(source.saveUri);
+				emitSaveRemoved({ saveUri: source.saveUri, collectionUri: sourceCollectionUri });
 				ok++;
 			} catch {
 				failed++;
@@ -235,28 +290,55 @@
 	}
 
 	async function bulkRemove() {
+		const sourceCollectionUri = singleSourceUri;
+		if (sourceCollectionUri === null) return;
 		const targets = selectedList;
+		const lastSaveCount = targets.filter((item) => {
+			const save = removableSaves(item).find(
+				(candidate) => candidate.collectionUri === sourceCollectionUri
+			);
+			return (
+				!!save && isLastCollectionSave(item.viewer?.saves ?? [], save.saveUri, sourceCollectionUri)
+			);
+		}).length;
+		let lastSaveAction = preferences.lastSaveRemovalAction;
+		if (lastSaveCount > 0 && lastSaveAction === 'ask') {
+			const choice = await askLastSaveRemoval(lastSaveCount);
+			if (!choice) return;
+			lastSaveAction = choice;
+		}
 		let ok = 0;
 		let failed = 0;
+		let moved = 0;
 		await runBounded(targets, 4, async (item) => {
-			const save = removableSaves(item).find((s) => s.collectionUri === selectedUri);
+			const save = removableSaves(item).find(
+				(candidate) => candidate.collectionUri === sourceCollectionUri
+			);
 			if (!save) {
 				failed++;
 				return;
 			}
-			feed.removeItem(item.uri);
 			try {
-				const rkey = save.saveUri.split('/').pop();
-				const res = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
-				if (!res.ok) throw new Error(`${res.status}`);
-				emitSaveRemoved({ saveUri: save.saveUri, collectionUri: selectedUri });
+				const action = removalAction(
+					item.viewer?.saves ?? [],
+					save.saveUri,
+					sourceCollectionUri,
+					lastSaveAction
+				) as LastSaveRemovalAction;
+				await removeSaveRecord(save.saveUri, save.saveUri, action);
+				feed.removeItem(save.saveUri);
+				emitSaveRemoved({ saveUri: save.saveUri, collectionUri: sourceCollectionUri });
+				if (action === 'move-to-profile') moved++;
 				ok++;
 			} catch {
 				failed++;
 			}
 		});
-		if (ok > 0) toast.success(`Removed ${ok}${failed ? ` · ${failed} failed` : ''}`);
-		else toast.error('Could not remove from collection');
+		if (ok > 0) {
+			toast.success(
+				`Removed ${ok}${moved ? ` · ${moved} kept in Profile` : ''}${failed ? ` · ${failed} failed` : ''}`
+			);
+		} else toast.error('Could not remove from collection');
 		if (failed) {
 			feed.reset();
 			feed.loadMore();
@@ -279,6 +361,9 @@
 		},
 		get canRemove() {
 			return canRemove;
+		},
+		get removeLabel() {
+			return removeLabel;
 		},
 		onSelectAll: selectAllLoaded,
 		onClear: () => selected.clear(),
@@ -315,27 +400,68 @@
 	}
 
 	function removableSaves(item: SaveView) {
-		if (selectedUri) {
-			const save = item.viewer?.saves?.find((s) => s.collectionUri === selectedUri);
-			return [{ collectionUri: selectedUri, saveUri: save?.saveUri ?? item.uri }];
+		const saves = item.viewer?.saves ?? [];
+		if (inSearchResults) return saveLocationsInScope(saves, removalScope);
+		if (unsorted) {
+			const save = saves.find((candidate) => candidate.collectionUri === '');
+			return save ? [save] : [];
 		}
-		return item.viewer?.saves ?? [];
+		if (selectedUri) {
+			const save = saves.find((candidate) => candidate.collectionUri === selectedUri);
+			return save ? [save] : [];
+		}
+		return saves;
+	}
+
+	function canMoveItem(item: SaveView) {
+		return (
+			singleSourceUri !== null &&
+			removableSaves(item).some((save) => save.collectionUri === singleSourceUri)
+		);
 	}
 
 	async function removeFromCollection(item: SaveView, collectionUri = selectedUri) {
 		const save = removableSaves(item).find((s) => s.collectionUri === collectionUri);
 		if (!save) return;
-		const remaining = (item.viewer?.saves ?? []).filter((s) => s.saveUri !== save.saveUri);
-		// My library is deduplicated: removing one membership should leave the tile
-		// visible while another membership still exists.
-		if (selectedUri || remaining.length === 0) feed.removeItem(item.uri);
-		else item.viewer = { ...(item.viewer ?? {}), saves: remaining };
+		const saves = item.viewer?.saves ?? [];
+		let action = removalAction(
+			saves,
+			save.saveUri,
+			collectionUri,
+			preferences.lastSaveRemovalAction
+		);
+		if (action === 'ask') {
+			const choice = await askLastSaveRemoval();
+			if (!choice) return;
+			action = choice;
+		}
 		try {
-			const rkey = save.saveUri.split('/').pop();
-			const res = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
-			if (!res.ok) throw new Error(`${res.status}`);
+			const movedSaveUri = await removeSaveRecord(
+				save.saveUri,
+				save.saveUri,
+				action as LastSaveRemovalAction
+			);
+			const remaining = [
+				...saves.filter((candidate) => candidate.saveUri !== save.saveUri),
+				...(movedSaveUri ? [{ collectionUri: '', saveUri: movedSaveUri }] : [])
+			];
+			if (inSearchResults) {
+				// Search rows are save records rather than deduplicated images. Remove only
+				// the chosen source row; another selected membership remains as its own row.
+				feed.removeItem(save.saveUri);
+				item.viewer = { ...(item.viewer ?? {}), saves: remaining };
+			} else if (unsorted || selectedUri || remaining.length === 0) {
+				feed.removeItem(item.uri);
+			} else {
+				// My library is deduplicated: another membership keeps the tile visible.
+				item.viewer = { ...(item.viewer ?? {}), saves: remaining };
+			}
 			emitSaveRemoved({ saveUri: save.saveUri, collectionUri });
-			toast.success(`Removed from ${collectionName(collectionUri)}`);
+			toast.success(
+				action === 'move-to-profile'
+					? 'Moved to your profile'
+					: `Removed from ${collectionName(collectionUri)}`
+			);
 		} catch {
 			toast.error('Could not remove from collection');
 			feed.reset();
@@ -349,18 +475,21 @@
 	// is already in the destination, a resave would duplicate it, so just drop the
 	// source instead.
 	async function moveToCollection(item: SaveView, collectionUri: string) {
-		if (collectionUri === selectedUri) return; // already here
-		const rkey = item.uri.split('/').pop();
+		const sourceCollectionUri = singleSourceUri;
+		if (sourceCollectionUri === null || collectionUri === sourceCollectionUri) return;
+		const source = removableSaves(item).find((save) => save.collectionUri === sourceCollectionUri);
+		if (!source) return;
+		const rkey = source.saveUri.split('/').pop();
 		const alreadyInDest = item.viewer?.saves?.some((s) => s.collectionUri === collectionUri);
-		feed.removeItem(item.uri); // optimistic: leaves the current collection grid
+		feed.removeItem(source.saveUri); // optimistic: leaves the source collection/search row
 		try {
 			if (!alreadyInDest) {
-				const res = await resaveWithFallback(item.uri, collectionUri);
+				const res = await resaveWithFallback(source.saveUri, collectionUri);
 				if (!res.ok) throw new Error(`resave: ${res.status}`);
 			}
 			const del = await apiFetch(`/api/save/${rkey}`, { method: 'DELETE' });
 			if (!del.ok) throw new Error(`delete: ${del.status}`);
-			emitSaveRemoved({ saveUri: item.uri, collectionUri: selectedUri });
+			emitSaveRemoved({ saveUri: source.saveUri, collectionUri: sourceCollectionUri });
 			toast.success('Moved');
 		} catch {
 			toast.error('Could not move');
@@ -373,7 +502,15 @@
 	// this menu's inline "Copy to collection" toggling the current collection off).
 	$effect(() =>
 		onSaveRemoved((e) => {
-			if (selectedUri && e.collectionUri === selectedUri) feed.removeItem(e.saveUri);
+			if (
+				(inSearchResults &&
+					(removalScope.length === 0 || removalScope.includes(e.collectionUri))) ||
+				(!inSearchResults &&
+					((unsorted && e.collectionUri === '') ||
+						(selectedUri && e.collectionUri === selectedUri)))
+			) {
+				feed.removeItem(e.saveUri);
+			}
 		})
 	);
 
@@ -554,10 +691,9 @@
 			</Menu.SubContent>
 		</Menu.Sub>
 	{/if}
-	<!-- Move: only when viewing a real collection, where this tile's record
-	     unambiguously belongs to it. Destination picker (no item → pickerMode);
-	     the Profile row selects '' = unsorted. -->
-	{#if selectedUri && !search && !color && !similar}
+	<!-- Move needs one owned source collection: a collection view, or a search
+	     filtered to exactly one of the viewer's collections. -->
+	{#if canMoveItem(item)}
 		{#if sidebar.isMobile}
 			<Menu.Item onSelect={() => openMoveDrawer(item)}>
 				<FolderInput />
@@ -596,9 +732,9 @@
 		<Download />
 		Download
 	</Menu.Item>
-	{#if !search && !color && !similar && removableSaves(item).length > 0}
+	{#if removableSaves(item).length > 0}
 		<Menu.Separator />
-		{#if selectedUri || removableSaves(item).length === 1}
+		{#if removableSaves(item).length === 1}
 			<Menu.Item
 				variant="destructive"
 				onSelect={() => removeFromCollection(item, removableSaves(item)[0].collectionUri)}
@@ -722,13 +858,15 @@
 					No similar images in your library.
 				{:else if search}
 					No results for “{search.query}”.
+				{:else if unsorted}
+					No unsorted saves yet.
 				{:else if selectedUri}
 					No images in this collection yet.
 				{:else}
 					You haven't saved any images yet.
 				{/if}
 			</p>
-			{#if !similar && !search && !color && !selectedUri}
+			{#if !similar && !search && !color && !selectedUri && !unsorted}
 				<Button href="/explore" variant="outline" size="sm" class="mt-1">Go to explore mode</Button>
 			{/if}
 		</div>

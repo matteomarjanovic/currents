@@ -15,18 +15,24 @@ type UserPrefs struct {
 	GifAutoplay            bool   `json:"gifAutoplay"`
 	OrganizeCollectionSort string `json:"organizeCollectionSort"`
 	SaveSuggestionMode     string `json:"saveSuggestionMode"`
+	LastSaveRemovalAction  string `json:"lastSaveRemovalAction"`
 }
 
 // defaultUserPrefs is returned for users with no stored row. Kept in sync with
-// the DB column defaults in migrations 042 and 048.
+// the DB column defaults in migrations 042, 048, 050, and 052.
 var defaultUserPrefs = UserPrefs{
 	GifAutoplay:            true,
 	OrganizeCollectionSort: "name",
 	SaveSuggestionMode:     "recommended-then-last-used",
+	LastSaveRemovalAction:  "ask",
 }
 
 func validSaveSuggestionMode(mode string) bool {
 	return mode == "last-used" || mode == "recommended" || mode == "recommended-then-last-used"
+}
+
+func validLastSaveRemovalAction(action string) bool {
+	return action == "ask" || action == "move-to-profile" || action == "delete"
 }
 
 func (s *Server) APIGetPreferences(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +62,7 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 		GifAutoplay            *bool   `json:"gifAutoplay"`
 		OrganizeCollectionSort *string `json:"organizeCollectionSort"`
 		SaveSuggestionMode     *string `json:"saveSuggestionMode"`
+		LastSaveRemovalAction  *string `json:"lastSaveRemovalAction"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -82,6 +89,13 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prefs.SaveSuggestionMode = *patch.SaveSuggestionMode
+	}
+	if patch.LastSaveRemovalAction != nil {
+		if !validLastSaveRemovalAction(*patch.LastSaveRemovalAction) {
+			http.Error(w, "invalid lastSaveRemovalAction", http.StatusBadRequest)
+			return
+		}
+		prefs.LastSaveRemovalAction = *patch.LastSaveRemovalAction
 	}
 	if err := s.Store.SetUserPrefs(r.Context(), did.String(), prefs); err != nil {
 		http.Error(w, fmt.Sprintf("saving preferences: %s", err), http.StatusInternalServerError)
