@@ -42,7 +42,7 @@ const secondPage = [makeSave(4), makeSave(5), makeSave(6)];
 async function mockApi(page: Page, { paginate = false, hydrate = false, related = false } = {}) {
 	const asFeedItem = (s: ReturnType<typeof makeSave>) =>
 		hydrate ? { ...s, viewer: undefined } : s;
-	await page.route(APPVIEW_ROUTE, (route) => {
+	await page.route(APPVIEW_ROUTE, async (route) => {
 		const url = route.request().url();
 		const json = (o: unknown) =>
 			route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
@@ -68,10 +68,19 @@ async function mockApi(page: Page, { paginate = false, hydrate = false, related 
 		}
 		if (url.includes('getRelatedSaves')) {
 			if (!related) return json({ saves: [] });
-			const limit = new URL(url).searchParams.get('limit');
-			return limit === '20'
-				? json({ saves: Array.from({ length: 20 }, (_, i) => makeSave(i + 10)), cursor: 'page-2' })
-				: json({ saves: Array.from({ length: 50 }, (_, i) => makeSave(i + 30)), cursor: null });
+			const cursor = new URL(url).searchParams.get('cursor');
+			if (!cursor) {
+				return json({
+					saves: Array.from({ length: 20 }, (_, i) => makeSave(i + 10)),
+					cursor: 'page-2'
+				});
+			}
+			await new Promise((resolve) => setTimeout(resolve, 250));
+			const start = cursor === 'page-2' ? 30 : cursor === 'page-3' ? 80 : 130;
+			return json({
+				saves: Array.from({ length: 50 }, (_, i) => makeSave(i + start)),
+				cursor: cursor === 'page-2' ? 'page-3' : cursor === 'page-3' ? 'page-4' : null
+			});
 		}
 		if (url.includes('getImageCollections')) return json({ collections: [] });
 		if (url.includes('features/seen')) return json({ seen: [] });
@@ -133,6 +142,16 @@ async function emulateNativeApp(page: Page) {
 	// Capacitor detects Android from this bridge before its client module initializes.
 	await page.addInitScript(() => {
 		Object.defineProperty(window, 'androidBridge', { value: {}, configurable: true });
+	});
+}
+
+async function emulateIosApp(page: Page) {
+	// Capacitor detects iOS from this bridge before its client module initializes.
+	await page.addInitScript(() => {
+		Object.defineProperty(window, 'webkit', {
+			value: { messageHandlers: { bridge: { postMessage() {} } } },
+			configurable: true
+		});
 	});
 }
 
@@ -358,3 +377,97 @@ test('back returns to the grid however many images were swiped through', async (
 	await expect(page).toHaveURL(/\/explore\/general$/);
 	await expect(page.locator('.fixed.inset-0.z-50')).toHaveCount(0);
 });
+
+test('iOS back from a detail preserves the feed scroll position', async ({ page }) => {
+	await emulateIosApp(page);
+	await mockApi(page);
+	await page.goto('/explore/general');
+	await page.waitForSelector('a.block img', { timeout: 10_000 });
+	await page.locator('main').evaluate((element) => (element.style.minHeight = '2000px'));
+	await page.evaluate(() => window.scrollTo(0, 300));
+
+	await page.locator('a.block:has(img[src*="bafy3"])').tap();
+	await expect(page).toHaveURL(/\/save\/s3$/);
+	await expect(page.locator('body')).toHaveCSS('top', '-300px');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/explore\/general$/);
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(300);
+});
+
+for (const [platform, emulate] of [
+	['iOS', emulateIosApp],
+	['Android', emulateNativeApp]
+] as const) {
+	test(`${platform} keeps the previous detail mounted under a related image`, async ({ page }) => {
+		await emulate(page);
+		await mockApi(page, { related: true });
+		let feedRequests = 0;
+		const relatedRequests = new Map<string, number>();
+		page.on('request', (request) => {
+			if (request.url().includes('getFeed')) feedRequests += 1;
+			if (request.url().includes('getRelatedSaves')) {
+				const uri = new URL(request.url()).searchParams.get('uri') ?? '';
+				relatedRequests.set(uri, (relatedRequests.get(uri) ?? 0) + 1);
+			}
+		});
+
+		await page.goto('/explore/general');
+		await page.waitForSelector('a.block img', { timeout: 10_000 });
+		await page.locator('main').evaluate((element) => (element.style.minHeight = '2000px'));
+		await page.evaluate(() => window.scrollTo(0, 300));
+		const feedScroll = await page.evaluate(() => window.scrollY);
+		expect(feedScroll).toBeGreaterThan(0);
+
+		await page.locator('a.block:has(img[src*="bafy3"])').tap();
+		const overlays = page.locator('[data-save-detail-overlay]');
+		await expect(overlays).toHaveCount(1);
+		const overlay = overlays.first();
+		const relatedGrid = overlay.locator('section div[style*="grid-template-columns"]').first();
+		await expect
+			.poll(() => relatedGrid.evaluate((element) => element.children.length))
+			.toBeGreaterThanOrEqual(21);
+		for (const frameCount of [71, 121, 171]) {
+			await overlay.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+			await expect
+				.poll(() => relatedGrid.evaluate((element) => element.children.length))
+				.toBeGreaterThanOrEqual(frameCount);
+		}
+		await overlay.evaluate((element) => element.scrollTo(0, 16_000));
+		await expect.poll(() => overlay.evaluate((element) => element.scrollTop)).toBe(16_000);
+		const visibleHref = async () =>
+			overlay.locator('section a.block').evaluateAll((links) => {
+				const link = links.find((element) => {
+					const rect = element.getBoundingClientRect();
+					return rect.top >= 0 && rect.bottom <= window.innerHeight;
+				});
+				return link?.getAttribute('href') ?? null;
+			});
+		await expect.poll(visibleHref).not.toBeNull();
+		const href = (await visibleHref())!;
+		const detailScroll = await overlay.evaluate((element) => element.scrollTop);
+		expect(detailScroll).toBe(16_000);
+		const requestsBeforePush = relatedRequests.get(feed[2].uri);
+		await overlay.locator(`a[href="${href}"]`).tap();
+		await expect(page).toHaveURL(new RegExp(`${href.split('/').pop()}$`));
+		await expect(overlays).toHaveCount(2);
+		await expect(overlays.first()).toHaveAttribute('data-active', 'false');
+		await expect(overlays.last()).toHaveAttribute('data-active', 'true');
+		expect(await overlays.first().evaluate((element) => element.scrollTop)).toBe(detailScroll);
+
+		await page.goBack();
+		await expect(page).toHaveURL(/\/save\/s3$/);
+		await expect(overlays).toHaveCount(1);
+		await expect(overlays.first()).toHaveAttribute('data-active', 'true');
+		expect(await overlays.first().evaluate((element) => element.scrollTop)).toBe(detailScroll);
+		expect(relatedRequests.get(feed[2].uri)).toBe(requestsBeforePush);
+		await overlays.first().evaluate((element) => element.scrollTo(0, 0));
+		await drag(page, 140, 0);
+		await expectSaveReady(page, 's2');
+
+		await page.goBack();
+		await expect(page).toHaveURL(/\/explore\/general$/);
+		await expect(overlays).toHaveCount(0);
+		await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(feedScroll);
+		expect(feedRequests).toBe(1);
+	});
+}

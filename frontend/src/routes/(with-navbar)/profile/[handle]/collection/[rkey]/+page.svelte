@@ -36,26 +36,7 @@
 
 	let children = $state<CollectionView[]>(untrack(() => data.children));
 	let childrenLoaded = $state(true);
-	let parent = $state<CollectionView | null>(null);
-	let parentFetchedFor = '';
-
-	$effect(() => {
-		const pUri = collection?.parentUri ?? '';
-		if (pUri === parentFetchedFor) return;
-		parentFetchedFor = pUri;
-		untrack(() => {
-			parent = null;
-		});
-		if (!pUri) return;
-		apiFetch(
-			`/xrpc/is.currents.feed.getCollectionSaves?collection=${encodeURIComponent(pUri)}&limit=1`
-		)
-			.then((r) => (r.ok ? r.json() : null))
-			.then((d) => {
-				if (d?.collection) parent = d.collection;
-			})
-			.catch(() => {});
-	});
+	let parent = $state<CollectionView | null>(untrack(() => data.parent));
 
 	const isOwner = $derived(
 		!!auth.user && !!collection?.author && auth.user.did === collection.author.did
@@ -93,8 +74,7 @@
 			loadError = !!next.loadError;
 			children = next.children;
 			childrenLoaded = true;
-			parent = null;
-			parentFetchedFor = '';
+			parent = next.parent;
 			scroll.reset({ items: next.saves, cursor: next.cursor });
 		});
 	});

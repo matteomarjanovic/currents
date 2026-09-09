@@ -8,13 +8,14 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
-	import SaveDetail from '$lib/components/save-detail.svelte';
+	import SaveDetailOverlay from '$lib/components/save-detail-overlay.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { loadCollections } from '$lib/stores/collections.svelte';
 	import { apiFetch } from '$lib/api';
 	import { isNative } from '$lib/platform';
 	import { lockBodyScroll } from '$lib/scroll-lock';
+	import { activateSaveSequence } from '$lib/save-sequence.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
@@ -75,48 +76,13 @@
 		}
 	});
 
+	let saveStack = $derived(page.state.saveStack ?? (page.state.save ? [page.state.save] : []));
+	let saveOverlayOpen = $derived(saveStack.length > 0);
+	let activeSaveDepth = $derived(saveStack.length - 1);
 	$effect(() => {
-		if (page.state.save) return lockBodyScroll();
+		if (saveOverlayOpen) return lockBodyScroll();
 	});
-
-	let overlayEl: HTMLDivElement | undefined = $state();
-	const overlayScroll = new Map<string, number>();
-	let trackedUri: string | undefined;
-	let restoring = false;
-
-	$effect(() => {
-		if (!overlayEl) return;
-		const el = overlayEl;
-		const onScroll = () => {
-			if (!restoring && trackedUri) overlayScroll.set(trackedUri, el.scrollTop);
-		};
-		el.addEventListener('scroll', onScroll, { passive: true });
-		return () => el.removeEventListener('scroll', onScroll);
-	});
-
-	$effect(() => {
-		const uri = page.state.save?.uri as string | undefined;
-		trackedUri = uri;
-		if (!overlayEl || !uri) return;
-		const el = overlayEl;
-		const target = overlayScroll.get(uri) ?? 0;
-		restoring = true;
-		el.scrollTop = target;
-		const start = performance.now();
-		const tick = () => {
-			if (!el.isConnected || trackedUri !== uri) {
-				restoring = false;
-				return;
-			}
-			if (el.scrollTop < target - 1) el.scrollTop = target;
-			if (el.scrollTop < target - 1 && performance.now() - start < 3000) {
-				requestAnimationFrame(tick);
-			} else {
-				restoring = false;
-			}
-		};
-		requestAnimationFrame(tick);
-	});
+	$effect(() => activateSaveSequence(activeSaveDepth));
 </script>
 
 <ModeWatcher />
@@ -150,15 +116,9 @@
 	{/if}
 {/if}
 
-{#if page.state.save}
-	<div
-		bind:this={overlayEl}
-		data-save-detail-overlay
-		class="fixed inset-0 z-50 overflow-y-auto app-muted-wash"
-	>
-		<SaveDetail save={page.state.save} />
-	</div>
-{/if}
+{#each saveStack as save, i (i)}
+	<SaveDetailOverlay {save} active={i === activeSaveDepth} />
+{/each}
 
 <LoginDialog />
 

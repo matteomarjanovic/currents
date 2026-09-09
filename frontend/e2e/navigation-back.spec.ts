@@ -11,24 +11,40 @@ const collection = {
 	saveCount: 0,
 	createdAt: '2026-01-01T00:00:00Z'
 };
+const section = {
+	...collection,
+	uri: `at://${me.did}/is.currents.feed.collection/interiors`,
+	name: 'Interiors',
+	parentUri: collection.uri
+};
 
-async function mockApi(page: Page, authenticated = true) {
+async function mockApi(page: Page, authenticated = true, sectionMode = false) {
+	let parentRequests = 0;
 	await page.route(`${APPVIEW}/**`, async (route) => {
 		const url = new URL(route.request().url());
 		const json = (value: unknown) =>
 			route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(value) });
 
 		if (url.pathname === '/api/me') {
+			if (sectionMode) await new Promise((resolve) => setTimeout(resolve, 600));
 			return authenticated ? json(me) : route.fulfill({ status: 401, body: '' });
 		}
 		if (url.pathname.endsWith('getProfile')) return json(me);
 		if (url.pathname.endsWith('getActorCollections')) {
 			return json({
-				collections: url.searchParams.get('parent') === collection.uri ? [] : [collection]
+				collections: url.searchParams.get('parent') === 'root' ? [collection] : []
 			});
 		}
 		if (url.pathname.endsWith('getCollectionSaves')) {
-			return json({ collection, saves: [], cursor: null });
+			const uri = url.searchParams.get('collection');
+			if (sectionMode && uri === collection.uri && ++parentRequests === 2) {
+				await new Promise((resolve) => setTimeout(resolve, 300));
+			}
+			return json({
+				collection: sectionMode && uri === section.uri ? section : collection,
+				saves: [],
+				cursor: null
+			});
 		}
 		if (url.pathname.endsWith('getFeed')) return json({ feed: [], cursor: null });
 		if (url.pathname === '/api/feed/preferences') {
@@ -50,6 +66,22 @@ async function mockApi(page: Page, authenticated = true) {
 		return json({});
 	});
 }
+
+test('section parent stays visible through the authenticated refresh', async ({ page }) => {
+	await mockApi(page, true, true);
+	await page.goto(`/profile/${me.handle}/collection/interiors`);
+	await expect(page.getByRole('link', { name: 'Architecture', exact: true })).toBeVisible();
+
+	const disappeared = await page.evaluate(async () => {
+		const deadline = performance.now() + 1200;
+		while (performance.now() < deadline) {
+			if (!document.body.innerText.includes('Section of')) return true;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		return false;
+	});
+	expect(disappeared).toBe(false);
+});
 
 test('returning from Explore does not loop through the authenticated home redirect', async ({
 	page

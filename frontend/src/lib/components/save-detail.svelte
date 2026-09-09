@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { goto, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
@@ -55,9 +56,10 @@
 	interface Props {
 		save: SaveView;
 		onClose?: () => void;
+		scrollRoot?: HTMLElement;
 	}
 
-	let { save, onClose }: Props = $props();
+	let { save, onClose, scrollRoot }: Props = $props();
 	let hydratedSave = $state<SaveView | null>(null);
 	// Guarded on the uri rather than cleared when `save` changes: an effect runs *after*
 	// the DOM has been updated, so clearing it there left one frame in which `save` was
@@ -315,10 +317,13 @@
 
 	function openSave(target: SaveView) {
 		// replaceState, not pushState: swiping through twenty images shouldn't cost
-		// twenty back presses to leave. Back always returns to the grid.
+		// twenty back presses. Back returns to the layer this one was opened from.
 		const rkey = target.uri.split('/').pop() ?? '';
+		const next = $state.snapshot(target);
+		const stack = page.state.saveStack ?? (page.state.save ? [page.state.save] : []);
 		replaceState(`/profile/${target.author.handle}/save/${rkey}`, {
-			save: $state.snapshot(target)
+			save: next,
+			saveStack: stack.length ? [...stack.slice(0, -1), next] : [next]
 		});
 	}
 
@@ -406,6 +411,7 @@
 	// viewport-tall stage, so a short first page doesn't immediately page itself in.
 	const RELATED_FIRST_PAGE = 20;
 	const RELATED_PAGE = 50;
+	const RELATED_LOAD_AHEAD = 1200;
 	let relatedScrollStarted = $state(false);
 	let relatedPrefetchRequested = $state(false);
 
@@ -433,22 +439,14 @@
 	// A detail overlay owns its scroll container, so the window does not tell the
 	// related rail that the viewer has started moving. The first real scroll asks
 	// for the next page immediately; later pages use the sentinel's larger lead.
-	onMount(() => {
-		const onScroll = (event: Event) => {
-			const target = event.target;
-			if (
-				target === document ||
-				target === window ||
-				(target instanceof Element && target.closest('[data-save-detail-overlay]'))
-			) {
-				relatedScrollStarted = true;
-			}
+	$effect(() => {
+		const target = scrollRoot ?? window;
+		const onScroll = () => {
+			relatedScrollStarted = true;
 		};
-		document.addEventListener('scroll', onScroll, { capture: true, passive: true });
-		window.addEventListener('scroll', onScroll, { passive: true });
+		target.addEventListener('scroll', onScroll, { passive: true });
 		return () => {
-			document.removeEventListener('scroll', onScroll, true);
-			window.removeEventListener('scroll', onScroll);
+			target.removeEventListener('scroll', onScroll);
 		};
 	});
 
@@ -462,15 +460,29 @@
 
 	$effect(() => {
 		if (!sentinel) return;
-		const root = document.querySelector<HTMLElement>('[data-save-detail-overlay]');
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (relatedPrefetchRequested && entries[0].isIntersecting) related.loadMore();
 			},
-			{ root, rootMargin: '1200px 0px' }
+			{ root: scrollRoot ?? null, rootMargin: `${RELATED_LOAD_AHEAD}px 0px` }
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();
+	});
+
+	// A masonry reflow can move the sentinel without producing another intersection
+	// update. Re-check after each page lands so deep scrolling keeps paginating.
+	$effect(() => {
+		void related.items.length;
+		if (!relatedPrefetchRequested || !sentinel) return;
+		const target = sentinel;
+		const frame = requestAnimationFrame(() => {
+			const rootBottom = scrollRoot?.getBoundingClientRect().bottom ?? window.innerHeight;
+			if (target.getBoundingClientRect().top <= rootBottom + RELATED_LOAD_AHEAD) {
+				void related.loadMore();
+			}
+		});
+		return () => cancelAnimationFrame(frame);
 	});
 
 	// ── "In other collections" accordion ─────────────────────────────────────

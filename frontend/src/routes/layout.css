@@ -142,6 +142,11 @@
 	html {
 		@apply font-sans;
 	}
+	/* A real scrollbar keeps masonry width stable without leaving an empty gutter on
+	   unrelated pages. The detail overlay owns its own scrollbar while body is locked. */
+	html:has([data-masonry-grid]):not(:has(body.scroll-locked)) {
+		overflow-y: scroll;
+	}
 }
 
 @utility scrollbar-hide {

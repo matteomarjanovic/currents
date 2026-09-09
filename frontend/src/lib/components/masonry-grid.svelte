@@ -145,7 +145,7 @@
 
 <svelte:window bind:innerWidth={viewportWidth} bind:innerHeight={viewportHeight} />
 
-<div bind:clientWidth={containerWidth}>
+<div bind:clientWidth={containerWidth} data-masonry-grid>
 	<!-- Appended frames briefly have the default CSS order before the masonry
 	     observer positions them. Keep that transient reflow from becoming the
 	     browser's scroll anchor and moving the viewport as a page lands. -->
@@ -171,7 +171,7 @@
 							{mobileSave}
 							{longPressSave}
 							preloadControls={nearby.has(item.uri)}
-							onOpen={() => setSaveSequence(gridId, visibleItems, loadMore)}
+							onOpen={(depth) => setSaveSequence(gridId, visibleItems, loadMore, depth)}
 						/>
 					{/if}
 				</div>
