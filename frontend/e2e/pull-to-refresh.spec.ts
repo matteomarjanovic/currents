@@ -46,7 +46,7 @@ async function pullToRefresh(page: Page, label: string) {
 	await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
 	await client.send('Input.dispatchTouchEvent', {
 		type: 'touchMove',
-		touchPoints: [{ x: point.x, y: point.y + 150 }]
+		touchPoints: [{ x: point.x, y: point.y + 200 }]
 	});
 	await expect(page.getByRole('status', { name: `Release to refresh ${label}` })).toBeVisible();
 	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });

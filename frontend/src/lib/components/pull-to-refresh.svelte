@@ -13,7 +13,7 @@
 	let { onRefresh, label, disabled = false }: Props = $props();
 
 	const PULL_REFRESH_DISTANCE = 50;
-	const PULL_TRIGGER_DRAG_DISTANCE = 125;
+	const PULL_TRIGGER_DRAG_DISTANCE = 160;
 	const nativePullToRefresh = isNative();
 	let pullStartY = 0;
 	let pullDistance = $state(0);
