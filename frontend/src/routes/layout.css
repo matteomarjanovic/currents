@@ -142,6 +142,11 @@
 	html {
 		@apply font-sans;
 	}
+	/* A real scrollbar keeps masonry width stable without leaving an empty gutter on
+	   unrelated pages. The detail overlay owns its own scrollbar while body is locked. */
+	html:has([data-masonry-grid]):not(:has(body.scroll-locked)) {
+		overflow-y: scroll;
+	}
 }
 
 @utility scrollbar-hide {
@@ -169,15 +174,16 @@
 }
 
 /* iOS/WebKit zooms the viewport when a form control smaller than 16px is focused. A few inputs
-   use smaller text by design (the color-picker hex/alpha fields, the command search box), so on
-   touch devices force editable controls to at least 16px to stop the zoom — applies to the native
-   app and to currents.is in a mobile browser alike. Desktop keeps the intended smaller sizes.
-   Unlayered so it beats Tailwind's utility layer. */
+	   use smaller text by design (the color-picker hex/alpha fields, the command search box), so on
+	   touch devices keep editable controls at least 16px to stop the zoom, while still allowing the
+	   native Dynamic Type root size to make them larger. Applies to the app and mobile web alike.
+	   Desktop keeps the intended smaller sizes.
+	   Unlayered so it beats Tailwind's utility layer. */
 @media (hover: none) and (pointer: coarse) {
 	input:not([type='checkbox']):not([type='radio']),
 	textarea,
 	select {
-		font-size: 16px;
+		font-size: max(16px, 1rem);
 	}
 }
 

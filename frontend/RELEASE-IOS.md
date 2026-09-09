@@ -106,7 +106,8 @@ Sanity-check the archive installs and the release build still logs in / uploads 
 - `@capawesome-team/capacitor-secure-preferences` is a **paid Capawesome Insiders** plugin (Keychain
   storage on iOS). Confirm the Insiders license covers **production distribution**. `CAPAWESOME_TOKEN`
   is only needed at install/build time, not at runtime.
-- All other plugins (`send-intent`, `@capacitor/*`, `@capacitor-community/safe-area`) are MIT/free.
+- All other plugins (`send-intent`, `@capacitor/*`, `@capacitor-community/safe-area`,
+  `@capawesome/capacitor-accessibility-preferences`) are MIT/free.
 
 ## 8. App Store Connect
 

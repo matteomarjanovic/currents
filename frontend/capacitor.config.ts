@@ -8,11 +8,12 @@ const config: CapacitorConfig = {
 	// build/, whose bundle is broken inside the webview — pointing here means `cap sync` errors
 	// on a missing directory rather than silently packaging it.
 	webDir: 'build-mobile',
-	// This plugin is optional so web deployments do not need Capawesome registry
-	// credentials. Native builds install it locally and opt it into Capacitor's
-	// scanner explicitly (which otherwise only reads dependencies/devDependencies).
+	// Secure Preferences is optional so web deployments do not need Capawesome registry
+	// credentials. Native builds install it locally; this explicit list keeps it in
+	// Capacitor's scanner alongside the public plugins.
 	includePlugins: [
 		'@capacitor-community/safe-area',
+		'@capawesome/capacitor-accessibility-preferences',
 		'@capacitor/app',
 		'@capacitor/browser',
 		'@capacitor/camera',

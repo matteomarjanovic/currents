@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Haptics, ImpactStyle } from '@capacitor/haptics';
+	import { onMount } from 'svelte';
 	import { isNative } from '$lib/platform';
 	import { Spinner } from '$lib/components/ui/spinner';
 
@@ -12,12 +13,26 @@
 	let { onRefresh, label, disabled = false }: Props = $props();
 
 	const PULL_REFRESH_DISTANCE = 50;
+	const PULL_TRIGGER_DRAG_DISTANCE = 160;
 	const nativePullToRefresh = isNative();
 	let pullStartY = 0;
 	let pullDistance = $state(0);
 	let pulling = $state(false);
 	let refreshing = $state(false);
 	let pulsedRefreshThreshold = false;
+
+	function hasOpenOverlay() {
+		return Boolean(
+			document.querySelector(
+				'[data-save-detail-overlay], [data-slot="dialog-content"], [data-slot="drawer-content"], [data-slot="dropdown-menu-content"], [data-slot="context-menu-content"]'
+			)
+		);
+	}
+
+	onMount(() => {
+		window.addEventListener('touchmove', onPullMove, { passive: false });
+		return () => window.removeEventListener('touchmove', onPullMove);
+	});
 
 	function onPullStart(e: TouchEvent) {
 		if (
@@ -26,6 +41,7 @@
 			refreshing ||
 			window.scrollY !== 0 ||
 			e.touches.length !== 1 ||
+			hasOpenOverlay() ||
 			(e.target instanceof Element &&
 				e.target.closest('[data-save-detail-overlay], [role="dialog"]'))
 		)
@@ -38,7 +54,14 @@
 	function onPullMove(e: TouchEvent) {
 		if (!pulling || e.touches.length !== 1) return;
 		const distance = e.touches[0].clientY - pullStartY;
-		pullDistance = distance > 0 ? Math.min(PULL_REFRESH_DISTANCE, distance) : 0;
+		if (distance <= 0) {
+			pulling = false;
+			pullDistance = 0;
+			return;
+		}
+		e.preventDefault();
+		const progress = Math.min(1, distance / PULL_TRIGGER_DRAG_DISTANCE);
+		pullDistance = PULL_REFRESH_DISTANCE * (1 - (1 - progress) ** 2);
 		if (pullDistance === PULL_REFRESH_DISTANCE && !pulsedRefreshThreshold) {
 			pulsedRefreshThreshold = true;
 			void Haptics.impact({ style: ImpactStyle.Light });
@@ -61,12 +84,7 @@
 	}
 </script>
 
-<svelte:window
-	ontouchstart={onPullStart}
-	ontouchmove={onPullMove}
-	ontouchend={onPullEnd}
-	ontouchcancel={onPullEnd}
-/>
+<svelte:window ontouchstart={onPullStart} ontouchend={onPullEnd} ontouchcancel={onPullEnd} />
 
 {#if nativePullToRefresh && (pullDistance > 0 || refreshing)}
 	<div

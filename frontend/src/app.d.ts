@@ -9,6 +9,7 @@ declare global {
 		// interface PageData {}
 		interface PageState {
 			save?: SaveView;
+			saveStack?: SaveView[];
 		}
 		// interface Platform {}
 	}

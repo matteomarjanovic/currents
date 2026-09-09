@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pushState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
 	import { longpress } from '$lib/long-press';
@@ -30,7 +31,7 @@
 		preloadControls?: boolean;
 		// Called just before the detail view opens, so the grid can record the run of
 		// images this tile came from (see $lib/save-sequence).
-		onOpen?: () => void;
+		onOpen?: (depth: number) => void;
 	}
 
 	let {
@@ -95,8 +96,10 @@
 		// Let the browser handle modified clicks (open in new tab, etc.)
 		if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
 		e.preventDefault();
-		onOpen?.();
-		pushState(href, { save: $state.snapshot(item) });
+		const stack = page.state.saveStack ?? (page.state.save ? [page.state.save] : []);
+		const next = $state.snapshot(item);
+		onOpen?.(stack.length);
+		pushState(href, { save: next, saveStack: [...stack, next] });
 	}
 
 	function prepareDesktopControls(node: HTMLElement) {

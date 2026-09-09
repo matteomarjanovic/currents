@@ -57,6 +57,8 @@
 		// Bindable so a host can present the picker without a trigger tap — the share
 		// flow opens the drawer on arrival, since choosing a collection is the whole task.
 		open?: boolean;
+		// Picker mode has no implicit selection. Callers that want a remembered default
+		// (such as /upload) pass it explicitly; action-only pickers start unselected.
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
@@ -111,7 +113,7 @@
 	);
 	let selectedCollectionUri = $derived(
 		pickerMode
-			? (selectedUri ?? rememberedCollectionUri)
+			? selectedUri
 			: (userSelectedUri ?? quickSaveCollectionUri ?? localSaves[0]?.collectionUri ?? '')
 	);
 	let recommendationPending = $derived(

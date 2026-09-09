@@ -202,7 +202,7 @@
      hides the scrollbar, so the button never moves; the latched --sb places it
      on the grid's border while the scrollbar is showing. -->
 <div
-	class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-20 flex md:right-[calc(1rem+var(--sb)+100%-100vw)]"
+	class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] bottom-[calc(env(safe-area-inset-bottom)-0.125rem)] z-20 hidden md:flex md:right-[calc(1rem+var(--sb)+100%-100vw)] md:bottom-[calc(env(safe-area-inset-bottom)+0.875rem)]"
 	style="--sb: {scrollbarInset}px"
 >
 	<PersonalizationButton />

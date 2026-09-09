@@ -46,7 +46,7 @@ async function pullToRefresh(page: Page, label: string) {
 	await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
 	await client.send('Input.dispatchTouchEvent', {
 		type: 'touchMove',
-		touchPoints: [{ x: point.x, y: point.y + 60 }]
+		touchPoints: [{ x: point.x, y: point.y + 200 }]
 	});
 	await expect(page.getByRole('status', { name: `Release to refresh ${label}` })).toBeVisible();
 	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -88,6 +88,24 @@ test('native pull refreshes the feed', async ({ page }) => {
 
 	await page.goto('/explore/general');
 	await expect(page.getByRole('img', { name: 'Before refresh' })).toBeVisible();
+	await page.evaluate(() => {
+		const dialog = document.createElement('div');
+		dialog.dataset.slot = 'dialog-content';
+		document.body.append(dialog);
+	});
+	const client = await page.context().newCDPSession(page);
+	await client.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: [{ x: 180, y: 180 }]
+	});
+	await client.send('Input.dispatchTouchEvent', {
+		type: 'touchMove',
+		touchPoints: [{ x: 180, y: 330 }]
+	});
+	await expect(page.getByRole('status')).toBeHidden();
+	await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	expect(feedRequests).toBe(1);
+	await page.evaluate(() => document.querySelector('[data-slot="dialog-content"]')?.remove());
 	await pullToRefresh(page, 'feed');
 	await expect(page.getByRole('img', { name: 'After refresh' })).toBeVisible();
 	expect(feedRequests).toBe(2);

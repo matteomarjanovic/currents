@@ -26,6 +26,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		return {
 			collectionUri,
 			collection: null,
+			parent: null,
 			saves: [],
 			cursor: undefined,
 			children: [],
@@ -38,29 +39,44 @@ export const load: PageLoad = async ({ params, fetch }) => {
 		saves?: SaveView[];
 		cursor?: string;
 	};
+	const collection = page.collection ?? null;
+	let parent: CollectionView | null = null;
 	const children: CollectionView[] = [];
-	let cursor = '';
-	do {
-		const query = new URLSearchParams({
-			actor: profile.did,
-			parent: collectionUri,
-			limit: '100'
-		});
-		if (cursor) query.set('cursor', cursor);
-		const childRes = await apiFetch(
-			`/xrpc/is.currents.feed.getActorCollections?${query}`,
+	if (collection?.parentUri) {
+		const parentRes = await apiFetch(
+			`/xrpc/is.currents.feed.getCollectionSaves?collection=${encodeURIComponent(collection.parentUri)}&limit=1`,
 			{},
 			fetch
 		);
-		if (!childRes.ok) break;
-		const data = await childRes.json();
-		children.push(...(data.collections ?? []));
-		cursor = data.cursor ?? '';
-	} while (cursor);
+		if (parentRes.ok) {
+			const parentPage = (await parentRes.json()) as { collection?: CollectionView };
+			parent = parentPage.collection ?? null;
+		}
+	} else {
+		let cursor = '';
+		do {
+			const query = new URLSearchParams({
+				actor: profile.did,
+				parent: collectionUri,
+				limit: '100'
+			});
+			if (cursor) query.set('cursor', cursor);
+			const childRes = await apiFetch(
+				`/xrpc/is.currents.feed.getActorCollections?${query}`,
+				{},
+				fetch
+			);
+			if (!childRes.ok) break;
+			const data = await childRes.json();
+			children.push(...(data.collections ?? []));
+			cursor = data.cursor ?? '';
+		} while (cursor);
+	}
 
 	return {
 		collectionUri,
-		collection: page.collection ?? null,
+		collection,
+		parent,
 		saves: page.saves ?? [],
 		cursor: page.cursor,
 		children

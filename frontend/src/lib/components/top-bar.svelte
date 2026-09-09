@@ -44,6 +44,7 @@
 	import InstallAppDialog from '$lib/components/install-app-dialog.svelte';
 	import NotificationsDialog from '$lib/components/notifications-dialog.svelte';
 	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
+	import PersonalizationButton from '$lib/components/personalization-button-v3.svelte';
 	import SearchCommand from '$lib/components/search-command.svelte';
 	import { addCollection } from '$lib/stores/collections.svelte';
 	import { notifications, refreshNotifications } from '$lib/stores/notifications.svelte';
@@ -70,6 +71,9 @@
 		user: { did: string; handle: string; displayName?: string; avatar?: string } | null;
 		landing?: boolean;
 	} = $props();
+
+	// Android and web need the raised mobile bar; iOS keeps extra room for its native layout.
+	const raisedMobileBar = isAndroid() || !isNative();
 
 	const SEARCH_TYPES = [
 		{ value: 'saves', label: 'Images' },
@@ -100,6 +104,39 @@
 	}
 	// The mobile bottom bar; its menus anchor to it (centered) instead of to their buttons.
 	let bottomBarEl = $state<HTMLElement | undefined>();
+	let flowFieldEl = $state<HTMLElement | undefined>();
+	let centerMobileControls = $state(false);
+	let flowCenterOffset = $state(0);
+
+	$effect(() => {
+		const bar = bottomBarEl;
+		const flow = flowFieldEl;
+		if (!bar || !flow) {
+			centerMobileControls = false;
+			return;
+		}
+
+		const updateMobileControls = () => {
+			const barRect = bar.getBoundingClientRect();
+			const flowRect = flow.getBoundingClientRect();
+			const gap = flowRect.left - barRect.right;
+			const offset = (flowRect.width + gap) / 2;
+			flowCenterOffset = offset;
+			// Measure the default bar-centered position even after the pair has shifted.
+			centerMobileControls = flowRect.right + (centerMobileControls ? offset : 0) > window.innerWidth;
+		};
+
+		const observer = new ResizeObserver(updateMobileControls);
+		observer.observe(bar);
+		observer.observe(flow);
+		window.addEventListener('resize', updateMobileControls);
+		updateMobileControls();
+
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', updateMobileControls);
+		};
+	});
 
 	// Only items the user hasn't acted on yet count toward the unread indicator —
 	// disputes are waiting on a moderator, not on the author.
@@ -746,18 +783,18 @@
 			type="button"
 			onclick={() => (searchCommandOpen = true)}
 			class="fixed left-1/2 z-10 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-baseline gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3 py-1.5 text-sm text-foreground shadow-sm backdrop-blur-sm md:hidden"
-			style="bottom: calc(env(safe-area-inset-bottom) + 4.625rem)"
+			style="bottom: calc(env(safe-area-inset-bottom) + 4.25rem)"
 		>
 			{@render searchQuery()}
 		</button>
 	{/if}
 	<div
-		bind:this={bottomBarEl}
-		class="{glassGroup} fixed left-1/2 z-10 flex -translate-x-1/2 scale-[1.08] md:hidden"
-		style="bottom: calc(env(safe-area-inset-bottom) + 1.375rem)"
+		class="fixed z-10 -translate-x-1/2 md:hidden"
+		style="left: {centerMobileControls ? `calc(50% - ${flowCenterOffset}px)` : '50%'}; bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
 	>
-		{#if !user}
-			{@render loginButton('default')}
+		<div bind:this={bottomBarEl} class="{glassGroup} flex scale-[1.08]">
+			{#if !user}
+				{@render loginButton('default')}
 			<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
 			     bg-input/50 would read as a pressed state inside the glass pill. The
 			     asymmetric padding is optical, not arithmetic: the chevron already
@@ -766,8 +803,8 @@
 			<ThemeToggle
 				class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
 			/>
-		{:else}
-			{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
+			{:else}
+				{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
 			<DropdownMenu.Root
 				bind:open={() => openMenu === 'burger-mobile', (v) => toggleMenu('burger-mobile', v)}
 			>
@@ -810,8 +847,18 @@
 					bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
 				/>
 			{/if}
+			{/if}
+			{@render searchButton('ghost', '', false)}
+		</div>
+		{#if page.route.id === '/(with-navbar)/explore/[level]'}
+			<div
+				bind:this={flowFieldEl}
+				class="absolute top-1/2 left-[calc(100%+1rem)]"
+				style="transform: translateY(-50%)"
+			>
+				<PersonalizationButton />
+			</div>
 		{/if}
-		{@render searchButton('ghost', '', false)}
 	</div>
 {/if}
 

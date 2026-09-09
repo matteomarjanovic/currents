@@ -28,6 +28,8 @@
 	type Item = {
 		id: string;
 		previewUrl: string;
+		width?: number;
+		height?: number;
 		file?: File;
 		imageUrl?: string;
 		pageUrl?: string;
@@ -53,8 +55,10 @@
 			? 'your profile'
 			: (collections.items.find((c) => c.uri === savedUri)?.name ?? 'your collection')
 	);
-	let organizeHref = $derived(
-		savedUri ? `${resolve('/organize')}?c=${encodeURIComponent(savedUri)}` : resolve('/organize')
+	// The Android share plugin hosts this route in a disposable activity. A deep link
+	// transfers organize mode to MainActivity, which survives normal app switching.
+	let organizeLaunchHref = $derived(
+		savedUri ? `currents://organize?c=${encodeURIComponent(savedUri)}` : 'currents://organize'
 	);
 
 	let pending = $state<PendingShare | null>(null);
@@ -156,6 +160,12 @@
 	function toggle(id: string) {
 		const item = items.find((i) => i.id === id);
 		if (item) item.selected = !item.selected;
+	}
+
+	function setDimensions(item: Item, event: Event) {
+		const image = event.currentTarget as HTMLImageElement;
+		item.width = image.naturalWidth;
+		item.height = image.naturalHeight;
 	}
 
 	// A preview that won't load is a dead scrape result — drop it rather than let the
@@ -309,7 +319,7 @@
 				</p>
 			</div>
 			<div class="flex w-full max-w-xs flex-col gap-2">
-				<Button href={organizeHref} class="w-full">Add details in organize</Button>
+				<Button href={organizeLaunchHref} class="w-full">Add details in organize</Button>
 				<Button variant="outline" class="w-full" onclick={leave}>Done</Button>
 			</div>
 		</div>
@@ -336,6 +346,9 @@
 							? 'border-primary'
 							: 'border-transparent'}"
 						aria-pressed={item.selected}
+						aria-label={item.width && item.height
+							? `Image, ${item.width} by ${item.height} pixels`
+							: 'Image'}
 						disabled={phase !== 'select'}
 						onclick={() => toggle(item.id)}
 					>
@@ -343,8 +356,16 @@
 							src={item.previewUrl}
 							alt=""
 							class="size-full object-cover {item.selected ? '' : 'opacity-60'}"
+							onload={(event) => setDimensions(item, event)}
 							onerror={() => dropBroken(item.id)}
 						/>
+						{#if phase === 'select' && item.width && item.height}
+							<span
+								class="pointer-events-none absolute right-1.5 bottom-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none font-medium text-white tabular-nums shadow-sm"
+							>
+								{item.width}×{item.height}
+							</span>
+						{/if}
 						{#if item.status === 'saving'}
 							<span class="absolute inset-0 grid place-items-center bg-background/60">
 								<Spinner class="size-5" />

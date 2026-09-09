@@ -1,10 +1,10 @@
 import type { SaveView } from '$lib/types';
 import { appendUnseen, countAfter, neighbourOf } from '$lib/save-sequence';
 
-// The run of images the open detail view was opened from, so a swipe there can move
-// through it. Opening a tile is a shallow route (pushState), so the grid stays mounted
-// underneath and its items are already in memory — nothing here refetches what the
-// viewer has already seen.
+// Each retained detail layer keeps the run of images it was opened from, so a swipe
+// there can move through it. Opening a tile is a shallow route (pushState), so the grid
+// or previous detail stays mounted underneath and nothing refetches what the viewer has
+// already seen. Back/Forward switches the active run along with the visible layer.
 //
 // The run starts as a snapshot rather than a live view of the grid's list, because the
 // detail's own related rail is a grid too: tapping an image there refills that rail with
@@ -24,29 +24,45 @@ import { appendUnseen, countAfter, neighbourOf } from '$lib/save-sequence';
 /** A grid instance's identity, so a stale grid can't sync into a run it no longer owns. */
 type Owner = object;
 
-let owner: Owner | null = null;
-let extend: (() => void | Promise<void>) | null = null;
-let extending = false;
+type Run = {
+	owner: Owner;
+	extend: (() => void | Promise<void>) | null;
+	extending: boolean;
+	sequence: SaveView[];
+};
+
+const runs: Run[] = [];
+let activeDepth = -1;
 // Raw: the run is replaced wholesale, and deep-proxying every SaveView in it would cost
 // more than it buys.
 let sequence = $state.raw<SaveView[]>([]);
 
-/** Record the grid a tile was opened from. Called just before the detail opens. */
+/** Record the grid a tile was opened from at the new overlay's depth. */
 export function setSaveSequence(
 	id: Owner,
 	items: SaveView[],
-	loadMore?: () => void | Promise<void>
+	loadMore: (() => void | Promise<void>) | undefined,
+	depth: number
 ) {
-	owner = id;
-	extend = loadMore ?? null;
-	extending = false;
-	sequence = items.slice();
+	runs.length = depth;
+	const run = { owner: id, extend: loadMore ?? null, extending: false, sequence: items.slice() };
+	runs[depth] = run;
+	activeDepth = depth;
+	sequence = run.sequence;
+}
+
+/** Make the retained overlay at `depth` own swipe navigation again after Back/Forward. */
+export function activateSaveSequence(depth: number) {
+	activeDepth = depth;
+	sequence = depth >= 0 ? (runs[depth]?.sequence ?? []) : [];
 }
 
 /** Fold a grid's newly loaded items into the run it owns. A no-op for any other grid. */
 export function syncSaveSequence(id: Owner, items: SaveView[]) {
-	if (id !== owner) return;
-	sequence = appendUnseen(sequence, items);
+	const run = runs.find((candidate) => candidate.owner === id);
+	if (!run) return;
+	run.sequence = appendUnseen(run.sequence, items);
+	if (run === runs[activeDepth]) sequence = run.sequence;
 }
 
 /**
@@ -55,12 +71,13 @@ export function syncSaveSequence(id: Owner, items: SaveView[]) {
  * so this costs nothing at the true end of a run.
  */
 export async function extendSaveSequence() {
-	if (!extend || extending) return;
-	extending = true;
+	const run = runs[activeDepth];
+	if (!run?.extend || run.extending) return;
+	run.extending = true;
 	try {
-		await extend();
+		await run.extend();
 	} finally {
-		extending = false;
+		run.extending = false;
 	}
 }
 
