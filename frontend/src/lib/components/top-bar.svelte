@@ -854,7 +854,7 @@
 			<div
 				bind:this={flowFieldEl}
 				class="absolute top-1/2 left-[calc(100%+1rem)]"
-				style="transform: translateY(calc(-50% + 0.125rem))"
+				style="transform: translateY(-50%)"
 			>
 				<PersonalizationButton />
 			</div>
