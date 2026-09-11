@@ -54,6 +54,7 @@
 		unsorted = false,
 		selectedSaveUri = null,
 		onSelectSave,
+		onOpenFullScreen,
 		onFindSimilar,
 		selectMode = $bindable(false),
 		selected,
@@ -68,6 +69,7 @@
 		unsorted?: boolean;
 		selectedSaveUri?: string | null;
 		onSelectSave: (save: SaveView) => void;
+		onOpenFullScreen: (save: SaveView) => void;
 		onFindSimilar: (save: SaveView) => void;
 		// Multi-select: the mode flag (owned by the page's header toggle) and the
 		// shared set of selected save URIs.
@@ -657,9 +659,9 @@
 		<SquareCheck />
 		Select
 	</Menu.Item>
-	<Menu.Item onSelect={() => selectTile(item)}>
+	<Menu.Item disabled={!getImageContent(item)} onSelect={() => onOpenFullScreen(item)}>
 		<Scan />
-		Open
+		View full screen
 	</Menu.Item>
 	<Menu.Item onSelect={() => onFindSimilar(item)}>
 		<Sparkles />

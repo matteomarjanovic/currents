@@ -3,6 +3,7 @@
 	import SaveImage from '$lib/components/save-image.svelte';
 	import X from '@lucide/svelte/icons/x';
 	import { SvelteMap } from 'svelte/reactivity';
+	import { onBackButton } from '$lib/back-button';
 	import type { ImageContentView } from '$lib/types';
 
 	interface Props {
@@ -16,6 +17,7 @@
 	const MIN_SCALE = 1;
 	const MAX_SCALE = 5;
 	const DOUBLE_TAP_SCALE = 2.5;
+	const WHEEL_SENSITIVITY = 0.0015;
 
 	let viewport: HTMLDivElement | undefined = $state();
 	let zoomContent: HTMLDivElement | undefined = $state();
@@ -32,9 +34,11 @@
 	let startX = 0;
 	let startY = 0;
 	let panStart: Point = { x: 0, y: 0 };
+	let backdropPointer: (Point & { id: number }) | undefined;
 
 	function reset() {
 		pointers.clear();
+		backdropPointer = undefined;
 		startDistance = 0;
 		scale = MIN_SCALE;
 		x = 0;
@@ -44,6 +48,11 @@
 
 	$effect(() => {
 		if (!open) reset();
+	});
+
+	$effect(() => {
+		if (!open) return;
+		return onBackButton(() => (open = false));
 	});
 
 	$effect(() => {
@@ -106,6 +115,15 @@
 
 	function onPointerDown(e: PointerEvent) {
 		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		if (backdropPointer && backdropPointer.id !== e.pointerId) {
+			backdropPointer = undefined;
+			return;
+		}
+		if (!zoomContent?.contains(e.target as Node)) {
+			if (pointers.size > 0) return;
+			backdropPointer = { id: e.pointerId, x: e.clientX, y: e.clientY };
+			return;
+		}
 		viewport?.setPointerCapture(e.pointerId);
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		moving = true;
@@ -119,6 +137,12 @@
 	}
 
 	function onPointerMove(e: PointerEvent) {
+		if (backdropPointer?.id === e.pointerId) {
+			if (distance(backdropPointer, { x: e.clientX, y: e.clientY }) > 8) {
+				backdropPointer = undefined;
+			}
+			return;
+		}
 		if (!open || !pointers.has(e.pointerId)) return;
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -139,6 +163,11 @@
 	}
 
 	function onPointerEnd(e: PointerEvent) {
+		if (backdropPointer?.id === e.pointerId) {
+			backdropPointer = undefined;
+			open = false;
+			return;
+		}
 		if (!open || !pointers.delete(e.pointerId)) return;
 		if (pointers.size === 1) {
 			const [point] = pointers.values();
@@ -151,7 +180,13 @@
 		}
 	}
 
+	function onPointerCancel(e: PointerEvent) {
+		if (backdropPointer?.id === e.pointerId) backdropPointer = undefined;
+		onPointerEnd(e);
+	}
+
 	function toggleZoom(e: MouseEvent) {
+		if (window.matchMedia('(pointer: fine)').matches) return;
 		e.stopPropagation();
 		if (scale > MIN_SCALE) return reset();
 		const point = fromCentre({ x: e.clientX, y: e.clientY });
@@ -161,22 +196,41 @@
 			point.y - point.y * DOUBLE_TAP_SCALE
 		);
 	}
+
+	function onWheel(e: WheelEvent) {
+		if (!window.matchMedia('(pointer: fine)').matches) return;
+		e.preventDefault();
+		const unit =
+			e.deltaMode === WheelEvent.DOM_DELTA_LINE
+				? 16
+				: e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+					? (viewport?.clientHeight ?? 800)
+					: 1;
+		const nextScale = Math.max(
+			MIN_SCALE,
+			Math.min(MAX_SCALE, scale * Math.exp(-e.deltaY * unit * WHEEL_SENSITIVITY))
+		);
+		if (nextScale === scale) return;
+		const point = fromCentre({ x: e.clientX, y: e.clientY });
+		const ratio = nextScale / scale;
+		setTransform(nextScale, point.x - (point.x - x) * ratio, point.y - (point.y - y) * ratio);
+	}
 </script>
 
 <svelte:window
 	onpointermove={onPointerMove}
 	onpointerup={onPointerEnd}
-	onpointercancel={onPointerEnd}
+	onpointercancel={onPointerCancel}
 />
 
 <Dialog.Root bind:open>
 	<Dialog.Content
 		showCloseButton={false}
-		class="fixed inset-0 top-0 left-0 z-[60] block h-dvh max-h-none w-screen max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-none bg-black/85 p-0 text-white shadow-none ring-0"
+		class="fixed inset-0 top-0 left-0 z-[60] block h-dvh max-h-none! w-screen max-w-none! translate-x-0 translate-y-0 overflow-hidden rounded-none bg-black/85 p-0 text-white shadow-none ring-0"
 	>
 		<Dialog.Title class="sr-only">Image viewer</Dialog.Title>
 		<Dialog.Description class="sr-only">
-			Pinch to zoom, drag to move the image, or double-tap to zoom in and out.
+			Pinch or scroll to zoom, drag to move the image, or double-tap to zoom in and out.
 		</Dialog.Description>
 
 		<div
@@ -184,24 +238,42 @@
 			data-image-focus
 			role="group"
 			aria-label="Zoomable image"
-			class="absolute inset-0 flex touch-none items-center justify-center overflow-hidden p-4 select-none"
+			class="absolute inset-0 flex touch-none items-center justify-center overflow-hidden p-4 select-none md:flex-col md:gap-3 {scale >
+			MIN_SCALE
+				? moving
+					? 'cursor-grabbing'
+					: 'cursor-grab'
+				: 'cursor-default'}"
 			onpointerdown={onPointerDown}
+			onwheel={onWheel}
 		>
 			<div
 				bind:this={zoomContent}
 				role="presentation"
-				class="flex items-center justify-center {moving ? '' : 'transition-transform duration-150'}"
+				class="flex items-center justify-center {moving
+					? ''
+					: 'transition-transform duration-100 ease-out'}"
 				style="transform: translate3d({x}px, {y}px, 0) scale({scale})"
 				ondblclick={toggleZoom}
+				ondragstart={(e) => e.preventDefault()}
 			>
 				<SaveImage
 					{image}
 					{alt}
 					loading="eager"
-					class="max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] object-contain"
+					class="max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] object-contain md:max-h-[calc(100dvh-5rem)]"
 					wrapperClass="flex items-center justify-center"
 					sizes="100vw"
 				/>
+			</div>
+			<div
+				aria-hidden={scale > MIN_SCALE}
+				class="pointer-events-none hidden shrink-0 rounded-full bg-black/60 px-4 py-2 text-sm text-white/90 backdrop-blur-sm transition-opacity md:block {scale ===
+				MIN_SCALE
+					? 'opacity-100'
+					: 'opacity-0'}"
+			>
+				Scroll to zoom
 			</div>
 		</div>
 
@@ -214,7 +286,7 @@
 		</Dialog.Close>
 		{#if scale === MIN_SCALE}
 			<div
-				class="pointer-events-none absolute bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1.5 text-xs text-white/90 backdrop-blur-sm"
+				class="pointer-events-none absolute bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1.5 text-xs text-white/90 backdrop-blur-sm md:hidden"
 			>
 				Pinch to zoom
 			</div>

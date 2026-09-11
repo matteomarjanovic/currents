@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { apiFetch } from '$lib/api';
@@ -17,6 +17,7 @@
 	import OrganizeCanvas from '$lib/components/organize/canvas.svelte';
 	import OrganizeSidebarRight from '$lib/components/organize/sidebar-right.svelte';
 	import OrganizeSearchCommand from '$lib/components/organize/search-command.svelte';
+	import ImageFocusDialog from '$lib/components/image-focus-dialog.svelte';
 	import BulkActionBar from '$lib/components/organize/bulk-action-bar.svelte';
 	import type { BulkApi } from '$lib/organize-bulk';
 	import CollectionFilterItems from '$lib/components/organize/collection-filter-items.svelte';
@@ -206,6 +207,23 @@
 	let sourceKey = $derived(unsorted ? 'unsorted' : selectedUri);
 	let selection = $state<{ source: string; save: SaveView } | null>(null);
 	let selectedSave = $derived(selection && selection.source === sourceKey ? selection.save : null);
+	type FocusPointer = { id: number; x: number; y: number };
+	let focusSave = $state<SaveView | null>(null);
+	let focusOpen = $state(false);
+	let focusDialog: { continuePinch: (pointers: FocusPointer[]) => void } | undefined = $state();
+	let focusImage = $derived(focusSave ? getImageContent(focusSave) : null);
+
+	function openFullScreen(save: SaveView) {
+		if (!getImageContent(save)) return;
+		focusSave = save;
+		focusOpen = true;
+	}
+
+	async function continueFullScreenPinch(save: SaveView, pointers: FocusPointer[]) {
+		focusSave = save;
+		await tick();
+		focusDialog?.continuePinch(pointers);
+	}
 	// The panel's X closes it, and so should Android's back button — otherwise back
 	// leaves organize mode with the (full-screen, on mobile) panel still open.
 	$effect(() => {
@@ -673,6 +691,7 @@
 				{ownContext}
 				selectedSaveUri={selectedSave?.uri ?? null}
 				onSelectSave={(s) => (selection = { source: sourceKey, save: s })}
+				onOpenFullScreen={openFullScreen}
 				onFindSimilar={findSimilar}
 			/>
 		</div>
@@ -689,6 +708,8 @@
 			onSavesChange={(saves) => {
 				if (selection) selection.save.viewer = { ...(selection.save.viewer ?? {}), saves };
 			}}
+			onOpenFullScreen={openFullScreen}
+			onContinueFullScreenPinch={continueFullScreenPinch}
 			onFindSimilar={findSimilar}
 			{onColorSearch}
 		/>
@@ -711,3 +732,12 @@
 		onColorSearch={(hex, text) => searchColorInLibrary(hex, text)}
 	/>
 </Sidebar.Provider>
+
+{#if focusSave && focusImage}
+	<ImageFocusDialog
+		bind:this={focusDialog}
+		bind:open={focusOpen}
+		image={focusImage}
+		alt={focusImage.alt ?? focusSave.text ?? ''}
+	/>
+{/if}

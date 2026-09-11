@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { linear, cubicInOut } from 'svelte/easing';
+	import { SvelteMap } from 'svelte/reactivity';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Badge, badgeVariants } from '$lib/components/ui/badge';
@@ -38,12 +39,19 @@
 		save,
 		onClose,
 		onSavesChange,
+		onOpenFullScreen,
+		onContinueFullScreenPinch,
 		onFindSimilar,
 		onColorSearch
 	}: {
 		save: SaveView;
 		onClose: () => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
+		onOpenFullScreen: (save: SaveView) => void;
+		onContinueFullScreenPinch: (
+			save: SaveView,
+			pointers: { id: number; x: number; y: number }[]
+		) => void;
 		onFindSimilar: (save: SaveView) => void;
 		onColorSearch?: (hex: string, where: 'explore' | 'library') => void;
 	} = $props();
@@ -52,6 +60,26 @@
 	const native = isNative();
 
 	let tab = $state('details');
+	type FocusPointer = { id: number; x: number; y: number };
+	const imagePointers = new SvelteMap<number, FocusPointer>();
+
+	function onImagePointerDown(e: PointerEvent) {
+		if (!native || e.pointerType !== 'touch') return;
+		imagePointers.set(e.pointerId, { id: e.pointerId, x: e.clientX, y: e.clientY });
+		if (imagePointers.size !== 2) return;
+		const imageButton = e.currentTarget as HTMLButtonElement;
+		for (const id of imagePointers.keys()) imageButton.setPointerCapture(id);
+		onContinueFullScreenPinch(save, [...imagePointers.values()]);
+	}
+
+	function onImagePointerMove(e: PointerEvent) {
+		if (!imagePointers.has(e.pointerId)) return;
+		imagePointers.set(e.pointerId, { id: e.pointerId, x: e.clientX, y: e.clientY });
+	}
+
+	function onImagePointerEnd(e: PointerEvent) {
+		imagePointers.delete(e.pointerId);
+	}
 
 	let image = $derived(getImageContent(save));
 	let palette = $derived(image?.palette ?? (image?.dominantColor ? [image.dominantColor] : []));
@@ -95,6 +123,7 @@
 		altOverride = null;
 		attributionOverride = null;
 		addedLabels = [];
+		imagePointers.clear();
 	});
 
 	let alt = $derived(altOverride ?? image?.alt ?? '');
@@ -215,13 +244,24 @@
 			>
 				{#if image}
 					<LabeledMedia labels={save.labels} class="flex justify-center">
-						<SaveImage
-							{image}
-							alt={image.alt ?? save.text ?? ''}
-							sizes="22rem"
-							class="max-h-[45vh] w-auto max-w-full object-contain"
-							style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
-						/>
+						<button
+							type="button"
+							class="flex max-w-full cursor-zoom-in justify-center {native ? 'touch-pan-y' : ''}"
+							onclick={() => onOpenFullScreen(save)}
+							onpointerdown={onImagePointerDown}
+							onpointermove={onImagePointerMove}
+							onpointerup={onImagePointerEnd}
+							onpointercancel={onImagePointerEnd}
+							aria-label="View image full screen"
+						>
+							<SaveImage
+								{image}
+								alt={image.alt ?? save.text ?? ''}
+								sizes="22rem"
+								class="max-h-[45vh] w-auto max-w-full object-contain"
+								style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+							/>
+						</button>
 					</LabeledMedia>
 				{/if}
 
