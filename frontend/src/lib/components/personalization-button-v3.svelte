@@ -42,7 +42,7 @@
 			<Button
 				{...props}
 				variant="glass"
-				class="h-auto cursor-pointer gap-2 rounded-full p-0.5 transition-transform duration-100 aria-expanded:scale-95 md:pl-3"
+				class="size-14 cursor-pointer gap-2 rounded-full p-0.5 transition-transform duration-100 aria-expanded:scale-95 md:h-auto md:w-auto md:pl-3"
 				aria-label="Adjust personalization"
 				onpointerdowncapture={blockImageNavigation}
 				ontouchstart={preventTouchClickThrough}
@@ -55,7 +55,7 @@
 				<span class="text-md hidden font-medium whitespace-nowrap text-foreground md:inline">
 					{selected.label}
 				</span>
-				<div class="h-11 w-11 overflow-hidden rounded-full">
+				<div class="size-full overflow-hidden rounded-full md:h-11 md:w-11">
 					<FlowField noiseIntensity={selected.noiseIntensity} lineCount={7} />
 				</div>
 			</Button>

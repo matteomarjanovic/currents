@@ -413,8 +413,8 @@
 	</a>
 {/snippet}
 
-{#snippet burgerIcon(open: boolean)}
-	<span class="relative block size-4">
+{#snippet burgerIcon(open: boolean, mobile = false)}
+	<span class="relative block size-4 {mobile ? 'scale-[1.15]' : ''}">
 		<span
 			class="absolute top-[4px] left-0 h-0.5 w-4 rounded-full bg-current transition-transform duration-200 {open
 				? 'translate-y-[3px] rotate-45'
@@ -778,7 +778,7 @@
 {#if !landing}
 	{#if activeSearch}
 		<!-- The bottom cluster has no room beside the lens, so the active query rides
-		     just above it (44px cluster + 0.5rem gap over the cluster's own offset). -->
+		     just above it. -->
 		<button
 			type="button"
 			onclick={() => (searchCommandOpen = true)}
@@ -792,7 +792,12 @@
 		class="fixed z-10 -translate-x-1/2 md:hidden"
 		style="left: {centerMobileControls ? `calc(50% - ${flowCenterOffset}px)` : '50%'}; bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
 	>
-		<div bind:this={bottomBarEl} class="{glassGroup} flex scale-[1.08]">
+		<div
+			bind:this={bottomBarEl}
+			class="{glassGroup} flex p-1.5 {user
+				? '[&_button]:size-11 [&_svg]:size-[1.375rem] [&_[data-slot=avatar]]:size-10'
+				: ''}"
+		>
 			{#if !user}
 				{@render loginButton('default')}
 			<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
@@ -818,7 +823,7 @@
 							type="button"
 							aria-label="Menu"
 						>
-							{@render burgerIcon(openMenu === 'burger-mobile')}
+							{@render burgerIcon(openMenu === 'burger-mobile', true)}
 							{#if burgerDot}
 								<span
 									class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
