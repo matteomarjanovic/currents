@@ -165,6 +165,13 @@
 		mobileView = null;
 		setTimeout(() => (attributionOpen = true), 250);
 	}
+
+	function removeFromMenu() {
+		mobileView = null;
+		// The removal safeguard is a shared dialog. Wait for the drawer's exit
+		// animation so the dialog mounts above a fully dismissed sheet.
+		setTimeout(onRemove, 250);
+	}
 </script>
 
 <!-- The destination list, reused by the copy/move popovers and the mobile drawer. -->
@@ -477,7 +484,7 @@
 						})}
 					{/if}
 					{#if canRemove}
-						{@render menuRow(removeLabel, Trash2, onRemove, {
+						{@render menuRow(removeLabel, Trash2, removeFromMenu, {
 							disabled: saves.length === 0
 						})}
 					{/if}

@@ -47,6 +47,25 @@ function librarySaves(withMembership = false) {
 	}));
 }
 
+function collectionSaves() {
+	return [1, 2].map((n) => {
+		const uri = `at://did:plc:test/is.currents.feed.save/interior${n}`;
+		return {
+			uri,
+			author: me,
+			createdAt: `2026-02-0${n}T00:00:00Z`,
+			content: {
+				$type: 'is.currents.content.defs#imageView',
+				imageUrl: `https://example.com/interior${n}.jpg`,
+				blobCid: `interior-cid${n}`,
+				width: 400,
+				height: 500
+			},
+			viewer: { saves: [{ collectionUri: INTERIORS, saveUri: uri }] }
+		};
+	});
+}
+
 type Calls = { labelBulk: string[]; resave: string[]; deleted: string[] };
 
 async function mockApi(page: Page, calls: Calls, withMembership = false) {
@@ -75,6 +94,7 @@ async function mockApi(page: Page, calls: Calls, withMembership = false) {
 		if (url.includes('getFavouriteCollections')) return json({ collections: [] });
 		if (url.includes('features/seen')) return json({ seen: [] });
 		if (url.includes('moderation/prefs')) return json({ adult: 'blur', aiGenerated: 'show' });
+		if (url.includes('getCollectionSaves')) return json({ saves: collectionSaves(), cursor: null });
 		if (url.includes('getLibrarySaves'))
 			return json({ saves: librarySaves(withMembership), cursor: null });
 		return json({ saves: [], cursor: null });
@@ -205,14 +225,40 @@ test('mobile: dismissing the drawer lets the pill reopen it', async ({ page }) =
 
 	await pill.click();
 	await expect(menuItem).toBeVisible();
+	const drawer = page.locator('[data-slot="drawer-content"]');
+	await expect.poll(async () => (await drawer.boundingBox())?.y).toBeLessThan(400);
 
 	// Tap the overlay above the sheet to dismiss it.
-	await page.mouse.click(20, 30);
+	await page.mouse.move(20, 30);
+	await page.mouse.down();
+	await page.waitForTimeout(20);
+	await page.mouse.up();
 	await expect(menuItem).toBeHidden();
 
 	// The pill must reopen it.
 	await pill.click();
 	await expect(menuItem).toBeVisible();
+});
+
+test('mobile: Remove closes the bulk drawer before the last-copy dialog opens', async ({
+	page
+}) => {
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
+	await mockApi(page, calls);
+	await page.goto(`/organize?c=${encodeURIComponent(INTERIORS)}`);
+
+	await expect(page.locator('[data-uri]').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Select' }).click();
+	await page.locator('[data-uri]').nth(0).click();
+	await page.locator('[data-uri]').nth(1).click();
+	await page.getByRole('button', { name: 'Bulk actions (2)' }).click();
+	await page.getByRole('button', { name: 'Remove from collection' }).click();
+
+	await expect(
+		page.getByRole('alertdialog').getByText('2 images are only saved in this collection')
+	).toBeVisible();
+	await expect(page.locator('[data-vaul-drawer]')).toHaveCount(0);
+	expect(calls.deleted).toHaveLength(0);
 });
 
 // The bar is a sibling of the rounded panel, not a strip inside it: the panel is
