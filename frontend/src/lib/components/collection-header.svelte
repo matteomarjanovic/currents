@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { buttonVariants } from '$lib/components/ui/button';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
 	import MoreHorizontal from '@lucide/svelte/icons/more-horizontal';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -10,6 +11,7 @@
 	import Star from '@lucide/svelte/icons/star';
 	import FavouriteToggle from './favourite-toggle.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 
 	interface Props {
 		collection: CollectionView;
@@ -29,35 +31,56 @@
 	$effect(() => {
 		favouriteCount = collection.favouriteCount ?? 0;
 	});
+
+	function goBack() {
+		if (history.length > 1) {
+			history.back();
+			return;
+		}
+		const handle = collection.author?.handle ?? collection.uri.split('/')[2];
+		const parentRkey = collection.parentUri?.split('/').pop();
+		goto(parentRkey ? `/profile/${handle}/collection/${parentRkey}` : `/profile/${handle}`);
+	}
 </script>
 
 <section class="mb-6">
 	<div class="flex items-start justify-between gap-3 px-1">
-		<div class="min-w-0 flex-1">
-			<h1 class="truncate text-2xl font-semibold text-foreground">{collection.name}</h1>
-			{#if collection.author}
-				<a
-					href={`/profile/${collection.author.handle}`}
-					class="text-sm text-muted-foreground hover:text-foreground hover:underline"
-				>
-					@{collection.author.handle}
-				</a>
-			{/if}
-			{#if collection.saveCount != null}
-				<span class="ml-2 text-sm text-muted-foreground">
-					· {collection.saveCount}
-					{collection.saveCount === 1 ? 'save' : 'saves'}
-				</span>
-			{/if}
-			{#if favouriteCount > 0}
-				<span
-					class="ml-2 inline-flex items-center gap-1 align-middle text-sm text-muted-foreground"
-					title={`${favouriteCount} ${favouriteCount === 1 ? 'favourite' : 'favourites'}`}
-				>
-					<Star class="size-3.5 fill-current" />
-					{favouriteCount}
-				</span>
-			{/if}
+		<div class="flex min-w-0 flex-1 items-start gap-3">
+			<Button
+				variant="outline"
+				size="icon"
+				class="hidden shrink-0 rounded-full md:inline-flex"
+				onclick={goBack}
+				aria-label="Go back"
+			>
+				<ArrowLeft class="size-4" />
+			</Button>
+			<div class="min-w-0 flex-1">
+				<h1 class="truncate text-2xl font-semibold text-foreground">{collection.name}</h1>
+				{#if collection.author}
+					<a
+						href={`/profile/${collection.author.handle}`}
+						class="text-sm text-muted-foreground hover:text-foreground hover:underline"
+					>
+						@{collection.author.handle}
+					</a>
+				{/if}
+				{#if collection.saveCount != null}
+					<span class="ml-2 text-sm text-muted-foreground">
+						· {collection.saveCount}
+						{collection.saveCount === 1 ? 'save' : 'saves'}
+					</span>
+				{/if}
+				{#if favouriteCount > 0}
+					<span
+						class="ml-2 inline-flex items-center gap-1 align-middle text-sm text-muted-foreground"
+						title={`${favouriteCount} ${favouriteCount === 1 ? 'favourite' : 'favourites'}`}
+					>
+						<Star class="size-3.5 fill-current" />
+						{favouriteCount}
+					</span>
+				{/if}
+			</div>
 		</div>
 
 		{#if isOwner}

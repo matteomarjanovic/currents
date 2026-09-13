@@ -809,7 +809,10 @@
 
 <!-- overflow-anchor:none disables the browser's native scroll anchoring, which
      misfires on the masonry's transform-based layout; we anchor manually instead. -->
-<div bind:this={scrollEl} class="min-h-0 flex-1 overflow-y-auto p-4 [overflow-anchor:none]">
+<div
+	bind:this={scrollEl}
+	class="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] [overflow-anchor:none] md:pb-4"
+>
 	{#if feed.error && visible.length === 0}
 		<div
 			class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"

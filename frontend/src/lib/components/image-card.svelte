@@ -187,6 +187,8 @@
 							<CollectionSelector
 								{item}
 								variant="popover"
+								saveToggleVariant="outline"
+								saveToggleClass="bg-background aria-pressed:bg-muted aria-pressed:text-foreground"
 								onOpenChange={(o) => (dropdownOpen = o)}
 								onSavesChange={handleSavesChange}
 							/>

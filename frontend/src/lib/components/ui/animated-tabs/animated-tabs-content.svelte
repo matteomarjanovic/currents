@@ -1,0 +1,88 @@
+<!--
+  @component
+  Animated shadcn Tabs content panel.
+
+  Wraps bits-ui Tabs.Content. When animated, uses the child render prop
+  to keep the panel element always in the DOM (never `hidden`). Inactive
+  panels use `display:none` so they collapse. The active panel's children
+  are wrapped in a MotionDiv that replays a fade+slide entrance on each
+  tab switch — the panel container (and any styling on it) stays stable.
+-->
+<script lang="ts">
+	import { cn, type WithoutChildrenOrChild } from '$lib/utils';
+	import {
+		MotionDiv,
+		type MotionAnimate,
+		type MotionInitial,
+		type MotionTransition
+	} from '@humanspeak/svelte-motion';
+	import { Tabs as TabsPrimitive, type TabsContentProps as BitsTabsContentProps } from 'bits-ui';
+	import { getContext } from 'svelte';
+	import { TABS_CTX, type TabsContext } from './animated-tabs.svelte';
+
+	export type TabsContentProps = WithoutChildrenOrChild<BitsTabsContentProps> & {
+		/** Override animation for this panel. Inherits from Root when unset. */
+		animated?: boolean;
+		/** Override the content entrance initial state. Default: `{ opacity: 0, y: 8 }` */
+		initial?: MotionInitial;
+		/** Override the content entrance animate target. Default: `{ opacity: 1, y: 0 }` */
+		animate?: MotionAnimate;
+		/** Override the content entrance transition. Default: `{ duration: 0.3, ease: 'easeOut' }` */
+		transition?: MotionTransition;
+	};
+
+	let {
+		class: className,
+		value,
+		animated,
+		initial,
+		animate,
+		transition,
+		ref = $bindable(null),
+		children,
+		...restProps
+	}: TabsContentProps & { children?: import('svelte').Snippet } = $props();
+
+	const ctx = getContext<TabsContext>(TABS_CTX);
+	const isActive = $derived(ctx.value() === value);
+	const isAnimated = $derived(animated ?? ctx.animated());
+
+	const defaultInitial: MotionInitial = { opacity: 0, y: 8 };
+	const defaultAnimate: MotionAnimate = { opacity: 1, y: 0 };
+	const defaultTransition: MotionTransition = { duration: 0.3, ease: 'easeOut' };
+</script>
+
+{#if isAnimated}
+	<TabsPrimitive.Content bind:ref {value} {...restProps}>
+		{#snippet child({ props: panelProps })}
+			<!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -- hidden must be stripped so the panel stays in the DOM -->
+			{@const { hidden: _hidden, style: panelStyle, ...safeProps } = panelProps}
+			<div
+				{...safeProps}
+				data-slot="tabs-content"
+				class={cn('flex-1 text-sm outline-none', className)}
+				style="{panelStyle ?? ''}{isActive ? '' : ';display:none'}"
+			>
+				{#key ctx.value()}
+					<MotionDiv
+						initial={initial ?? defaultInitial}
+						animate={animate ?? defaultAnimate}
+						transition={transition ?? defaultTransition}
+					>
+						{@render children?.()}
+					</MotionDiv>
+				{/key}
+			</div>
+		{/snippet}
+	</TabsPrimitive.Content>
+{:else}
+	<TabsPrimitive.Content
+		bind:ref
+		{value}
+		data-slot="tabs-content"
+		class={cn('flex-1 text-sm outline-none', className)}
+		{...restProps}
+	>
+		{@render children?.()}
+	</TabsPrimitive.Content>
+{/if}

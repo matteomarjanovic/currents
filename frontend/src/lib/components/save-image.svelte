@@ -26,6 +26,7 @@
 		loading?: 'lazy' | 'eager';
 		variant?: 'grid' | 'detail';
 		sizes?: string;
+		onLoad?: () => void;
 	}
 
 	let {
@@ -37,7 +38,8 @@
 		overlayFit = 'object-contain',
 		loading = 'lazy',
 		variant = 'detail',
-		sizes
+		sizes,
+		onLoad
 	}: Props = $props();
 
 	const widths = $derived(variant === 'grid' ? [320, 480, 640, 960] : [640, 960, 1440, 2048]);
@@ -135,7 +137,10 @@
 				{loading}
 				class={className}
 				{style}
-				onload={drawFirstFrame}
+				onload={() => {
+					drawFirstFrame();
+					onLoad?.();
+				}}
 				ondragstart={handleDragStart}
 			/>
 			<!-- Frozen first frame overlays the animating <img>; hidden on hover to reveal playback. -->
@@ -157,6 +162,7 @@
 			{loading}
 			class={className}
 			{style}
+			onload={onLoad}
 			ondragstart={handleDragStart}
 		/>
 	{/if}

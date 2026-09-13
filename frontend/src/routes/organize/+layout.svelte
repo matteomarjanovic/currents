@@ -10,6 +10,7 @@
 	import { supporter, loadSupporterStatus } from '$lib/stores/supporter.svelte';
 	import { apiFetch } from '$lib/api';
 	import { isNative } from '$lib/platform';
+	import TopBar from '$lib/components/top-bar.svelte';
 
 	let { children } = $props();
 
@@ -40,5 +41,6 @@
 <ModeWatcher />
 {#if allowed}
 	{@render children()}
+	<TopBar user={auth.user} actionsOnly mobileOnly />
 {/if}
 <Toaster />

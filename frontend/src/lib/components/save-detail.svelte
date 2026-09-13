@@ -4,10 +4,12 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { fly } from 'svelte/transition';
+	import { fade, fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { apiFetch } from '$lib/api';
 	import Logo from '$lib/assets/logo.svelte';
+	import ModeTabs from '$lib/components/mode-tabs.svelte';
+	import TopBar from '$lib/components/top-bar.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Drawer from '$lib/components/ui/drawer';
 	import * as Accordion from '$lib/components/ui/accordion';
@@ -57,9 +59,10 @@
 		save: SaveView;
 		onClose?: () => void;
 		scrollRoot?: HTMLElement;
+		active?: boolean;
 	}
 
-	let { save, onClose, scrollRoot }: Props = $props();
+	let { save, onClose, scrollRoot, active = true }: Props = $props();
 	let hydratedSave = $state<SaveView | null>(null);
 	// Guarded on the uri rather than cleared when `save` changes: an effect runs *after*
 	// the DOM has been updated, so clearing it there left one frame in which `save` was
@@ -414,6 +417,7 @@
 	const RELATED_LOAD_AHEAD = 1200;
 	let relatedScrollStarted = $state(false);
 	let relatedPrefetchRequested = $state(false);
+	let showScrolledActions = $state(false);
 
 	const related = useInfiniteScroll(async (cursor) => {
 		const params = new URLSearchParams({
@@ -443,8 +447,10 @@
 		const target = scrollRoot ?? window;
 		const onScroll = () => {
 			relatedScrollStarted = true;
+			showScrolledActions = (scrollRoot?.scrollTop ?? window.scrollY) > 10;
 		};
 		target.addEventListener('scroll', onScroll, { passive: true });
+		showScrolledActions = (scrollRoot?.scrollTop ?? window.scrollY) > 10;
 		return () => {
 			target.removeEventListener('scroll', onScroll);
 		};
@@ -744,6 +750,8 @@
 			item={currentSave}
 			variant="popover"
 			triggerVariant="secondary"
+			saveToggleVariant="outline"
+			saveToggleClass="bg-background aria-pressed:bg-muted aria-pressed:text-foreground"
 			onSavesChange={handleSavesChange}
 		/>
 	{:else if auth.checked}
@@ -855,7 +863,17 @@
 {/snippet}
 
 <div bind:this={desktopHero} class="hidden h-screen md:flex">
-	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-6 pt-20">
+	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-4 pt-20">
+		<Button
+			variant="outline"
+			size="sm"
+			class="w-fit rounded-full"
+			onclick={goBack}
+			aria-label="Go back"
+		>
+			<ArrowLeft class="size-4" />
+			Back
+		</Button>
 		{@render saveControl()}
 		{@render info()}
 		{@render imageCollectionsSection()}
@@ -874,7 +892,7 @@
 		<div
 			bind:this={imagePane}
 			onscroll={onImagePaneScroll}
-			class="flex h-full justify-center p-6 {long
+			class="flex h-full justify-center p-4 {long
 				? 'items-start overflow-y-auto'
 				: 'items-center'} {long && !imagePaneAtEnd ? 'mask-b-from-88% mask-b-to-100%' : ''}"
 		>
@@ -1037,64 +1055,75 @@
 	</span>
 </a>
 
-<!-- Desktop floating controls: back (icon) + home pill, pinned top-left on the
-     grid's left border (md:p-6), at the explore top-bar's vertical offset. -->
-<div class="fixed top-2 left-6 z-50 hidden items-center gap-2 md:flex">
-	<Button
-		variant="glass"
-		size="icon-lg"
-		class="size-11 rounded-full"
-		onclick={goBack}
-		aria-label="Go back"
-	>
-		<ArrowLeft class="size-5" />
-	</Button>
-	<a
-		href={resolve('/')}
-		aria-label="Go to home"
-		class="flex h-11 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-sm backdrop-blur-sm"
-	>
-		<span class="block h-5">
-			<Logo />
-		</span>
-	</a>
-</div>
+<ModeTabs detail={active} />
+
+{#if active && showScrolledActions && !isMobile.current}
+	<div class="pointer-events-none" transition:fade={{ duration: 200, easing: cubicOut }}>
+		<TopBar user={auth.user} actionsOnly />
+	</div>
+{/if}
 
 <!-- Floating actions: revealed once the primary view scrolls out of sight. -->
 {#if scrolledPastTop}
 	<div
-		class="fixed left-2 z-50 md:hidden"
+		class="fixed left-2 z-50 md:left-4"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
 		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 	>
-		<Button variant="glass" size="lg" class="rounded-full" onclick={goBack} aria-label="Go back">
+		<Button
+			variant="glass"
+			size="lg"
+			class="rounded-full md:hidden"
+			onclick={goBack}
+			aria-label="Go back"
+		>
 			<ArrowLeft />
 			Back
 		</Button>
+		<Button
+			variant="glass"
+			size="lg"
+			class="hidden rounded-full border-border shadow-none md:inline-flex"
+			onclick={goBack}
+			aria-label="Go back"
+		>
+			<ArrowLeft class="size-4" />
+			Back
+		</Button>
 	</div>
-	<!-- Aligned with the grid's right border: content padding (p-2 / md:p-6) plus
+	<!-- Aligned with the grid's right border: content padding (p-2 / md:p-4) plus
 	     the scroll container's measured scrollbar width. The `100% - 100vw` term
 	     cancels root-viewport changes when a scroll lock hides the scrollbar. -->
 	<div
 		bind:this={toTopEl}
-		class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:right-[calc(1.5rem+var(--sb)+100%-100vw)]"
+		class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:right-[calc(1rem+var(--sb)+100%-100vw)]"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1rem); --sb: {scrollbarInset}px"
 		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 	>
 		<Button
 			variant="glass"
 			size="icon-lg"
-			class="rounded-full md:size-11"
+			class="rounded-full md:hidden"
 			onclick={scrollToTop}
 			aria-label="Scroll to top"
 		>
-			<ChevronUp class="size-4 md:size-5" />
+			<ChevronUp class="size-4" />
+		</Button>
+		<Button
+			variant="glass"
+			size="lg"
+			class="hidden rounded-full border-border shadow-none md:inline-flex"
+			onclick={scrollToTop}
+			aria-label="Go to top"
+		>
+			<ChevronUp class="size-4" />
+			Go to top
 		</Button>
 	</div>
 {/if}
 
 {#if related.items.length > 0 || related.loading}
-	<section class="flex flex-col gap-4 p-2 md:p-6">
+	<section class="flex flex-col gap-4 p-2 md:p-4">
 		<h2 class="text-lg font-medium">Related</h2>
 		<MasonryGrid items={related.items} loading={related.loading} longPressSave />
 		{#if related.hasMore}

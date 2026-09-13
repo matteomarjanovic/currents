@@ -42,7 +42,7 @@
 			<Button
 				{...props}
 				variant="glass"
-				class="size-14 cursor-pointer gap-2 rounded-full p-0.5 transition-transform duration-100 aria-expanded:scale-95 md:h-auto md:w-auto md:pl-3"
+				class="size-14 cursor-pointer gap-2 rounded-full border-border p-0.5 shadow-none transition-transform duration-100 aria-expanded:scale-95 md:h-auto md:w-auto md:pl-3"
 				aria-label="Adjust personalization"
 				onpointerdowncapture={blockImageNavigation}
 				ontouchstart={preventTouchClickThrough}

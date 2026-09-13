@@ -14,5 +14,5 @@
 	aria-hidden={active ? undefined : 'true'}
 	class="fixed inset-0 z-50 overflow-y-auto app-muted-wash [overflow-anchor:none]"
 >
-	<SaveDetail {save} {scrollRoot} />
+	<SaveDetail {save} {scrollRoot} {active} />
 </div>

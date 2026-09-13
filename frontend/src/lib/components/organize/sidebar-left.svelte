@@ -21,7 +21,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import Logo from '$lib/assets/logo.svelte';
-	import ModeSwitcher from '$lib/components/mode-switcher.svelte';
+	import { trackOrganizeSidebar } from '$lib/mode-tabs.svelte';
 	import CollectionActions from '$lib/components/collection-actions.svelte';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import CollectionPinToggle from './collection-pin-toggle.svelte';
@@ -154,12 +154,20 @@
 
 <Sidebar.Root collapsible="offcanvas" variant="inset" side="left">
 	<Sidebar.Header class="gap-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-1">
-		<div class="px-1 pt-1">
-			<a href="/organize" class="block h-5 w-fit text-foreground" aria-label="Currents">
+		<div
+			use:trackOrganizeSidebar
+			class="hidden h-[46px] w-56 shrink-0 md:block"
+			aria-hidden="true"
+		></div>
+		<div class="flex justify-center py-2 md:hidden">
+			<a href="/organize" class="block h-4 w-fit text-foreground" aria-label="Currents">
 				<Logo />
 			</a>
 		</div>
-		<ModeSwitcher mode="organize" variant="sidebar" />
+		<Button class="w-full" onclick={() => (createCollectionOpen = true)}>
+			<FolderPlus />
+			<span>Create collection</span>
+		</Button>
 		<div class="flex items-center gap-2">
 			<div class="relative flex-1">
 				<ListFilter
@@ -168,7 +176,7 @@
 				<Input
 					bind:value={query}
 					placeholder="Filter collections…"
-					class="h-9 bg-background pl-8"
+					class="h-9 border-border bg-background pl-8"
 					autocorrect="off"
 					autocapitalize="off"
 					spellcheck={false}
@@ -203,21 +211,10 @@
 	</Sidebar.Header>
 
 	<Sidebar.Content>
-		<Sidebar.Group class="sticky top-0 z-10 bg-sidebar pb-0">
-			<Sidebar.Menu>
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton onclick={() => (createCollectionOpen = true)} class="h-8">
-						<FolderPlus />
-						<span>Create collection</span>
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-			</Sidebar.Menu>
-		</Sidebar.Group>
-
 		<Collapsible.Root bind:open={libraryOpen} class="group/section">
-			<Sidebar.Group>
+			<Sidebar.Group class="pt-0">
 				<Sidebar.GroupLabel
-					class="sticky top-10 z-10 cursor-pointer rounded-none bg-sidebar hover:text-foreground"
+					class="sticky top-0 z-10 cursor-pointer rounded-none bg-sidebar hover:text-foreground"
 				>
 					{#snippet child({ props })}
 						<Collapsible.Trigger {...props}>
@@ -260,7 +257,7 @@
 														<Folder
 															class={node.root.viewer?.pinned
 																? 'opacity-0'
-																: 'transition-opacity group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0'}
+																: 'group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0'}
 														/>
 														<span class="min-w-0 flex-1 truncate">{node.root.name}</span>
 													</a>

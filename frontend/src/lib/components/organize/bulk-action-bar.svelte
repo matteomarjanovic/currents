@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { slide } from 'svelte/transition';
+	import { slide, fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { apiFetch } from '$lib/api';
@@ -8,6 +8,7 @@
 	import { distinctBlobCids, saveRkeys } from '$lib/organize-bulk';
 	import { downloadImage } from '$lib/save-actions';
 	import { useSidebar } from '$lib/components/ui/sidebar';
+	import { mobileBottomBarState } from '$lib/mode-tabs.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Drawer from '$lib/components/ui/drawer';
@@ -54,6 +55,13 @@
 	} = $props();
 
 	const sidebar = useSidebar();
+
+	$effect(() => {
+		mobileBottomBarState.hidden = sidebar.isMobile;
+		return () => {
+			mobileBottomBarState.hidden = false;
+		};
+	});
 
 	// Add-only self-label vocab (mirrors the server's allowed set).
 	const SELF_LABEL_OPTIONS = [
@@ -232,6 +240,7 @@
 	<!-- Mobile: a floating pill instead of a bar, so the grid keeps its height. The
 	     count rides on the pill and everything else lives in the drawer below. -->
 	<div
+		transition:fly|global={{ y: 16, duration: 180, easing: cubicOut }}
 		class="fixed left-1/2 z-40 -translate-x-1/2"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1.25rem)"
 	>
@@ -250,7 +259,7 @@
 	<div
 		transition:slide|global={{ duration: 200, easing: cubicOut }}
 		data-bulk-action-bar
-		class="mt-2 shrink-0 rounded-2xl bg-popover/95 shadow-sm backdrop-blur-sm"
+		class="mt-2 shrink-0 rounded-2xl bg-popover/95 backdrop-blur-sm"
 	>
 		<div class="mx-auto flex max-w-5xl flex-nowrap items-center gap-2 overflow-hidden p-3">
 			<div class="flex shrink-0 items-center gap-3 text-sm whitespace-nowrap">

@@ -13,7 +13,7 @@
 	import { emitSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { RATE_LIMIT_MESSAGE } from '$lib/rate-limit';
 	import { Button, type ButtonVariant } from '$lib/components/ui/button';
-	import { Toggle } from '$lib/components/ui/toggle';
+	import { Toggle, type ToggleVariant } from '$lib/components/ui/toggle';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Drawer from '$lib/components/ui/drawer';
 	import Check from '@lucide/svelte/icons/check';
@@ -50,6 +50,10 @@
 		// (good over imagery, e.g. card tiles); pass a solid variant on plain
 		// backgrounds where glass would blend in (e.g. the save-detail sidebar).
 		triggerVariant?: ButtonVariant;
+		// The adjacent quick-save toggle can be styled independently by dense hosts
+		// such as masonry-card overlays.
+		saveToggleVariant?: ToggleVariant;
+		saveToggleClass?: string;
 		// Custom trigger, replacing the default button (+ Save toggle). Receives the
 		// popover/drawer trigger props to spread onto a focusable element.
 		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
@@ -68,6 +72,8 @@
 		item,
 		variant = 'popover',
 		triggerVariant = 'glass',
+		saveToggleVariant = 'default',
+		saveToggleClass,
 		trigger,
 		onOpenChange,
 		open = $bindable(false),
@@ -520,11 +526,13 @@
 
 		{#if !pickerMode && !trigger}
 			<Toggle
+				variant={saveToggleVariant}
 				size="default"
 				disabled={recommendationPending}
 				pressed={!!isSavedInSelected()}
 				onPressedChange={handleButtonClick}
-				class="border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
+				class={saveToggleClass ??
+					'border border-transparent bg-primary text-primary-foreground hover:bg-primary/80 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80'}
 			>
 				{isSavedInSelected() ? 'Saved' : 'Save'}
 			</Toggle>

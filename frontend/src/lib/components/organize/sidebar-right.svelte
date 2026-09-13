@@ -5,6 +5,7 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Badge, badgeVariants } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { cn } from '$lib/utils.js';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
@@ -83,6 +84,12 @@
 
 	let image = $derived(getImageContent(save));
 	let palette = $derived(image?.palette ?? (image?.dominantColor ? [image.dominantColor] : []));
+	let loadedImageUrl = $state('');
+	let imageLoading = $derived(!!image && loadedImageUrl !== image.imageUrl);
+
+	function markImageLoaded() {
+		loadedImageUrl = image?.imageUrl ?? '';
+	}
 
 	let sourceLink = $derived.by(() => {
 		const u = save.originUrl;
@@ -246,7 +253,9 @@
 					<LabeledMedia labels={save.labels} class="flex justify-center">
 						<button
 							type="button"
-							class="flex max-w-full cursor-zoom-in justify-center {native ? 'touch-pan-y' : ''}"
+							class="flex w-full max-w-full cursor-zoom-in flex-col items-center {native
+								? 'touch-pan-y'
+								: ''}"
 							onclick={() => onOpenFullScreen(save)}
 							onpointerdown={onImagePointerDown}
 							onpointermove={onImagePointerMove}
@@ -254,12 +263,19 @@
 							onpointercancel={onImagePointerEnd}
 							aria-label="View image full screen"
 						>
+							{#if imageLoading}
+								<Skeleton aria-hidden="true" class="h-80 w-full" />
+							{/if}
 							<SaveImage
 								{image}
 								alt={image.alt ?? save.text ?? ''}
 								sizes="22rem"
-								class="max-h-[45vh] w-auto max-w-full object-contain"
+								loading="eager"
+								class="max-h-[45vh] w-auto max-w-full object-contain {imageLoading
+									? 'opacity-0'
+									: ''}"
 								style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+								onLoad={markImageLoaded}
 							/>
 						</button>
 					</LabeledMedia>

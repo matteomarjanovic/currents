@@ -14,7 +14,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { setMode, resetMode, userPrefersMode } from 'mode-watcher';
-	import { fade } from 'svelte/transition';
+	import { fade, fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import UserIcon from '@lucide/svelte/icons/user';
@@ -63,17 +63,25 @@
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { detectBrowser } from '$lib/browser';
 	import type { CollectionView } from '$lib/types';
+	import { mobileBottomBarState } from '$lib/mode-tabs.svelte';
 
 	let {
 		user,
-		landing = false
+		landing = false,
+		actionsOnly = false,
+		mobileOnly = false
 	}: {
 		user: { did: string; handle: string; displayName?: string; avatar?: string } | null;
 		landing?: boolean;
+		actionsOnly?: boolean;
+		mobileOnly?: boolean;
 	} = $props();
 
 	// Android and web need the raised mobile bar; iOS keeps extra room for its native layout.
 	const raisedMobileBar = isAndroid() || !isNative();
+	let routeMode = $derived<'organize' | 'explore'>(
+		page.url.pathname.startsWith('/organize') ? 'organize' : 'explore'
+	);
 
 	const SEARCH_TYPES = [
 		{ value: 'saves', label: 'Images' },
@@ -123,7 +131,8 @@
 			const offset = (flowRect.width + gap) / 2;
 			flowCenterOffset = offset;
 			// Measure the default bar-centered position even after the pair has shifted.
-			centerMobileControls = flowRect.right + (centerMobileControls ? offset : 0) > window.innerWidth;
+			centerMobileControls =
+				flowRect.right + (centerMobileControls ? offset : 0) > window.innerWidth;
 		};
 
 		const observer = new ResizeObserver(updateMobileControls);
@@ -179,8 +188,7 @@
 		return param ? { text: param, color: '' } : null;
 	});
 
-	// Every page except the explore home gets a floating back button next to the
-	// logo (save-detail has its own and doesn't render the top bar).
+	// Mobile keeps a floating back button on every page except the explore home.
 	let showBack = $derived(
 		!landing && page.url.pathname !== '/' && !page.url.pathname.startsWith('/explore')
 	);
@@ -315,7 +323,7 @@
 
 	// Shared shell for the floating button clusters (add display per instance).
 	const glassGroup =
-		'pointer-events-auto shrink-0 items-center gap-0.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding p-1 shadow-sm backdrop-blur-sm';
+		'pointer-events-auto shrink-0 items-center gap-0.5 rounded-full border bg-primary-foreground/80 bg-clip-padding p-1 backdrop-blur-sm';
 </script>
 
 {#snippet searchBar(autofocus: boolean, compact: boolean)}
@@ -598,104 +606,216 @@
 	</div>
 {/snippet}
 
-<header
-	class="{landing
-		? 'fixed'
-		: 'sticky'} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
->
-	{#if !searchOpen}
-		{#if landing}
-			<a
-				in:fade={{ duration: 250, easing: cubicOut }}
-				href={resolve('/')}
-				class="pointer-events-auto h-5 shrink-0 text-lg font-semibold text-foreground"><Logo /></a
-			>
-		{:else}
-			<div
-				in:fade={{ duration: 250, easing: cubicOut }}
-				class="pointer-events-auto hidden shrink-0 items-center gap-2 md:flex"
-			>
-				{#if showBack}
+{#snippet desktopActions()}
+	<div
+		in:fade={{ duration: 250, easing: cubicOut }}
+		class="{glassGroup} hidden border-border md:flex"
+	>
+		{@render searchButton('ghost', '', true)}
+		{@render plusMenu('plus-desktop', 'bottom', 'end')}
+		<DropdownMenu.Root
+			bind:open={() => openMenu === 'burger-desktop', (v) => toggleMenu('burger-desktop', v)}
+		>
+			<DropdownMenu.Trigger class="shrink-0 outline-none">
+				{#snippet child({ props })}
 					<Button
-						variant="glass"
-						size="icon-lg"
-						class="size-11 rounded-full"
-						onclick={goBack}
-						aria-label="Go back"
+						{...props}
+						variant="ghost"
+						size="icon"
+						class="relative rounded-full"
+						type="button"
+						aria-label="Menu"
 					>
-						<ArrowLeft class="size-5" />
+						{@render burgerIcon(openMenu === 'burger-desktop')}
+						{#if burgerDot}
+							<span
+								class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+								aria-label="New feature available"
+							></span>
+						{/if}
 					</Button>
-				{/if}
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end" class="w-56">
+				{@render burgerItems()}
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+		{@render avatarMenu('avatar-desktop', 'bottom', 'end')}
+	</div>
+{/snippet}
+
+{#if actionsOnly && !mobileOnly}
+	<header
+		class="pointer-events-none fixed top-0 z-50 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3"
+	>
+		<div class="flex-1"></div>
+		{#if user}{@render desktopActions()}{/if}
+	</header>
+{:else if !actionsOnly}
+	<header
+		class="{landing
+			? 'fixed'
+			: 'sticky'} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
+	>
+		{#if !searchOpen}
+			{#if landing}
 				<a
+					in:fade={{ duration: 250, easing: cubicOut }}
+					href={resolve('/')}
+					class="pointer-events-auto h-5 shrink-0 text-lg font-semibold text-foreground"><Logo /></a
+				>
+			{:else}
+				<div
+					in:fade={{ duration: 250, easing: cubicOut }}
+					class="pointer-events-auto hidden shrink-0 items-center gap-2 md:flex"
+				>
+					<div class="h-[46px] {user ? 'w-56' : 'w-[46px]'} shrink-0" aria-hidden="true"></div>
+				</div>
+				<!-- Mobile: the logo floats centered on its own (same box and position as the
+			     save-detail home button, so it doesn't jump between views); the buttons
+			     live in the bottom cluster instead. -->
+				<a
+					in:fade={{ duration: 250, easing: cubicOut }}
 					href={resolve('/')}
 					aria-label="Go to home"
-					class="flex h-11 shrink-0 items-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 text-foreground shadow-sm backdrop-blur-sm"
+					class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
+					style="top: calc(env(safe-area-inset-top) + 2rem)"
 				>
 					<span class="block h-5"><Logo /></span>
 				</a>
-				{#if user}
-					<ModeSwitcher
-						mode="explore"
-						bind:open={() => openMenu === 'mode-desktop', (v) => toggleMenu('mode-desktop', v)}
-					/>
-				{/if}
-			</div>
-			<!-- Mobile: the logo floats centered on its own (same box and position as the
-			     save-detail home button, so it doesn't jump between views); the buttons
-			     live in the bottom cluster instead. -->
-			<a
-				in:fade={{ duration: 250, easing: cubicOut }}
-				href={resolve('/')}
-				aria-label="Go to home"
-				class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
-				style="top: calc(env(safe-area-inset-top) + 2rem)"
-			>
-				<span class="block h-5"><Logo /></span>
-			</a>
-			{#if showBack}
-				<!-- The positioning translate lives on a wrapper: on the button itself the
+				{#if showBack}
+					<!-- The positioning translate lives on a wrapper: on the button itself the
 				     pressed-state translate-y-px would override it and jump the button down. -->
-				<div
-					class="pointer-events-auto fixed left-2 -translate-y-1/2 md:hidden"
-					style="top: calc(env(safe-area-inset-top) + 2rem)"
-				>
-					<Button
-						variant="glass"
-						size="icon-lg"
-						class="size-11 rounded-full"
-						onclick={goBack}
-						aria-label="Go back"
+					<div
+						class="pointer-events-auto fixed left-2 -translate-y-1/2 md:hidden"
+						style="top: calc(env(safe-area-inset-top) + 2rem)"
 					>
-						<ArrowLeft class="size-5" />
-					</Button>
+						<Button
+							variant="glass"
+							size="icon-lg"
+							class="size-11 rounded-full"
+							onclick={goBack}
+							aria-label="Go back"
+						>
+							<ArrowLeft class="size-5" />
+						</Button>
+					</div>
+				{/if}
+			{/if}
+		{/if}
+
+		{#if landing}
+			<!-- The landing hero keeps the prominent search bar; everywhere else search
+		     lives behind an icon button that opens the search command. -->
+			<div
+				class="pointer-events-auto absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center justify-center md:flex md:max-w-sm lg:max-w-md"
+			>
+				<form {onsubmit} class="w-full md:max-w-xs lg:max-w-sm">
+					{@render searchBar(false, false)}
+				</form>
+			</div>
+		{/if}
+
+		{#if !searchOpen}
+			<div class="flex-1"></div>
+
+			{#if user}
+				<!-- Desktop top-right cluster: search, add, burger, profile. On mobile these
+			     live in the bottom cluster instead. -->
+				{@render desktopActions()}
+			{:else if landing}
+				<!-- The hero already has a search bar on desktop; on mobile the icon expands
+			     it inline rather than opening the command dialog. -->
+				<Button
+					variant="ghost"
+					size="icon"
+					class="pointer-events-auto shrink-0 rounded-full md:hidden"
+					type="button"
+					aria-label="Search"
+					onclick={() => (searchOpen = true)}
+				>
+					<SearchIcon class="size-4" />
+				</Button>
+				{@render loginButton('lg')}
+			{:else}
+				<!-- Desktop top-right cluster for logged-out viewers. On mobile these live in
+			     the bottom cluster instead, mirroring the logged-in bar. -->
+				<div class="hidden shrink-0 items-center gap-2 md:flex">
+					{@render searchButton('glass', 'pointer-events-auto shrink-0', true)}
+					<ThemeToggle
+						class="pointer-events-auto h-9 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground"
+					/>
+					{@render loginButton('lg')}
 				</div>
 			{/if}
 		{/if}
-	{/if}
 
-	{#if landing}
-		<!-- The landing hero keeps the prominent search bar; everywhere else search
-		     lives behind an icon button that opens the search command. -->
-		<div
-			class="pointer-events-auto absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center justify-center md:flex md:max-w-sm lg:max-w-md"
+		{#if searchOpen}
+			<!-- Flow content (not absolute) so the header grows to fit the input and inherits the
+		     header's safe-area top padding + bottom padding, instead of overflowing its box. -->
+			<div
+				transition:fade={{ duration: 250, easing: cubicOut }}
+				class="pointer-events-auto flex flex-1 items-center gap-2 md:hidden"
+			>
+				<form {onsubmit} class="flex-1">
+					{@render searchBar(true, true)}
+				</form>
+				<Button
+					variant="glass"
+					size="icon"
+					class="shrink-0 rounded-full"
+					onclick={() => (searchOpen = false)}
+				>
+					<X class="size-4" />
+				</Button>
+			</div>
+		{/if}
+	</header>
+{/if}
+
+<!-- Mobile bottom-center cluster. Logged in: profile, menu, add, mode switch, search;
+     logged out: log in, theme, search. Scale the compact controls up slightly so
+     the bar and its icons are easier to hit without changing its composition. -->
+{#if !landing && !mobileBottomBarState.hidden}
+	{#if activeSearch}
+		<!-- The bottom cluster has no room beside the lens, so the active query rides
+		     just above it (44px cluster + 0.5rem gap over the cluster's own offset). -->
+		<button
+			type="button"
+			onclick={() => (searchCommandOpen = true)}
+			class="fixed left-1/2 z-10 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-baseline gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3 py-1.5 text-sm text-foreground shadow-sm backdrop-blur-sm md:hidden"
+			style="bottom: calc(env(safe-area-inset-bottom) + 4.25rem)"
 		>
-			<form {onsubmit} class="w-full md:max-w-xs lg:max-w-sm">
-				{@render searchBar(false, false)}
-			</form>
-		</div>
+			{@render searchQuery()}
+		</button>
 	{/if}
-
-	{#if !searchOpen}
-		<div class="flex-1"></div>
-
-		{#if user}
-			<!-- Desktop top-right cluster: search, add, burger, profile. On mobile these
-			     live in the bottom cluster instead. -->
-			<div in:fade={{ duration: 250, easing: cubicOut }} class="{glassGroup} hidden md:flex">
-				{@render searchButton('ghost', '', true)}
-				{@render plusMenu('plus-desktop', 'bottom', 'end')}
+	<div
+		transition:fly={{ y: 16, duration: 180, easing: cubicOut }}
+		class="fixed z-10 -translate-x-1/2 md:hidden"
+		style="left: {centerMobileControls
+			? `calc(50% - ${flowCenterOffset}px)`
+			: '50%'}; bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
+	>
+		<div
+			bind:this={bottomBarEl}
+			class="{glassGroup} flex border-border p-1.5 {user
+				? '[&_[data-slot=avatar]]:size-10 [&_button]:size-11 [&_svg]:size-[1.375rem]'
+				: ''}"
+		>
+			{#if !user}
+				{@render loginButton('default')}
+				<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
+			     bg-input/50 would read as a pressed state inside the glass pill. The
+			     asymmetric padding is optical, not arithmetic: the chevron already
+			     carries trailing space of its own, while the solid Log in pill needs
+			     room to breathe — that lands both gaps at ~18px of visible space. -->
+				<ThemeToggle
+					class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
+				/>
+			{:else}
+				{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
 				<DropdownMenu.Root
-					bind:open={() => openMenu === 'burger-desktop', (v) => toggleMenu('burger-desktop', v)}
+					bind:open={() => openMenu === 'burger-mobile', (v) => toggleMenu('burger-mobile', v)}
 				>
 					<DropdownMenu.Trigger class="shrink-0 outline-none">
 						{#snippet child({ props })}
@@ -707,7 +827,7 @@
 								type="button"
 								aria-label="Menu"
 							>
-								{@render burgerIcon(openMenu === 'burger-desktop')}
+								{@render burgerIcon(openMenu === 'burger-mobile', true)}
 								{#if burgerDot}
 									<span
 										class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
@@ -717,141 +837,25 @@
 							</Button>
 						{/snippet}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-56">
+					<DropdownMenu.Content
+						side="top"
+						align="center"
+						customAnchor={bottomBarEl ?? null}
+						class="w-56"
+					>
 						{@render burgerItems()}
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
-				{@render avatarMenu('avatar-desktop', 'bottom', 'end')}
-			</div>
-		{:else if landing}
-			<!-- The hero already has a search bar on desktop; on mobile the icon expands
-			     it inline rather than opening the command dialog. -->
-			<Button
-				variant="ghost"
-				size="icon"
-				class="pointer-events-auto shrink-0 rounded-full md:hidden"
-				type="button"
-				aria-label="Search"
-				onclick={() => (searchOpen = true)}
-			>
-				<SearchIcon class="size-4" />
-			</Button>
-			{@render loginButton('lg')}
-		{:else}
-			<!-- Desktop top-right cluster for logged-out viewers. On mobile these live in
-			     the bottom cluster instead, mirroring the logged-in bar. -->
-			<div class="hidden shrink-0 items-center gap-2 md:flex">
-				{@render searchButton('glass', 'pointer-events-auto shrink-0', true)}
-				<ThemeToggle
-					class="pointer-events-auto h-9 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground"
-				/>
-				{@render loginButton('lg')}
-			</div>
-		{/if}
-	{/if}
-
-	{#if searchOpen}
-		<!-- Flow content (not absolute) so the header grows to fit the input and inherits the
-		     header's safe-area top padding + bottom padding, instead of overflowing its box. -->
-		<div
-			transition:fade={{ duration: 250, easing: cubicOut }}
-			class="pointer-events-auto flex flex-1 items-center gap-2 md:hidden"
-		>
-			<form {onsubmit} class="flex-1">
-				{@render searchBar(true, true)}
-			</form>
-			<Button
-				variant="glass"
-				size="icon"
-				class="shrink-0 rounded-full"
-				onclick={() => (searchOpen = false)}
-			>
-				<X class="size-4" />
-			</Button>
-		</div>
-	{/if}
-</header>
-
-<!-- Mobile bottom-center cluster. Logged in: profile, menu, add, mode switch, search;
-     logged out: log in, theme, search. Scale the compact controls up slightly so
-     the bar and its icons are easier to hit without changing its composition. -->
-{#if !landing}
-	{#if activeSearch}
-		<!-- The bottom cluster has no room beside the lens, so the active query rides
-		     just above it. -->
-		<button
-			type="button"
-			onclick={() => (searchCommandOpen = true)}
-			class="fixed left-1/2 z-10 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-baseline gap-1.5 rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-3 py-1.5 text-sm text-foreground shadow-sm backdrop-blur-sm md:hidden"
-			style="bottom: calc(env(safe-area-inset-bottom) + 4.25rem)"
-		>
-			{@render searchQuery()}
-		</button>
-	{/if}
-	<div
-		class="fixed z-10 -translate-x-1/2 md:hidden"
-		style="left: {centerMobileControls ? `calc(50% - ${flowCenterOffset}px)` : '50%'}; bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
-	>
-		<div
-			bind:this={bottomBarEl}
-			class="{glassGroup} flex p-1.5 {user
-				? '[&_button]:size-11 [&_svg]:size-[1.375rem] [&_[data-slot=avatar]]:size-10'
-				: ''}"
-		>
-			{#if !user}
-				{@render loginButton('default')}
-			<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
-			     bg-input/50 would read as a pressed state inside the glass pill. The
-			     asymmetric padding is optical, not arithmetic: the chevron already
-			     carries trailing space of its own, while the solid Log in pill needs
-			     room to breathe — that lands both gaps at ~18px of visible space. -->
-			<ThemeToggle
-				class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
-			/>
-			{:else}
-				{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
-			<DropdownMenu.Root
-				bind:open={() => openMenu === 'burger-mobile', (v) => toggleMenu('burger-mobile', v)}
-			>
-				<DropdownMenu.Trigger class="shrink-0 outline-none">
-					{#snippet child({ props })}
-						<Button
-							{...props}
-							variant="ghost"
-							size="icon"
-							class="relative rounded-full"
-							type="button"
-							aria-label="Menu"
-						>
-							{@render burgerIcon(openMenu === 'burger-mobile', true)}
-							{#if burgerDot}
-								<span
-									class="absolute top-0 right-0 inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
-									aria-label="New feature available"
-								></span>
-							{/if}
-						</Button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content
-					side="top"
-					align="center"
-					customAnchor={bottomBarEl ?? null}
-					class="w-56"
-				>
-					{@render burgerItems()}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-			{@render plusMenu('plus-mobile', 'top', 'center', bottomBarEl)}
-			{#if user}
-				<ModeSwitcher
-					mode="explore"
-					variant="icon"
-					side="top"
-					anchor={bottomBarEl}
-					bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
-				/>
-			{/if}
+				{@render plusMenu('plus-mobile', 'top', 'center', bottomBarEl)}
+				{#if user}
+					<ModeSwitcher
+						mode={routeMode}
+						variant="icon"
+						side="top"
+						anchor={bottomBarEl}
+						bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
+					/>
+				{/if}
 			{/if}
 			{@render searchButton('ghost', '', false)}
 		</div>
@@ -870,6 +874,7 @@
 <!-- ⌘K / Ctrl+K opens the search command from anywhere. -->
 <svelte:window
 	onkeydown={(e) => {
+		if (actionsOnly) return;
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 			e.preventDefault();
 			searchCommandOpen = true;
