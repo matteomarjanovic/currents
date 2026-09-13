@@ -23,7 +23,7 @@ proposing new work; delete an entry when it ships.
 
 ## Engineering
 
-- **Move the appview stack to a Scaleway Virtual Instance.** Motivation: the
+- **Scaleway migration (completed 2026-09-13).** Motivation: the
   2026-08-04 incident — the mac mini's ISP had a degraded route to
   `relay1.us-west` and TAP fell hours behind (mitigated by pinning
   `relay1.us-east`); a datacenter VM is immune to residential peering
@@ -38,7 +38,10 @@ proposing new work; delete an entry when it ships.
   hostnames but is not in the production traffic path. The web and OAuth
   client live at `currents.is`, the appview DID/native API remains
   `api.currents.is`, and Bunny serves immutable images from `cdn.currents.is`.
-  The mac mini leaves the production topology after the rollback window.
+  The migration is live: the root frontend/OAuth client runs on the main VM,
+  production DNS is direct to the Flexible IPv4, and the release pipeline
+  deploys changed frontend images. The mac mini leaves the production topology
+  after the rollback window.
 
 - **Collapse the per-field save-edit endpoints into one.** Editing a save's
   metadata is currently spread over four handlers — `PUT /save/{id}/alt`,

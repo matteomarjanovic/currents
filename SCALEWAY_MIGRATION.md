@@ -1,10 +1,9 @@
 # Migrating Currents to Scaleway
 
-> **Current decision (2026-08-28):** Cutover B is deferred. The web frontend
-> stays on Netlify until its free tier is exhausted; `currents.is` therefore
-> remains the Netlify SSR deployment. Scaleway continues to host the appview,
-> database, TAP, clustering, and inference services. Do not resume the root
-> frontend/OAuth cutover without a new explicit decision.
+> **Current status (2026-09-13):** Both production cutovers are complete.
+> `currents.is` serves the SvelteKit SSR frontend from the Scaleway main VM;
+> it is the root-domain OAuth client, while `api.currents.is` remains the
+> stable AppView identity and native/extension API endpoint.
 
 Moves the public Currents stack off Netlify and the mac mini onto Scaleway,
 while keeping inference isolated on a small CPU instance that can be resized
@@ -129,13 +128,14 @@ The 4 GB ARM64 inference VM is deployed and healthy on its Private Network
 address. Cross-device embedding compatibility, a live protected Caddy/SSR
 rehearsal, versioned model sync, nightly backup plus full restore, sealed
 production configuration, candidate ARM64 builds, and Cutover A have passed.
-The API, database, TAP, and inference now run on Scaleway while the root web
-app remains on Netlify for the production soak. Bunny now serves immutable
-images through `cdn.currents.is`, with European Origin Shield and dynamic image
-optimization enabled. Responsive variants and resized dynamic OG images are
-live in the Netlify SSR deployment. Cutover B and the final mac mini
-rollback-window exit remain acceptance gates. The point-in-time operational
-handoff for resuming Cutover B is `SCALEWAY_CUTOVER_B_HANDOFF.md`.
+The API, database, TAP, inference, and root web frontend now run on Scaleway.
+Bunny serves immutable images through `cdn.currents.is`, with European Origin
+Shield and dynamic image optimization enabled. Cutover B completed on
+2026-09-13: `currents.is` is a DNS-only `A` record for `51.159.84.247`, Caddy
+holds its Let's Encrypt certificate, root-domain OAuth and same-origin API
+routing work, and a user completed the new PDS consent/login. The main release
+pipeline now publishes and deploys the frontend alongside changed services.
+Only the final mac mini rollback-window exit remains an acceptance gate.
 
 ### 0.1 Split the web and Capacitor builds
 
@@ -752,13 +752,12 @@ volume untouched for at least two weeks.
 
 ## 5. Cutover B: SvelteKit SSR and root-domain OAuth
 
-Status: **deferred on 2026-08-28**. Keep the validated configuration and this
-runbook for the eventual Netlify exit, but do not execute this section yet.
+Status: **completed on 2026-09-13**. Keep this runbook for its verification and
+rollback steps; the Netlify root deployment is no longer live.
 
-Only begin after Cutover A has soaked successfully.
+Cutover A soaked successfully before the final switch.
 
-For the exact 2026-08-17 production checkpoint and a copy-paste prompt for a
-fresh agent session, read `SCALEWAY_CUTOVER_B_HANDOFF.md` before acting.
+`SCALEWAY_CUTOVER_B_HANDOFF.md` remains the historical pre-cutover checkpoint.
 
 The low-risk application rehearsal completed on 2026-08-17: Netlify now serves
 the SSR build before the root DNS move. The adapter is selected
@@ -805,6 +804,18 @@ docker compose --env-file .env.production -f docker-compose.scaleway.yml \
 
 A brief login interruption is preferable to running both OAuth client
 identities concurrently. Existing users will need to approve the new client.
+
+Completed Cutover B evidence:
+
+- `currents.is` resolves directly to `51.159.84.247` with no root AAAA record;
+  Caddy obtained a Let's Encrypt certificate and serves the Node SSR frontend.
+- Root-domain OAuth metadata and JWKS return `200`; `api.currents.is/oauth/login`
+  responds with its method-preserving redirect to `currents.is`.
+- Same-origin `/api` and `/xrpc` requests, `did:web:api.currents.is`, internal
+  SSR-to-appview requests, and public profile metadata passed. A user completed
+  a fresh PDS consent/login identifying `Currents` / `currents.is`.
+- The managed ARM64 frontend image first shipped through the normal main
+  release pipeline at `0ad338003c02d48b9938364612b6bd1868050026`.
 
 Completed on 2026-08-17 after SSR became stable:
 
