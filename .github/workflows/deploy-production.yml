@@ -25,6 +25,11 @@ on:
         required: true
         default: true
         type: boolean
+      deploy_frontend:
+        description: Deploy the frontend on the main VM
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -48,6 +53,7 @@ jobs:
       deploy_inference: ${{ steps.services.outputs.inference }}
       deploy_appview: ${{ steps.services.outputs.appview }}
       deploy_clustering: ${{ steps.services.outputs.clustering }}
+      deploy_frontend: ${{ steps.services.outputs.frontend }}
       has_services: ${{ steps.services.outputs.has_services }}
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha || inputs.release_sha || github.sha }}
@@ -65,7 +71,7 @@ jobs:
             test "${#RELEASE_SHA}" -eq 40
             git fetch --no-tags origin main
             git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-            if [ "${{ inputs.deploy_inference }}" = true ] || [ "${{ inputs.deploy_appview }}" = true ] || [ "${{ inputs.deploy_clustering }}" = true ]; then
+            if [ "${{ inputs.deploy_inference }}" = true ] || [ "${{ inputs.deploy_appview }}" = true ] || [ "${{ inputs.deploy_clustering }}" = true ] || [ "${{ inputs.deploy_frontend }}" = true ]; then
               has_services=true
             else
               has_services=false
@@ -75,6 +81,7 @@ jobs:
               printf 'inference=%s\n' "${{ inputs.deploy_inference }}"
               printf 'appview=%s\n' "${{ inputs.deploy_appview }}"
               printf 'clustering=%s\n' "${{ inputs.deploy_clustering }}"
+              printf 'frontend=%s\n' "${{ inputs.deploy_frontend }}"
               printf 'has_services=%s\n' "$has_services"
             } >> "$GITHUB_OUTPUT"
           else
@@ -99,6 +106,7 @@ jobs:
       DEPLOY_INFERENCE: ${{ needs.changes.outputs.deploy_inference }}
       DEPLOY_APPVIEW: ${{ needs.changes.outputs.deploy_appview }}
       DEPLOY_CLUSTERING: ${{ needs.changes.outputs.deploy_clustering }}
+      DEPLOY_FRONTEND: ${{ needs.changes.outputs.deploy_frontend }}
     steps:
       - name: Validate request and environment
         run: |
@@ -106,12 +114,12 @@ jobs:
             *[!0-9a-f]*|'') echo "release_sha must be a full lowercase commit SHA" >&2; exit 2 ;;
           esac
           test "${#RELEASE_SHA}" -eq 40
-          if [ "$DEPLOY_INFERENCE" != true ] && [ "$DEPLOY_APPVIEW" != true ] && [ "$DEPLOY_CLUSTERING" != true ]; then
+          if [ "$DEPLOY_INFERENCE" != true ] && [ "$DEPLOY_APPVIEW" != true ] && [ "$DEPLOY_CLUSTERING" != true ] && [ "$DEPLOY_FRONTEND" != true ]; then
             echo "select at least one service" >&2
             exit 2
           fi
           if [ "$DEPLOY_INFERENCE" = true ]; then test -n "$INFERENCE_DEPLOY_HOST"; fi
-          if [ "$DEPLOY_APPVIEW" = true ] || [ "$DEPLOY_CLUSTERING" = true ]; then test -n "$MAIN_DEPLOY_HOST"; fi
+          if [ "$DEPLOY_APPVIEW" = true ] || [ "$DEPLOY_CLUSTERING" = true ] || [ "$DEPLOY_FRONTEND" = true ]; then test -n "$MAIN_DEPLOY_HOST"; fi
           test -n "$DEPLOY_SSH_KEY"
           test -n "$DEPLOY_KNOWN_HOSTS"
           test -n "$REGISTRY_PULL_SECRET_KEY"
@@ -135,12 +143,15 @@ jobs:
             currents-deploy@"$INFERENCE_DEPLOY_HOST" \
             "deploy $RELEASE_SHA"
       - name: Deploy main VM services
-        if: env.DEPLOY_APPVIEW == 'true' || env.DEPLOY_CLUSTERING == 'true'
+        if: env.DEPLOY_APPVIEW == 'true' || env.DEPLOY_CLUSTERING == 'true' || env.DEPLOY_FRONTEND == 'true'
         run: |
           services=""
           if [ "$DEPLOY_APPVIEW" = true ]; then services="appview"; fi
           if [ "$DEPLOY_CLUSTERING" = true ]; then
             if [ -n "$services" ]; then services="$services,clustering"; else services="clustering"; fi
+          fi
+          if [ "$DEPLOY_FRONTEND" = true ]; then
+            if [ -n "$services" ]; then services="$services,frontend"; else services="frontend"; fi
           fi
           printf '%s\n' "$REGISTRY_PULL_SECRET_KEY" | ssh -i "$HOME/.ssh/currents-deploy" \
             -o BatchMode=yes \

@@ -24,8 +24,8 @@ case "$release_sha" in
 esac
 [ "${#release_sha}" -eq 40 ] || fail 'release SHA must contain 40 characters'
 case "$services" in
-	appview|clustering|appview,clustering) ;;
-	*) fail 'services must be appview, clustering, or appview,clustering' ;;
+	appview|clustering|frontend|appview,clustering|appview,frontend|clustering,frontend|appview,clustering,frontend) ;;
+	*) fail 'services must be a valid appview, clustering, and/or frontend combination' ;;
 esac
 
 [ "$(id -u)" -eq 0 ] || fail 'must run as root'
@@ -138,6 +138,24 @@ wait_for_clustering() {
 	done
 }
 
+frontend_responds() {
+	id=$(container_id frontend)
+	[ -n "$id" ] || return 1
+	docker exec "$id" wget -q -O /dev/null http://127.0.0.1:3000/ >/dev/null 2>&1
+}
+
+wait_for_frontend() {
+	i=0
+	while [ "$i" -lt 60 ]; do
+		if container_running frontend && frontend_responds; then
+			return 0
+		fi
+		i=$((i + 1))
+		sleep 2
+	done
+	return 1
+}
+
 record_release() {
 	service=$1
 	image=$2
@@ -224,24 +242,39 @@ deploy_clustering() {
 	fail 'clustering and its automatic rollback both failed'
 }
 
-case "$services" in
-	appview) registry_docker pull "$SCW_REGISTRY/currents-appview:$release_sha" ;;
-	clustering) registry_docker pull "$SCW_REGISTRY/currents-clustering:$release_sha" ;;
-	appview,clustering)
-		registry_docker pull "$SCW_REGISTRY/currents-appview:$release_sha"
-		registry_docker pull "$SCW_REGISTRY/currents-clustering:$release_sha"
-		;;
-esac
+deploy_frontend() {
+	image="$SCW_REGISTRY/currents-frontend:$release_sha"
+	rollback_image=currents-frontend:rollback
+	previous_id=$(prepare_rollback frontend "$rollback_image")
 
-case "$services" in
-	appview) deploy_appview ;;
-	clustering) deploy_clustering ;;
-	appview,clustering)
-		deploy_appview
-		deploy_clustering
-		;;
-esac
+	export FRONTEND_IMAGE="$image"
+	compose up -d --no-deps --no-build --force-recreate frontend
+	if wait_for_frontend; then
+		record_release frontend "$image" "$previous_id"
+		logger -t currents-deploy "service=frontend sha=$release_sha result=success"
+		printf 'deploy-main: frontend %s is healthy\n' "$release_sha"
+		return
+	fi
+
+	printf 'deploy-main: frontend health failed; restoring the previous image\n' >&2
+	export FRONTEND_IMAGE="$rollback_image"
+	compose up -d --no-deps --no-build --force-recreate frontend
+	if wait_for_frontend; then
+		logger -t currents-deploy "service=frontend sha=$release_sha result=rolled-back"
+		fail 'frontend health failed; previous image restored'
+	fi
+	logger -t currents-deploy "service=frontend sha=$release_sha result=rollback-failed"
+	fail 'frontend and its automatic rollback both failed'
+}
+
+case ",$services," in *,appview,*) registry_docker pull "$SCW_REGISTRY/currents-appview:$release_sha" ;; esac
+case ",$services," in *,clustering,*) registry_docker pull "$SCW_REGISTRY/currents-clustering:$release_sha" ;; esac
+case ",$services," in *,frontend,*) registry_docker pull "$SCW_REGISTRY/currents-frontend:$release_sha" ;; esac
+
+case ",$services," in *,appview,*) deploy_appview ;; esac
+case ",$services," in *,clustering,*) deploy_clustering ;; esac
+case ",$services," in *,frontend,*) deploy_frontend ;; esac
 
 if ! curl -fsS --connect-timeout 2 --max-time 5 -o /dev/null https://currents.is/; then
-	printf 'deploy-main: warning: the independent Netlify frontend did not answer its final check\n' >&2
+	printf 'deploy-main: warning: the public frontend did not answer its final check\n' >&2
 fi

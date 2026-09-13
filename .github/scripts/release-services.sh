@@ -16,23 +16,26 @@ esac
 appview=false
 inference=false
 clustering=false
+frontend=false
 if [[ "$force_all" == --all ]]; then
 	appview=true
 	inference=true
 	clustering=true
+	frontend=true
 else
 	while IFS= read -r path; do
 		case "$path" in
 			appview/*) appview=true ;;
 			inference/*|docker-compose.inference.scaleway.yml) inference=true ;;
 			clustering/*) clustering=true ;;
-			docker-compose.scaleway.yml) appview=true; clustering=true ;;
+			frontend/*) frontend=true ;;
+			docker-compose.scaleway.yml) appview=true; clustering=true; frontend=true ;;
 		esac
 	done < <(git diff-tree --no-commit-id --name-only -r -m --root "$release_sha")
 fi
 
 has_services=false
-if "$appview" || "$inference" || "$clustering"; then has_services=true; fi
+if "$appview" || "$inference" || "$clustering" || "$frontend"; then has_services=true; fi
 
 matrix='{"include":['
 add_image() {
@@ -42,6 +45,7 @@ add_image() {
 "$appview" && add_image '{"image":"currents-appview","context":"appview"}'
 "$inference" && add_image '{"image":"currents-inference","context":"inference"}'
 "$clustering" && add_image '{"image":"currents-clustering","context":"clustering"}'
+"$frontend" && add_image '{"image":"currents-frontend","context":"frontend"}'
 matrix+=']}'
 
 {
@@ -49,6 +53,7 @@ matrix+=']}'
 	printf 'appview=%s\n' "$appview"
 	printf 'inference=%s\n' "$inference"
 	printf 'clustering=%s\n' "$clustering"
+	printf 'frontend=%s\n' "$frontend"
 	printf 'has_services=%s\n' "$has_services"
 	printf 'matrix=%s\n' "$matrix"
 } >> "$GITHUB_OUTPUT"

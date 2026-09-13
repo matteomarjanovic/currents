@@ -1,8 +1,8 @@
 # Scaleway CI/CD
 
-The frontend remains on Netlify. Netlify deploys it from `main`; the workflows
-here validate the web artifact but publish and deploy only appview, inference,
-and clustering. Capacitor releases continue to be built locally.
+After Cutover B, the frontend runs on the Scaleway main VM. The workflows then
+publish and deploy it alongside appview, inference, and clustering. Capacitor
+releases continue to be built locally.
 
 ## Release flow
 
@@ -13,8 +13,8 @@ and clustering. Capacitor releases continue to be built locally.
 3. A successful image publish starts `deploy-production.yml`. It deploys those
    same changed services automatically.
 4. Inference is deployed first when it changed. The main host then recreates
-   only appview and/or clustering; DB, TAP, Caddy, and the Netlify frontend are
-   never recreated by the release.
+   only the changed appview, clustering, and/or frontend service; DB, TAP, and
+   Caddy are never recreated by the release.
 
 The host scripts serialize releases, pull exact tags, retain the prior image,
 and roll back a service that fails health checks. Every appview deployment
@@ -132,8 +132,9 @@ After the settings and both hosts are ready, establish the first image set:
 4. Verify `/var/lib/currents-releases/*.current` and the public checks.
 
 After that baseline release, every green `main` change under `appview/`,
-`inference/`, or `clustering/` deploys automatically. An appview migration is
-therefore released automatically after its staging validation and CI pass.
+`inference/`, `clustering/`, or `frontend/` deploys the matching service
+automatically. An appview migration is therefore released automatically after
+its staging validation and CI pass.
 
 The production Compose files keep their local `build:` definitions as a manual
 recovery fallback. Automated deploys always set the exact registry image and

@@ -12,7 +12,7 @@ services=$3
 case "$sha" in *[!0-9a-f]*|'') exit 64 ;; esac
 [ "${#sha}" -eq 40 ] || exit 64
 case "$services" in
-	appview|clustering|appview,clustering) ;;
+	appview|clustering|frontend|appview,clustering|appview,frontend|clustering,frontend|appview,clustering,frontend) ;;
 	*) exit 64 ;;
 esac
 

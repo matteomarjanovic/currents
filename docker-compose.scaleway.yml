@@ -73,6 +73,7 @@ services:
       OPS_REPORTING_SECRET: ${OPS_REPORTING_SECRET:-}
 
   frontend:
+    image: ${FRONTEND_IMAGE:-currents-frontend}
     build:
       context: ./frontend
       args:
