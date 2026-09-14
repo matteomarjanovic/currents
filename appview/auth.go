@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -229,7 +231,15 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 		redirectTarget = s.FrontendURL
 	}
 	if returnTo, ok := sess.Values["return_to"].(string); ok && returnTo != "" {
-		if s.FrontendURL != "" && strings.HasPrefix(returnTo, s.FrontendURL) {
+		if s.isLegacyExtensionReturnTo(returnTo) {
+			code, err := s.issueLegacyExtensionBridge(sessData.AccountDID.String(), sessData.SessionID, resp.Handle)
+			if err != nil {
+				slog.Error("creating extension login bridge", "err", err)
+				http.Error(w, "could not finalize login", http.StatusInternalServerError)
+				return
+			}
+			redirectTarget = strings.TrimRight(s.ServiceURL, "/") + "/oauth/extension/callback?code=" + url.QueryEscape(code)
+		} else if s.FrontendURL != "" && strings.HasPrefix(returnTo, s.FrontendURL) {
 			redirectTarget = returnTo
 		} else if s.isMobileReturnTo(returnTo) {
 			// Native clients have no shared cookie jar: hand the session back as an opaque
@@ -244,6 +254,53 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 		delete(sess.Values, "return_to")
 		sess.Save(r, w)
+	}
+	http.Redirect(w, r, redirectTarget, http.StatusFound)
+}
+
+func (s *Server) isLegacyExtensionReturnTo(returnTo string) bool {
+	return s.FrontendURL != "" && strings.TrimRight(returnTo, "/") == strings.TrimRight(s.FrontendURL, "/")+"/login/success"
+}
+
+func (s *Server) issueLegacyExtensionBridge(accountDID, sessionID, handle string) (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	code := base64.RawURLEncoding.EncodeToString(bytes)
+	s.legacyExtensionBridges.Store(code, legacyExtensionSession{
+		AccountDID: accountDID,
+		SessionID:  sessionID,
+		Handle:     handle,
+		ExpiresAt:  time.Now().Add(5 * time.Minute),
+	})
+	time.AfterFunc(5*time.Minute, func() { s.legacyExtensionBridges.Delete(code) })
+	return code, nil
+}
+
+// OAuthLegacyExtensionCallback gives the released extension an api.currents.is
+// host-only cookie after its root-domain OAuth flow completes. New extension
+// versions read the root cookie directly and never use this one-time bridge.
+func (s *Server) OAuthLegacyExtensionCallback(w http.ResponseWriter, r *http.Request) {
+	value, ok := s.legacyExtensionBridges.LoadAndDelete(r.URL.Query().Get("code"))
+	bridge, ok := value.(legacyExtensionSession)
+	if !ok || time.Now().After(bridge.ExpiresAt) {
+		http.Error(w, "login session expired", http.StatusUnauthorized)
+		return
+	}
+
+	sess, _ := s.CookieStore.Get(r, "currents-session")
+	sess.Values["account_did"] = bridge.AccountDID
+	sess.Values["session_id"] = bridge.SessionID
+	sess.Values["handle"] = bridge.Handle
+	if err := sess.Save(r, w); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	redirectTarget := "/login/success"
+	if s.FrontendURL != "" {
+		redirectTarget = strings.TrimRight(s.FrontendURL, "/") + redirectTarget
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
 }
