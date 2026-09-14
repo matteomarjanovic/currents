@@ -45,7 +45,7 @@
 				{...props}
 				variant={mobileBar ? 'ghost' : 'glass'}
 				class={mobileBar
-					? 'size-11 cursor-pointer rounded-full p-0.5 shadow-none transition-transform duration-100 aria-expanded:scale-95'
+					? 'size-11 cursor-pointer rounded-full p-0 shadow-none transition-colors duration-100 active:translate-y-0 aria-expanded:scale-100'
 					: 'size-14 cursor-pointer gap-2 rounded-full border-border p-0.5 shadow-none transition-transform duration-100 aria-expanded:scale-95 md:h-auto md:w-auto md:pl-3'}
 				aria-label="Adjust personalization"
 				onpointerdowncapture={blockImageNavigation}

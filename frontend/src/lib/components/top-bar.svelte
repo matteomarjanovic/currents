@@ -826,13 +826,11 @@
 			<div
 				inert={!showFlowField}
 				aria-hidden={!showFlowField}
-				class="shrink-0 overflow-hidden transition-[width,opacity,transform] duration-200 ease-out {showFlowField
+				class="flex h-11 shrink-0 items-center justify-center overflow-hidden transition-[width,opacity,transform] duration-200 ease-out {showFlowField
 					? 'w-11 scale-100 opacity-100'
 					: 'pointer-events-none w-0 scale-75 opacity-0'}"
 			>
-				<div class="w-11">
-					<PersonalizationButton mobileBar />
-				</div>
+				<PersonalizationButton mobileBar />
 			</div>
 		</div>
 	</div>
