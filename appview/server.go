@@ -3,8 +3,6 @@ package main
 import (
 	"net/http"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/bluesky-social/indigo/atproto/auth"
 	"github.com/bluesky-social/indigo/atproto/auth/oauth"
@@ -13,13 +11,6 @@ import (
 	"github.com/gorilla/sessions"
 	polargo "github.com/polarsource/polar-go"
 )
-
-type legacyExtensionSession struct {
-	AccountDID string
-	SessionID  string
-	Handle     string
-	ExpiresAt  time.Time
-}
 
 type Server struct {
 	CookieStore   *sessions.CookieStore
@@ -54,9 +45,8 @@ type Server struct {
 	TapAdminPassword string
 	// OpsReportingSecret verifies HMAC-signed host capacity reports. An empty
 	// value leaves the ingestion endpoint disabled.
-	OpsReportingSecret     string
-	WipeWorker             *PdsWipeWorker
-	legacyExtensionBridges sync.Map // one-time code -> legacyExtensionSession
+	OpsReportingSecret string
+	WipeWorker         *PdsWipeWorker
 }
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

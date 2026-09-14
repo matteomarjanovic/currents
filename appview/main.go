@@ -588,7 +588,6 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /oauth-client-metadata.json", srv.ClientMetadata)
 	http.HandleFunc("GET /oauth/jwks.json", srv.JWKS)
 	http.HandleFunc("GET /oauth/callback", srv.OAuthCallback)
-	http.HandleFunc("GET /oauth/extension/callback", srv.OAuthLegacyExtensionCallback)
 
 	http.HandleFunc("GET /api/me", srv.APIMe)
 	http.HandleFunc("GET /api/me/role", srv.APIMeRole)

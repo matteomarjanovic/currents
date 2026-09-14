@@ -89,50 +89,6 @@ func TestLegacyLogoutExpiresHostOnlyCookieAndContinuesOnFrontend(t *testing.T) {
 	}
 }
 
-func TestLegacyExtensionBridgeSetsAPIHostOnlyCookie(t *testing.T) {
-	store := sessions.NewCookieStore([]byte("test-secret"))
-	store.Options = &sessions.Options{
-		Path:     "/",
-		Secure:   true,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	}
-	srv := Server{
-		CookieStore: store,
-		FrontendURL: "https://currents.is",
-		ServiceURL:  "https://api.currents.is",
-	}
-	code, err := srv.issueLegacyExtensionBridge("did:plc:alice", "session", "alice.currents.is")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	res := httptest.NewRecorder()
-	srv.OAuthLegacyExtensionCallback(res, httptest.NewRequest(http.MethodGet, "https://api.currents.is/oauth/extension/callback?code="+code, nil))
-	if res.Code != http.StatusFound {
-		t.Fatalf("status = %d, want %d", res.Code, http.StatusFound)
-	}
-	if location := res.Header().Get("Location"); location != "https://currents.is/login/success" {
-		t.Fatalf("location = %q", location)
-	}
-	cookie := res.Result().Cookies()[0]
-	if cookie.Domain != "" {
-		t.Fatalf("cookie must be host-only: %q", cookie.String())
-	}
-	req := httptest.NewRequest(http.MethodGet, "https://api.currents.is/api/me", nil)
-	req.AddCookie(cookie)
-	did, _, handle := srv.sessionDIDFromCookie(req)
-	if did == nil || did.String() != "did:plc:alice" || handle != "alice.currents.is" {
-		t.Fatalf("bridge cookie decoded as did=%v handle=%q", did, handle)
-	}
-
-	res = httptest.NewRecorder()
-	srv.OAuthLegacyExtensionCallback(res, httptest.NewRequest(http.MethodGet, "https://api.currents.is/oauth/extension/callback?code="+code, nil))
-	if res.Code != http.StatusUnauthorized {
-		t.Fatalf("reused bridge status = %d, want %d", res.Code, http.StatusUnauthorized)
-	}
-}
-
 func TestWellKnownDIDUsesServiceURLNotCDN(t *testing.T) {
 	srv := Server{
 		ServiceDID: "did:web:api.currents.is",
