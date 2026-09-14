@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeSaveActionsPlugin.class);
+        registerPlugin(NativeAuthPlugin.class);
         super.onCreate(savedInstanceState);
         // BridgeActivity always hosts Capacitor's own WebView layout, not this app's
         // activity_main.xml. Set the mode on that actual WebView so Android doesn't

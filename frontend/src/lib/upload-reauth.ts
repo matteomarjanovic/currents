@@ -2,6 +2,7 @@ import { toast } from 'svelte-sonner';
 import { appviewUrl } from '$lib/api';
 import { auth } from '$lib/stores/auth.svelte';
 import { isNative } from '$lib/platform';
+import { openNativeOAuth } from '$lib/native-auth';
 
 // Re-run the OAuth flow for the currently logged-in user to pick up newly
 // requested scopes (here: the uploadBlob rpc: scope that enables direct-to-PDS
@@ -18,9 +19,7 @@ export function reauthorize(returnTo: string = location.pathname + location.sear
 		const url = new URL(appviewUrl('/oauth/login'));
 		url.searchParams.set('username', did);
 		url.searchParams.set('return_to', 'currents://oauth-callback');
-		void import('@capacitor/browser').then(({ Browser }) =>
-			Browser.open({ url: url.toString(), presentationStyle: 'popover' })
-		);
+		void openNativeOAuth(url.toString()).catch(() => {});
 		return;
 	}
 

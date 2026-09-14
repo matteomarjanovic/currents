@@ -6,6 +6,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { FieldGroup, Field, FieldDescription } from '$lib/components/ui/field/index.js';
 	import { onDeepLink } from '$lib/app-init';
+	import { openNativeOAuth } from '$lib/native-auth';
 	import { gotoAfterLogin } from '$lib/post-login-route';
 
 	const RETURN_TO = 'currents://oauth-callback';
@@ -26,11 +27,10 @@
 		const url = new URL(`${PUBLIC_APPVIEW_URL}/oauth/login`);
 		url.searchParams.set('username', username);
 		url.searchParams.set('return_to', RETURN_TO);
-		const { Browser } = await import('@capacitor/browser');
 		try {
-			await Browser.open({ url: url.toString(), presentationStyle: 'popover' });
+			await openNativeOAuth(url.toString());
 		} catch (err) {
-			console.error('Browser.open failed', err);
+			console.error('OAuth browser failed', err);
 			inFlight = false;
 		}
 	}
