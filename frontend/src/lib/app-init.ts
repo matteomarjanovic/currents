@@ -79,7 +79,7 @@ export async function initApp(): Promise<void> {
 	App.addListener('appUrlOpen', async (event) => {
 		try {
 			const url = new URL(event.url);
-			if (url.protocol !== 'currents:') return;
+			if (url.protocol !== 'currents:' && url.protocol !== 'is.currents.app:') return;
 			const path = (url.host || url.pathname.replace(/^\/+/, '')).split('/')[0];
 			// Leave Android's disposable share activity for the normal app task before
 			// entering organize mode, so switching apps doesn't destroy the details screen.
