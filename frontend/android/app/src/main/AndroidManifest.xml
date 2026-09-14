@@ -20,13 +20,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- OAuth deep link: the appview redirects to currents://oauth-callback?token=...
+            <!-- OAuth deep link: the appview redirects to is.currents.app://oauth-callback?token=...
                  after login; Capacitor's appUrlOpen listener (app-init.ts) handles it. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="currents" android:host="oauth-callback" />
+                <data android:scheme="is.currents.app" android:host="oauth-callback" />
             </intent-filter>
 
             <!-- Move from the disposable share-target activity into the normal app task

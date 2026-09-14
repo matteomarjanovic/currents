@@ -9,6 +9,10 @@ interface NativeAuthPlugin {
 
 const NativeAuth = registerPlugin<NativeAuthPlugin>('NativeAuth');
 
+export function nativeOAuthReturnTo(): string {
+	return isAndroid() ? 'is.currents.app://oauth-callback' : 'currents://oauth-callback';
+}
+
 export async function openNativeOAuth(url: string): Promise<void> {
 	if (isAndroid()) {
 		let supported = false;
@@ -18,7 +22,7 @@ export async function openNativeOAuth(url: string): Promise<void> {
 			// Older builds do not contain the native plugin; keep their existing flow.
 		}
 		if (supported) {
-			const result = await NativeAuth.open({ url, redirectScheme: 'currents' });
+			const result = await NativeAuth.open({ url, redirectScheme: 'is.currents.app' });
 			if (!(await completeOAuthCallback(result.url))) {
 				throw new Error('Authentication returned an invalid callback URL');
 			}

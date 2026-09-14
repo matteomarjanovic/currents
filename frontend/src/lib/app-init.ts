@@ -24,7 +24,7 @@ function emit(ev: DeepLinkEvent) {
 
 export async function completeOAuthCallback(rawUrl: string): Promise<boolean> {
 	const url = new URL(rawUrl);
-	if (url.protocol !== 'currents:') return false;
+	if (url.protocol !== 'currents:' && url.protocol !== 'is.currents.app:') return false;
 	const path = (url.host || url.pathname.replace(/^\/+/, '')).split('/')[0];
 	if (path !== 'oauth-callback') return false;
 	const token = url.searchParams.get('token');
