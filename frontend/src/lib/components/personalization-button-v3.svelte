@@ -10,6 +10,8 @@
 	import { FEED_LEVELS, findFeedLevel } from '$lib/feed-levels';
 	import { blockImageNavigation } from '$lib/image-navigation-guard';
 
+	let { mobileBar = false }: { mobileBar?: boolean } = $props();
+
 	// The active level comes from the route; default to general if the slug is unknown.
 	const selected = $derived(findFeedLevel(page.params.level) ?? FEED_LEVELS[1]);
 
@@ -41,8 +43,10 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				variant="glass"
-				class="size-14 cursor-pointer gap-2 rounded-full border-border p-0.5 shadow-none transition-transform duration-100 aria-expanded:scale-95 md:h-auto md:w-auto md:pl-3"
+				variant={mobileBar ? 'ghost' : 'glass'}
+				class={mobileBar
+					? 'size-11 cursor-pointer rounded-full p-0 shadow-none transition-colors duration-100 active:translate-y-0 aria-expanded:scale-100'
+					: 'size-14 cursor-pointer gap-2 rounded-full border-border p-0.5 shadow-none transition-transform duration-100 aria-expanded:scale-95 md:h-auto md:w-auto md:pl-3'}
 				aria-label="Adjust personalization"
 				onpointerdowncapture={blockImageNavigation}
 				ontouchstart={preventTouchClickThrough}

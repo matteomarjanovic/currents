@@ -1,6 +1,8 @@
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
 
+const firefoxBinary = process.env.FIREFOX_BINARY;
+
 export default defineConfig({
 	srcDir: 'src',
 	modules: ['@wxt-dev/module-svelte'],
@@ -10,11 +12,7 @@ export default defineConfig({
 	vite: () => ({
 		plugins: [tailwindcss()]
 	}),
-	runner: {
-		binaries: {
-			firefox: process.env.FIREFOX_BINARY
-		}
-	},
+	...(firefoxBinary && { runner: { binaries: { firefox: firefoxBinary } } }),
 	manifest: ({ browser }) => ({
 		name: 'Save to Currents',
 		description: 'Save images to Currents',

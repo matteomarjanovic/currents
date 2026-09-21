@@ -23,12 +23,11 @@ interface Collection {
 
 // --- Cookie helper ---
 // Service workers don't share the browser's cookie jar, so we read the
-// session cookie via the cookies API and attach it manually.
+// root-domain session cookie via the cookies API and attach it to API requests.
 
 async function getSessionCookie(): Promise<string | null> {
-	const url = new URL(CURRENTS_URL);
 	const cookie = await browser.cookies.get({
-		url: CURRENTS_URL,
+		url: FRONTEND_URL,
 		name: 'currents-session'
 	});
 	return cookie?.value ? `currents-session=${cookie.value}` : null;

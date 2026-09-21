@@ -22,6 +22,26 @@ function emit(ev: DeepLinkEvent) {
 	for (const cb of listeners) cb(ev);
 }
 
+export async function completeOAuthCallback(rawUrl: string): Promise<boolean> {
+	const url = new URL(rawUrl);
+	if (url.protocol !== 'currents:' && url.protocol !== 'is.currents.app:') return false;
+	const path = (url.host || url.pathname.replace(/^\/+/, '')).split('/')[0];
+	if (path !== 'oauth-callback') return false;
+	const token = url.searchParams.get('token');
+	const handle = url.searchParams.get('handle') ?? undefined;
+	if (!token) return false;
+	await setAuthToken(token);
+	auth.checked = false;
+	try {
+		const { Browser } = await import('@capacitor/browser');
+		await Browser.close();
+	} catch {
+		// Auth Tab is already closed, or the fallback browser was closed by Android.
+	}
+	emit({ type: 'oauth-callback', token, handle });
+	return true;
+}
+
 async function applyIosFontScale(): Promise<void> {
 	try {
 		const { AccessibilityPreferences } =
@@ -59,7 +79,7 @@ export async function initApp(): Promise<void> {
 	App.addListener('appUrlOpen', async (event) => {
 		try {
 			const url = new URL(event.url);
-			if (url.protocol !== 'currents:') return;
+			if (url.protocol !== 'currents:' && url.protocol !== 'is.currents.app:') return;
 			const path = (url.host || url.pathname.replace(/^\/+/, '')).split('/')[0];
 			// Leave Android's disposable share activity for the normal app task before
 			// entering organize mode, so switching apps doesn't destroy the details screen.
@@ -72,20 +92,7 @@ export async function initApp(): Promise<void> {
 				);
 				return;
 			}
-			// currents://oauth-callback?token=...&handle=...
-			if (path !== 'oauth-callback') return;
-			const token = url.searchParams.get('token');
-			const handle = url.searchParams.get('handle') ?? undefined;
-			if (!token) return;
-			await setAuthToken(token);
-			auth.checked = false;
-			try {
-				const { Browser } = await import('@capacitor/browser');
-				await Browser.close();
-			} catch {
-				// browser already closed
-			}
-			emit({ type: 'oauth-callback', token, handle });
+			await completeOAuthCallback(event.url);
 		} catch (err) {
 			console.warn('appUrlOpen handler error', err);
 		}

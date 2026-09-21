@@ -112,40 +112,7 @@
 	}
 	// The mobile bottom bar; its menus anchor to it (centered) instead of to their buttons.
 	let bottomBarEl = $state<HTMLElement | undefined>();
-	let flowFieldEl = $state<HTMLElement | undefined>();
-	let centerMobileControls = $state(false);
-	let flowCenterOffset = $state(0);
-
-	$effect(() => {
-		const bar = bottomBarEl;
-		const flow = flowFieldEl;
-		if (!bar || !flow) {
-			centerMobileControls = false;
-			return;
-		}
-
-		const updateMobileControls = () => {
-			const barRect = bar.getBoundingClientRect();
-			const flowRect = flow.getBoundingClientRect();
-			const gap = flowRect.left - barRect.right;
-			const offset = (flowRect.width + gap) / 2;
-			flowCenterOffset = offset;
-			// Measure the default bar-centered position even after the pair has shifted.
-			centerMobileControls =
-				flowRect.right + (centerMobileControls ? offset : 0) > window.innerWidth;
-		};
-
-		const observer = new ResizeObserver(updateMobileControls);
-		observer.observe(bar);
-		observer.observe(flow);
-		window.addEventListener('resize', updateMobileControls);
-		updateMobileControls();
-
-		return () => {
-			observer.disconnect();
-			window.removeEventListener('resize', updateMobileControls);
-		};
-	});
+	let showFlowField = $derived(page.route.id === '/(with-navbar)/explore/[level]');
 
 	// Only items the user hasn't acted on yet count toward the unread indicator —
 	// disputes are waiting on a moderator, not on the author.
@@ -791,10 +758,8 @@
 	{/if}
 	<div
 		transition:fly={{ y: 16, duration: 180, easing: cubicOut }}
-		class="fixed z-10 -translate-x-1/2 md:hidden"
-		style="left: {centerMobileControls
-			? `calc(50% - ${flowCenterOffset}px)`
-			: '50%'}; bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
+		class="fixed left-1/2 z-10 -translate-x-1/2 md:hidden"
+		style="bottom: calc(env(safe-area-inset-bottom) - {raisedMobileBar ? -0.5 : 1}rem)"
 	>
 		<div
 			bind:this={bottomBarEl}
@@ -858,16 +823,16 @@
 				{/if}
 			{/if}
 			{@render searchButton('ghost', '', false)}
-		</div>
-		{#if page.route.id === '/(with-navbar)/explore/[level]'}
 			<div
-				bind:this={flowFieldEl}
-				class="absolute top-1/2 left-[calc(100%+1rem)]"
-				style="transform: translateY(-50%)"
+				inert={!showFlowField}
+				aria-hidden={!showFlowField}
+				class="flex h-11 shrink-0 items-center justify-center overflow-hidden transition-[width,opacity,transform] duration-200 ease-out {showFlowField
+					? 'w-11 scale-100 opacity-100'
+					: 'pointer-events-none w-0 scale-75 opacity-0'}"
 			>
-				<PersonalizationButton />
+				<PersonalizationButton mobileBar />
 			</div>
-		{/if}
+		</div>
 	</div>
 {/if}
 

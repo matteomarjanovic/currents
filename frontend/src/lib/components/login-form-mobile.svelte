@@ -14,14 +14,13 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { cn } from '$lib/utils.js';
 	import { onDeepLink } from '$lib/app-init';
+	import { nativeOAuthReturnTo, openNativeOAuth } from '$lib/native-auth';
 	import { gotoAfterLogin } from '$lib/post-login-route';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> = $props();
 
 	const id = $props.id();
-	const RETURN_TO = 'currents://oauth-callback';
-
 	type Actor = { did: string; handle: string; displayName?: string; avatar?: string };
 
 	let handle = $state('');
@@ -44,12 +43,11 @@
 		inFlight = true;
 		const url = new URL(`${PUBLIC_APPVIEW_URL}/oauth/login`);
 		url.searchParams.set('username', username);
-		url.searchParams.set('return_to', RETURN_TO);
-		const { Browser } = await import('@capacitor/browser');
+		url.searchParams.set('return_to', nativeOAuthReturnTo());
 		try {
-			await Browser.open({ url: url.toString(), presentationStyle: 'popover' });
+			await openNativeOAuth(url.toString());
 		} catch (err) {
-			console.error('Browser.open failed', err);
+			console.error('OAuth browser failed', err);
 			inFlight = false;
 		}
 	}
