@@ -4,7 +4,7 @@ umask 077
 
 project_dir=/opt/currents
 compose_file=docker-compose.scaleway.yml
-env_file=.env.production.phase-a
+env_file=.env.production
 registry_env="$project_dir/.env.registry"
 state_dir=/var/lib/currents-releases
 lock_file=/run/lock/currents-deploy-main.lock
@@ -102,6 +102,8 @@ migration_state() {
 appview_responds() {
 	id=$(container_id appview)
 	[ -n "$id" ] || return 1
+	# Cutover B puts OAuth on the root host; the Phase A value loses the login cookie.
+	docker exec "$id" sh -c '[ "$OAUTH_HOSTNAME" = currents.is ]' || return 1
 	docker exec "$id" wget -q -O /dev/null http://127.0.0.1:8080/api/supporter/stats >/dev/null 2>&1
 }
 

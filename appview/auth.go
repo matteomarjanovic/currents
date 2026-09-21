@@ -137,6 +137,21 @@ func (s *Server) JWKS(w http.ResponseWriter, r *http.Request) {
 func (s *Server) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Native clients call the API hostname, but OAuth may live on the web hostname.
+	// Start there before setting the host-only return_to cookie so the callback can
+	// read it. Keep POST bodies and GET query parameters through the redirect.
+	callbackURL, err := url.Parse(s.OAuth.Config.CallbackURL)
+	if err != nil {
+		http.Error(w, "invalid OAuth callback URL", http.StatusInternalServerError)
+		return
+	}
+	if !strings.EqualFold(r.Host, callbackURL.Host) {
+		callbackURL.Path = "/oauth/login"
+		callbackURL.RawQuery = r.URL.RawQuery
+		http.Redirect(w, r, callbackURL.String(), http.StatusTemporaryRedirect)
+		return
+	}
+
 	// POST is the web form path. GET-with-username lets native clients run the whole
 	// flow inside @capacitor/browser, with return_to a custom scheme (e.g. currents://).
 	var username, returnTo string

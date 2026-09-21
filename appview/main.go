@@ -24,6 +24,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+const defaultMobileRedirectSchemes = "currents://,is.currents.app://"
+
 func main() {
 	app := cli.App{
 		Name:   "appview",
@@ -281,7 +283,7 @@ func main() {
 			&cli.StringFlag{
 				Name:    "mobile-redirect-schemes",
 				Usage:   "comma-separated allowed return_to URL prefixes for native deep links",
-				Value:   "currents://",
+				Value:   defaultMobileRedirectSchemes,
 				EnvVars: []string{"MOBILE_REDIRECT_SCHEMES"},
 			},
 			&cli.StringFlag{

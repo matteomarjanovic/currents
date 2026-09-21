@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
 	android: true,
 	supported: true,
-	callbackUrl: 'currents://oauth-callback?token=opaque',
+	callbackUrl: 'is.currents.app://oauth-callback?token=opaque',
 	complete: vi.fn().mockResolvedValue(true),
 	nativeOpen: vi.fn(),
 	browserOpen: vi.fn()

@@ -10,7 +10,8 @@ The released app talks to whatever `PUBLIC_APPVIEW_URL` was baked in at build ti
 **production** appview (not `api-dev`), and make sure that appview runs the mobile code from this branch:
 
 - CORS allows `capacitor://localhost` and `https://localhost`, and the `Authorization` header.
-- `MOBILE_REDIRECT_SCHEMES` includes `currents://` (default).
+- `MOBILE_REDIRECT_SCHEMES` includes `is.currents.app://` (Android) and `currents://`
+  (iOS and older Android builds); both are included by default.
 - `GET /oauth/login` is registered (native in-app-browser flow).
 
 (We verified all of this against `api-dev.currents.is`; production must have the same.)
@@ -155,7 +156,7 @@ keystore.properties
 
 ## Checklist before each release
 
-- [ ] `PUBLIC_APPVIEW_URL` = production, prod backend has mobile CORS + `currents://` + `GET /oauth/login`
+- [ ] `PUBLIC_APPVIEW_URL` = production, prod backend has mobile CORS + both callback schemes + `GET /oauth/login`
 - [ ] `npm run build:mobile` (**not** `npm run build` — see §1)
 - [ ] `versionCode` bumped
 - [ ] `bundleRelease` produces a **signed** AAB

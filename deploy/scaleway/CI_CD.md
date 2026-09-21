@@ -25,6 +25,14 @@ never run.
 The workflow sends SSH keepalives while the backup runs, so a quiet but healthy
 backup cannot be mistaken for a dropped deployment connection.
 
+The main-host script must use `/opt/currents/.env.production`, with
+`OAUTH_HOSTNAME=currents.is`. `.env.production.phase-a` is historical rollback
+configuration: using it during a normal release restores the API-host OAuth
+callback while Caddy still starts login on the root host, losing the host-only
+return cookie. The appview health check also verifies the root OAuth hostname.
+Changes to the host scripts must be installed on the VM using the commands
+below; pushing a commit deploys service images, not these installed scripts.
+
 ## One-time registry setup
 
 Create a private Container Registry namespace in `fr-par` and two separate IAM

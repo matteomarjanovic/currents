@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
 import { isIos, isNative } from './platform';
 import { mirrorAuthToken, setAuthToken } from './auth-storage';
+import { apiFetch } from './api';
 import { auth } from './stores/auth.svelte';
 import { loadCollections } from './stores/collections.svelte';
 import { initShareTarget } from './share-target';
@@ -31,13 +32,20 @@ export async function completeOAuthCallback(rawUrl: string): Promise<boolean> {
 	const handle = url.searchParams.get('handle') ?? undefined;
 	if (!token) return false;
 	await setAuthToken(token);
-	auth.checked = false;
 	try {
 		const { Browser } = await import('@capacitor/browser');
 		await Browser.close();
 	} catch {
 		// Auth Tab is already closed, or the fallback browser was closed by Android.
 	}
+	// Reconnect can finish over an already-mounted screen: resetting checked alone
+	// never reruns its onMount auth request. Refresh the user with the new token now.
+	const res = await apiFetch('/api/me');
+	if (!res.ok) throw new Error('Could not load the authenticated profile');
+	const user = await res.json();
+	auth.user = user;
+	auth.checked = true;
+	void loadCollections(user.did).catch((err) => console.warn('Could not refresh collections', err));
 	emit({ type: 'oauth-callback', token, handle });
 	return true;
 }
