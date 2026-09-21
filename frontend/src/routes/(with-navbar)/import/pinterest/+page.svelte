@@ -133,7 +133,8 @@
 				error = `Couldn't load boards (${res.status}).`;
 				return;
 			}
-			const data = (await res.json()) as { boards: Board[] | null };
+			const data = (await res.json()) as { boards: Board[] | null; username?: string };
+			username = data.username ?? u;
 			boards = data.boards ?? [];
 			selected.clear();
 			for (const b of boards) selected.add(b.id);
@@ -341,11 +342,11 @@
 	{#if stage === 'username'}
 		<form onsubmit={loadBoards} class="space-y-4">
 			<div class="space-y-2">
-				<Label for="pinterest-username">Pinterest username</Label>
+				<Label for="pinterest-username">Pinterest username or URL</Label>
 				<Input
 					id="pinterest-username"
 					bind:value={username}
-					placeholder="e.g. designspiration"
+					placeholder="e.g. designspiration or a board URL"
 					disabled={loading}
 					autocorrect="off"
 					autocapitalize="off"

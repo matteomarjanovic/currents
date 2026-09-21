@@ -21,6 +21,35 @@ const (
 
 var pinterestHTTP = &http.Client{Timeout: 30 * time.Second}
 
+func normalizePinterestUsername(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", fmt.Errorf("username is required")
+	}
+
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		u, err := url.Parse(input)
+		if err != nil {
+			return "", fmt.Errorf("invalid Pinterest URL")
+		}
+		host := strings.ToLower(u.Hostname())
+		if host != "pinterest.com" && !strings.HasSuffix(host, ".pinterest.com") {
+			return "", fmt.Errorf("URL must be on pinterest.com")
+		}
+		username := strings.Split(strings.Trim(u.Path, "/"), "/")[0]
+		if username == "" {
+			return "", fmt.Errorf("Pinterest URL has no username")
+		}
+		return username, nil
+	}
+
+	username := strings.TrimPrefix(input, "@")
+	if strings.ContainsAny(username, "/?#") {
+		return "", fmt.Errorf("enter a Pinterest username or full profile/board URL")
+	}
+	return username, nil
+}
+
 type PinterestBoard struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`

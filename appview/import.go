@@ -41,9 +41,9 @@ func (s *Server) APIPinterestBoards(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	username := strings.TrimSpace(r.URL.Query().Get("username"))
-	if username == "" {
-		http.Error(w, "username is required", http.StatusBadRequest)
+	username, err := normalizePinterestUsername(r.URL.Query().Get("username"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	boards, err := ListBoards(r.Context(), username)
@@ -53,7 +53,7 @@ func (s *Server) APIPinterestBoards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"boards": boards})
+	json.NewEncoder(w).Encode(map[string]any{"boards": boards, "username": username})
 }
 
 func (s *Server) APIPinterestSections(w http.ResponseWriter, r *http.Request) {
