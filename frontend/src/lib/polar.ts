@@ -4,6 +4,7 @@ import { mode } from 'mode-watcher';
 import { toast } from 'svelte-sonner';
 import { apiFetch } from '$lib/api';
 import { loadSupporterStatus, supporter, supporterFlow } from '$lib/stores/supporter.svelte';
+import { trackEvent, type CheckoutPlacement, type SupporterFeature } from '$lib/analytics';
 
 export const POLAR_PRODUCT_MONTHLY = PUBLIC_POLAR_PRODUCT_MONTHLY;
 export const POLAR_PRODUCT_YEARLY = PUBLIC_POLAR_PRODUCT_YEARLY;
@@ -30,7 +31,10 @@ async function refreshUntilActive() {
 // back to the Currents user. Provisioning happens via the appview's Polar
 // webhook; the success event just tells us to poll until the mirror catches
 // up (usually the first attempt) so the UI unlocks while the embed is open.
-export async function openSupporterCheckout(productId: string) {
+export async function openSupporterCheckout(
+	productId: string,
+	context: { placement: CheckoutPlacement; feature?: SupporterFeature }
+) {
 	const res = await apiFetch('/api/supporter/checkout', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -38,6 +42,11 @@ export async function openSupporterCheckout(productId: string) {
 	});
 	if (!res.ok) throw new Error(`checkout: ${res.status}`);
 	const { url } = (await res.json()) as { url: string };
+	const plan: 'monthly' | 'yearly' = productId === POLAR_PRODUCT_YEARLY ? 'yearly' : 'monthly';
+	const eventData = context.feature
+		? { plan, placement: context.placement, feature: context.feature }
+		: { plan, placement: context.placement };
+	trackEvent('checkout_started', eventData);
 	// Render the embedded checkout in the app's current theme. Do NOT also stamp a
 	// `color-scheme` on the checkout iframe: the embed leaves it at `auto`, which
 	// lets the browser composite the cross-origin iframe transparently so its rgba
@@ -47,7 +56,13 @@ export async function openSupporterCheckout(productId: string) {
 	const checkout = await PolarEmbedCheckout.create(url, {
 		theme: mode.current === 'dark' ? 'dark' : 'light'
 	});
-	checkout.addEventListener('success', () => void celebrate());
+	let completed = false;
+	checkout.addEventListener('success', () => {
+		if (completed) return;
+		completed = true;
+		trackEvent('checkout_succeeded', eventData);
+		void celebrate();
+	});
 }
 
 // Opens the Polar customer portal for an existing supporter to manage/cancel

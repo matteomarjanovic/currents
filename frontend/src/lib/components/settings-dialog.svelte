@@ -502,7 +502,10 @@
 							{:else}
 								<p class="text-sm">What you unlock as a supporter:</p>
 								<SupporterPerks class="text-sm" />
-								<SupporterPlans onCheckoutOpen={() => (settingsDialog.open = false)} />
+								<SupporterPlans
+									placement="settings"
+									onCheckoutOpen={() => (settingsDialog.open = false)}
+								/>
 							{/if}
 						</section>
 					{:else}

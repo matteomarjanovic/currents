@@ -65,7 +65,9 @@
 			promptLogin();
 			return;
 		}
-		openSupporterCheckout(productId).catch(() => toast.error("Couldn't open the checkout"));
+		openSupporterCheckout(productId, { placement: 'support_page' }).catch(() =>
+			toast.error("Couldn't open the checkout")
+		);
 	}
 
 	let portalLoading = $state(false);

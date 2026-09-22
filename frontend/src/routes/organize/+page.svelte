@@ -162,7 +162,7 @@
 	// same paywall, but only once the free trial colors are used up. The
 	// paywall itself is mounted once in the root layout.
 	async function findSimilar(s: SaveView) {
-		if (!(await requireSupporter(() => void findSimilar(s)))) return;
+		if (!(await requireSupporter('similar_library', () => void findSimilar(s)))) return;
 		searchQuery = null;
 		scope.clear();
 		similarSource = s;
@@ -721,7 +721,7 @@
 		favourites={favouriteCollections.items}
 		initial={selectedUri ? [selectedUri] : []}
 		initialText={searchQuery ?? ''}
-		canSearch={() => requireSupporter(() => (searchOpen = true))}
+		canSearch={() => requireSupporter('library_search', () => (searchOpen = true))}
 		onSearch={(q, cols) => {
 			// Text search is ephemeral; drop any find-similar or color search from the URL.
 			if (similarUri || colorParam) goto(sourceHref());

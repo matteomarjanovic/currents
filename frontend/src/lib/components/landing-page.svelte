@@ -4,6 +4,7 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import { resolve } from '$app/paths';
 	import SiteFooter from '$lib/components/site-footer.svelte';
+	import { trackEvent } from '$lib/analytics';
 
 	let video: HTMLVideoElement;
 
@@ -59,7 +60,10 @@
 				</p>
 
 				<div class="flex items-center justify-center gap-4">
-					<a href={resolve('/explore')}>
+					<a
+						href={resolve('/explore')}
+						onclick={() => trackEvent('landing_cta_clicked', { destination: 'explore' })}
+					>
 						<Button size="lg" class="gap-2 rounded-full px-8 text-base shadow-lg shadow-black/20">
 							Explore currents
 							<ArrowRight class="size-4" />

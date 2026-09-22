@@ -57,7 +57,7 @@
 			if (!res.ok) {
 				// Deep-linked non-supporter (or logged-out) hitting the gated color
 				// endpoint: raise the paywall, show nothing.
-				if (res.status === 403) void requireSupporter();
+				if (res.status === 403) void requireSupporter('color_search');
 				loadedType = fetchedType;
 				return { items: [], cursor: undefined };
 			}

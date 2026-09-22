@@ -104,9 +104,10 @@
 						</li>
 						<li>
 							Aggregate usage statistics collected with Umami, a privacy-focused, cookieless
-							analytics tool. It records anonymous page views without cookies, device
-							fingerprinting, or cross-site tracking, and the data cannot be tied back to individual
-							users.
+							analytics tool. It records anonymous page views and a small set of interaction events
+							without account identifiers, cookies, device fingerprinting, or cross-site tracking.
+							Searches, profile identifiers, collection identifiers, and save identifiers are
+							removed before analytics data is sent.
 						</li>
 					</ul>
 				</section>

@@ -8,6 +8,7 @@
 	import { onDeepLink } from '$lib/app-init';
 	import { nativeOAuthReturnTo, openNativeOAuth } from '$lib/native-auth';
 	import { gotoAfterLogin } from '$lib/post-login-route';
+	import { authProvider, trackAuthStarted } from '$lib/analytics';
 
 	let inFlight = $state(false);
 
@@ -22,6 +23,7 @@
 	async function startRegister(username: string) {
 		if (inFlight) return;
 		inFlight = true;
+		trackAuthStarted('signup', authProvider(username), 'native');
 		const url = new URL(`${PUBLIC_APPVIEW_URL}/oauth/login`);
 		url.searchParams.set('username', username);
 		url.searchParams.set('return_to', nativeOAuthReturnTo());

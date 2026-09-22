@@ -17,6 +17,7 @@
 	import { nativeOAuthReturnTo, openNativeOAuth } from '$lib/native-auth';
 	import { gotoAfterLogin } from '$lib/post-login-route';
 	import type { HTMLAttributes } from 'svelte/elements';
+	import { authProvider, trackAuthStarted } from '$lib/analytics';
 
 	let { class: className, ...restProps }: HTMLAttributes<HTMLDivElement> = $props();
 
@@ -41,6 +42,7 @@
 	async function startLogin(username: string) {
 		if (inFlight) return;
 		inFlight = true;
+		trackAuthStarted('login', authProvider(username), 'native');
 		const url = new URL(`${PUBLIC_APPVIEW_URL}/oauth/login`);
 		url.searchParams.set('username', username);
 		url.searchParams.set('return_to', nativeOAuthReturnTo());

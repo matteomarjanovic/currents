@@ -7,6 +7,7 @@
 	import { FieldGroup, Field, FieldDescription } from '$lib/components/ui/field/index.js';
 	import RegisterFormMobile from '$lib/components/register-form-mobile.svelte';
 	import { isNative } from '$lib/platform';
+	import { trackAuthStarted } from '$lib/analytics';
 
 	const loginAction = appviewUrl('/oauth/login');
 	const native = isNative();
@@ -35,7 +36,11 @@
 					<Card.Content>
 						<FieldGroup>
 							<Field>
-								<form method="POST" action={loginAction}>
+								<form
+									method="POST"
+									action={loginAction}
+									onsubmit={() => trackAuthStarted('signup', 'eurosky', 'web')}
+								>
 									<input type="hidden" name="username" value="https://eurosky.social" />
 									<Button variant="outline" type="submit" class="relative w-full">
 										<span
@@ -55,7 +60,11 @@
 										Register with Eurosky
 									</Button>
 								</form>
-								<form method="POST" action={loginAction}>
+								<form
+									method="POST"
+									action={loginAction}
+									onsubmit={() => trackAuthStarted('signup', 'bluesky', 'web')}
+								>
 									<input type="hidden" name="username" value="https://bsky.social" />
 									<Button variant="outline" type="submit" class="w-full">
 										<svg
@@ -71,7 +80,11 @@
 										Register with Bluesky
 									</Button>
 								</form>
-								<form method="POST" action={loginAction}>
+								<form
+									method="POST"
+									action={loginAction}
+									onsubmit={() => trackAuthStarted('signup', 'blacksky', 'web')}
+								>
 									<input type="hidden" name="username" value="https://blacksky.app" />
 									<Button variant="outline" type="submit" class="w-full">
 										<svg

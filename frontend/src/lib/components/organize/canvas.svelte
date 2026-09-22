@@ -831,7 +831,15 @@
 						This is a supporter feature.
 					{/if}
 				</p>
-				<Button variant="outline" size="sm" class="mt-1" onclick={() => void requireSupporter()}>
+				<Button
+					variant="outline"
+					size="sm"
+					class="mt-1"
+					onclick={() =>
+						void requireSupporter(
+							color ? 'color_search' : similar ? 'similar_library' : 'library_search'
+						)}
+				>
 					Become a supporter
 				</Button>
 			{:else}

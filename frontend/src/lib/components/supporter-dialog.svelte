@@ -3,7 +3,8 @@
 	import { isAndroid } from '$lib/platform';
 	import { openExternal } from '$lib/external';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { supporter, supporterFlow } from '$lib/stores/supporter.svelte';
+	import { supporter, supporterFlow, supporterGate } from '$lib/stores/supporter.svelte';
+	import { trackEvent } from '$lib/analytics';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import SupporterPerks from '$lib/components/supporter-perks.svelte';
 	import SupporterPlans from '$lib/components/supporter-plans.svelte';
@@ -22,8 +23,16 @@
 	// If the paywall is dismissed without starting a checkout, the interrupted
 	// action is stale — drop it so a later, unrelated checkout doesn't replay it.
 	let startedCheckout = false;
+	let wasOpen = false;
 	$effect(() => {
-		if (open) startedCheckout = false;
+		if (open && !wasOpen && supporterGate.feature) {
+			startedCheckout = false;
+			trackEvent('paywall_viewed', {
+				feature: supporterGate.feature,
+				placement: 'feature_gate'
+			});
+		}
+		wasOpen = open;
 	});
 	function handleOpenChange(o: boolean) {
 		if (!o && !startedCheckout) supporterFlow.pending = null;
@@ -44,6 +53,8 @@
 		</Dialog.Header>
 		<SupporterPerks class="text-sm" />
 		<SupporterPlans
+			placement="paywall"
+			feature={supporterGate.feature ?? undefined}
 			onCheckoutOpen={() => {
 				startedCheckout = true;
 				open = false;

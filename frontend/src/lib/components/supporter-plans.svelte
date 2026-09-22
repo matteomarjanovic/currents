@@ -10,10 +10,19 @@
 		POLAR_PRODUCT_MONTHLY,
 		POLAR_PRODUCT_YEARLY
 	} from '$lib/polar';
+	import type { CheckoutPlacement, SupporterFeature } from '$lib/analytics';
 
 	// The two supporter price options, shared by the upgrade dialog and the
 	// settings dialog's subscription section.
-	let { onCheckoutOpen }: { onCheckoutOpen?: () => void } = $props();
+	let {
+		onCheckoutOpen,
+		placement,
+		feature
+	}: {
+		onCheckoutOpen?: () => void;
+		placement: CheckoutPlacement;
+		feature?: SupporterFeature;
+	} = $props();
 
 	// App Store rules forbid selling digital goods in-app through an external processor, so the
 	// native apps never run the in-app Polar embed. Google Play permits linking out, so on Android
@@ -28,7 +37,9 @@
 	function subscribe(productId: string) {
 		if (!auth.user) return;
 		onCheckoutOpen?.();
-		openSupporterCheckout(productId).catch(() => toast.error("Couldn't open the checkout"));
+		openSupporterCheckout(productId, { placement, feature }).catch(() =>
+			toast.error("Couldn't open the checkout")
+		);
 	}
 
 	// Android hands off to the web checkout: close the host dialog, then open /support-us in the

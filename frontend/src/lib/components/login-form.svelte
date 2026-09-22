@@ -12,6 +12,7 @@
 	} from '$lib/components/ui/field/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { cn } from '$lib/utils.js';
+	import { authProvider, trackAuthStarted, type AnalyticsSurface } from '$lib/analytics';
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	let {
@@ -22,6 +23,7 @@
 
 	const id = $props.id();
 	const loginAction = appviewUrl('/oauth/login');
+	let analyticsSurface = $derived<AnalyticsSurface>(returnTo ? 'extension' : 'web');
 
 	type Actor = { did: string; handle: string; displayName?: string; avatar?: string };
 
@@ -95,7 +97,11 @@
 		<Card.Content>
 			<FieldGroup>
 				<Field>
-					<form method="POST" action={loginAction}>
+					<form
+						method="POST"
+						action={loginAction}
+						onsubmit={() => trackAuthStarted('login', 'bluesky', analyticsSurface)}
+					>
 						<input type="hidden" name="username" value="https://bsky.social" />
 						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
@@ -112,7 +118,11 @@
 							Login with Bluesky
 						</Button>
 					</form>
-					<form method="POST" action={loginAction}>
+					<form
+						method="POST"
+						action={loginAction}
+						onsubmit={() => trackAuthStarted('login', 'eurosky', analyticsSurface)}
+					>
 						<input type="hidden" name="username" value="https://eurosky.social" />
 						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
@@ -128,7 +138,11 @@
 							Login with Eurosky
 						</Button>
 					</form>
-					<form method="POST" action={loginAction}>
+					<form
+						method="POST"
+						action={loginAction}
+						onsubmit={() => trackAuthStarted('login', 'blacksky', analyticsSurface)}
+					>
 						<input type="hidden" name="username" value="https://blacksky.app" />
 						{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 						<Button variant="outline" type="submit" class="w-full">
@@ -155,7 +169,11 @@
 				<FieldSeparator class="*:data-[slot=field-separator-content]:bg-card">
 					Or use your custom PDS
 				</FieldSeparator>
-				<form method="POST" action={loginAction}>
+				<form
+					method="POST"
+					action={loginAction}
+					onsubmit={() => trackAuthStarted('login', authProvider(handle.trim()), analyticsSurface)}
+				>
 					{#if returnTo}<input type="hidden" name="return_to" value={returnTo} />{/if}
 					<FieldGroup>
 						<Field>

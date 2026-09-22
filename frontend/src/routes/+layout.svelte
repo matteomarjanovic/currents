@@ -15,6 +15,7 @@
 	import SaveRemovalDialog from '$lib/components/save-removal-dialog.svelte';
 	import ModeTabs from '$lib/components/mode-tabs.svelte';
 	import { supporterGate } from '$lib/stores/supporter.svelte';
+	import { initAnalytics, trackPendingAuthSuccess } from '$lib/analytics';
 	// Side-effect import: registers the beforeinstallprompt listener on every page so the
 	// one-shot event is captured even before the top bar (which offers "Install app") mounts.
 	import '$lib/stores/pwa-install.svelte';
@@ -33,6 +34,7 @@
 	});
 
 	onMount(() => {
+		initAnalytics();
 		initApp().catch((err) => console.warn('initApp failed', err));
 		// Register the PWA service worker in production web builds only. The same build is reused
 		// by Capacitor, where a worker is unwanted (guard: isNative); and under `vite dev` the
@@ -68,6 +70,7 @@
 	$effect(() => {
 		if (!auth.user) return;
 		untrack(() => {
+			trackPendingAuthSuccess();
 			if (!modPrefsLoaded.value) void loadModerationPrefs();
 			if (!preferencesLoaded.value) void loadPreferences();
 		});

@@ -1,6 +1,7 @@
 import { apiFetch } from '$lib/api';
 import { auth } from '$lib/stores/auth.svelte';
 import { loginPrompt } from '$lib/stores/login-prompt.svelte';
+import type { SupporterFeature } from '$lib/analytics';
 
 // Supporter-tier entitlement (semantic library search + find-similar in
 // library), mirrored from the server. `active` is what the gate enforces —
@@ -29,7 +30,10 @@ export const supporterFlow = $state({
 // Open state for the paywall dialog, mounted once in the root layout so any
 // surface (explore color search, organize library search/find-similar) can
 // raise it via requireSupporter.
-export const supporterGate = $state({ open: false });
+export const supporterGate = $state({
+	open: false,
+	feature: null as SupporterFeature | null
+});
 
 // A logged-out viewer has no account to attach a subscription to, so both gates
 // ask them to sign in first — the paywall is only ever the second step.
@@ -42,11 +46,15 @@ function loggedOut(): boolean {
 // Gate a supporter-tier action. Resolves true when the viewer is entitled;
 // otherwise stashes `pending` on the supporter flow (resumed by the
 // post-checkout thank-you dialog), opens the paywall, and resolves false.
-export async function requireSupporter(pending?: () => void): Promise<boolean> {
+export async function requireSupporter(
+	feature: SupporterFeature,
+	pending?: () => void
+): Promise<boolean> {
 	if (loggedOut()) return false;
 	if (!supporter.loaded) await loadSupporterStatus();
 	if (supporter.active) return true;
 	supporterFlow.pending = pending ?? null;
+	supporterGate.feature = feature;
 	supporterGate.open = true;
 	return false;
 }
@@ -61,6 +69,7 @@ export async function requireColorSearch(pending?: () => void): Promise<boolean>
 	if (!supporter.loaded || !supporter.active) await loadSupporterStatus();
 	if (supporter.active || supporter.colorTrialsLeft > 0) return true;
 	supporterFlow.pending = pending ?? null;
+	supporterGate.feature = 'color_search';
 	supporterGate.open = true;
 	return false;
 }
