@@ -41,6 +41,8 @@
 
 {@render children()}
 
+<div class="h-[calc(5rem+env(safe-area-inset-bottom))] md:hidden" aria-hidden="true"></div>
+
 <!-- This route is outside (with-navbar)/(without-navbar), so it has to mount the
      login prompt itself — the tier buttons raise it for logged-out visitors. -->
 <LoginDialog />

@@ -50,7 +50,9 @@
 				style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
 			>
 				<CollectionSelector {item} variant="quick" onSavesChange={handleSavesChange} />
-				<Button class="w-full" onclick={() => (view = 'collections')}>Save somewhere else</Button>
+				<Button class="h-11 w-full" onclick={() => (view = 'collections')}
+					>Save somewhere else</Button
+				>
 			</div>
 		{:else}
 			<Drawer.Header class="relative">

@@ -110,7 +110,7 @@
 	{#if isHome && !auth.user}
 		{@render children()}
 	{:else if !isHome}
-		<main class="p-2 md:p-4">
+		<main class="p-2 pb-[calc(5rem+env(safe-area-inset-bottom))] md:p-4">
 			{@render children()}
 		</main>
 	{/if}
