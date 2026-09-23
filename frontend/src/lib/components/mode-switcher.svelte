@@ -124,7 +124,7 @@
 		class="w-52"
 	>
 		{#each MODES as m (m.value)}
-			<DropdownMenu.Item onclick={() => m.value !== mode && m.open()}>
+			<DropdownMenu.Item onclick={() => (m.value !== mode || m.value === 'explore') && m.open()}>
 				<m.icon class="size-4" />
 				<span class="grid flex-1 leading-tight">
 					<span>{m.label}</span>

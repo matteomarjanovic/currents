@@ -1030,6 +1030,9 @@ func TestUserPrefs(t *testing.T) {
 	if got.OrganizeCollectionSort != "name" {
 		t.Fatalf("default organizeCollectionSort = %q, want name", got.OrganizeCollectionSort)
 	}
+	if got.OrganizeSidebarAutoClose {
+		t.Fatal("default organizeSidebarAutoClose = true, want false")
+	}
 	if got.SaveSuggestionMode != "recommended-then-last-used" {
 		t.Fatalf("default saveSuggestionMode = %q, want recommended-then-last-used", got.SaveSuggestionMode)
 	}
@@ -1038,7 +1041,7 @@ func TestUserPrefs(t *testing.T) {
 	}
 
 	if err := s.SetUserPrefs(ctx, did, UserPrefs{
-		GifAutoplay: false, OrganizeCollectionSort: "recent", SaveSuggestionMode: "recommended",
+		GifAutoplay: false, OrganizeCollectionSort: "recent", OrganizeSidebarAutoClose: true, SaveSuggestionMode: "recommended",
 		LastSaveRemovalAction: "move-to-profile",
 	}); err != nil {
 		t.Fatalf("SetUserPrefs: %v", err)
@@ -1052,6 +1055,9 @@ func TestUserPrefs(t *testing.T) {
 	}
 	if got.OrganizeCollectionSort != "recent" {
 		t.Fatalf("stored organizeCollectionSort = %q, want recent", got.OrganizeCollectionSort)
+	}
+	if !got.OrganizeSidebarAutoClose {
+		t.Fatal("stored organizeSidebarAutoClose = false, want true")
 	}
 	if got.SaveSuggestionMode != "recommended" {
 		t.Fatalf("stored saveSuggestionMode = %q, want recommended", got.SaveSuggestionMode)
@@ -1067,6 +1073,9 @@ func TestUserPrefs(t *testing.T) {
 	got, _ = s.GetUserPrefs(ctx, did)
 	if !got.GifAutoplay {
 		t.Fatalf("updated gifAutoplay = %v, want true", got.GifAutoplay)
+	}
+	if got.OrganizeSidebarAutoClose {
+		t.Fatal("updated organizeSidebarAutoClose = true, want false")
 	}
 	if got.LastSaveRemovalAction != "ask" {
 		t.Fatalf("updated lastSaveRemovalAction = %q, want ask", got.LastSaveRemovalAction)

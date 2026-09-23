@@ -43,6 +43,10 @@
 		await goto(next === 'organize' ? resolve('/organize') : resolve('/(with-navbar)/explore'));
 	}
 
+	function openExplore() {
+		if (routeMode === 'explore') void goto(resolve('/(with-navbar)/explore'));
+	}
+
 	$effect(() => {
 		value = routeMode;
 		if (routeMode === 'organize' && auth.user) void markFeatureSeen(FEATURE_ORGANIZE_MODE);
@@ -71,7 +75,9 @@
 				aria-label="Currents mode"
 				class="h-9! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding backdrop-blur-sm"
 			>
-				<Tabs.Trigger value="explore" class="rounded-full">Explore</Tabs.Trigger>
+				<Tabs.Trigger value="explore" class="rounded-full" onclick={openExplore}
+					>Explore</Tabs.Trigger
+				>
 				<Tabs.Trigger value="organize" class="rounded-full">
 					<span class="relative">
 						Organize

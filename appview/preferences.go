@@ -12,14 +12,15 @@ import (
 
 // UserPrefs mirrors the JSON shape consumed by the web client.
 type UserPrefs struct {
-	GifAutoplay            bool   `json:"gifAutoplay"`
-	OrganizeCollectionSort string `json:"organizeCollectionSort"`
-	SaveSuggestionMode     string `json:"saveSuggestionMode"`
-	LastSaveRemovalAction  string `json:"lastSaveRemovalAction"`
+	GifAutoplay              bool   `json:"gifAutoplay"`
+	OrganizeCollectionSort   string `json:"organizeCollectionSort"`
+	OrganizeSidebarAutoClose bool   `json:"organizeSidebarAutoClose"`
+	SaveSuggestionMode       string `json:"saveSuggestionMode"`
+	LastSaveRemovalAction    string `json:"lastSaveRemovalAction"`
 }
 
 // defaultUserPrefs is returned for users with no stored row. Kept in sync with
-// the DB column defaults in migrations 042, 048, 050, and 052.
+// the DB column defaults in migrations 042, 048, 050, 052, and 053.
 var defaultUserPrefs = UserPrefs{
 	GifAutoplay:            true,
 	OrganizeCollectionSort: "name",
@@ -59,10 +60,11 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 	// Treat PUT as a field-wise update so older mobile clients that only know
 	// gifAutoplay do not reset newer preferences.
 	var patch struct {
-		GifAutoplay            *bool   `json:"gifAutoplay"`
-		OrganizeCollectionSort *string `json:"organizeCollectionSort"`
-		SaveSuggestionMode     *string `json:"saveSuggestionMode"`
-		LastSaveRemovalAction  *string `json:"lastSaveRemovalAction"`
+		GifAutoplay              *bool   `json:"gifAutoplay"`
+		OrganizeCollectionSort   *string `json:"organizeCollectionSort"`
+		OrganizeSidebarAutoClose *bool   `json:"organizeSidebarAutoClose"`
+		SaveSuggestionMode       *string `json:"saveSuggestionMode"`
+		LastSaveRemovalAction    *string `json:"lastSaveRemovalAction"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -82,6 +84,9 @@ func (s *Server) APIPutPreferences(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prefs.OrganizeCollectionSort = *patch.OrganizeCollectionSort
+	}
+	if patch.OrganizeSidebarAutoClose != nil {
+		prefs.OrganizeSidebarAutoClose = *patch.OrganizeSidebarAutoClose
 	}
 	if patch.SaveSuggestionMode != nil {
 		if !validSaveSuggestionMode(*patch.SaveSuggestionMode) {

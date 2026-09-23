@@ -10,7 +10,7 @@
 	// root layout) over the explore feed. The (with-navbar) layout already bounces
 	// logged-out users to /login and gates children on the auth check, so by the
 	// time this mounts auth.user is resolved — we only handle the logged-in case.
-	const SECTIONS: SettingsSection[] = ['account', 'feed', 'subscription', 'moderation'];
+	const SECTIONS: SettingsSection[] = ['account', 'feed', 'organize', 'subscription', 'moderation'];
 
 	onMount(() => {
 		if (!auth.user) return;

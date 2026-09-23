@@ -39,11 +39,12 @@
 	let { selectedUri = '', unsorted = false }: { selectedUri?: string; unsorted?: boolean } =
 		$props();
 
-	// Picking a collection navigates within /organize (no remount), so the mobile
-	// offcanvas sheet would stay open over the result — close it explicitly.
+	// Picking a collection navigates within /organize (no remount), so close the
+	// mobile sheet, or the desktop sidebar when the viewer prefers it tucked away.
 	const sidebar = Sidebar.useSidebar();
-	function closeMobile() {
+	function closeSidebar() {
 		if (sidebar.isMobile) sidebar.setOpenMobile(false);
+		else if (preferences.organizeSidebarAutoClose) sidebar.setOpen(false);
 	}
 
 	// Tapping outside the sheet closes it, and so should Android's back button —
@@ -52,7 +53,7 @@
 		// Both conditions: `openMobile` can stay true after a resize past the mobile
 		// breakpoint, and a dismisser that no-ops would swallow the press instead.
 		if (!sidebar.isMobile || !sidebar.openMobile) return;
-		return onBackButton(closeMobile);
+		return onBackButton(closeSidebar);
 	});
 
 	let query = $state('');
@@ -231,7 +232,7 @@
 							<Sidebar.MenuItem>
 								<Sidebar.MenuButton isActive={unsorted} class="h-8">
 									{#snippet child({ props })}
-										<a href="/organize?unsorted=1" {...props} onclick={closeMobile}>
+										<a href="/organize?unsorted=1" {...props} onclick={closeSidebar}>
 											<UserIcon />
 											<span>Profile (Unsorted)</span>
 										</a>
@@ -253,7 +254,7 @@
 										<CollectionActions collection={node.root} variant="context" {onDeleted}>
 											<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
 												{#snippet child({ props })}
-													<a href={hrefFor(node.root.uri)} {...props} onclick={closeMobile}>
+													<a href={hrefFor(node.root.uri)} {...props} onclick={closeSidebar}>
 														<Folder
 															class={node.root.viewer?.pinned
 																? 'opacity-0'
@@ -283,7 +284,7 @@
 																<Sidebar.MenuSubButton
 																	href={hrefFor(section.uri)}
 																	isActive={selectedUri === section.uri}
-																	onclick={closeMobile}
+																	onclick={closeSidebar}
 																	class="pr-8"
 																>
 																	<span>{section.name}</span>
@@ -339,7 +340,7 @@
 									<Sidebar.MenuItem>
 										<Sidebar.MenuButton isActive={selectedUri === fav.uri} class="h-8">
 											{#snippet child({ props })}
-												<a href={hrefFor(fav.uri)} {...props} onclick={closeMobile}>
+												<a href={hrefFor(fav.uri)} {...props} onclick={closeSidebar}>
 													<Star />
 													<span>{fav.name}</span>
 												</a>
@@ -399,7 +400,7 @@
 						{/if}
 						<DropdownMenu.Item
 							onclick={() => {
-								closeMobile();
+								closeSidebar();
 								openSettings();
 							}}
 						>

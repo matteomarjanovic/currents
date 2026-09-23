@@ -25,6 +25,7 @@
 	import { Kbd } from '$lib/components/ui/kbd';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
+	import { preferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
 	import { requireSupporter, requireColorSearch } from '$lib/stores/supporter.svelte';
 	import { getImageContent, type SaveView } from '$lib/types';
 	import { bunnyImageUrl } from '$lib/image-url';
@@ -231,6 +232,10 @@
 		return onBackButton(() => (selection = null));
 	});
 	const isMobile = new IsMobile();
+	let sidebarOpen = $state(true);
+	$effect(() => {
+		if (preferencesLoaded.value) sidebarOpen = !preferences.organizeSidebarAutoClose;
+	});
 
 	// ── Multi-select ──────────────────────────────────────────────────────────
 	// A single selection shared by the header toggle and the canvas. It's scoped to
@@ -330,7 +335,7 @@
      so an svh shell falls short of the visible viewport and leaks a strip of body
      background at the bottom. dvh tracks the live viewport (and can't jitter here,
      since the page itself never scrolls). -->
-<Sidebar.Provider class="h-dvh overflow-hidden">
+<Sidebar.Provider bind:open={sidebarOpen} class="h-dvh overflow-hidden">
 	<OrganizeSidebarLeft {selectedUri} {unsorted} />
 	<!-- The inset must stay a direct sibling of the sidebar: its gutter margins come
 	     from `peer-data-[variant=inset]` classes, and Tailwind's peer-* is a sibling

@@ -28,6 +28,7 @@
 		preferencesLoaded,
 		loadPreferences,
 		setGifAutoplay,
+		setOrganizeSidebarAutoClose,
 		setSaveSuggestionMode,
 		setLastSaveRemovalAction,
 		type LastSaveRemovalPreference
@@ -51,6 +52,7 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import UserIcon from '@lucide/svelte/icons/user';
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
+	import FoldersIcon from '@lucide/svelte/icons/folders';
 
 	// Settings live in a dialog (not a page) so they open from every mode —
 	// explore's top bar, organize's sidebar, and the blurred-media overlays.
@@ -60,6 +62,7 @@
 	const NAV: { key: SettingsSection; name: string; icon: typeof ShieldIcon }[] = [
 		{ key: 'account', name: 'Account', icon: UserIcon },
 		{ key: 'feed', name: 'Feed', icon: ListFilterIcon },
+		{ key: 'organize', name: 'Organize', icon: FoldersIcon },
 		{ key: 'subscription', name: 'Subscription', icon: CreditCardIcon },
 		{ key: 'moderation', name: 'Moderation', icon: ShieldIcon }
 	];
@@ -276,7 +279,7 @@
 					<!-- The nav sidebar is hidden below md; switch sections here instead. -->
 					<div
 						data-testid="settings-mobile-nav"
-						class="grid w-full grid-cols-2 gap-0.5 rounded-md border border-border p-0.5 sm:grid-cols-4 md:hidden"
+						class="grid w-full grid-cols-2 gap-0.5 rounded-md border border-border p-0.5 sm:grid-cols-5 md:hidden"
 					>
 						{#each NAV as item (item.key)}
 							<button
@@ -453,6 +456,31 @@
 									</span>
 								</div>
 								<FeedCollectionCombobox />
+							</div>
+						</section>
+					{:else if section === 'organize'}
+						<section class="flex flex-col gap-4">
+							<div>
+								<h3 class="text-sm font-medium">Sidebar</h3>
+								<p class="text-sm text-muted-foreground">
+									Choose how the collection sidebar behaves in Organize mode.
+								</p>
+							</div>
+							<div
+								class="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
+							>
+								<div class="flex flex-col gap-0.5">
+									<span class="text-sm font-medium">Keep sidebar closed</span>
+									<span class="text-xs text-muted-foreground">
+										Open it with the sidebar button; choosing a collection closes it again.
+									</span>
+								</div>
+								<Switch
+									aria-label="Keep sidebar closed"
+									checked={preferences.organizeSidebarAutoClose}
+									disabled={!preferencesLoaded.value}
+									onCheckedChange={setOrganizeSidebarAutoClose}
+								/>
 							</div>
 						</section>
 					{:else if section === 'subscription'}

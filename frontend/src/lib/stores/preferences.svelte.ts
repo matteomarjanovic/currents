@@ -13,14 +13,16 @@ interface Prefs {
 	// and play on hover (see save-image.svelte).
 	gifAutoplay: boolean;
 	organizeCollectionSort: OrganizeCollectionSort;
+	organizeSidebarAutoClose: boolean;
 	saveSuggestionMode: SaveSuggestionMode;
 	lastSaveRemovalAction: LastSaveRemovalPreference;
 }
 
-// Defaults mirror the appview DB column defaults (migrations 042, 048, 050, and 052).
+// Defaults mirror the appview DB column defaults (migrations 042, 048, 050, 052, and 053).
 const DEFAULTS: Prefs = {
 	gifAutoplay: true,
 	organizeCollectionSort: 'name',
+	organizeSidebarAutoClose: false,
 	saveSuggestionMode: DEFAULT_SAVE_SUGGESTION_MODE,
 	lastSaveRemovalAction: 'ask'
 };
@@ -36,6 +38,9 @@ export async function loadPreferences() {
 		if (typeof data.gifAutoplay === 'boolean') preferences.gifAutoplay = data.gifAutoplay;
 		if (data.organizeCollectionSort === 'name' || data.organizeCollectionSort === 'recent') {
 			preferences.organizeCollectionSort = data.organizeCollectionSort;
+		}
+		if (typeof data.organizeSidebarAutoClose === 'boolean') {
+			preferences.organizeSidebarAutoClose = data.organizeSidebarAutoClose;
 		}
 		if (
 			data.saveSuggestionMode === 'last-used' ||
@@ -65,6 +70,7 @@ async function persist() {
 			body: JSON.stringify({
 				gifAutoplay: preferences.gifAutoplay,
 				organizeCollectionSort: preferences.organizeCollectionSort,
+				organizeSidebarAutoClose: preferences.organizeSidebarAutoClose,
 				saveSuggestionMode: preferences.saveSuggestionMode,
 				lastSaveRemovalAction: preferences.lastSaveRemovalAction
 			})
@@ -81,6 +87,11 @@ export function setGifAutoplay(val: boolean) {
 
 export function setOrganizeCollectionSort(val: OrganizeCollectionSort) {
 	preferences.organizeCollectionSort = val; // optimistic
+	void persist();
+}
+
+export function setOrganizeSidebarAutoClose(val: boolean) {
+	preferences.organizeSidebarAutoClose = val; // optimistic
 	void persist();
 }
 

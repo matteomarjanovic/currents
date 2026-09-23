@@ -111,6 +111,67 @@ test('Profile (Unsorted) is the first library source and loads only unsorted sav
 	expect(calls.unsortedUrls[0]).toContain(`actor=${encodeURIComponent(me.did)}`);
 });
 
+test('desktop sidebar opens on demand and closes after choosing a collection when enabled', async ({
+	page
+}) => {
+	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+	let autoClose = false;
+	await mockApi(page, calls);
+	await page.route(`${APPVIEW}/api/preferences`, (route) => {
+		if (route.request().method() === 'PUT') {
+			autoClose = route.request().postDataJSON().organizeSidebarAutoClose;
+			return route.fulfill({ status: 204 });
+		}
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ organizeSidebarAutoClose: autoClose })
+		});
+	});
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+	const sidebar = page.locator('[data-slot="sidebar"][data-side="left"]');
+	await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+
+	await page.goto('/settings/organize');
+	await page.getByRole('switch', { name: 'Keep sidebar closed' }).click();
+	await expect.poll(() => autoClose).toBe(true);
+	await page.goto('/organize');
+	await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+	await page.getByRole('button', { name: 'Toggle Sidebar' }).click();
+	await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+	await page.getByRole('link', { name: 'Interiors' }).click();
+	await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+	await page.reload();
+	await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+
+	await page.goto('/settings/organize');
+	await page.getByRole('switch', { name: 'Keep sidebar closed' }).click();
+	await expect.poll(() => autoClose).toBe(false);
+	await page.goto('/organize');
+	await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+	await page.getByRole('link', { name: 'Interiors' }).click();
+	await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+});
+
+test('clicking the selected Explore mode opens the Explore feed', async ({ page }) => {
+	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+	await mockApi(page, calls);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/search/saves/cats');
+	await page.getByRole('tab', { name: 'Explore' }).click();
+	await expect(page).toHaveURL(/\/explore\//);
+});
+
+test('clicking Explore in the mobile mode menu opens the Explore feed', async ({ page }) => {
+	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+	await mockApi(page, calls);
+	await page.goto('/search/saves/cats');
+	await page.getByRole('button', { name: 'Switch mode' }).click();
+	await page.getByRole('menuitem', { name: /Explore/ }).click();
+	await expect(page).toHaveURL(/\/explore\//);
+});
+
 test('collection pin controls stay below sticky sidebar headers', async ({ page }) => {
 	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
 	await mockApi(page, calls);
