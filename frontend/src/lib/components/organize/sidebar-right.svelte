@@ -539,7 +539,7 @@
 				     stays in the DOM when hidden, so an always-mounted masonry would
 				     measure clientWidth 0 and fetch before it's ever viewed. -->
 				{#if tab === 'similar'}
-					<SimilarPanel {save} />
+					<SimilarPanel {save} onViewFullScreen={onOpenFullScreen} />
 				{/if}
 			</Tabs.Content>
 		</Tabs.Root>

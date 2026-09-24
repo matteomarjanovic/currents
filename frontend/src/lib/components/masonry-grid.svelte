@@ -29,6 +29,8 @@
 		// page as the viewer nears the end of the run, since this grid's scroll sentinel
 		// is under the overlay and never fires while the detail is open.
 		loadMore?: () => void | Promise<void>;
+		onViewFullScreen?: (save: SaveView) => void;
+		reservePageScrollbarGutter?: boolean;
 	}
 
 	let {
@@ -38,7 +40,9 @@
 		mobileSave = false,
 		longPressSave = false,
 		discoveryFeed = false,
-		loadMore
+		loadMore,
+		onViewFullScreen,
+		reservePageScrollbarGutter = true
 	}: Props = $props();
 
 	// Drop saves the viewer has set to "hide" before the grid sees them: no
@@ -145,7 +149,10 @@
 
 <svelte:window bind:innerWidth={viewportWidth} bind:innerHeight={viewportHeight} />
 
-<div bind:clientWidth={containerWidth} data-masonry-grid>
+<div
+	bind:clientWidth={containerWidth}
+	data-masonry-grid={reservePageScrollbarGutter ? '' : undefined}
+>
 	<!-- Appended frames briefly have the default CSS order before the masonry
 	     observer positions them. Keep that transient reflow from becoming the
 	     browser's scroll anchor and moving the viewport as a page lands. -->
@@ -170,6 +177,8 @@
 							{linkToDetail}
 							{mobileSave}
 							{longPressSave}
+							{onViewFullScreen}
+							mobile={viewportWidth !== undefined && viewportWidth < 768}
 							preloadControls={nearby.has(item.uri)}
 							onOpen={(depth) => setSaveSequence(gridId, visibleItems, loadMore, depth)}
 						/>

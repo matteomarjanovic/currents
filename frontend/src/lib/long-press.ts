@@ -11,9 +11,10 @@ interface LongPressOptions {
 // so the feel matches across the app.
 export function longpress(node: HTMLElement, options: LongPressOptions) {
 	let timer: ReturnType<typeof setTimeout> | null = null;
-	let pointerType = '';
+	let touchPress = false;
 
 	function clear() {
+		touchPress = false;
 		if (timer !== null) {
 			clearTimeout(timer);
 			timer = null;
@@ -21,16 +22,17 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
 	}
 
 	function onPointerDown(e: PointerEvent) {
-		pointerType = e.pointerType;
-		if (!options.enabled || e.pointerType === 'mouse') return;
 		clear();
+		if (!options.enabled || (e.pointerType !== 'touch' && e.pointerType !== 'pen')) return;
+		touchPress = true;
 		timer = setTimeout(() => options.onLongPress(), DURATION_MS);
 	}
 
 	function onContextMenu(e: Event) {
-		// Mouse right-click belongs to the desktop context menu wrapped around the
-		// card. A touch/pen contextmenu is another way browsers signal a long press.
-		if (!options.enabled || pointerType === 'mouse') return;
+		const type = e instanceof PointerEvent ? e.pointerType : '';
+		// A menu dismissal layer can consume pointerdown. An unpaired mouse
+		// contextmenu must still reach the desktop menu, never the touch drawer.
+		if (!options.enabled || (type ? type !== 'touch' && type !== 'pen' : !touchPress)) return;
 		// Some devices/browsers signal the long-press via `contextmenu` instead of
 		// (or before) our own timer completing — fire from here too, matching
 		// bits-ui's ContextMenuTrigger. Clearing the timer first keeps this from
@@ -51,6 +53,7 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
 	return {
 		update(newOptions: LongPressOptions) {
 			options = newOptions;
+			if (!options.enabled) clear();
 		},
 		destroy() {
 			clear();

@@ -35,6 +35,9 @@
 		file?: File; // present for local uploads
 		imageUrl?: string; // paste-from-URL: the appview downloads this server-side
 		pageUrl?: string; // source page, saved as the record's originUrl
+		selected: boolean;
+		width?: number;
+		height?: number;
 	};
 
 	let staged = $state<Staged[]>([]);
@@ -72,12 +75,15 @@
 		selectedSelfLabels = next;
 	}
 
-	let total = $derived(staged.length);
-	let doneCount = $derived(staged.filter((s) => s.status === 'done').length);
-	let errorCount = $derived(staged.filter((s) => s.status === 'error').length);
+	let selected = $derived(staged.filter((s) => s.selected));
+	let total = $derived(selected.length);
+	let doneCount = $derived(selected.filter((s) => s.status === 'done').length);
+	let errorCount = $derived(selected.filter((s) => s.status === 'error').length);
 	let processed = $derived(doneCount + errorCount);
 	let progressValue = $derived(total === 0 ? 0 : (processed / total) * 100);
-	let canSave = $derived(!uploading && total > 0 && selectedCollectionUri !== undefined);
+	let canSave = $derived(
+		!uploading && selected.some((s) => s.status !== 'done') && selectedCollectionUri !== undefined
+	);
 	let popoverOpen = $derived((uploading || completed || rateLimited) && !popoverDismissed);
 
 	function addFiles(files: FileList | File[]) {
@@ -86,7 +92,8 @@
 			id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
 			file,
 			url: URL.createObjectURL(file),
-			status: 'pending'
+			status: 'pending',
+			selected: true
 		}));
 		staged = [...staged, ...mapped];
 		for (const item of mapped) if (item.file) void prefillAlt(item.id, item.file);
@@ -182,18 +189,19 @@
 				toast.error('No images found at that URL.');
 				return;
 			}
-			// Stage them directly. Unreachable previews auto-remove (the staged
-			// grid's onerror), which also filters scraped junk like dead links.
+			// A single result is unambiguous; for several, let the user choose.
+			// Unreachable previews auto-remove through the staged grid's onerror.
 			const mapped: Staged[] = imgs.map((imageUrl) => ({
 				id: `url-${imageUrl}-${Math.random()}`,
 				url: imageUrl,
 				imageUrl,
 				pageUrl: u,
-				status: 'pending'
+				status: 'pending',
+				selected: imgs.length === 1
 			}));
 			staged = [...staged, ...mapped];
 			sourceUrl = '';
-			toast.success(`Added ${mapped.length} image${mapped.length === 1 ? '' : 's'} from the page.`);
+			toast.success(`Found ${mapped.length} image${mapped.length === 1 ? '' : 's'} on the page.`);
 		} catch {
 			toast.error('Could not fetch images from that URL.');
 		} finally {
@@ -336,7 +344,7 @@
 		rateLimited = false;
 		popoverDismissed = false;
 
-		const queue = staged.filter((s) => s.status !== 'done');
+		const queue = selected.filter((s) => s.status !== 'done');
 		let cursor = 0;
 		let unauthorized = false;
 		let hitRateLimit = false;
@@ -447,7 +455,7 @@
 				<ImagePlus class="size-4" />
 				Add files
 			</Button>
-			{#if total === 0}
+			{#if staged.length === 0}
 				<span> ... or drag and drop them in the page </span>
 			{/if}
 		{/if}
@@ -459,9 +467,13 @@
 			class="hidden"
 			onchange={onFilePick}
 		/>
-		{#if total > 0}
+		{#if staged.length > 0}
 			<span class="text-sm text-muted-foreground">
-				{total} image{total === 1 ? '' : 's'} staged
+				{#if staged.some((item) => item.imageUrl)}
+					{selected.length} of {staged.length} {staged.length === 1 ? 'image' : 'images'} selected
+				{:else}
+					{staged.length} image{staged.length === 1 ? '' : 's'} staged
+				{/if}
 			</span>
 		{/if}
 	</div>
@@ -489,6 +501,9 @@
 	</div>
 
 	{#if staged.length > 0}
+		{#if staged.some((item) => item.imageUrl)}
+			<p class="text-sm text-muted-foreground">Select the fetched images you want to upload.</p>
+		{/if}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
 			{#each staged as item (item.id)}
 				<div class="group relative aspect-square overflow-hidden rounded-xl bg-muted">
@@ -500,11 +515,45 @@
 						alt=""
 						loading="lazy"
 						decoding="async"
-						class="size-full object-cover"
+						class="size-full object-cover {item.imageUrl && !item.selected ? 'opacity-60' : ''}"
+						onload={(e) => {
+							const image = e.currentTarget as HTMLImageElement;
+							item.width = image.naturalWidth;
+							item.height = image.naturalHeight;
+						}}
 						onerror={() => {
 							if (item.imageUrl) removeStaged(item.id);
 						}}
 					/>
+					{#if item.imageUrl}
+						<button
+							type="button"
+							class="absolute inset-0 rounded-xl border-2 transition-colors {item.selected
+								? 'border-primary'
+								: 'border-transparent'}"
+							aria-pressed={item.selected}
+							aria-label={item.width && item.height
+								? `Image, ${item.width} by ${item.height} pixels`
+								: 'Image'}
+							disabled={uploading || item.status === 'done'}
+							onclick={() => (item.selected = !item.selected)}
+						>
+							{#if item.selected}
+								<span
+									class="absolute bottom-1.5 left-1.5 grid size-5 place-items-center rounded-full bg-primary"
+								>
+									<Check class="size-3 text-primary-foreground" />
+								</span>
+							{/if}
+						</button>
+					{/if}
+					{#if item.width && item.height}
+						<span
+							class="pointer-events-none absolute right-1.5 bottom-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none font-medium text-white tabular-nums shadow-sm"
+						>
+							{item.width}×{item.height}
+						</span>
+					{/if}
 					{#if item.status === 'uploading'}
 						<div
 							class="absolute inset-0 flex items-center justify-center bg-black/40 text-xs font-medium text-white"
@@ -530,7 +579,7 @@
 									<button
 										{...props}
 										type="button"
-										class="absolute top-1.5 left-1.5 flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition-colors hover:opacity-90 {item.alt?.trim()
+										class="absolute top-1.5 left-1.5 z-10 flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-semibold transition-colors hover:opacity-90 {item.alt?.trim()
 											? 'bg-primary text-primary-foreground'
 											: 'bg-black/60 text-white'}"
 										aria-label="Add alt text"
@@ -559,14 +608,16 @@
 								/>
 							</Popover.Content>
 						</Popover.Root>
-						<button
-							type="button"
-							class="absolute top-1.5 right-1.5 flex size-7 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
-							onclick={() => removeStaged(item.id)}
-							aria-label="Remove image"
-						>
-							<X class="size-4" />
-						</button>
+						{#if !item.imageUrl}
+							<button
+								type="button"
+								class="absolute top-1.5 right-1.5 z-10 flex size-7 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
+								onclick={() => removeStaged(item.id)}
+								aria-label="Remove image"
+							>
+								<X class="size-4" />
+							</button>
+						{/if}
 					{/if}
 				</div>
 			{/each}

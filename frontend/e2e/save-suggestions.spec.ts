@@ -103,6 +103,28 @@ function card(page: Page, n: number) {
 		.locator('xpath=ancestor::div[contains(@class,"group")][1]');
 }
 
+test('Explore and save detail use default Save and secondary Saved buttons', async ({ page }) => {
+	const resaves: { saveUri: string; collectionUri: string }[] = [];
+	await mockApi(page, resaves);
+	await page.goto('/explore/general');
+
+	const first = card(page, 1);
+	await first.hover();
+	const save = first.getByRole('button', { name: 'Save', exact: true });
+	await expect(save).toHaveAttribute('data-slot', 'button');
+	await expect(save).toHaveClass(/bg-primary/);
+	await save.click();
+	await expect.poll(() => resaves.length).toBe(1);
+	const saved = first.getByRole('button', { name: 'Saved', exact: true });
+	await expect(saved).toHaveClass(/bg-secondary/);
+
+	await first.locator('a').click({ position: { x: 40, y: 40 } });
+	const detailSaved = page
+		.locator('[data-save-detail-overlay][data-active="true"]')
+		.getByRole('button', { name: 'Saved', exact: true });
+	await expect(detailSaved).toHaveClass(/bg-secondary/);
+});
+
 test('Quick Save recommends, follows successful choices, and resets after leaving Explore', async ({
 	page
 }) => {

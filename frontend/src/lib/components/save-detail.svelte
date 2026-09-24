@@ -750,8 +750,6 @@
 			item={currentSave}
 			variant="popover"
 			triggerVariant="secondary"
-			saveToggleVariant="outline"
-			saveToggleClass="bg-background aria-pressed:bg-muted aria-pressed:text-foreground"
 			onSavesChange={handleSavesChange}
 		/>
 	{:else if auth.checked}

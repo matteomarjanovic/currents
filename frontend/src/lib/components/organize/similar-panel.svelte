@@ -8,7 +8,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import ImageOff from '@lucide/svelte/icons/image-off';
 
-	let { save }: { save: SaveView } = $props();
+	let { save, onViewFullScreen }: { save: SaveView; onViewFullScreen: (save: SaveView) => void } =
+		$props();
 
 	// Same source as explore mode's "Related" section: pgvector ANN over the whole
 	// Currents corpus, seeded by the focused save's visual identity.
@@ -67,10 +68,16 @@
 			<p>No similar images found.</p>
 		</div>
 	{:else}
-		<!-- Same masonry grid as explore mode (hover overlay + collection selector). Tiles
-		     aren't links here — clicking does nothing for now. On mobile there's no hover,
-		     so each tile gets an always-visible Save button instead. -->
-		<MasonryGrid items={related.items} loading={related.loading} linkToDetail={false} mobileSave />
+		<!-- Desktop cards show Save and image actions on hover. On mobile, tap opens
+		     the image viewer and long-press opens the shared Quick actions drawer. -->
+		<MasonryGrid
+			items={related.items}
+			loading={related.loading}
+			linkToDetail={false}
+			longPressSave
+			{onViewFullScreen}
+			reservePageScrollbarGutter={false}
+		/>
 		{#if related.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}

@@ -29,9 +29,11 @@
 		longPressSave?: boolean;
 		// Pre-mount desktop controls before the user hovers so their first reveal can animate.
 		preloadControls?: boolean;
+		mobile?: boolean;
 		// Called just before the detail view opens, so the grid can record the run of
 		// images this tile came from (see $lib/save-sequence).
 		onOpen?: (depth: number) => void;
+		onViewFullScreen?: (save: SaveView) => void;
 	}
 
 	let {
@@ -40,15 +42,20 @@
 		mobileSave = false,
 		longPressSave = false,
 		preloadControls = false,
-		onOpen
+		mobile = false,
+		onOpen,
+		onViewFullScreen
 	}: Props = $props();
 
 	let dropdownOpen = $state(false);
+	let actionMenuOpen = $state(false);
+	let controlsOpen = $derived(dropdownOpen || actionMenuOpen);
 	let desktopControlsMounted = $state(false);
 	let quickActionsOpen = $state(false);
 	let quickActionsMounted = $state(false);
 	let suppressNextClick = false;
 	const native = isNative();
+	let mobileActions = $derived(mobile || native);
 	let href = $derived.by(() => {
 		const rkey = item.uri.split('/').pop() ?? '';
 		return `/profile/${item.author.handle}/save/${rkey}`;
@@ -100,6 +107,14 @@
 		const next = $state.snapshot(item);
 		onOpen?.(stack.length);
 		pushState(href, { save: next, saveStack: [...stack, next] });
+	}
+
+	function handleFocusClick() {
+		if (suppressNextClick) {
+			suppressNextClick = false;
+			return;
+		}
+		if (!isImageNavigationBlocked()) onViewFullScreen?.(item);
 	}
 
 	function prepareDesktopControls(node: HTMLElement) {
@@ -158,22 +173,62 @@
 <div
 	class="group relative overflow-hidden rounded-lg"
 	style={tileStyle}
-	use:longpress={{ enabled: longPressSave, onLongPress: handleLongPress }}
+	use:longpress={{ enabled: longPressSave && mobileActions, onLongPress: handleLongPress }}
 	use:prepareDesktopControls
 >
-	<!-- Native Capacitor builds use the touch actions drawer for long-presses. The
-	     desktop context-menu recognizer would otherwise open a second surface on iOS. -->
-	<ImageActionMenu {item} variant="context" contextDisabled={native}>
+	<!-- Mobile web and Capacitor use the drawer; desktop uses the context menu. -->
+	<ImageActionMenu {item} variant="context" contextDisabled={mobileActions} {onViewFullScreen}>
 		<LabeledMedia labels={item.labels}>
 			{#if linkToDetail}
 				<a {href} class="block" draggable={false} onclick={handleClick}>
 					{@render media()}
 				</a>
+			{:else if onViewFullScreen && mobileActions}
+				<button
+					type="button"
+					class="block w-full cursor-zoom-in"
+					aria-label="View image full screen"
+					onclick={handleFocusClick}
+				>
+					{@render media()}
+				</button>
 			{:else}
 				<div class="block">{@render media()}</div>
 			{/if}
 			{#snippet overlay()}
-				{#if auth.user && collections.loaded && desktopControlsMounted}
+				{#if onViewFullScreen && desktopControlsMounted}
+					<div
+						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {controlsOpen
+							? 'opacity-100'
+							: 'opacity-0 group-hover:opacity-100'}"
+					>
+						<div
+							class="flex items-center justify-between gap-2 transition-transform duration-300 {controlsOpen
+								? 'pointer-events-auto translate-y-0'
+								: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
+						>
+							{#if auth.user && collections.loaded}
+								<CollectionSelector
+									{item}
+									variant="popover"
+									onOpenChange={(open) => (dropdownOpen = open)}
+									onSavesChange={handleSavesChange}
+								>
+									{#snippet trigger({ props })}
+										<Button {...props} variant="default" size="sm">Save</Button>
+									{/snippet}
+								</CollectionSelector>
+							{/if}
+							<ImageActionMenu
+								{item}
+								variant="dropdown"
+								buttonVariant="secondary"
+								{onViewFullScreen}
+								onOpenChange={(open) => (actionMenuOpen = open)}
+							/>
+						</div>
+					</div>
+				{:else if auth.user && collections.loaded && desktopControlsMounted}
 					<div
 						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
 							? 'opacity-100'
@@ -187,8 +242,6 @@
 							<CollectionSelector
 								{item}
 								variant="popover"
-								saveToggleVariant="outline"
-								saveToggleClass="bg-background aria-pressed:bg-muted aria-pressed:text-foreground"
 								onOpenChange={(o) => (dropdownOpen = o)}
 								onSavesChange={handleSavesChange}
 							/>
@@ -208,7 +261,7 @@
 			{/snippet}
 		</LabeledMedia>
 	</ImageActionMenu>
-	{#if longPressSave && auth.user && collections.loaded && quickActionsMounted}
+	{#if longPressSave && mobileActions && auth.user && collections.loaded && quickActionsMounted}
 		<MobileQuickActionsDrawer
 			{item}
 			bind:open={quickActionsOpen}

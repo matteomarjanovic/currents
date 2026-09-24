@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { Button, type ButtonVariant } from '$lib/components/ui/button';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
@@ -9,6 +9,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import type { SaveView } from '$lib/types';
+	import Scan from '@lucide/svelte/icons/scan';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Download from '@lucide/svelte/icons/download';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
@@ -22,18 +23,25 @@
 		variant,
 		contextDisabled = false,
 		children,
-		onReport
+		onReport,
+		onViewFullScreen,
+		onOpenChange,
+		buttonVariant = 'outline'
 	}: {
 		item: SaveView;
 		variant: 'context' | 'dropdown';
 		contextDisabled?: boolean;
 		children?: Snippet;
 		onReport?: () => void;
+		onViewFullScreen?: (save: SaveView) => void;
+		onOpenChange?: (open: boolean) => void;
+		buttonVariant?: ButtonVariant;
 	} = $props();
 
 	const dropdownMenu = DropdownMenu as unknown as typeof ContextMenu;
 	let menuOpen = $state(false);
 	let reportOpen = $state(false);
+	$effect(() => onOpenChange?.(menuOpen));
 
 	function run(action: (save: SaveView) => Promise<void>) {
 		void action(item);
@@ -50,6 +58,13 @@
 </script>
 
 {#snippet menuItems(Menu: typeof ContextMenu)}
+	{#if onViewFullScreen}
+		<Menu.Item onSelect={() => onViewFullScreen(item)}>
+			<Scan />
+			View full screen
+		</Menu.Item>
+		<Menu.Separator />
+	{/if}
 	<Menu.Item onSelect={() => run(downloadImage)}>
 		<Download />
 		Download
@@ -96,7 +111,7 @@
 	<DropdownMenu.Root bind:open={menuOpen}>
 		<DropdownMenu.Trigger>
 			{#snippet child({ props })}
-				<Button {...props} variant="outline" size="icon-sm" aria-label="Image actions">
+				<Button {...props} variant={buttonVariant} size="icon-sm" aria-label="Image actions">
 					<Ellipsis class="size-4" />
 				</Button>
 			{/snippet}
