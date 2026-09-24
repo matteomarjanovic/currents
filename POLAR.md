@@ -71,12 +71,13 @@ doesn't encode it.
      `POLAR_SERVER=sandbox` while testing against sandbox.
    - Frontend (committed, not secrets): sandbox product UUIDs in
      `frontend/.env.development` (what `npm run dev` uses), production UUIDs in
-     `frontend/.env.production` (what production builds — Netlify — use; env vars set
-     in the Netlify dashboard override the file, and are baked at build time, so any
-     change there needs a redeploy): `PUBLIC_POLAR_PRODUCT_MONTHLY`,
-     `PUBLIC_POLAR_PRODUCT_YEARLY`. While the ids are empty the subscribe buttons stay
-     disabled. Never point production at sandbox products — visitors would see working
-     test checkouts.
+     `frontend/.env.production` and the `frontend/Dockerfile` defaults. Release images
+     are built outside Compose, so the Dockerfile defaults must match the live products;
+     the VM's `.env.production` does not change IDs already baked into an image.
+     `PUBLIC_POLAR_PRODUCT_MONTHLY` and `PUBLIC_POLAR_PRODUCT_YEARLY` are baked at build
+     time, so any change needs a new frontend image. Empty IDs disable subscriptions
+     and make the monthly gross estimate show $0. Never point production at sandbox
+     products — visitors would see working test checkouts.
 
 ## Testing in sandbox
 

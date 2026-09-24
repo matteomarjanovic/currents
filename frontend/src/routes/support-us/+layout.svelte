@@ -37,7 +37,7 @@
 
 <ModeWatcher />
 
-<TopBar user={auth.user} />
+<TopBar user={auth.user} showLogo />
 
 {@render children()}
 

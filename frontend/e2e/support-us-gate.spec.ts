@@ -6,6 +6,7 @@ import { test, expect, type Page } from '@playwright/test';
 // layouts that mount it for the rest of the app.
 
 const APPVIEW = 'https://api-dev.currents.is';
+const YEARLY_PRODUCT = 'a9016507-9cde-40c7-bcf5-8317ac497ec6';
 const me = { did: 'did:plc:test', handle: 'test.bsky.social', displayName: 'Tester' };
 
 async function mockApi(page: Page, loggedIn: boolean) {
@@ -20,7 +21,7 @@ async function mockApi(page: Page, loggedIn: boolean) {
 				? json({ active: false, subscribed: false, colorTrialsLeft: 0 })
 				: route.fulfill({ status: 401, body: '' });
 		if (url.includes('/api/supporter/stats'))
-			return json({ totalUsers: 120, supporters: 4, byProduct: {} });
+			return json({ totalUsers: 120, supporters: 1, byProduct: { [YEARLY_PRODUCT]: 1 } });
 		return json({});
 	});
 }
@@ -53,4 +54,20 @@ test('a logged-in visitor clicking a tier goes straight to checkout', async ({ p
 	await page.waitForTimeout(800);
 
 	await expect(page.getByText('Log in to continue')).toHaveCount(0);
+});
+
+test('estimates monthly gross from active plans', async ({ page }) => {
+	await load(page, false);
+	await expect(page.getByText('Est. monthly gross').locator('..')).toContainText('$6');
+});
+
+test.describe('desktop support page', () => {
+	test.use({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false });
+
+	test('shows the Currents logo in the header', async ({ page }) => {
+		await load(page, false);
+		await expect(
+			page.locator('header a[aria-label="Go to home"]:visible svg[viewBox="0 0 2510 388"]')
+		).toBeVisible();
+	});
 });

@@ -68,11 +68,13 @@
 	let {
 		user,
 		landing = false,
+		showLogo = false,
 		actionsOnly = false,
 		mobileOnly = false
 	}: {
 		user: { did: string; handle: string; displayName?: string; avatar?: string } | null;
 		landing?: boolean;
+		showLogo?: boolean;
 		actionsOnly?: boolean;
 		mobileOnly?: boolean;
 	} = $props();
@@ -632,12 +634,22 @@
 					class="pointer-events-auto h-5 shrink-0 text-lg font-semibold text-foreground"><Logo /></a
 				>
 			{:else}
-				<div
-					in:fade={{ duration: 250, easing: cubicOut }}
-					class="pointer-events-auto hidden shrink-0 items-center gap-2 md:flex"
-				>
-					<div class="h-[46px] {user ? 'w-56' : 'w-[46px]'} shrink-0" aria-hidden="true"></div>
-				</div>
+				{#if showLogo}
+					<a
+						in:fade={{ duration: 250, easing: cubicOut }}
+						href={resolve('/')}
+						aria-label="Go to home"
+						class="pointer-events-auto hidden h-5 shrink-0 text-lg font-semibold text-foreground md:block"
+						><Logo /></a
+					>
+				{:else}
+					<div
+						in:fade={{ duration: 250, easing: cubicOut }}
+						class="pointer-events-auto hidden shrink-0 items-center gap-2 md:flex"
+					>
+						<div class="h-[46px] {user ? 'w-56' : 'w-[46px]'} shrink-0" aria-hidden="true"></div>
+					</div>
+				{/if}
 				<!-- Mobile: the logo floats centered on its own (same box and position as the
 			     save-detail home button, so it doesn't jump between views); the buttons
 			     live in the bottom cluster instead. -->
