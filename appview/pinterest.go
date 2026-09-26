@@ -21,6 +21,39 @@ const (
 
 var pinterestHTTP = &http.Client{Timeout: 30 * time.Second}
 
+func resolvePinterestUsername(ctx context.Context, input string) (string, error) {
+	input = strings.TrimSpace(input)
+	u, err := url.Parse(input)
+	if err != nil || !strings.EqualFold(u.Hostname(), "pin.it") || u.Port() != "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return normalizePinterestUsername(input)
+	}
+
+	u.Scheme = "https"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("invalid Pinterest short URL")
+	}
+	req.Header.Set("User-Agent", pinterestUA)
+	client := *pinterestHTTP
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		host := strings.ToLower(req.URL.Hostname())
+		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.Port() != "" ||
+			(host != "pin.it" && host != "pinterest.com" && !strings.HasSuffix(host, ".pinterest.com")) {
+			return fmt.Errorf("Pinterest short URL redirects outside Pinterest")
+		}
+		return nil
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve Pinterest short URL")
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Pinterest short URL returned status %d", resp.StatusCode)
+	}
+	return normalizePinterestUsername(resp.Request.URL.String())
+}
+
 func normalizePinterestUsername(input string) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {

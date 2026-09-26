@@ -41,7 +41,7 @@ func (s *Server) APIPinterestBoards(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	username, err := normalizePinterestUsername(r.URL.Query().Get("username"))
+	username, err := resolvePinterestUsername(r.Context(), r.URL.Query().Get("username"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
