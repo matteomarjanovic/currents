@@ -137,6 +137,19 @@ That pass processes distinct unresolved blob CIDs directly from `save`, then rec
 
 The `visual_identity` table stores the canonical blob reference (best-quality source), the embedding (HNSW-indexed for fast ANN search), a dominant-color palette for placeholder rendering, and a `save_count` maintained by a DB trigger.
 
+## Repository integrity
+
+The server also runs daily orphan recovery and a durable collection-deletion
+worker. Recovery promotes sections whose PDS parent is gone and moves saves
+whose collection is gone to Profile → Unsorted, preserving existing records.
+Deletion returns 202 after queueing; cleanup survives restarts and PDS rate
+limits. Both verify the PDS and coordinate with imports.
+
+Use `appview repair-orphans --did <did> --dry-run` to inspect an account.
+The full rules, grace period, OAuth requirements, operator commands and
+verification steps are in [REPOSITORY_MAINTENANCE.md](../REPOSITORY_MAINTENANCE.md).
+The existing `APPVIEW_MODE=repair` remains the embedding/enrichment backfill.
+
 ## Moderation backfill
 
 Score existing saves through the safety heads and apply labels site-wide:

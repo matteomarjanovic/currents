@@ -143,7 +143,11 @@
 			}
 			deleteOpen = false;
 			removeCollection(collection.uri);
-			toast.success(`Collection "${collection.name}" deleted`);
+			toast.success(
+				res.status === 202
+					? `Deleting "${collection.name}" and its contents`
+					: `Collection "${collection.name}" deleted`
+			);
 			const handle = auth.user?.handle ?? '';
 			await goto(handle ? `/profile/${handle}` : '/', {
 				replaceState: true,

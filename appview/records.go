@@ -202,6 +202,12 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -230,12 +236,8 @@ func (s *Server) CreateCollection(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "parent must be your own is.currents.feed.collection record", http.StatusBadRequest)
 			return
 		}
-		// Enforce a single level: the parent must itself be a root collection.
-		if existing, err := s.Store.GetCollectionByURI(r.Context(), parentURI, ""); err == nil && existing != nil && existing.ParentURI != "" {
-			http.Error(w, "sub-collections cannot have sub-collections", http.StatusBadRequest)
-			return
-		}
-		ref, err := resolveStrongRef(r.Context(), c, parentURI)
+		// Validate hierarchy on the PDS; TAP may still show a pre-repair parent.
+		ref, err := resolveCollectionRef(r.Context(), c, s.Store, did.String(), parentURI, true)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("resolving parent: %s", err), http.StatusBadRequest)
 			return
@@ -295,6 +297,12 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
+
 	rkey := r.PathValue("id")
 
 	// Parent is a pointer so the field is tri-state: absent keeps the current
@@ -349,10 +357,6 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 			}
 			// Enforce a single level from both ends: the new parent must be a root
 			// collection, and this collection must not have sections of its own.
-			if existing, err := s.Store.GetCollectionByURI(r.Context(), newParent, ""); err == nil && existing != nil && existing.ParentURI != "" {
-				http.Error(w, "sub-collections cannot have sub-collections", http.StatusBadRequest)
-				return
-			}
 			if subs, err := s.Store.GetSubcollectionURIs(r.Context(), uri, did.String()); err != nil {
 				http.Error(w, "checking sub-collections", http.StatusInternalServerError)
 				return
@@ -360,7 +364,7 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "a collection with sections cannot become a section", http.StatusBadRequest)
 				return
 			}
-			ref, err := resolveStrongRef(r.Context(), c, newParent)
+			ref, err := resolveCollectionRef(r.Context(), c, s.Store, did.String(), newParent, true)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("resolving parent: %s", err), http.StatusBadRequest)
 				return
@@ -386,6 +390,7 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		Repo:       did.String(),
 		Rkey:       rkey,
 		Record:     record,
+		SwapRecord: existing.Cid,
 	})
 	if err != nil {
 		if s.handleSessionError(err, w, r) {
@@ -400,86 +405,29 @@ func (s *Server) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"uri": out.Uri, "cid": out.Cid})
 }
 
+// DeleteCollection accepts a durable deletion request. The worker removes saves
+// and sections before their parent, retries failures, and checks the live PDS.
 func (s *Server) DeleteCollection(w http.ResponseWriter, r *http.Request) {
-	c, did, err := s.apiClientFromSession(r)
+	_, did, err := s.apiClientFromSession(r)
 	if err != nil {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	_, sessionID, _ := s.currentSessionDID(r)
-
-	rkey := r.PathValue("id")
-	collectionURI := "at://" + did.String() + "/" + collectionNSID + "/" + rkey
-
-	// Cascade: this collection's saves, plus every sub-collection (and its saves).
-	saveRkeys, err := s.Store.GetSaveRkeysInCollection(r.Context(), collectionURI, did.String())
-	if err != nil {
-		slog.Error("listing saves for cascade", "err", err, "collection", collectionURI)
-		// proceed without cascade rather than blocking the user
-	}
-	var subCollRkeys []string
-	subURIs, err := s.Store.GetSubcollectionURIs(r.Context(), collectionURI, did.String())
-	if err != nil {
-		slog.Error("listing subcollections for cascade", "err", err, "collection", collectionURI)
-	}
-	for _, sub := range subURIs {
-		subSaves, err := s.Store.GetSaveRkeysInCollection(r.Context(), sub, did.String())
-		if err != nil {
-			slog.Error("listing subcollection saves for cascade", "err", err, "subcollection", sub)
-			continue
-		}
-		saveRkeys = append(saveRkeys, subSaves...)
-		if rk := rkeyFromURI(sub); rk != "" {
-			subCollRkeys = append(subCollRkeys, rk)
-		}
-	}
-
-	if err := c.Post(r.Context(), "com.atproto.repo.deleteRecord", map[string]any{
-		"repo":       did.String(),
-		"collection": collectionNSID,
-		"rkey":       rkey,
-	}, nil); err != nil {
-		if s.handleSessionError(err, w, r) {
-			return
-		}
-		http.Error(w, fmt.Sprintf("deleting record: %s", err), http.StatusInternalServerError)
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
 		return
 	}
-
-	slog.Info("deleted collection", "rkey", rkey, "cascadeSaves", len(saveRkeys), "cascadeSubcollections", len(subCollRkeys))
-	w.WriteHeader(http.StatusNoContent)
-
-	if len(saveRkeys) > 0 || len(subCollRkeys) > 0 {
-		go s.cascadeDelete(*did, sessionID, subCollRkeys, saveRkeys)
-	}
-}
-
-// cascadeDelete removes the given save and collection records from the user's
-// PDS in the background. Saves are deleted first, then the (sub-)collections.
-func (s *Server) cascadeDelete(did syntax.DID, sessionID string, collRkeys, saveRkeys []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-	oauthSess, err := s.OAuth.ResumeSession(ctx, did, sessionID)
-	if err != nil {
-		slog.Error("cascade: resume session", "did", did.String(), "err", err)
+	defer unlock()
+	uri := "at://" + did.String() + "/" + collectionNSID + "/" + r.PathValue("id")
+	if !ownCollection(did.String(), uri) {
+		http.Error(w, "invalid collection", http.StatusBadRequest)
 		return
 	}
-	cli := oauthSess.APIClient()
-	del := func(collection, rk string) {
-		if err := cli.Post(ctx, "com.atproto.repo.deleteRecord", map[string]any{
-			"repo":       did.String(),
-			"collection": collection,
-			"rkey":       rk,
-		}, nil); err != nil {
-			slog.Error("cascade delete", "collection", collection, "rkey", rk, "err", err)
-		}
+	if err := s.Store.queueCollectionDelete(r.Context(), did.String(), uri); err != nil {
+		http.Error(w, "could not queue collection deletion", http.StatusInternalServerError)
+		return
 	}
-	for _, rk := range saveRkeys {
-		del(saveNSID, rk)
-	}
-	for _, rk := range collRkeys {
-		del(collectionNSID, rk)
-	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // --- Saves ---
@@ -603,6 +551,12 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
+
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -617,6 +571,16 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	attrLicense := strings.TrimSpace(r.PostFormValue("attribution_license"))
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 	selfLabelVals := parseSelfLabels(r.PostFormValue("labels"))
+
+	// Reject invisible/deleting destinations before spending a blob upload.
+	var collectionStrongRef map[string]any
+	if collectionURI != "" {
+		collectionStrongRef, err = resolveCollectionRef(r.Context(), c, s.Store, did.String(), collectionURI, false)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
+			return
+		}
+	}
 
 	var blobAny any
 	if preUploaded := strings.TrimSpace(r.PostFormValue("blob")); preUploaded != "" {
@@ -699,12 +663,7 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		"createdAt": syntax.DatetimeNow().String(),
 	}
 	// A save with no collection is "unsorted" — it lives on the user's profile only.
-	if collectionURI != "" {
-		collectionStrongRef, err := resolveStrongRef(r.Context(), c, collectionURI)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
-			return
-		}
+	if collectionStrongRef != nil {
 		record["collection"] = collectionStrongRef
 	}
 	if labels := buildSelfLabelsRecord(selfLabelVals); labels != nil {
@@ -773,6 +732,12 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
+
 	rkey := r.PathValue("id")
 
 	if err := r.ParseForm(); err != nil {
@@ -823,7 +788,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve collection strongRef
-	collectionStrongRef, err := resolveStrongRef(r.Context(), c, collectionURI)
+	collectionStrongRef, err := resolveCollectionRef(r.Context(), c, s.Store, did.String(), collectionURI, false)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
 		return
@@ -870,6 +835,7 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		Repo:       did.String(),
 		Rkey:       rkey,
 		Record:     record,
+		SwapRecord: existing.Cid,
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("updating record: %s", err), http.StatusInternalServerError)
@@ -1021,11 +987,14 @@ func (s *Server) putSaveContentForRkey(ctx context.Context, c *atclient.APIClien
 		}
 	}
 
+	// Do not restore an old collection reference if recovery or another editor
+	// changed the record after we fetched it.
 	if _, err := comatproto.RepoPutRecord(ctx, c, &comatproto.RepoPutRecord_Input{
 		Collection: saveNSID,
 		Repo:       did.String(),
 		Rkey:       rkey,
 		Record:     record,
+		SwapRecord: existing.Cid,
 	}); err != nil {
 		return fmt.Errorf("put record: %w", err)
 	}
@@ -1104,11 +1073,14 @@ func applyLabelsToOwnedSave(ctx context.Context, c *atclient.APIClient, did *syn
 	if existingVal.Text != "" {
 		record["text"] = existingVal.Text
 	}
+	// Do not restore an old collection reference if recovery or another editor
+	// changed the record after we fetched it.
 	if _, err := comatproto.RepoPutRecord(ctx, c, &comatproto.RepoPutRecord_Input{
 		Collection: saveNSID,
 		Repo:       did.String(),
 		Rkey:       rkey,
 		Record:     record,
+		SwapRecord: existing.Cid,
 	}); err != nil {
 		return nil, false, false, fmt.Errorf("put record: %w", err)
 	}
@@ -1476,6 +1448,12 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
+
 	var body struct {
 		SaveURI       string `json:"saveUri"`
 		CollectionURI string `json:"collectionUri"`
@@ -1490,6 +1468,16 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	if body.SaveURI == "" {
 		http.Error(w, "saveUri is required", http.StatusBadRequest)
 		return
+	}
+
+	// Reject invisible/deleting destinations before spending a blob upload.
+	var collectionStrongRef map[string]any
+	if body.CollectionURI != "" {
+		collectionStrongRef, err = resolveCollectionRef(r.Context(), c, s.Store, did.String(), body.CollectionURI, false)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Look up the original save to get blob info, source URL, and attribution
@@ -1586,12 +1574,7 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		"createdAt": createdAt,
 	}
 	// No collection → an "unsorted" resave that lives on the viewer's profile only.
-	if body.CollectionURI != "" {
-		collectionStrongRef, err := resolveStrongRef(r.Context(), c, body.CollectionURI)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("resolving collection: %s", err), http.StatusBadRequest)
-			return
-		}
+	if collectionStrongRef != nil {
 		record["collection"] = collectionStrongRef
 	}
 	if origOriginURL != "" {

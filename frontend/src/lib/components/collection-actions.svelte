@@ -117,7 +117,11 @@
 			// so the tree doesn't keep orphans around until the next load.
 			for (const s of sections) removeCollection(s.uri);
 			removeCollection(collection.uri);
-			toast.success(`Collection "${collection.name}" deleted`);
+			toast.success(
+				res.status === 202
+					? `Deleting "${collection.name}" and its contents`
+					: `Collection "${collection.name}" deleted`
+			);
 			onDeleted?.();
 		} catch {
 			toast.error('Network error. Please try again.');
