@@ -15,6 +15,8 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
+	pgvector "github.com/pgvector/pgvector-go"
 )
 
 const (
@@ -182,7 +184,15 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 	case saveNSID:
 		slog.Info("TAP save received", "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
-			return handler.Store.DeleteSave(ctx, atURI)
+			previous, err := handler.Store.saveCollectionURI(ctx, atURI)
+			if err != nil {
+				return err
+			}
+			if err := handler.Store.DeleteSave(ctx, atURI); err != nil {
+				return err
+			}
+			handler.scheduleEmbeddingUpdate(previous)
+			return nil
 		}
 		var s saveRecord
 		if err := json.Unmarshal(ev.Record, &s); err != nil {
@@ -204,11 +214,18 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 			}
 		}
 		createdAt := parseTimestamp(s.CreatedAt)
+		previous, err := handler.Store.saveCollectionURI(ctx, atURI)
+		if err != nil {
+			return err
+		}
 		if err := handleSaveUpsert(ctx, handler, ev, s, atURI, contentNSID, pdsBlobCID, createdAt); err != nil {
 			return err
 		}
 		if contentNSID == saveContentImageNSID {
 			handler.scheduleEmbeddingUpdate(s.Collection.URI)
+		}
+		if previous != s.Collection.URI {
+			handler.scheduleEmbeddingUpdate(previous)
 		}
 		return nil
 
@@ -524,15 +541,46 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 }
 
 func recomputeCollectionEmbedding(ctx context.Context, store *PgStore, collectionURI string) error {
-	embeddings, err := store.GetCollectionEmbeddings(ctx, collectionURI)
+	// Serialize with the save trigger's invalidation. Otherwise a recomputation
+	// that read before the last delete could put its obsolete medoid back.
+	tx, err := store.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if len(embeddings) == 0 {
-		return nil
+	defer tx.Rollback(ctx)
+	var uri string
+	if err := tx.QueryRow(ctx, `SELECT uri FROM collection WHERE uri = $1 FOR UPDATE`, collectionURI).Scan(&uri); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
 	}
-	medoid := computeMedoid(embeddings)
-	return store.UpdateCollectionEmbedding(ctx, collectionURI, medoid)
+	rows, err := tx.Query(ctx, `SELECT vi.embedding FROM save s JOIN visual_identity vi ON vi.id = s.visual_identity_id
+		WHERE s.collection_uri = $1 AND vi.embedding IS NOT NULL`, collectionURI)
+	if err != nil {
+		return err
+	}
+	var embeddings [][]float32
+	for rows.Next() {
+		var vec pgvector.Vector
+		if err := rows.Scan(&vec); err != nil {
+			rows.Close()
+			return err
+		}
+		embeddings = append(embeddings, vec.Slice())
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var medoid any
+	if len(embeddings) > 0 {
+		medoid = pgvector.NewVector(computeMedoid(embeddings))
+	}
+	if _, err := tx.Exec(ctx, `UPDATE collection SET canonical_embedding = $2 WHERE uri = $1`, collectionURI, medoid); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func fetchBlobFromCandidates(ctx context.Context, store *PgStore, dir identity.Directory, candidates []BlobSourceCandidate, blobCID string) (BlobSourceCandidate, []byte, string, error) {

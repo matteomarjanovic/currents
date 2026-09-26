@@ -66,6 +66,11 @@ func (s *Server) APIAccountDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, sessionID, _ := s.currentSessionDID(r)
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
 
 	var body struct {
 		DeletePdsData bool `json:"deletePdsData"`

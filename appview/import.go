@@ -109,6 +109,21 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	unlock, ok := s.lockRepositoryRequest(w, r, did.String())
+	if !ok {
+		return
+	}
+	defer unlock()
+	client, _, err := s.apiClientFromSession(r)
+	if err != nil {
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		return
+	}
+	if _, err := resolveCollectionRef(r.Context(), client, s.Store, did.String(), body.CollectionURI, false); err != nil {
+		http.Error(w, "collection unavailable: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if err := s.Store.UpsertImportSession(r.Context(), body.ImportSessionID, did.String(), body.PinterestUsername); err != nil {
 		http.Error(w, fmt.Sprintf("creating session: %s", err), http.StatusInternalServerError)
 		return
@@ -470,7 +485,44 @@ func isRateLimited(err error) bool {
 // is returned to the queue without consuming an attempt) so the caller can
 // back off before processing more work for this user.
 func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did string, oauthSess *oauth.ClientSession) (rateLimited bool) {
+	// Coordinate the final PDS write with deletion/recovery, including workers
+	// in another process. Recheck a claimed item after obtaining the lock.
+	unlock, err := w.Store.lockRepository(ctx, did)
+	if err != nil {
+		_ = w.Store.PauseImportItem(ctx, item.ID)
+		return true
+	}
+	defer unlock()
+	var pending bool
+	if err := w.Store.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM import_item WHERE id = $1 AND status = 'running')`, item.ID).Scan(&pending); err != nil {
+		_ = w.Store.PauseImportItem(ctx, item.ID)
+		return true
+	}
+	if !pending {
+		return false
+	}
+
 	c := oauthSess.APIClient()
+
+	collRef, err := resolveCollectionRef(ctx, c, w.Store, did, item.TargetCollectionURI, false)
+	if err != nil {
+		if isRateLimited(err) {
+			slog.Warn("import rate limited by PDS on getRecord, backing off", "did", did, "wait", importRateLimitWait)
+			_ = w.Store.PauseImportItem(ctx, item.ID)
+			return true
+		}
+		// A missing target collection dooms every item in the job (they all
+		// point at the same record), so fail the whole job at once instead of
+		// retrying each item. Happens when the collection was deleted after the
+		// items were queued — e.g. cleaning up a previous import's leftovers.
+		if isRecordNotFound(err) || errors.Is(err, errCollectionDeleting) {
+			_ = w.Store.FailImportJob(ctx, item.JobID, "target collection unavailable: "+err.Error())
+			slog.Warn("import job failed: target collection unavailable", "job_id", item.JobID, "collection", item.TargetCollectionURI)
+			return false
+		}
+		w.failOrRequeue(ctx, item, "collection: "+err.Error())
+		return false
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.ImageURL, nil)
 	if err != nil {
@@ -525,26 +577,6 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	blobJSON, _ := json.Marshal(uploadOut.Blob)
 	var blobAny any
 	json.Unmarshal(blobJSON, &blobAny)
-
-	collRef, err := resolveStrongRef(ctx, c, item.TargetCollectionURI)
-	if err != nil {
-		if isRateLimited(err) {
-			slog.Warn("import rate limited by PDS on getRecord, backing off", "did", did, "wait", importRateLimitWait)
-			_ = w.Store.PauseImportItem(ctx, item.ID)
-			return true
-		}
-		// A missing target collection dooms every item in the job (they all
-		// point at the same record), so fail the whole job at once instead of
-		// retrying each item. Happens when the collection was deleted after the
-		// items were queued — e.g. cleaning up a previous import's leftovers.
-		if isRecordNotFound(err) {
-			_ = w.Store.FailImportJob(ctx, item.JobID, "target collection missing: "+err.Error())
-			slog.Warn("import job failed: target collection missing", "job_id", item.JobID, "collection", item.TargetCollectionURI)
-			return false
-		}
-		w.failOrRequeue(ctx, item, "collection: "+err.Error())
-		return false
-	}
 
 	originURL := item.SourceURL
 	if originURL == "" {

@@ -166,13 +166,11 @@ test('Quick Save recommends, follows successful choices, and resets after leavin
 	await third.hover();
 	await expect(third.getByRole('button', { name: 'Sports Cars', exact: true })).toBeVisible();
 
-	// Navigate through the real mode switcher so this is a client-side route
+	// Navigate through the real mode tabs so this is a client-side route
 	// transition: leaving Explore must clear only the temporary destination.
-	await page.locator('button:visible').filter({ hasText: 'Explore' }).first().click();
-	await page.getByRole('menuitem').filter({ hasText: 'Organize' }).click();
+	await page.getByRole('tab', { name: /Organize/ }).click();
 	await expect(page).toHaveURL(/\/organize/);
-	await page.locator('button:visible').filter({ hasText: 'Organize' }).first().click();
-	await page.getByRole('menuitem').filter({ hasText: 'Explore' }).click();
+	await page.getByRole('tab', { name: 'Explore', exact: true }).click();
 	await expect(page).toHaveURL(/\/explore\/general/);
 
 	const returnedThird = card(page, 3);
@@ -180,4 +178,36 @@ test('Quick Save recommends, follows successful choices, and resets after leavin
 	await expect(
 		returnedThird.getByRole('button', { name: 'Landscapes', exact: true })
 	).toBeVisible();
+});
+
+test('Quick Save ignores an orphan section returned by a stale API response', async ({ page }) => {
+	const resaves: { saveUri: string; collectionUri: string }[] = [];
+	const orphan = collection('orphan');
+	await page.addInitScript(
+		(uri) => localStorage.setItem('lastUsedCollectionUri', uri),
+		SPORTS_CARS
+	);
+	await mockApi(page, resaves);
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getActorCollections?**`, (route) =>
+		route.fulfill({
+			json: {
+				collections: [
+					...collections,
+					{ uri: orphan, name: 'Hidden section', parentUri: collection('deleted') }
+				]
+			}
+		})
+	);
+	await page.route(`${APPVIEW}/api/save-suggestions`, (route) =>
+		route.fulfill({
+			json: { suggestions: Object.fromEntries(saves.map((save) => [save.uri, orphan])) }
+		})
+	);
+	await page.goto('/explore/general');
+	const first = card(page, 1);
+	await first.hover();
+	await expect(first.getByRole('button', { name: 'Sports Cars', exact: true })).toBeVisible();
+	await expect(page.getByText('Hidden section')).toHaveCount(0);
+	await first.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect.poll(() => resaves.at(-1)?.collectionUri).toBe(SPORTS_CARS);
 });

@@ -31,6 +31,9 @@ async function mockApi(page: Page, onPut?: (body: string) => void) {
 			onPut?.(req.postData() ?? '');
 			return json({ uri: '', cid: '' });
 		}
+		if (url.includes('/collection/') && req.method() === 'DELETE') {
+			return route.fulfill({ status: 202 });
+		}
 		if (url.includes('/api/me/role')) return json({ role: 'moderator' });
 		if (url.includes('/api/me')) return json(me);
 		if (url.includes('/api/supporter/status'))
@@ -97,6 +100,9 @@ test('the delete warning names the sections and saves it takes with it', async (
 	await expect(page.getByRole('alertdialog')).toContainText(
 		'This deletes the collection, its 1 section, and all 9 saves inside them.'
 	);
+	await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click();
+	await expect(page.getByText('Deleting "Travel" and its contents')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Travel', exact: true })).toHaveCount(0);
 });
 
 test('mobile: the breadcrumb collapses its ancestors and carries the actions menu', async ({
