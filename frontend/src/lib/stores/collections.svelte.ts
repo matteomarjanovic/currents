@@ -30,7 +30,13 @@ export async function loadCollections(did: string) {
 		all.push(...(data.collections ?? []));
 		cursor = data.cursor ?? '';
 	} while (cursor);
-	collections.items = all;
+	// Never revive a deleted destination during TAP lag or offer a section
+	// whose parent is missing. Filter after pagination so parents on later
+	// pages are included in this check.
+	const available = new Set(all.filter((c) => !deletedCollectionUris.has(c.uri)).map((c) => c.uri));
+	collections.items = all.filter(
+		(c) => available.has(c.uri) && (!c.parentUri || available.has(c.parentUri))
+	);
 	collections.loaded = true;
 	if (collections.lastUsedUri === '' && collections.items.length > 0) {
 		collections.lastUsedUri = collections.items[0].uri;
@@ -72,6 +78,9 @@ export async function setCollectionPinned(uri: string, pinned: boolean): Promise
 }
 
 export function removeCollection(uri: string) {
-	collections.items = collections.items.filter((c) => c.uri !== uri);
+	for (const c of collections.items) {
+		if (c.uri === uri || c.parentUri === uri) deletedCollectionUris.add(c.uri);
+	}
+	collections.items = collections.items.filter((c) => !deletedCollectionUris.has(c.uri));
 	deletedCollectionUris.add(uri);
 }

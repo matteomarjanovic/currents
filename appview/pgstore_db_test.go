@@ -99,7 +99,8 @@ func truncateAll(t *testing.T, s *PgStore) {
 		TRUNCATE save, collection, "user", follow, favourite_collection, pinned_collection,
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref, hidden_feed_image,
 			label, blob_moderation_state, review_item, report, moderation_event,
-			import_session, admin, operations_job_run, operations_host_snapshot
+			import_session, admin, operations_job_run, operations_host_snapshot,
+			collection_delete_job, orphan_record
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {
@@ -1141,6 +1142,8 @@ func TestSuggestedCollections(t *testing.T) {
 	carImage[0], carImage[1] = 0.1, 0.9
 	flowerSave := seed("flower", "blob-flower", flowerImage)
 	carSave := seed("car", "blob-car", carImage)
+	seedImageSave(t, s, collectionURI("owned-flower-save"), viewer, flowers, "owned-flower", 1, testBase)
+	seedImageSave(t, s, collectionURI("owned-car-save"), viewer, carsSection, "owned-car", 1, testBase)
 
 	got, err := s.GetSuggestedCollections(ctx, viewer, []string{flowerSave, carSave, "at://missing"})
 	if err != nil {

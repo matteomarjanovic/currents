@@ -169,8 +169,16 @@ Because the cursor keeps the chosen pools fixed, page 2 and later continue the s
 
 When a new save arrives in a collection, the collection's `canonical_embedding` is recomputed asynchronously (debounced, 30 s delay). The medoid is chosen because it is always a real image embedding (unlike a centroid, which may land in a sparse region of the space), making ANN lookups more reliable.
 
+Collection embeddings are invalidated transactionally when saves are deleted,
+moved, or change visual identity. TAP recomputes both affected destinations;
+empty collections clear their embedding. The daily maintenance pass also
+recomputes missing medoids after interrupted debounce timers. See
+[repository maintenance](REPOSITORY_MAINTENANCE.md).
+
 ## Quick Save collection suggestions
 
 Explore can suggest a destination by comparing an image's existing visual-identity embedding with the canonical embeddings of the viewer's own collections and sections. This is an exact cosine-distance scan over that viewer's small candidate set; it does not call the inference server and does not expose embeddings to the client. Collections without a canonical embedding are ineligible and the client falls back to its persistent last-used destination.
 
 The suggestion and the collection menu order are deliberately separate. The menu always keeps the persistent last-used collection or section first. The default Quick Save mode recommends per image throughout the app; inside Explore, the first successful save temporarily changes the target to that destination, and later successful choices replace it until the user leaves Explore. The temporary destination is client memory only. Users can instead choose per-image recommendations every time or the persistent last-used destination every time under Settings → Feed. On touch grids, long-press exposes the same Quick Save target in the Quick actions drawer, alongside the shared download/copy/share actions and a path to the full collection selector.
+
+Quick Save excludes empty collections, sections whose indexed parent is missing, and destinations pending deletion. Save writes independently validate the destination against the PDS; recovered sections become eligible as ordinary root collections.

@@ -17,6 +17,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/auth"
 	"github.com/bluesky-social/indigo/atproto/auth/oauth"
 	"github.com/bluesky-social/indigo/atproto/identity"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 
 	"github.com/gorilla/sessions"
 	polargo "github.com/polarsource/polar-go"
@@ -32,6 +33,16 @@ func main() {
 		Usage:  "AT Protocol appview server",
 		Action: runServer,
 		Commands: []*cli.Command{
+			{
+				Name:   "repair-orphans",
+				Usage:  "promote orphaned sections and move orphaned saves to Unsorted on their PDS",
+				Action: runServer,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "did", Usage: "restrict inspection and repair to this DID"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "inspect and report without changing records or orphan observations"},
+					&cli.BoolFlag{Name: "now", Usage: "bypass the 24-hour observation grace for a verified incident (requires --did)"},
+				},
+			},
 			{
 				Name:   "sync-polar-subscriptions",
 				Usage:  "re-sync the Polar subscription mirror (one-shot, requires subscriptions:read)",
@@ -408,8 +419,19 @@ func runServer(cctx *cli.Context) error {
 	defer stop()
 
 	mode := strings.ToLower(cctx.String("mode"))
+	if cctx.Command.Name == "repair-orphans" {
+		mode = "repair-orphans"
+		if cctx.Bool("now") && cctx.String("did") == "" {
+			return fmt.Errorf("--now requires --did")
+		}
+		if cctx.String("did") != "" {
+			if _, err := syntax.ParseDID(cctx.String("did")); err != nil {
+				return err
+			}
+		}
+	}
 	switch mode {
-	case "all", "repair":
+	case "all", "repair", "repair-orphans":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -468,6 +490,11 @@ func runServer(cctx *cli.Context) error {
 		return err
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
+	maintenance := &RepositoryMaintenance{Context: ctx, Store: store, OAuth: oauthClient, Dir: dir}
+	if mode == "repair-orphans" {
+		_, err := maintenance.repairOrphans(ctx, cctx.String("did"), cctx.Bool("dry-run"), cctx.Bool("now"))
+		return err
+	}
 
 	inferenceClient := NewInferenceClient(cctx.String("inference-url"))
 
@@ -704,6 +731,8 @@ func runServer(cctx *cli.Context) error {
 
 	go wipeWorker.Run()
 	slog.Info("pds wipe worker started")
+	go maintenance.Run()
+	slog.Info("repository maintenance started")
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)

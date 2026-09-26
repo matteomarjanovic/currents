@@ -482,6 +482,9 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			FROM collection c
 			WHERE c.author_did = $1
 			  AND c.cid IS NOT NULL
+			  AND (c.parent_uri IS NULL OR EXISTS (
+			      SELECT 1 FROM collection p WHERE p.uri = c.parent_uri AND p.author_did = c.author_did AND p.parent_uri IS NULL AND p.cid IS NOT NULL))
+			  AND NOT EXISTS (SELECT 1 FROM collection_delete_job j WHERE j.collection_uri = c.uri OR j.collection_uri = c.parent_uri)
 			  %s
 			  %s
 			ORDER BY c.created_at DESC NULLS LAST, c.uri ASC
@@ -1192,6 +1195,8 @@ func (m *PgStore) DeleteUserData(ctx context.Context, did, keepSessionID string)
 
 	for _, q := range []string{
 		`DELETE FROM collection WHERE author_did = $1`,
+		`DELETE FROM collection_delete_job WHERE owner_did = $1`,
+		`DELETE FROM orphan_record WHERE owner_did = $1`,
 		`DELETE FROM pinned_collection WHERE viewer_did = $1`,
 		`DELETE FROM favourite_collection WHERE viewer_did = $1`,
 		`DELETE FROM follow WHERE follower_did = $1`,
@@ -2996,9 +3001,13 @@ func (m *PgStore) GetCollectionEmbeddings(ctx context.Context, collectionURI str
 
 // UpdateCollectionEmbedding stores the precomputed canonical embedding for a collection.
 func (m *PgStore) UpdateCollectionEmbedding(ctx context.Context, collectionURI string, embedding []float32) error {
+	var value any
+	if len(embedding) > 0 {
+		value = pgvector.NewVector(embedding)
+	}
 	_, err := m.pool.Exec(ctx, `
 		UPDATE collection SET canonical_embedding = $2 WHERE uri = $1
-	`, collectionURI, pgvector.NewVector(embedding))
+	`, collectionURI, value)
 	return err
 }
 
@@ -3016,11 +3025,16 @@ type CollectionImportance struct {
 // an approximate global-index search with an author filter.
 func (m *PgStore) GetSuggestedCollections(ctx context.Context, viewerDID string, saveURIs []string) (map[string]string, error) {
 	collections, err := m.pool.Query(ctx, `
-		SELECT uri, canonical_embedding
-		FROM collection
-		WHERE author_did = $1
-		  AND canonical_embedding IS NOT NULL
-		ORDER BY uri
+		SELECT c.uri, c.canonical_embedding
+		FROM collection c
+		WHERE c.author_did = $1
+		  AND c.canonical_embedding IS NOT NULL
+		  AND c.cid IS NOT NULL
+		  AND (c.parent_uri IS NULL OR EXISTS (
+		      SELECT 1 FROM collection p WHERE p.uri = c.parent_uri AND p.author_did = c.author_did AND p.parent_uri IS NULL AND p.cid IS NOT NULL))
+		  AND EXISTS (SELECT 1 FROM save s WHERE s.collection_uri = c.uri)
+		  AND NOT EXISTS (SELECT 1 FROM collection_delete_job j WHERE j.collection_uri = c.uri OR j.collection_uri = c.parent_uri)
+		ORDER BY c.uri
 	`, viewerDID)
 	if err != nil {
 		return nil, err
@@ -3493,6 +3507,15 @@ func (m *PgStore) BulkInsertImportItems(ctx context.Context, jobID, ownerDID str
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
+	// Serialise listing flushes with cancellation. A flush that was already
+	// fetching Pinterest pages must not replenish a failed job's queue.
+	var listing bool
+	if err := tx.QueryRow(ctx, `SELECT status = 'listing' FROM import_job WHERE id = $1 FOR UPDATE`, jobID).Scan(&listing); err != nil {
+		return 0, err
+	}
+	if !listing {
+		return 0, nil
+	}
 	if _, err := tx.Exec(ctx, `
 		CREATE TEMP TABLE _import_item_in (
 			job_id UUID, owner_did TEXT, source_pin_id TEXT, image_url TEXT, source_url TEXT, rkey TEXT
@@ -3523,7 +3546,7 @@ func (m *PgStore) BulkInsertImportItems(ctx context.Context, jobID, ownerDID str
 
 func (m *PgStore) UpdateImportJobStatus(ctx context.Context, jobID, status, errMsg string) error {
 	_, err := m.pool.Exec(ctx,
-		`UPDATE import_job SET status=$2, error=$3, updated_at=now() WHERE id=$1`,
+		`UPDATE import_job SET status=$2, error=$3, updated_at=now() WHERE id=$1 AND status NOT IN ('done', 'failed')`,
 		jobID, status, errMsg,
 	)
 	return err
@@ -3647,7 +3670,7 @@ func (m *PgStore) MarkImportItemFailed(ctx context.Context, itemID, errMsg strin
 
 func (m *PgStore) RequeueImportItem(ctx context.Context, itemID, lastError string) error {
 	_, err := m.pool.Exec(ctx,
-		`UPDATE import_item SET status='queued', error=$2, updated_at=now() WHERE id=$1`,
+		`UPDATE import_item SET status='queued', error=$2, updated_at=now() WHERE id=$1 AND status = 'running'`,
 		itemID, lastError,
 	)
 	return err
@@ -3658,7 +3681,7 @@ func (m *PgStore) RequeueImportItem(ctx context.Context, itemID, lastError strin
 // import resumes cleanly once they have a valid session again.
 func (m *PgStore) PauseImportItem(ctx context.Context, itemID string) error {
 	_, err := m.pool.Exec(ctx,
-		`UPDATE import_item SET status='queued', attempt_count = GREATEST(attempt_count - 1, 0), updated_at=now() WHERE id=$1`,
+		`UPDATE import_item SET status='queued', attempt_count = GREATEST(attempt_count - 1, 0), updated_at=now() WHERE id=$1 AND status = 'running'`,
 		itemID,
 	)
 	return err
