@@ -1,7 +1,6 @@
 <script lang="ts" module>
-	// The metadata that applies to a save regardless of which image it is — so in
-	// bulk mode one fill-in covers the whole selection. Alt text deliberately
-	// isn't here: it describes one specific image.
+	// Shared form fields for single-image saves and each image in the page picker.
+	// Alt text stays beside the image-specific form because it is always per-image.
 	export interface Details {
 		note: string;
 		attributionCredit: string;

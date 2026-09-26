@@ -21,6 +21,9 @@
 			pollIntervalId = null;
 			clipper.authState = 'authenticated';
 			clipper.userHandle = res.handle;
+			clipper.userDisplayName = res.displayName ?? '';
+			clipper.userAvatar = res.avatar ?? '';
+			clipper.lastUsedCollectionUri = res.lastUsedCollectionUri ?? '';
 			clipper.collections = res.collections;
 			clipper.collectionsLoading = false;
 		}, 3000);

@@ -8,6 +8,8 @@ const AUTH_TTL_MS = 60_000;
 interface AuthCache {
 	did: string;
 	handle: string;
+	displayName: string;
+	avatar: string;
 	fetchedAt: number;
 }
 
@@ -19,6 +21,7 @@ interface Collection {
 	previews?: { url: string; labels?: string[] }[];
 	createdAt?: string;
 	lastSavedAt?: string;
+	viewer?: { pinned?: boolean };
 }
 
 // --- Cookie helper ---
@@ -65,7 +68,13 @@ async function fetchAuth(): Promise<AuthCache | null> {
 		if (!resp.ok) return null;
 		const data = JSON.parse(text);
 		console.log('[currents] fetchAuth data', data);
-		const cache: AuthCache = { did: data.did, handle: data.handle, fetchedAt: Date.now() };
+		const cache: AuthCache = {
+			did: data.did,
+			handle: data.handle,
+			displayName: data.displayName ?? '',
+			avatar: data.avatar ?? '',
+			fetchedAt: Date.now()
+		};
 		await browser.storage.session.set({ authCache: cache });
 		return cache;
 	} catch (e) {
@@ -76,6 +85,20 @@ async function fetchAuth(): Promise<AuthCache | null> {
 
 async function getAuth(): Promise<AuthCache | null> {
 	return (await getCachedAuth()) ?? (await fetchAuth());
+}
+
+async function logout(): Promise<{ ok: boolean; error?: string }> {
+	try {
+		const resp = await appviewFetch(`${CURRENTS_URL}/oauth/logout`, { redirect: 'manual' });
+		if (!resp.ok && resp.type !== 'opaqueredirect' && (resp.status < 300 || resp.status >= 400)) {
+			return { ok: false, error: `Could not log out (HTTP ${resp.status})` };
+		}
+		await browser.cookies.remove({ url: FRONTEND_URL, name: 'currents-session' });
+		await browser.storage.session.remove('authCache');
+		return { ok: true };
+	} catch (e) {
+		return { ok: false, error: `Could not log out: ${e}` };
+	}
 }
 
 async function fetchCollections(did: string): Promise<Collection[]> {
@@ -100,7 +123,8 @@ async function fetchCollections(did: string): Promise<Collection[]> {
 					parentUri: c.parentUri,
 					previews: c.previews,
 					createdAt: c.createdAt,
-					lastSavedAt: c.lastSavedAt
+					lastSavedAt: c.lastSavedAt,
+					viewer: c.viewer
 				});
 			}
 			cursor = data.cursor ?? '';
@@ -126,7 +150,7 @@ async function handleCreateCollection(message: {
 	if (message.parent) body.set('parent', message.parent);
 
 	try {
-		const resp = await appviewFetch(`${CURRENTS_URL}/collection`, {
+		const resp = await appviewFetch(`${CURRENTS_URL}/api/collection`, {
 			method: 'POST',
 			body,
 			headers: { Accept: 'application/json' },
@@ -157,7 +181,8 @@ async function handleCreateCollection(message: {
 
 async function handleSave(message: {
 	imgUrl: string;
-	collectionUri: string;
+	collectionUri?: string;
+	collectionUris?: string[];
 	text: string;
 	alt?: string;
 	originUrl: string;
@@ -173,6 +198,7 @@ async function handleSave(message: {
 	// The PDS is throttling. A batch run stops on this rather than collecting
 	// another twenty 429s.
 	rateLimited?: boolean;
+	savedCollections?: string[];
 }> {
 	const auth = await getAuth();
 	if (!auth) return { ok: false, error: 'Not logged in', authError: true };
@@ -188,7 +214,7 @@ async function handleSave(message: {
 	// com.atproto.repo.uploadBlob runs from the user's own IP (their own per-IP
 	// bucket). No server-side fallback: if the session lacks the rpc: scope (403),
 	// ask the user to reconnect rather than silently draining the shared appview IP.
-	const form = new FormData();
+	let blobRef: string;
 	try {
 		const tokenResp = await appviewFetch(`${CURRENTS_URL}/api/blob/upload-token`, {
 			method: 'POST'
@@ -218,42 +244,49 @@ async function handleSave(message: {
 			};
 		}
 		if (!upResp.ok) throw new Error(`uploadBlob HTTP ${upResp.status}`);
-		form.append('blob', JSON.stringify((await upResp.json()).blob));
+		blobRef = JSON.stringify((await upResp.json()).blob);
 	} catch (e) {
 		return { ok: false, error: `Could not upload image: ${e}` };
 	}
-	form.append('collection', message.collectionUri);
-	if (message.text) form.append('title', message.text);
-	if (message.alt) form.append('alt', message.alt);
-	if (message.originUrl) form.append('url', message.originUrl);
-	if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);
-	if (message.attributionLicense) form.append('attribution_license', message.attributionLicense);
-	if (message.attributionCredit) form.append('attribution_credit', message.attributionCredit);
-	if (message.labels) form.append('labels', message.labels);
-
+	const savedCollections: string[] = [];
 	try {
-		const resp = await appviewFetch(`${CURRENTS_URL}/save`, {
-			method: 'POST',
-			body: form,
-			redirect: 'manual'
-		});
-		// POST /save returns 302 on success; redirect: 'manual' gives us an opaque redirect
-		if (resp.type === 'opaqueredirect' || resp.status === 0) {
-			return { ok: true };
+		for (const uri of message.collectionUris ?? [message.collectionUri ?? '']) {
+			const form = new FormData();
+			form.append('blob', blobRef);
+			form.append('collection', uri);
+			if (message.text) form.append('title', message.text);
+			if (message.alt) form.append('alt', message.alt);
+			if (message.originUrl) form.append('url', message.originUrl);
+			if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);
+			if (message.attributionLicense)
+				form.append('attribution_license', message.attributionLicense);
+			if (message.attributionCredit) form.append('attribution_credit', message.attributionCredit);
+			if (message.labels) form.append('labels', message.labels);
+			const resp = await appviewFetch(`${CURRENTS_URL}/api/save`, {
+				method: 'POST',
+				body: form,
+				redirect: 'manual'
+			});
+			// POST /save returns a redirect. Keep successes so retries never duplicate them.
+			if (resp.type === 'opaqueredirect' || resp.status === 0) {
+				savedCollections.push(uri);
+				continue;
+			}
+			if (resp.status === 429) {
+				return {
+					ok: false,
+					savedCollections,
+					rateLimited: true,
+					error:
+						'Your data server is temporarily limiting uploads. Please try again in a few minutes.'
+				};
+			}
+			const errorText = await resp.text();
+			return { ok: false, savedCollections, error: errorText.trim() || `HTTP ${resp.status}` };
 		}
-		// PDS rate-limit: the user's data server is throttling blob uploads.
-		if (resp.status === 429) {
-			return {
-				ok: false,
-				rateLimited: true,
-				error:
-					'Your data server is temporarily limiting uploads. Please try again in a few minutes.'
-			};
-		}
-		const errorText = await resp.text();
-		return { ok: false, error: errorText.trim() || `HTTP ${resp.status}` };
+		return { ok: true, savedCollections };
 	} catch (e) {
-		return { ok: false, error: String(e) };
+		return { ok: false, savedCollections, error: String(e) };
 	}
 }
 
@@ -364,6 +397,10 @@ export default defineBackground(() => {
 			handleLookupAlt(message).then(sendResponse);
 			return true;
 		}
+		if (message.type === 'LOG_OUT') {
+			logout().then(sendResponse);
+			return true;
+		}
 		if (message.type === 'CREATE_COLLECTION') {
 			handleCreateCollection(message).then(sendResponse);
 			return true;
@@ -377,7 +414,16 @@ export default defineBackground(() => {
 					return;
 				}
 				const collections = await fetchCollections(auth.did);
-				sendResponse({ authenticated: true, handle: auth.handle, collections });
+				const { lastUsedCollectionUri = '' } =
+					await browser.storage.local.get('lastUsedCollectionUri');
+				sendResponse({
+					authenticated: true,
+					handle: auth.handle,
+					displayName: auth.displayName,
+					avatar: auth.avatar,
+					lastUsedCollectionUri,
+					collections
+				});
 			})();
 			return true;
 		}

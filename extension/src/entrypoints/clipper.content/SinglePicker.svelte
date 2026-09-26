@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
-	import { clipper, defaultCollectionUri, hideClipper } from '../../lib/clipper-store.svelte';
+	import {
+		clipper,
+		defaultCollectionUri,
+		hideClipper,
+		rememberCollection
+	} from '../../lib/clipper-store.svelte';
 	import CollectionField from '../../lib/CollectionField.svelte';
 	import SaveDetails, { newDetails } from '../../lib/SaveDetails.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import { scrollFade } from '../../lib/scroll-fade';
 
 	interface Props {
 		onPickerOpenChange?: (open: boolean) => void;
@@ -18,6 +24,7 @@
 	// the most-recently-used default, which moves as collections load in.
 	let picked = $state<string | null>(null);
 	let creatingCollection = $state(false);
+	let collectionOpen = $state(false);
 	let collectionUri = $derived(picked ?? defaultCollectionUri(clipper.collections));
 	let alt = $state('');
 	const details = $state(newDetails(clipper.siteHints.attributionCredit ?? ''));
@@ -53,6 +60,7 @@
 				labels: Array.from(labels).join(',')
 			});
 			if (response.ok) {
+				rememberCollection(collectionUri);
 				saveState = 'saved';
 				setTimeout(hideClipper, 1500);
 			} else if (response.authError) {
@@ -71,44 +79,47 @@
 	let busy = $derived(saveState === 'saving' || saveState === 'saved');
 </script>
 
-<img
-	class="max-h-[20vh] w-full shrink-0 rounded-2xl bg-muted object-contain"
-	src={clipper.imgUrl}
-	alt="Preview"
-/>
+<img class="max-h-[20vh] w-full shrink-0 object-contain" src={clipper.imgUrl} alt="Preview" />
 
-<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+<div use:scrollFade={!collectionOpen} class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
 	<CollectionField
 		selectedUri={collectionUri}
 		bind:picked
 		bind:creating={creatingCollection}
 		disabled={busy}
-		onOpenChange={onPickerOpenChange}
+		onOpenChange={(open) => {
+			collectionOpen = open;
+			onPickerOpenChange?.(open);
+		}}
 	/>
 
-	<div class="flex flex-col gap-1">
-		<span class="text-xs text-muted-foreground">Alt text</span>
-		<Textarea
-			placeholder="Describe the image (optional but recommended)"
-			bind:value={alt}
-			disabled={busy}
-			maxlength={2000}
-			rows={2}
-		/>
-	</div>
+	{#if !creatingCollection}
+		<div class="flex flex-col gap-1">
+			<span class="text-xs text-muted-foreground">Alt text</span>
+			<Textarea
+				placeholder="Describe the image (optional but recommended)"
+				bind:value={alt}
+				disabled={busy}
+				maxlength={2000}
+				rows={2}
+			/>
+		</div>
 
-	<SaveDetails {details} {labels} disabled={busy} />
-</div>
-
-<div class="flex shrink-0 flex-col gap-2">
-	{#if saveState === 'saved'}
-		<p class="text-center font-medium">Saved!</p>
-	{:else}
-		<Button onclick={save} disabled={creatingCollection || saveState === 'saving'}>
-			{saveState === 'saving' ? 'Saving…' : 'Save to Currents'}
-		</Button>
-		{#if saveState === 'error'}
-			<p class="text-xs text-destructive">{errorMsg}</p>
-		{/if}
+		<SaveDetails {details} {labels} disabled={busy} />
 	{/if}
 </div>
+
+{#if !creatingCollection}
+	<div class="flex shrink-0 flex-col gap-2">
+		{#if saveState === 'saved'}
+			<p class="text-center font-medium">Saved!</p>
+		{:else}
+			<Button onclick={save} disabled={creatingCollection || saveState === 'saving'}>
+				{saveState === 'saving' ? 'Saving…' : 'Save to Currents'}
+			</Button>
+			{#if saveState === 'error'}
+				<p class="text-xs text-destructive">{errorMsg}</p>
+			{/if}
+		{/if}
+	</div>
+{/if}

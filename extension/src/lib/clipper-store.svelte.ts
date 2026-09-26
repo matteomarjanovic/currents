@@ -15,6 +15,7 @@ export interface Collection {
 	previews?: { url: string; labels?: string[] }[];
 	createdAt?: string;
 	lastSavedAt?: string;
+	viewer?: { pinned?: boolean };
 }
 
 export interface SiteHints {
@@ -42,6 +43,9 @@ interface ClipperState {
 	// uploadBlob rpc: scope (not a real logout) — the UI shows "reconnect" copy.
 	reauthNeeded: boolean;
 	userHandle: string;
+	userDisplayName: string;
+	userAvatar: string;
+	lastUsedCollectionUri: string;
 	siteHints: SiteHints;
 }
 
@@ -59,6 +63,9 @@ export const clipper: ClipperState = $state({
 	authState: 'unauthenticated',
 	reauthNeeded: false,
 	userHandle: '',
+	userDisplayName: '',
+	userAvatar: '',
+	lastUsedCollectionUri: '',
 	siteHints: {}
 });
 
@@ -80,6 +87,9 @@ export function showClipper(data: Partial<ClipperState>) {
 			authState: 'authenticated',
 			reauthNeeded: false,
 			userHandle: '',
+			userDisplayName: '',
+			userAvatar: '',
+			lastUsedCollectionUri: '',
 			siteHints: {}
 		},
 		data,
@@ -99,12 +109,21 @@ export async function loadClipperAuth() {
 	clipper.authState = res.authenticated ? 'authenticated' : 'unauthenticated';
 	clipper.collections = res.authenticated ? res.collections : [];
 	clipper.userHandle = res.authenticated ? res.handle : '';
+	clipper.userDisplayName = res.authenticated ? (res.displayName ?? '') : '';
+	clipper.userAvatar = res.authenticated ? (res.avatar ?? '') : '';
+	clipper.lastUsedCollectionUri = res.authenticated
+		? res.collections.some((c: Collection) => c.uri === res.lastUsedCollectionUri)
+			? res.lastUsedCollectionUri
+			: defaultCollectionUri(res.collections)
+		: '';
 	clipper.collectionsLoading = false;
 }
 
 // The collection that received the most recent save; on ties (a save in a
 // section also bumps its root) prefer the section, then the newest collection.
 export function defaultCollectionUri(cols: Collection[]): string {
+	if (cols.some((c) => c.uri === clipper.lastUsedCollectionUri))
+		return clipper.lastUsedCollectionUri;
 	const best = [...cols].sort((a, b) => {
 		const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
 		const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
@@ -115,4 +134,10 @@ export function defaultCollectionUri(cols: Collection[]): string {
 		return cb - ca;
 	});
 	return best[0]?.uri ?? '';
+}
+
+export function rememberCollection(uri: string) {
+	if (!uri) return;
+	clipper.lastUsedCollectionUri = uri;
+	void browser.storage.local.set({ lastUsedCollectionUri: uri });
 }

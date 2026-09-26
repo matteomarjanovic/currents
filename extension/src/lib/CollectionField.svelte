@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import Plus from '@lucide/svelte/icons/plus';
 
 	interface Props {
 		// The collection currently targeted — the parent's `picked ?? default`.
@@ -81,7 +82,7 @@
 </script>
 
 <div class="flex flex-col gap-1">
-	<span class="text-xs text-muted-foreground">
+	<span class={creating ? 'text-base font-semibold' : 'text-xs text-muted-foreground'}>
 		{#if creating && createParent}
 			New section in {createParent.name}
 		{:else if creating}
@@ -115,14 +116,21 @@
 			{/if}
 		</div>
 	{:else}
-		<CollectionSelector
-			collections={clipper.collections}
-			{selectedUri}
-			loading={clipper.collectionsLoading}
-			{disabled}
-			onSelect={(uri) => (picked = uri)}
-			onCreate={startCreate}
-			{onOpenChange}
-		/>
+		<div class="flex items-center gap-2">
+			<div class="min-w-0 flex-1">
+				<CollectionSelector
+					collections={clipper.collections}
+					{selectedUri}
+					loading={clipper.collectionsLoading}
+					{disabled}
+					onSelect={(uri) => (picked = uri)}
+					onCreate={startCreate}
+					{onOpenChange}
+				/>
+			</div>
+			<Button variant="outline" class="shrink-0" {disabled} onclick={() => startCreate(null)}>
+				<Plus class="size-4" /> New
+			</Button>
+		</div>
 	{/if}
 </div>

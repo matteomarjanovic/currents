@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { Collection } from './clipper-store.svelte';
+	import { clipper, type Collection } from './clipper-store.svelte';
+	import { orderedRoots, orderedSections } from './collection-order';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
-	import Plus from '@lucide/svelte/icons/plus';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import User from '@lucide/svelte/icons/user';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -46,16 +46,6 @@
 		if (!open) drillParent = null;
 	});
 
-	// Most recently saved-into first; ties broken by newest collection.
-	function byRecentSave(a: Collection, b: Collection): number {
-		const ra = a.lastSavedAt ? Date.parse(a.lastSavedAt) : 0;
-		const rb = b.lastSavedAt ? Date.parse(b.lastSavedAt) : 0;
-		if (rb !== ra) return rb - ra;
-		const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
-		const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
-		return cb - ca;
-	}
-
 	let childrenByParent = $derived.by(() => {
 		const m = new Map<string, Collection[]>();
 		for (const c of collections) {
@@ -67,9 +57,9 @@
 		}
 		return m;
 	});
-	let rootCollections = $derived(collections.filter((c) => !c.parentUri).sort(byRecentSave));
+	let rootCollections = $derived(orderedRoots(collections, clipper.lastUsedCollectionUri));
 	let drillSections = $derived(
-		drillParent ? [...(childrenByParent.get(drillParent.uri) ?? [])].sort(byRecentSave) : []
+		drillParent ? orderedSections(collections, drillParent.uri, clipper.lastUsedCollectionUri) : []
 	);
 
 	function sectionCount(uri: string): number {
@@ -174,7 +164,7 @@
 	<Popover.Content
 		align="start"
 		portalProps={{ disabled: true }}
-		class="scrollbar-hide max-h-[40vh] gap-0 overflow-y-auto bg-popover/70 p-1.5 backdrop-blur-2xl backdrop-saturate-150"
+		class="scrollbar-hide max-h-[40vh] gap-0 overflow-y-auto bg-popover p-1.5"
 	>
 		{#if drillParent}
 			{@const dp = drillParent}
@@ -214,18 +204,6 @@
 				{#if selectedUri === UNSORTED_URI}
 					<Check class="size-4 shrink-0" />
 				{/if}
-			</button>
-			<button
-				class="flex w-full items-center gap-2.5 rounded-2xl px-2 py-1.5 text-sm hover:bg-foreground/10"
-				onclick={() => create(null)}
-			>
-				<span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
-					<Plus class="size-4 text-muted-foreground" />
-				</span>
-				<span class="flex flex-1 flex-col items-start truncate">
-					<span class="truncate">Create new collection</span>
-					<span class="text-xs text-muted-foreground">Group your saves</span>
-				</span>
 			</button>
 			{#each rootCollections as root (root.uri)}
 				{#if sectionCount(root.uri) > 0}

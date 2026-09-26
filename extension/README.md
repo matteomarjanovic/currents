@@ -3,12 +3,12 @@
 Browser extension for [Currents](https://currents.is). Save images to your
 collections from any website:
 
-- **One image** — right-click it and choose **Save to Currents** to pick a
-  collection and save.
+- **One image** — right-click it and choose **Save to Currents**, or use the
+  Currents button on a Pinterest image, to pick a collection and save.
 - **A whole page** — click the toolbar icon, or right-click anywhere on the page
-  and choose **Save images from this page…**. Every image large enough to be
-  worth saving is shown as a grid; deselect the ones you don't want and save the
-  rest into one collection, each carrying the page's own alt text.
+  and choose **Save images from this page…**. Pick images from the grid, add
+  optional details to individual images, then select one or more collections.
+  Scroll the page while the panel is open to discover newly loaded images.
 
 Built with [WXT](https://wxt.dev) + Svelte, Manifest V3.
 
