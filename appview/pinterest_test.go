@@ -1,6 +1,65 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+type pinterestRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f pinterestRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestResolvePinterestShortURL(t *testing.T) {
+	original := pinterestHTTP
+	defer func() { pinterestHTTP = original }()
+	pinterestHTTP = &http.Client{Transport: pinterestRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var status int
+		var location string
+		switch req.URL.Hostname() {
+		case "pin.it":
+			status, location = http.StatusPermanentRedirect, "https://api.pinterest.com/url_shortener/abc/redirect/"
+		case "api.pinterest.com":
+			status, location = http.StatusFound, "https://www.pinterest.com/giova_merlo/consolle/?invite_code=abc"
+		case "www.pinterest.com":
+			status = http.StatusOK
+		default:
+			return nil, fmt.Errorf("unexpected host %q", req.URL.Hostname())
+		}
+		header := make(http.Header)
+		if location != "" {
+			header.Set("Location", location)
+		}
+		return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+	})}
+
+	got, err := resolvePinterestUsername(context.Background(), "https://pin.it/abc")
+	if err != nil || got != "giova_merlo" {
+		t.Fatalf("resolvePinterestUsername() = %q, %v; want giova_merlo", got, err)
+	}
+}
+
+func TestResolvePinterestShortURLRejectsExternalRedirect(t *testing.T) {
+	original := pinterestHTTP
+	defer func() { pinterestHTTP = original }()
+	pinterestHTTP = &http.Client{Transport: pinterestRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Hostname() != "pin.it" {
+			t.Fatalf("unexpected request to %s", req.URL.Hostname())
+		}
+		header := make(http.Header)
+		header.Set("Location", "https://example.com/elsewhere")
+		return &http.Response{StatusCode: http.StatusFound, Header: header, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+	})}
+
+	if _, err := resolvePinterestUsername(context.Background(), "https://pin.it/abc"); err == nil {
+		t.Fatal("external redirect unexpectedly accepted")
+	}
+}
 
 func TestNormalizePinterestUsername(t *testing.T) {
 	tests := []struct {
