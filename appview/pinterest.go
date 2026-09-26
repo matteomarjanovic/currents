@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,17 +22,23 @@ const (
 
 var pinterestHTTP = &http.Client{Timeout: 30 * time.Second}
 
-func resolvePinterestUsername(ctx context.Context, input string) (string, error) {
+var (
+	errPinterestPrivateProfile  = errors.New("Pinterest profile is private")
+	errPinterestProfileNotFound = errors.New("Pinterest profile not found")
+)
+
+func resolvePinterestUsername(ctx context.Context, input string) (string, string, error) {
 	input = strings.TrimSpace(input)
 	u, err := url.Parse(input)
 	if err != nil || !strings.EqualFold(u.Hostname(), "pin.it") || u.Port() != "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return normalizePinterestUsername(input)
+		username, err := normalizePinterestUsername(input)
+		return username, input, err
 	}
 
 	u.Scheme = "https"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return "", fmt.Errorf("invalid Pinterest short URL")
+		return "", "", fmt.Errorf("invalid Pinterest short URL")
 	}
 	req.Header.Set("User-Agent", pinterestUA)
 	client := *pinterestHTTP
@@ -45,13 +52,27 @@ func resolvePinterestUsername(ctx context.Context, input string) (string, error)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("could not resolve Pinterest short URL")
+		return "", "", fmt.Errorf("could not resolve Pinterest short URL")
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Pinterest short URL returned status %d", resp.StatusCode)
+		return "", "", fmt.Errorf("Pinterest short URL returned status %d", resp.StatusCode)
 	}
-	return normalizePinterestUsername(resp.Request.URL.String())
+	resolved := resp.Request.URL.String()
+	username, err := normalizePinterestUsername(resolved)
+	return username, resolved, err
+}
+
+func pinterestBoardPath(input string) string {
+	u, err := url.Parse(input)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 || strings.HasPrefix(parts[1], "_") {
+		return ""
+	}
+	return "/" + parts[0] + "/" + parts[1]
 }
 
 func normalizePinterestUsername(input string) (string, error) {
@@ -160,7 +181,19 @@ func ListBoards(ctx context.Context, username string) ([]PinterestBoard, error) 
 			return nil, fmt.Errorf("listing boards: %w", readErr)
 		}
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("pinterest user %q not found", username)
+			return nil, errPinterestProfileNotFound
+		}
+		if resp.StatusCode == http.StatusForbidden {
+			var failure struct {
+				ResourceResponse struct {
+					Error struct {
+						Code int `json:"code"`
+					} `json:"error"`
+				} `json:"resource_response"`
+			}
+			if json.Unmarshal(body, &failure) == nil && failure.ResourceResponse.Error.Code == 4808 {
+				return nil, errPinterestPrivateProfile
+			}
 		}
 		if resp.StatusCode != http.StatusOK {
 			preview := body

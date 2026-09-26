@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,9 +39,9 @@ func TestResolvePinterestShortURL(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
 	})}
 
-	got, err := resolvePinterestUsername(context.Background(), "https://pin.it/abc")
-	if err != nil || got != "giova_merlo" {
-		t.Fatalf("resolvePinterestUsername() = %q, %v; want giova_merlo", got, err)
+	got, resolved, err := resolvePinterestUsername(context.Background(), "https://pin.it/abc")
+	if err != nil || got != "giova_merlo" || resolved != "https://www.pinterest.com/giova_merlo/consolle/?invite_code=abc" {
+		t.Fatalf("resolvePinterestUsername() = %q, %q, %v; want giova_merlo and board URL", got, resolved, err)
 	}
 }
 
@@ -56,8 +57,50 @@ func TestResolvePinterestShortURLRejectsExternalRedirect(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusFound, Header: header, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
 	})}
 
-	if _, err := resolvePinterestUsername(context.Background(), "https://pin.it/abc"); err == nil {
+	if _, _, err := resolvePinterestUsername(context.Background(), "https://pin.it/abc"); err == nil {
 		t.Fatal("external redirect unexpectedly accepted")
+	}
+}
+
+func TestPinterestBoardPath(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  string
+	}{
+		{"https://www.pinterest.com/giova_merlo/consolle/?invite_code=abc", "/giova_merlo/consolle"},
+		{"https://www.pinterest.com/giova_merlo/consolle/section/", "/giova_merlo/consolle"},
+		{"https://www.pinterest.com/giova_merlo/", ""},
+		{"https://www.pinterest.com/giova_merlo/_saved/", ""},
+		{"giova_merlo", ""},
+	} {
+		if got := pinterestBoardPath(tt.input); got != tt.want {
+			t.Errorf("pinterestBoardPath(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestListBoardsErrors(t *testing.T) {
+	original := pinterestHTTP
+	defer func() { pinterestHTTP = original }()
+	for _, tt := range []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"private profile", http.StatusForbidden, `{"resource_response":{"error":{"code":4808}}}`, errPinterestPrivateProfile},
+		{"missing profile", http.StatusNotFound, `{"resource_response":{"error":{"code":30}}}`, errPinterestProfileNotFound},
+		{"other forbidden", http.StatusForbidden, `{"resource_response":{"error":{"code":999}}}`, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pinterestHTTP = &http.Client{Transport: pinterestRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tt.status, Body: io.NopCloser(strings.NewReader(tt.body)), Request: req}, nil
+			})}
+			_, err := ListBoards(context.Background(), "giova_merlo")
+			if err == nil || (tt.want != nil && !errors.Is(err, tt.want)) || (tt.want == nil && (errors.Is(err, errPinterestPrivateProfile) || errors.Is(err, errPinterestProfileNotFound))) {
+				t.Fatalf("ListBoards() error = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }
 

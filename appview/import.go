@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -41,16 +42,37 @@ func (s *Server) APIPinterestBoards(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
-	username, err := resolvePinterestUsername(r.Context(), r.URL.Query().Get("username"))
+	username, resolvedURL, err := resolvePinterestUsername(r.Context(), r.URL.Query().Get("username"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "Check the Pinterest link, or enter the profile's username instead.", http.StatusBadRequest)
 		return
 	}
 	boards, err := ListBoards(r.Context(), username)
 	if err != nil {
 		slog.Warn("pinterest boards list failed", "username", username, "err", err)
-		http.Error(w, fmt.Sprintf("listing boards: %s", err), http.StatusBadGateway)
+		switch {
+		case errors.Is(err, errPinterestPrivateProfile):
+			http.Error(w, "This Pinterest profile is private. In Pinterest, open Settings > Profile visibility and turn off Private profile, then try again. Currents can only import boards visible without signing in to Pinterest.", http.StatusForbidden)
+		case errors.Is(err, errPinterestProfileNotFound):
+			http.Error(w, "We couldn't find that Pinterest profile. Check the username or link and try again.", http.StatusNotFound)
+		default:
+			http.Error(w, "We couldn't load boards from Pinterest right now. Please try again in a few minutes.", http.StatusBadGateway)
+		}
 		return
+	}
+	if requested := pinterestBoardPath(resolvedURL); requested != "" {
+		found := false
+		for _, board := range boards {
+			path, _ := url.PathUnescape(board.URL)
+			if strings.EqualFold(strings.TrimRight(path, "/"), requested) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "We couldn't find that board among the profile's public boards. Check the link and make sure the board is public in Pinterest, then try again.", http.StatusNotFound)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"boards": boards, "username": username})

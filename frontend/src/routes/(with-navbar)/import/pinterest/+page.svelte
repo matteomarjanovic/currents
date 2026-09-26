@@ -130,7 +130,10 @@
 					promptLogin();
 					return;
 				}
-				error = `Couldn't load boards (${res.status}).`;
+				const message = res.headers.get('Content-Type')?.startsWith('text/plain')
+					? (await res.text()).trim()
+					: '';
+				error = message || "Couldn't load boards right now. Please try again in a few minutes.";
 				return;
 			}
 			const data = (await res.json()) as { boards: Board[] | null; username?: string };
@@ -381,7 +384,8 @@
 		</div>
 		{#if boards.length === 0}
 			<p class="text-sm text-muted-foreground">
-				No public boards found for @{username}.
+				No public boards found for @{username}. Check that your boards are public in Pinterest,
+				then try again.
 			</p>
 		{:else}
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
