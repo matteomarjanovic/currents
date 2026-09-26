@@ -25,6 +25,7 @@ export interface SiteHints {
 
 interface ClipperState {
 	visible: boolean;
+	closing: boolean;
 	mode: ClipperMode;
 	// Bumped on every open. The pickers are keyed on it, so reopening remounts
 	// them with fresh form state instead of carrying the last image's over.
@@ -51,6 +52,7 @@ interface ClipperState {
 
 export const clipper: ClipperState = $state({
 	visible: false,
+	closing: false,
 	mode: 'single',
 	session: 0,
 	locked: false,
@@ -72,11 +74,15 @@ export const clipper: ClipperState = $state({
 // Opens the dialog immediately, optimistically assuming a signed-in user with
 // collections still loading — every caller then kicks off loadClipperAuth() so
 // the dialog never waits on a network round-trip to appear.
+let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function showClipper(data: Partial<ClipperState>) {
+	clearTimeout(closeTimer);
 	Object.assign(
 		clipper,
 		{
 			mode: 'single',
+			closing: false,
 			locked: false,
 			imgUrl: '',
 			candidates: [],
@@ -98,7 +104,16 @@ export function showClipper(data: Partial<ClipperState>) {
 }
 
 export function hideClipper() {
-	clipper.visible = false;
+	if (!clipper.visible || clipper.locked || clipper.closing) return;
+	if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+		clipper.visible = false;
+		return;
+	}
+	clipper.closing = true;
+	closeTimer = setTimeout(() => {
+		clipper.visible = false;
+		clipper.closing = false;
+	}, 220);
 }
 
 export async function loadClipperAuth() {

@@ -62,7 +62,10 @@
 			if (response.ok) {
 				rememberCollection(collectionUri);
 				saveState = 'saved';
-				setTimeout(hideClipper, 1500);
+				const session = clipper.session;
+				setTimeout(() => {
+					if (clipper.session === session) hideClipper();
+				}, 1500);
 			} else if (response.authError) {
 				clipper.authState = 'unauthenticated';
 				clipper.reauthNeeded = response.reauth ?? false;
