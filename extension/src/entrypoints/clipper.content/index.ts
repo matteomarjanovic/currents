@@ -99,13 +99,32 @@ export default defineContentScript({
 		host.style.setProperty('margin', '0', 'important');
 		host.style.setProperty('padding', '0', 'important');
 		host.style.setProperty('border', '0', 'important');
+		let contextImage: { url: string; alt: string } | undefined;
+
+		document.addEventListener(
+			'contextmenu',
+			(event) => {
+				const target = event.target;
+				const img =
+					target instanceof HTMLImageElement
+						? target
+						: target instanceof Element
+							? target.closest('img')
+							: null;
+				contextImage = img ? { url: img.currentSrc || img.src, alt: img.alt } : undefined;
+			},
+			true
+		);
 
 		browser.runtime.onMessage.addListener((message) => {
 			if (message.type === 'SHOW_CLIPPER') {
 				injectFont();
 				const siteHints = extractSiteHints();
+				const altText = contextImage?.url === message.imgUrl ? contextImage.alt : '';
+				contextImage = undefined;
 				showClipper({
 					imgUrl: message.imgUrl ?? '',
+					altText,
 					originUrl: siteHints.originUrl ?? message.originUrl ?? '',
 					pageTitle: message.pageTitle ?? '',
 					siteHints
@@ -113,6 +132,7 @@ export default defineContentScript({
 				void loadClipperAuth();
 			} else if (message.type === 'SHOW_CLIPPER_MULTI') {
 				injectFont();
+				contextImage = undefined;
 				showClipper({
 					mode: 'multi',
 					candidates: collectPageImages(),

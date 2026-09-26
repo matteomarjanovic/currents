@@ -26,7 +26,7 @@
 	let creatingCollection = $state(false);
 	let collectionOpen = $state(false);
 	let collectionUri = $derived(picked ?? defaultCollectionUri(clipper.collections));
-	let alt = $state('');
+	let alt = $state(clipper.altText);
 	const details = $state(newDetails(clipper.siteHints.attributionCredit ?? ''));
 	const labels = new SvelteSet<string>();
 

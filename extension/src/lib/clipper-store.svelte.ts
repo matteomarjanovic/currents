@@ -34,6 +34,7 @@ interface ClipperState {
 	// dismissing the dialog would kill it halfway through.
 	locked: boolean;
 	imgUrl: string;
+	altText: string;
 	candidates: ImageCandidate[];
 	originUrl: string;
 	pageTitle: string;
@@ -57,6 +58,7 @@ export const clipper: ClipperState = $state({
 	session: 0,
 	locked: false,
 	imgUrl: '',
+	altText: '',
 	candidates: [],
 	originUrl: '',
 	pageTitle: '',
@@ -85,6 +87,7 @@ export function showClipper(data: Partial<ClipperState>) {
 			closing: false,
 			locked: false,
 			imgUrl: '',
+			altText: '',
 			candidates: [],
 			originUrl: '',
 			pageTitle: '',

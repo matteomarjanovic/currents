@@ -102,7 +102,7 @@
 		class="fixed top-4 right-4 bottom-auto left-auto isolate z-50 m-0 w-[380px] max-w-[calc(100vw-2rem)] border-0 bg-transparent p-0 font-sans"
 	>
 		<div
-			class="clipper-panel relative flex max-h-[calc(100vh-2rem)] flex-col gap-3 rounded-3xl bg-popover p-4 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 {revealing
+			class="clipper-panel relative flex max-h-[calc(100vh-2rem)] flex-col gap-3 rounded-3xl bg-popover p-4 pt-3 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 {revealing
 				? 'clipper-revealing'
 				: ''} {entering ? 'clipper-entering' : ''} {clipper.closing ? 'clipper-closing' : ''}"
 			role="dialog"
@@ -187,7 +187,7 @@
 							</Popover.Content>
 						</Popover.Root>
 					{/if}
-					<div class="flex items-center">
+					<div class="flex items-center -space-x-1">
 						<Button
 							variant="ghost"
 							size="icon-sm"

@@ -44,6 +44,7 @@ function openClipper(host: HTMLElement) {
 		host.getAttribute('data-test-pin-id') ?? location.pathname.match(/\/pin\/(\d+)/)?.[1] ?? null;
 	showClipper({
 		imgUrl: bestImageUrl(img),
+		altText: img.alt,
 		originUrl: pinId ? `https://www.pinterest.com/pin/${pinId}/` : location.href,
 		pageTitle: document.title
 	});
