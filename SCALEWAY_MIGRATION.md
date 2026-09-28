@@ -246,6 +246,12 @@ The existing `SameSite=None` setting is unnecessary once browser requests are
 same-origin. Capacitor uses bearer authentication after OAuth, so it does not
 need a cross-site session cookie.
 
+The released browser extension still reads its session cookie from
+`api.currents.is`. An extension login returns through a short form POST to
+`/oauth/extension-session` on that host, which sets a separate host-only API
+cookie before sending the browser to `/login/success`. The root cookie remains
+host-only and is never sent to the API or CDN subdomains.
+
 During the transition, logout must also visit an `api.currents.is`
 compatibility endpoint that expires the old API-host cookie. A response from
 `currents.is` cannot clear another host's host-only cookie.

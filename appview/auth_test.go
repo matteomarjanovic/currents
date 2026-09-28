@@ -112,3 +112,77 @@ func TestMobileCallbackSessionToken(t *testing.T) {
 		}
 	}
 }
+
+func TestExtensionSessionBridgeSetsAPIHostCookie(t *testing.T) {
+	store := sessions.NewCookieStore([]byte("test-secret"))
+	store.Options = &sessions.Options{Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+	srv := Server{
+		CookieStore: store,
+		FrontendURL: "https://currents.is",
+		ServiceURL:  "https://api.currents.is",
+	}
+	rootURL, _ := url.Parse("https://currents.is/login/success")
+	apiURL, _ := url.Parse("https://api.currents.is/api/me")
+	jar, _ := cookiejar.New(nil)
+	rootReq := httptest.NewRequest(http.MethodGet, rootURL.String(), nil)
+	rootSession, _ := store.Get(rootReq, "currents-session")
+	rootSession.Values = map[any]any{
+		"account_did": "did:plc:test", "session_id": "session-id", "handle": "test.bsky.social",
+	}
+	rootRes := httptest.NewRecorder()
+	if err := rootSession.Save(rootReq, rootRes); err != nil {
+		t.Fatal(err)
+	}
+	jar.SetCookies(rootURL, rootRes.Result().Cookies())
+	if got := jar.Cookies(apiURL); len(got) != 0 {
+		t.Fatalf("root-host cookie reached API host before bridge: %v", got)
+	}
+
+	token, err := srv.encodeSessionToken("did:plc:test", "session-id", "test.bsky.social")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridgePage := httptest.NewRecorder()
+	srv.serveExtensionSessionBridge(bridgePage, token)
+	if got := bridgePage.Header().Get("Referrer-Policy"); got != "origin" {
+		t.Fatalf("bridge referrer policy = %q, want origin for the form POST", got)
+	}
+	if !strings.Contains(bridgePage.Body.String(), `action="https://api.currents.is/oauth/extension-session"`) ||
+		!strings.Contains(bridgePage.Body.String(), `name="token" value="`+token+`"`) {
+		t.Fatalf("extension bridge page does not submit the session to the API host: %s", bridgePage.Body.String())
+	}
+
+	form := url.Values{"token": {token}}
+	req := httptest.NewRequest(http.MethodPost, "https://api.currents.is/oauth/extension-session", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://currents.is")
+	res := httptest.NewRecorder()
+	srv.OAuthExtensionSession(res, req)
+	if res.Code != http.StatusSeeOther || res.Header().Get("Location") != rootURL.String() {
+		t.Fatalf("bridge response = %d, %q", res.Code, res.Header().Get("Location"))
+	}
+	for _, cookie := range res.Result().Cookies() {
+		if cookie.Domain != "" {
+			t.Fatalf("API cookie must be host-only: %s", cookie)
+		}
+	}
+	jar.SetCookies(apiURL, res.Result().Cookies())
+	apiReq := httptest.NewRequest(http.MethodGet, apiURL.String(), nil)
+	for _, cookie := range jar.Cookies(apiURL) {
+		apiReq.AddCookie(cookie)
+	}
+	did, sid, handle := srv.currentSessionDID(apiReq)
+	if did == nil || did.String() != "did:plc:test" || sid != "session-id" || handle != "test.bsky.social" {
+		t.Fatalf("API session = %v, %q, %q", did, sid, handle)
+	}
+	if got := jar.Cookies(rootURL); len(got) != 1 || got[0].Name != "currents-session" {
+		t.Fatalf("root-host session changed: %v", got)
+	}
+
+	req.Header.Set("Origin", "https://other.example")
+	res = httptest.NewRecorder()
+	srv.OAuthExtensionSession(res, req)
+	if res.Code != http.StatusForbidden || len(res.Result().Cookies()) != 0 {
+		t.Fatalf("cross-origin bridge = %d, cookies %v", res.Code, res.Result().Cookies())
+	}
+}

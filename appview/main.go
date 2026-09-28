@@ -649,6 +649,7 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /oauth/login", srv.OAuthLogin)
 	http.HandleFunc("GET /oauth/logout", srv.OAuthLogout)
 	http.HandleFunc("GET /oauth/logout/legacy", srv.OAuthLegacyLogout)
+	http.HandleFunc("POST /oauth/extension-session", srv.OAuthExtensionSession)
 
 	registerLegacyAndAPI(http.DefaultServeMux, "POST /collection", srv.CreateCollection)
 	registerLegacyAndAPI(http.DefaultServeMux, "GET /collection/{id}", srv.GetCollection)

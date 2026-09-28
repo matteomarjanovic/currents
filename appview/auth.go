@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -258,9 +259,66 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 			redirectTarget = appendTokenParams(returnTo, token, resp.Handle)
 		}
 		delete(sess.Values, "return_to")
-		sess.Save(r, w)
+		if err := sess.Save(r, w); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if s.ServiceURL != "" && redirectTarget == strings.TrimRight(s.FrontendURL, "/")+"/login/success" {
+			// The released extension reads its cookie from the API host. Complete
+			// its login there while keeping the web cookie host-only.
+			token, err := s.encodeSessionToken(sessData.AccountDID.String(), sessData.SessionID, resp.Handle)
+			if err != nil {
+				http.Error(w, "could not finalize login", http.StatusInternalServerError)
+				return
+			}
+			s.serveExtensionSessionBridge(w, token)
+			return
+		}
 	}
 	http.Redirect(w, r, redirectTarget, http.StatusFound)
+}
+
+var extensionSessionBridgePage = template.Must(template.New("extension-session-bridge").Parse(`<!doctype html>
+<form method="post" action="{{.Action}}">
+<input type="hidden" name="token" value="{{.Token}}">
+<button type="submit">Continue to Currents</button>
+</form>
+<script>document.forms[0].submit()</script>`))
+
+func (s *Server) serveExtensionSessionBridge(w http.ResponseWriter, token string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "origin")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; form-action "+strings.TrimRight(s.ServiceURL, "/"))
+	extensionSessionBridgePage.Execute(w, struct{ Action, Token string }{
+		Action: strings.TrimRight(s.ServiceURL, "/") + "/oauth/extension-session",
+		Token:  token,
+	})
+}
+
+func (s *Server) OAuthExtensionSession(w http.ResponseWriter, r *http.Request) {
+	serviceURL, err := url.Parse(s.ServiceURL)
+	if err != nil || r.Host != serviceURL.Host || r.Header.Get("Origin") != strings.TrimRight(s.FrontendURL, "/") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	values := map[any]any{}
+	if err := securecookie.DecodeMulti("currents-session", r.PostFormValue("token"), &values, s.CookieStore.Codecs...); err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+	did, sessionID, handle := parseSessionValues(values)
+	if did == nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+	sess, _ := s.CookieStore.Get(r, "currents-session")
+	sess.Values = map[any]any{"account_did": did.String(), "session_id": sessionID, "handle": handle}
+	if err := sess.Save(r, w); err != nil {
+		http.Error(w, "could not finalize login", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, strings.TrimRight(s.FrontendURL, "/")+"/login/success", http.StatusSeeOther)
 }
 
 func (s *Server) isMobileReturnTo(returnTo string) bool {
