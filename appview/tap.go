@@ -149,7 +149,12 @@ func handleTapConn(ctx context.Context, conn *websocket.Conn, handler *TapHandle
 				slog.Warn("TAP record skipped", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action, "did", evt.Record.DID, "rkey", evt.Record.Rkey)
 			}
 		case "identity":
-			// no-op for now; fall through to ack
+			if evt.Identity != nil {
+				if err := handleTapIdentity(ctx, handler, evt.Identity); err != nil {
+					slog.Error("TAP identity handler error", "err", err, "did", evt.Identity.DID)
+					continue // transient; TAP will redeliver
+				}
+			}
 		default:
 			continue // unknown type; don't ack
 		}
@@ -159,6 +164,20 @@ func handleTapConn(ctx context.Context, conn *websocket.Conn, handler *TapHandle
 			return
 		}
 	}
+}
+
+func handleTapIdentity(ctx context.Context, handler *TapHandler, ev *TapIdentityEvent) error {
+	handle, err := syntax.ParseHandle(ev.Handle)
+	if err != nil || handle.IsInvalidHandle() {
+		return nil // No valid handle to index.
+	}
+	if err := handler.Dir.Purge(ctx, syntax.DID(ev.DID).AtIdentifier()); err != nil {
+		return err
+	}
+	if err := handler.Dir.Purge(ctx, handle.AtIdentifier()); err != nil {
+		return err
+	}
+	return handler.Store.UpdateUserHandle(ctx, ev.DID, handle.Normalize().String())
 }
 
 func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEvent) error {

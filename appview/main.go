@@ -44,6 +44,15 @@ func main() {
 				},
 			},
 			{
+				Name:   "refresh-handles",
+				Usage:  "refresh cached actor handles from DID resolution",
+				Action: runServer,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "did", Usage: "refresh only this DID"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "report changes without writing"},
+				},
+			},
+			{
 				Name:   "sync-polar-subscriptions",
 				Usage:  "re-sync the Polar subscription mirror (one-shot, requires subscriptions:read)",
 				Action: runSyncPolarSubscriptions,
@@ -419,9 +428,9 @@ func runServer(cctx *cli.Context) error {
 	defer stop()
 
 	mode := strings.ToLower(cctx.String("mode"))
-	if cctx.Command.Name == "repair-orphans" {
-		mode = "repair-orphans"
-		if cctx.Bool("now") && cctx.String("did") == "" {
+	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" {
+		mode = cctx.Command.Name
+		if mode == "repair-orphans" && cctx.Bool("now") && cctx.String("did") == "" {
 			return fmt.Errorf("--now requires --did")
 		}
 		if cctx.String("did") != "" {
@@ -431,7 +440,7 @@ func runServer(cctx *cli.Context) error {
 		}
 	}
 	switch mode {
-	case "all", "repair", "repair-orphans":
+	case "all", "repair", "repair-orphans", "refresh-handles":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -488,6 +497,9 @@ func runServer(cctx *cli.Context) error {
 	})
 	if err != nil {
 		return err
+	}
+	if mode == "refresh-handles" {
+		return refreshUserHandles(ctx, store, dir, cctx.String("did"), cctx.Bool("dry-run"))
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
 	maintenance := &RepositoryMaintenance{Context: ctx, Store: store, OAuth: oauthClient, Dir: dir}

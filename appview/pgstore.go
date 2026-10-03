@@ -196,6 +196,11 @@ func (m *PgStore) CreateUser(ctx context.Context, u UserRecord) error {
 	return err
 }
 
+func (m *PgStore) UpdateUserHandle(ctx context.Context, did, handle string) error {
+	_, err := m.pool.Exec(ctx, `UPDATE "user" SET handle = $2 WHERE did = $1 AND handle IS DISTINCT FROM $2`, did, handle)
+	return err
+}
+
 type ActorRow struct {
 	DID         string
 	Handle      string
