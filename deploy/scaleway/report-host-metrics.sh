@@ -21,6 +21,13 @@ storage_total=$1
 storage_used=$2
 storage_available=$3
 
+root_storage=null
+if [ "$OPS_HOST" = main ]; then
+	set -- $(df -B1 --output=size,used,avail / | awk 'NR == 2 { print $1, $2, $3 }')
+	[ "$#" -eq 3 ] || { echo 'could not read root disk metrics' >&2; exit 1; }
+	root_storage=$(printf '{"path":"/","totalBytes":%s,"usedBytes":%s,"availableBytes":%s}' "$1" "$2" "$3")
+fi
+
 containers=$(docker stats --no-stream --format '{{json .}}' 2>/dev/null |
 	awk 'BEGIN { printf "[" } { if (NR > 1) printf ","; printf "%s", $0 } END { printf "]" }') || containers='[]'
 
@@ -33,9 +40,9 @@ if [ -n "${OPS_MODEL_VERSION_FILE:-}" ] && [ -f "$OPS_MODEL_VERSION_FILE" ]; the
 	model_updated_at=$(printf '"%s"' "$model_updated_at")
 fi
 
-body=$(printf '{"host":"%s","memory":{"totalBytes":%s,"availableBytes":%s},"load1":%s,"storage":{"path":"%s","totalBytes":%s,"usedBytes":%s,"availableBytes":%s},"containers":%s,"modelVersion":%s,"modelUpdatedAt":%s}' \
+body=$(printf '{"host":"%s","memory":{"totalBytes":%s,"availableBytes":%s},"load1":%s,"storage":{"path":"%s","totalBytes":%s,"usedBytes":%s,"availableBytes":%s},"rootStorage":%s,"containers":%s,"modelVersion":%s,"modelUpdatedAt":%s}' \
 	"$OPS_HOST" "$memory_total" "$memory_available" "$load1" "$OPS_DISK_PATH" \
-	"$storage_total" "$storage_used" "$storage_available" "$containers" "$model_version" "$model_updated_at")
+	"$storage_total" "$storage_used" "$storage_available" "$root_storage" "$containers" "$model_version" "$model_updated_at")
 timestamp=$(date -u +%s)
 signature=$(printf '%s\n%s' "$timestamp" "$body" |
 	openssl dgst -sha256 -hmac "$OPS_REPORTING_SECRET" -binary | base64 | tr -d '\n')

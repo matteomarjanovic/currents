@@ -22,10 +22,12 @@
 		details: Record<string, unknown>;
 	};
 	type Container = { Name: string; CPUPerc: string; MemUsage: string };
+	type Storage = { path: string; totalBytes: number; usedBytes: number; availableBytes: number };
 	type HostPayload = {
 		memory: { totalBytes: number; availableBytes: number };
 		load1: number;
-		storage: { path: string; totalBytes: number; usedBytes: number; availableBytes: number };
+		storage: Storage;
+		rootStorage?: Storage | null;
 		containers: Container[];
 		modelVersion: string | null;
 		modelUpdatedAt: string | null;
@@ -236,6 +238,13 @@
 								: 'Waiting for host report'}</span
 						>
 					</div>
+					{#if host('main')?.payload.rootStorage}
+						<div class="flex justify-between">
+							<span class="text-muted-foreground">Backup disk free</span><span
+								>{bytes(host('main')!.payload.rootStorage!.availableBytes)}</span
+							>
+						</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 
@@ -397,6 +406,24 @@
 									></div>
 								</div>
 							</div>
+							{#if snapshot.payload.rootStorage}
+								<div class="rounded-md bg-muted/50 p-3 text-sm">
+									<div class="flex justify-between">
+										<span>Root disk (/)</span><span
+											>{bytes(snapshot.payload.rootStorage.availableBytes)} free</span
+										>
+									</div>
+									<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+										<div
+											class="h-full bg-foreground/70"
+											style={`width: ${ratio(snapshot.payload.rootStorage.usedBytes, snapshot.payload.rootStorage.totalBytes)}`}
+										></div>
+									</div>
+									<p class="mt-1 text-xs text-muted-foreground">
+										Database backups stage on this disk.
+									</p>
+								</div>
+							{/if}
 							{#if snapshot.payload.modelVersion}
 								<p class="text-xs text-muted-foreground">
 									UMAP model {snapshot.payload.modelVersion} · synced {ago(
