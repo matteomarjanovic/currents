@@ -19,6 +19,7 @@ services:
   tap:
     image: ghcr.io/bluesky-social/indigo/tap:latest
     restart: unless-stopped
+    scale: ${TAP_SCALE:-1}
     depends_on:
       db:
         condition: service_healthy
@@ -36,6 +37,7 @@ services:
   tap-seed:
     image: curlimages/curl:8.12.1
     restart: on-failure
+    scale: ${TAP_SCALE:-1}
     depends_on:
       tap:
         condition: service_started
@@ -54,10 +56,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      tap:
-        condition: service_started
-      tap-seed:
-        condition: service_started
     environment:
       SESSION_SECRET: ${SESSION_SECRET:-changeme-use-a-strong-random-secret}
       COOKIE_SAME_SITE: none
@@ -70,6 +68,9 @@ services:
       TAP_URL: ws://tap:2480/channel
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
+      INGEST_SOURCE: ${INGEST_SOURCE:-tap}
+      JETSTREAM_HOST: ${JETSTREAM_HOST:-https://jetstream.us-east.bsky.network}
+      JETSTREAM_API_KEY: ${JETSTREAM_API_KEY:-}
       INFERENCE_URL: http://host.docker.internal:8000
       HIDDEN_DIDS: ${HIDDEN_DIDS:-}
       LABELER_DID: ${LABELER_DID:-}

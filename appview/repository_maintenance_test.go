@@ -58,7 +58,7 @@ func (p *maintenancePDS) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/xrpc/com.atproto.sync.getLatestCommit":
-		json.NewEncoder(w).Encode(map[string]string{"cid": fmt.Sprintf("commit-%d", p.revision)})
+		json.NewEncoder(w).Encode(map[string]string{"cid": fmt.Sprintf("commit-%d", p.revision), "rev": fmt.Sprintf("rev-%d", p.revision)})
 	case "/xrpc/com.atproto.repo.listRecords":
 		start, _ := strconv.Atoi(r.URL.Query().Get("cursor"))
 		if p.failPage && start > 0 {

@@ -263,6 +263,23 @@ func main() {
 				EnvVars: []string{"CLIENT_SECRET_KEY_ID"},
 			},
 			&cli.StringFlag{
+				Name:    "ingest-source",
+				Usage:   "record ingestion source: tap or jetstream",
+				Value:   "tap",
+				EnvVars: []string{"INGEST_SOURCE"},
+			},
+			&cli.StringFlag{
+				Name:    "jetstream-host",
+				Usage:   "Jetstream v2 service host",
+				Value:   "https://jetstream.us-east.bsky.network",
+				EnvVars: []string{"JETSTREAM_HOST"},
+			},
+			&cli.StringFlag{
+				Name:    "jetstream-api-key",
+				Usage:   "API key for Jetstream archive replay after a restart",
+				EnvVars: []string{"JETSTREAM_API_KEY"},
+			},
+			&cli.StringFlag{
 				Name:    "tap-url",
 				Usage:   "WebSocket URL of the TAP event stream",
 				Value:   "ws://localhost:2480/channel",
@@ -428,6 +445,10 @@ func runServer(cctx *cli.Context) error {
 	defer stop()
 
 	mode := strings.ToLower(cctx.String("mode"))
+	ingestSource := strings.ToLower(cctx.String("ingest-source"))
+	if ingestSource != "tap" && ingestSource != "jetstream" {
+		return fmt.Errorf("invalid ingest source %q", ingestSource)
+	}
 	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" {
 		mode = cctx.Command.Name
 		if mode == "repair-orphans" && cctx.Bool("now") && cctx.String("did") == "" {
@@ -524,11 +545,12 @@ func runServer(cctx *cli.Context) error {
 	}
 
 	tapHandler := &TapHandler{
-		Context:   ctx,
-		Store:     store,
-		Dir:       dir,
-		Inference: inferenceClient,
-		Labeler:   labelerIssuer,
+		Context:      ctx,
+		Store:        store,
+		Dir:          dir,
+		Inference:    inferenceClient,
+		Labeler:      labelerIssuer,
+		IngestSource: ingestSource,
 	}
 	importWorker := &ImportWorker{
 		Context:   ctx,
@@ -606,6 +628,7 @@ func runServer(cctx *cli.Context) error {
 		Inference:             inferenceClient,
 		FrontendURL:           cctx.String("frontend-url"),
 		ProcessMode:           mode,
+		IngestSource:          ingestSource,
 		ImportWorker:          importWorker,
 		Labeler:               labelerIssuer,
 		LabelerHost:           labelerHost,
@@ -736,8 +759,18 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("POST /api/account/delete", srv.APIAccountDelete)
 
 	tapHandler.CDNBaseURL = cdnURL
-	go runTapListener(ctx, cctx.String("tap-url"), cctx.String("tap-admin-password"), tapHandler)
-	slog.Info("TAP listener started", "url", cctx.String("tap-url"))
+	if ingestSource == "tap" {
+		go runTapListener(ctx, cctx.String("tap-url"), cctx.String("tap-admin-password"), tapHandler)
+		slog.Info("TAP listener started", "url", cctx.String("tap-url"))
+	} else {
+		go func() {
+			if err := runJetstreamListener(ctx, cctx.String("jetstream-host"), cctx.String("jetstream-api-key"), tapHandler); err != nil {
+				slog.Error("Jetstream listener stopped", "err", err)
+				os.Exit(1)
+			}
+		}()
+		go runJetstreamBackfill(ctx, tapHandler)
+	}
 
 	go importWorker.Run()
 	slog.Info("import worker started")

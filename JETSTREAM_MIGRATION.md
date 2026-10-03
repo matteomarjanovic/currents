@@ -47,8 +47,10 @@ a long outage or across a cursor gap.
 3. Switch Mac mini staging to Jetstream, then verify create/update/delete,
    account deletion and relogin backfill, and sync divergence using test DIDs.
 4. Capture a production database backup, start from a cursor overlapping the
-   still-running TAP stream, and stop TAP only after the new consumer is caught
-   up. Keep the TAP image and database tables for rollback during the soak.
+   still-running TAP stream (currently one hour of overlap, after confirming
+   TAP's relay cursor is current), and stop TAP only after the new consumer is
+   caught up. Keep the TAP image and database tables for rollback during the
+   soak.
 
 Hosted Jetstream's live WebSocket needs no API key, but recovery beyond its
 lookback window uses the metered archive and requires a Jetstream API key. The

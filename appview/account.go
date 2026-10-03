@@ -25,9 +25,15 @@ import (
 
 var tapAdminHTTP = &http.Client{Timeout: 30 * time.Second}
 
-// tapRepos calls TAP's admin API to start ("add") or stop ("remove") tracking
-// a repo. Adding triggers a backfill of the repo's existing records.
+// tapRepos starts or stops repository tracking for the configured ingester.
+// Jetstream stores the opt-out locally; TAP also needs its admin API call.
 func (s *Server) tapRepos(ctx context.Context, action, did string) error {
+	if s.IngestSource == "jetstream" {
+		if action == "add" {
+			return s.Store.EnableJetstreamRepo(ctx, did)
+		}
+		return s.Store.OptOutJetstreamRepo(ctx, did)
+	}
 	body, err := json.Marshal(map[string][]string{"dids": {did}})
 	if err != nil {
 		return err
@@ -49,7 +55,10 @@ func (s *Server) tapRepos(ctx context.Context, action, did string) error {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
 		return fmt.Errorf("tap /repos/%s: status %d: %.200s", action, resp.StatusCode, msg)
 	}
-	return nil
+	if action == "add" {
+		return s.Store.EnableJetstreamRepo(ctx, did)
+	}
+	return s.Store.OptOutJetstreamRepo(ctx, did)
 }
 
 // APIAccountDelete deletes the viewer's account: refuses while a Polar

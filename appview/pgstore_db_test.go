@@ -100,11 +100,14 @@ func truncateAll(t *testing.T, s *PgStore) {
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref, hidden_feed_image,
 			label, blob_moderation_state, review_item, report, moderation_event,
 			import_session, admin, operations_job_run, operations_host_snapshot,
-			collection_delete_job, orphan_record
+			collection_delete_job, orphan_record, jetstream_backfill, jetstream_repo, jetstream_cursor
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {
 		t.Fatalf("truncating tables: %v", err)
+	}
+	if _, err := s.pool.Exec(context.Background(), `INSERT INTO jetstream_cursor (singleton, seq) VALUES (TRUE, 0)`); err != nil {
+		t.Fatalf("resetting Jetstream cursor: %v", err)
 	}
 }
 

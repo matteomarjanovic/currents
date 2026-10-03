@@ -48,8 +48,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      tap:
-        condition: service_started
     environment:
       SESSION_SECRET: ${SESSION_SECRET}
       COOKIE_SAME_SITE: lax
@@ -64,6 +62,9 @@ services:
       TAP_URL: ws://tap:2480/channel
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
+      INGEST_SOURCE: ${INGEST_SOURCE:-tap}
+      JETSTREAM_HOST: ${JETSTREAM_HOST:-https://jetstream.us-east.bsky.network}
+      JETSTREAM_API_KEY: ${JETSTREAM_API_KEY:-}
       INFERENCE_URL: ${INFERENCE_URL:?set to the inference VM private address, e.g. http://10.x.y.z:8000}
       HIDDEN_DIDS: ${HIDDEN_DIDS:-}
       LABELER_DID: ${LABELER_DID:-}
@@ -93,6 +94,7 @@ services:
   tap:
     image: ghcr.io/bluesky-social/indigo/tap:latest
     restart: unless-stopped
+    scale: ${TAP_SCALE:-1}
     depends_on:
       db:
         condition: service_healthy

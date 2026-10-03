@@ -78,6 +78,7 @@ type TapHandler struct {
 	Inference                   *InferenceClient
 	Labeler                     *LabelerIssuer // optional; nil disables label issuance
 	CDNBaseURL                  string
+	IngestSource                string
 	CollectionEmbeddingDebounce time.Duration
 
 	asyncMu          sync.Mutex
@@ -297,14 +298,21 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		if ident != nil {
 			handle = ident.Handle.String()
 		}
-		return handler.Store.CreateUser(ctx, userRecordFromCurrentsProfile(
+		if err := handler.Store.CreateUser(ctx, userRecordFromCurrentsProfile(
 			ev.DID,
 			handle,
 			"",
 			handler.CDNBaseURL,
 			p,
 			time.Now(),
-		))
+		)); err != nil {
+			return err
+		}
+		if handler.IngestSource != "jetstream" {
+			_, err := handler.Store.RegisterJetstreamRepo(ctx, ev.DID)
+			return err
+		}
+		return nil
 	}
 
 	return nil
