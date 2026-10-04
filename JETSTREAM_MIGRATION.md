@@ -18,8 +18,10 @@ real v2 endpoint, caught up from a one-hour lookback, indexed a 53-save repo
 with exactly the same save and collection URIs as TAP, and resumed from its
 saved cursor after a process restart. A 13-hour run on the normal Mac mini
 staging appview stayed at live witness time. The staging TAP container has
-since been scaled to zero with `TAP_SCALE=0` for a bounded source-only test;
-production still runs TAP.
+then been scaled to zero with `TAP_SCALE=0` for a bounded source-only test:
+appview indexed new saves while TAP's mirror count stayed fixed, including a
+save URI present only in appview. TAP was restored afterward, and production
+has not switched.
 
 Raw TAP/appview table counts are not a sufficient convergence check. Staging
 has two long-standing TAP `error` repos whose current PDS says `RepoNotFound`
@@ -33,11 +35,15 @@ missing-repo policy before production cutover.
 
 `appview queue-jetstream-audit --did DID` and `--all` report the number of
 tracked repos and existing saves they would scan. Add `--apply` to enqueue
-the selected scope; the native worker processes it durably. The all-repo scope
-is roughly a million staging saves, so preview it and plan capacity before
-queuing it. An explicit PDS `RepoNotFound` is currently retried without
-removing old appview rows. This preserves data until the missing-repo policy
-and grace period are settled.
+the selected scope; the native worker processes it durably. A targeted DID
+gets a full record refresh. `--all` performs a membership audit: it adds
+missing saves and removes stale ones without rewriting saves already indexed.
+It therefore does not prove that every historical save's mutable fields match
+the PDS. The all-repo scope is roughly a million staging saves, so preview it
+and plan capacity before queuing it. An explicit PDS `RepoNotFound` records a
+durable `missing_since` observation and retries without removing old appview
+rows. This preserves data until the missing-repo policy and grace period are
+settled.
 
 ## Behavior the replacement must preserve
 

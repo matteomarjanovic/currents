@@ -34,6 +34,7 @@ type maintenancePDS struct {
 	records          map[string]repositoryRecord
 	revision         int
 	failPage         bool
+	repoMissing      bool
 	changeDuringRead bool
 	failBatch        int
 	batches          int
@@ -58,6 +59,10 @@ func (p *maintenancePDS) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/xrpc/com.atproto.sync.getLatestCommit":
+		if p.repoMissing {
+			fail(400, "RepoNotFound")
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]string{"cid": fmt.Sprintf("commit-%d", p.revision), "rev": fmt.Sprintf("rev-%d", p.revision)})
 	case "/xrpc/com.atproto.repo.listRecords":
 		start, _ := strconv.Atoi(r.URL.Query().Get("cursor"))

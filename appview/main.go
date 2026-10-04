@@ -57,8 +57,8 @@ func main() {
 				Usage:  "inspect or queue PDS reconciliation for tracked repos",
 				Action: runServer,
 				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "did", Usage: "audit only this DID"},
-					&cli.BoolFlag{Name: "all", Usage: "audit every tracked repo"},
+					&cli.StringFlag{Name: "did", Usage: "fully refresh this DID from its PDS"},
+					&cli.BoolFlag{Name: "all", Usage: "audit record membership for every tracked repo"},
 					&cli.BoolFlag{Name: "apply", Usage: "queue the audit instead of only reporting its scope"},
 				},
 			},
@@ -544,7 +544,11 @@ func runServer(cctx *cli.Context) error {
 		if did != "" && repos == 0 {
 			return fmt.Errorf("DID is not an active tracked repo: %s", did)
 		}
-		slog.Info("Jetstream PDS audit scope", "did", did, "repos", repos, "indexed_saves", saves, "apply", cctx.Bool("apply"))
+		auditMode := "membership"
+		if did != "" {
+			auditMode = "full"
+		}
+		slog.Info("Jetstream PDS audit scope", "did", did, "mode", auditMode, "repos", repos, "indexed_saves", saves, "apply", cctx.Bool("apply"))
 		if cctx.Bool("apply") {
 			queued, err := store.QueueJetstreamAudit(ctx, did)
 			slog.Info("Jetstream PDS audit queued", "repos", queued)

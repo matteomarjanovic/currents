@@ -1,0 +1,1 @@
+ALTER TABLE jetstream_backfill ADD COLUMN full_scan BOOLEAN NOT NULL DEFAULT TRUE;

@@ -53,8 +53,8 @@ func (m *PgStore) EnableJetstreamRepo(ctx context.Context, did string) error {
 		ON CONFLICT (did) DO UPDATE SET state = 'active', reconciled_rev = ''`, did); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO jetstream_backfill (did) VALUES ($1)
-		ON CONFLICT (did) DO UPDATE SET due_at = NOW(), attempts = 0`, did); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO jetstream_backfill (did, full_scan) VALUES ($1, TRUE)
+		ON CONFLICT (did) DO UPDATE SET due_at = NOW(), attempts = 0, full_scan = TRUE, missing_since = NULL`, did); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -67,8 +67,8 @@ func (m *PgStore) OptOutJetstreamRepo(ctx context.Context, did string) error {
 }
 
 func (m *PgStore) QueueJetstreamBackfill(ctx context.Context, did string) error {
-	_, err := m.pool.Exec(ctx, `INSERT INTO jetstream_backfill (did) VALUES ($1)
-		ON CONFLICT (did) DO UPDATE SET due_at = NOW()`, did)
+	_, err := m.pool.Exec(ctx, `INSERT INTO jetstream_backfill (did, full_scan) VALUES ($1, TRUE)
+		ON CONFLICT (did) DO UPDATE SET due_at = NOW(), attempts = 0, full_scan = TRUE, missing_since = NULL`, did)
 	return err
 }
 
@@ -138,16 +138,22 @@ func (m *PgStore) ClearIndexedRepo(ctx context.Context, did string) error {
 	return tx.Commit(ctx)
 }
 
-func (m *PgStore) NextJetstreamBackfill(ctx context.Context) (string, time.Time, int, error) {
-	var did string
-	var due time.Time
-	var attempts int
-	err := m.pool.QueryRow(ctx, `SELECT did, due_at, attempts FROM jetstream_backfill
-		WHERE due_at <= NOW() ORDER BY due_at LIMIT 1`).Scan(&did, &due, &attempts)
+type JetstreamBackfillJob struct {
+	DID          string
+	Due          time.Time
+	Attempts     int
+	Full         bool
+	MissingSince *time.Time
+}
+
+func (m *PgStore) NextJetstreamBackfill(ctx context.Context) (JetstreamBackfillJob, error) {
+	var job JetstreamBackfillJob
+	err := m.pool.QueryRow(ctx, `SELECT did, due_at, attempts, full_scan, missing_since FROM jetstream_backfill
+		WHERE due_at <= NOW() ORDER BY due_at LIMIT 1`).Scan(&job.DID, &job.Due, &job.Attempts, &job.Full, &job.MissingSince)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", time.Time{}, 0, nil
+		return JetstreamBackfillJob{}, nil
 	}
-	return did, due, attempts, err
+	return job, err
 }
 
 func (m *PgStore) CompleteJetstreamBackfill(ctx context.Context, did string, due time.Time) error {
@@ -159,6 +165,13 @@ func (m *PgStore) RetryJetstreamBackfill(ctx context.Context, did string, due ti
 	_, err := m.pool.Exec(ctx, `UPDATE jetstream_backfill
 		SET attempts = attempts + 1, due_at = NOW() + $3 * INTERVAL '1 second'
 		WHERE did = $1 AND due_at = $2`, did, due, delaySeconds)
+	return err
+}
+
+func (m *PgStore) ObserveJetstreamRepoMissing(ctx context.Context, did string, due time.Time) error {
+	_, err := m.pool.Exec(ctx, `UPDATE jetstream_backfill
+		SET missing_since = COALESCE(missing_since, NOW())
+		WHERE did = $1 AND due_at = $2`, did, due)
 	return err
 }
 
@@ -175,9 +188,10 @@ func (m *PgStore) JetstreamAuditPlan(ctx context.Context, did string) (int64, in
 
 func (m *PgStore) QueueJetstreamAudit(ctx context.Context, did string) (int64, error) {
 	result, err := m.pool.Exec(ctx, `
-		INSERT INTO jetstream_backfill (did)
-		SELECT did FROM jetstream_repo WHERE state = 'active' AND ($1 = '' OR did = $1)
-		ON CONFLICT (did) DO UPDATE SET due_at = NOW(), attempts = 0
+		INSERT INTO jetstream_backfill (did, full_scan)
+		SELECT did, $1 <> '' FROM jetstream_repo WHERE state = 'active' AND ($1 = '' OR did = $1)
+		ON CONFLICT (did) DO UPDATE SET due_at = NOW(), attempts = 0,
+			full_scan = jetstream_backfill.full_scan OR EXCLUDED.full_scan
 	`, did)
 	return result.RowsAffected(), err
 }

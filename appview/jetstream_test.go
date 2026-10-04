@@ -31,8 +31,8 @@ func TestJetstreamEnrollmentOptOutAndReplay(t *testing.T) {
 	if err != nil || state != "active" {
 		t.Fatalf("profile signal state = %q, %v", state, err)
 	}
-	if pending, _, _, err := store.NextJetstreamBackfill(ctx); err != nil || pending != did {
-		t.Fatalf("profile signal backfill = %q, %v", pending, err)
+	if pending, err := store.NextJetstreamBackfill(ctx); err != nil || pending.DID != did || !pending.Full {
+		t.Fatalf("profile signal backfill = %+v, %v", pending, err)
 	}
 	actor, err := store.GetActorByDID(ctx, did)
 	if err != nil || actor == nil || actor.Handle != "new.example.test" {
@@ -120,8 +120,8 @@ func TestJetstreamSyncAndAccountMarkers(t *testing.T) {
 	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM follow WHERE subject_did = $1`, did).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("sync lost follows of actor: %d, %v", count, err)
 	}
-	if pending, _, _, err := store.NextJetstreamBackfill(ctx); err != nil || pending != did {
-		t.Fatalf("sync backfill = %q, %v", pending, err)
+	if pending, err := store.NextJetstreamBackfill(ctx); err != nil || pending.DID != did || !pending.Full {
+		t.Fatalf("sync backfill = %+v, %v", pending, err)
 	}
 	if err := applyJetstreamEvent(ctx, handler, jetstream.Event{DID: did, Kind: jetstream.KindAccount, Account: &jetstream.Account{Active: false, Status: "deleted"}}); err != nil {
 		t.Fatal(err)
@@ -161,8 +161,8 @@ func TestRepoTrackingKeepsDeletionOptOut(t *testing.T) {
 	if err != nil || state != "active" {
 		t.Fatalf("login state = %q, %v", state, err)
 	}
-	if pending, _, _, err := store.NextJetstreamBackfill(ctx); err != nil || pending != did {
-		t.Fatalf("login backfill = %q, %v", pending, err)
+	if pending, err := store.NextJetstreamBackfill(ctx); err != nil || pending.DID != did || !pending.Full {
+		t.Fatalf("login backfill = %+v, %v", pending, err)
 	}
 
 	var actions []string

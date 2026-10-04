@@ -19,19 +19,24 @@ var jetstreamCollections = []string{
 
 func runJetstreamBackfill(ctx context.Context, handler *TapHandler) {
 	for ctx.Err() == nil {
-		did, due, attempts, err := handler.Store.NextJetstreamBackfill(ctx)
+		job, err := handler.Store.NextJetstreamBackfill(ctx)
 		if err != nil {
 			slog.Warn("Jetstream backfill queue", "err", err)
-		} else if did != "" {
-			err = reconcileJetstreamRepo(ctx, handler, did)
+		} else if job.DID != "" {
+			err = reconcileJetstreamRepo(ctx, handler, job.DID, job.Full)
 			if err == nil {
-				err = handler.Store.CompleteJetstreamBackfill(ctx, did, due)
+				err = handler.Store.CompleteJetstreamBackfill(ctx, job.DID, job.Due)
 			}
 			if err != nil {
-				slog.Warn("Jetstream PDS backfill deferred", "did", did, "err", err)
-				delay := min(3600, 30<<min(attempts, 7))
-				if retryErr := handler.Store.RetryJetstreamBackfill(ctx, did, due, delay); retryErr != nil {
-					slog.Error("Jetstream backfill retry", "did", did, "err", retryErr)
+				slog.Warn("Jetstream PDS backfill deferred", "did", job.DID, "err", err)
+				if isPDSRepoNotFound(err) {
+					if observeErr := handler.Store.ObserveJetstreamRepoMissing(ctx, job.DID, job.Due); observeErr != nil {
+						slog.Error("Jetstream missing repo observation", "did", job.DID, "err", observeErr)
+					}
+				}
+				delay := min(3600, 30<<min(job.Attempts, 7))
+				if retryErr := handler.Store.RetryJetstreamBackfill(ctx, job.DID, job.Due, delay); retryErr != nil {
+					slog.Error("Jetstream backfill retry", "did", job.DID, "err", retryErr)
 				}
 			}
 			continue
@@ -42,6 +47,11 @@ func runJetstreamBackfill(ctx context.Context, handler *TapHandler) {
 		case <-time.After(30 * time.Second):
 		}
 	}
+}
+
+func isPDSRepoNotFound(err error) bool {
+	var apiErr *atclient.APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest && apiErr.Name == "RepoNotFound"
 }
 
 func pdsRepoRevision(ctx context.Context, c *atclient.APIClient, did string) (string, string, error) {
@@ -86,7 +96,7 @@ func readJetstreamRepo(ctx context.Context, c *atclient.APIClient, did string) (
 	return records, rev, nil
 }
 
-func reconcileJetstreamRepo(ctx context.Context, handler *TapHandler, did string) error {
+func reconcileJetstreamRepo(ctx context.Context, handler *TapHandler, did string, full bool) error {
 	unlock, err := handler.Store.lockRepository(ctx, did)
 	if err != nil {
 		return err
@@ -124,6 +134,7 @@ func reconcileJetstreamRepo(ctx context.Context, handler *TapHandler, did string
 	}
 	type indexedRecord struct{ kind, uri string }
 	var indexed []indexedRecord
+	indexedSaves := make(map[string]bool)
 	for rows.Next() {
 		var r indexedRecord
 		if err := rows.Scan(&r.kind, &r.uri); err != nil {
@@ -131,6 +142,9 @@ func reconcileJetstreamRepo(ctx context.Context, handler *TapHandler, did string
 			return err
 		}
 		indexed = append(indexed, r)
+		if r.kind == "save" {
+			indexedSaves[r.uri] = true
+		}
 	}
 	err = rows.Err()
 	rows.Close()
@@ -157,6 +171,9 @@ func reconcileJetstreamRepo(ctx context.Context, handler *TapHandler, did string
 	}
 	for _, nsid := range jetstreamCollections {
 		for _, record := range records[nsid] {
+			if nsid == saveNSID && !full && indexedSaves[record.URI] {
+				continue
+			}
 			uri, _ := syntax.ParseATURI(record.URI)
 			value, err := json.Marshal(record.Value)
 			if err != nil {
@@ -174,9 +191,13 @@ func reconcileJetstreamRepo(ctx context.Context, handler *TapHandler, did string
 			}
 		}
 	}
-	if err := handler.Store.SetJetstreamReconciledRev(ctx, did, rev); err != nil {
-		return err
+	if full {
+		// A membership-only audit leaves existing save fields untouched, so
+		// pending Jetstream updates through this rev must still be applied.
+		if err := handler.Store.SetJetstreamReconciledRev(ctx, did, rev); err != nil {
+			return err
+		}
 	}
-	slog.Info("Jetstream repo reconciled with PDS", "did", did, "rev", rev, "records", len(present))
+	slog.Info("Jetstream repo reconciled with PDS", "did", did, "rev", rev, "records", len(present), "full", full)
 	return nil
 }

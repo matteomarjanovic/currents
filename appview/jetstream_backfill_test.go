@@ -33,7 +33,6 @@ func TestJetstreamBackfillReconcilesPDSRecords(t *testing.T) {
 		testRepositoryRecord(favouriteURI, fmt.Sprintf(`{"subject":{"uri":%q}}`, root)),
 		testRepositoryRecord(save, fmt.Sprintf(`{"collection":{"uri":%q},"content":{"$type":"is.currents.content.text"},"text":"Hello","createdAt":"2026-01-01T00:00:00Z"}`, root)),
 	)
-	_ = p
 	if _, err := store.RegisterJetstreamRepo(ctx, repairTestDID); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +45,7 @@ func TestJetstreamBackfillReconcilesPDSRecords(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID); err != nil {
+	if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID, true); err != nil {
 		t.Fatal(err)
 	}
 	var names []string
@@ -86,6 +85,31 @@ func TestJetstreamBackfillReconcilesPDSRecords(t *testing.T) {
 	if err != nil || actor == nil || actor.DisplayName != "Alice" {
 		t.Fatalf("profile after reconcile = %+v, %v", actor, err)
 	}
+
+	newSave := saveTestURI("new")
+	p.records[save] = testRepositoryRecord(save, fmt.Sprintf(`{"collection":{"uri":%q},"content":{"$type":"is.currents.content.text"},"text":"Changed"}`, root))
+	p.records[newSave] = testRepositoryRecord(newSave, fmt.Sprintf(`{"collection":{"uri":%q},"content":{"$type":"is.currents.content.text"},"text":"New"}`, root))
+	p.revision++
+	if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID, false); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	if err := store.pool.QueryRow(ctx, `SELECT text FROM save WHERE uri = $1`, save).Scan(&text); err != nil || text != "Hello" {
+		t.Fatalf("membership audit rewrote existing save: %q, %v", text, err)
+	}
+	_, rev, err = store.JetstreamRepoState(ctx, repairTestDID)
+	if err != nil || rev != "rev-0" {
+		t.Fatalf("membership audit skipped pending event revisions: %q, %v", rev, err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT text FROM save WHERE uri = $1`, newSave).Scan(&text); err != nil || text != "New" {
+		t.Fatalf("membership audit missed new save: %q, %v", text, err)
+	}
+	if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT text FROM save WHERE uri = $1`, save).Scan(&text); err != nil || text != "Changed" {
+		t.Fatalf("full audit did not update existing save: %q, %v", text, err)
+	}
 }
 
 func TestJetstreamBackfillLeavesIndexUntouchedOnPartialPDSRead(t *testing.T) {
@@ -107,7 +131,7 @@ func TestJetstreamBackfillLeavesIndexUntouchedOnPartialPDSRead(t *testing.T) {
 			if err := store.UpsertCollection(ctx, stale, "old-cid", repairTestDID, "Stale", "", "", nil); err != nil {
 				t.Fatal(err)
 			}
-			if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID); err == nil {
+			if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID, true); err == nil {
 				t.Fatal("partial PDS read unexpectedly reconciled")
 			}
 			var count int
@@ -118,6 +142,52 @@ func TestJetstreamBackfillLeavesIndexUntouchedOnPartialPDSRead(t *testing.T) {
 	}
 }
 
+func TestJetstreamRepoNotFoundIsObservedWithoutDeletingRows(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	uri := collectionTestURI("retained")
+	p, client := newMaintenancePDS(t, testRepositoryRecord(uri, `{"name":"Retained"}`))
+	p.repoMissing = true
+	if _, err := store.RegisterJetstreamRepo(ctx, repairTestDID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertCollection(ctx, uri, "old-cid", repairTestDID, "Retained", "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.QueueJetstreamBackfill(ctx, repairTestDID); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.NextJetstreamBackfill(ctx)
+	if err != nil || job.DID != repairTestDID {
+		t.Fatalf("queued repo = %+v, %v", job, err)
+	}
+	err = reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID, job.Full)
+	if !isPDSRepoNotFound(err) {
+		t.Fatalf("expected explicit RepoNotFound, got %v", err)
+	}
+	if err := store.ObserveJetstreamRepoMissing(ctx, job.DID, job.Due); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	var observed bool
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM collection WHERE uri = $1`, uri).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("missing PDS deleted indexed collection: %d, %v", count, err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT missing_since IS NOT NULL FROM jetstream_backfill WHERE did = $1`, repairTestDID).Scan(&observed); err != nil || !observed {
+		t.Fatalf("missing repo observation = %t, %v", observed, err)
+	}
+	p.repoMissing = false
+	if err := reconcileJetstreamRepo(ctx, jetstreamTestHandler(store, client.Host), repairTestDID, job.Full); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteJetstreamBackfill(ctx, job.DID, job.Due); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM jetstream_backfill WHERE did = $1`, repairTestDID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("recovered repo left missing observation: %d, %v", count, err)
+	}
+}
+
 func TestJetstreamBackfillQueueRetry(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -125,29 +195,29 @@ func TestJetstreamBackfillQueueRetry(t *testing.T) {
 	if err := store.QueueJetstreamBackfill(ctx, did); err != nil {
 		t.Fatal(err)
 	}
-	got, due, attempts, err := store.NextJetstreamBackfill(ctx)
-	if err != nil || got != did || attempts != 0 || due.IsZero() {
-		t.Fatalf("queue = %q %v %d, %v", got, due, attempts, err)
+	job, err := store.NextJetstreamBackfill(ctx)
+	if err != nil || job.DID != did || job.Attempts != 0 || job.Due.IsZero() || !job.Full {
+		t.Fatalf("queue = %+v, %v", job, err)
 	}
-	if err := store.RetryJetstreamBackfill(ctx, did, due, 30); err != nil {
+	if err := store.RetryJetstreamBackfill(ctx, did, job.Due, 30); err != nil {
 		t.Fatal(err)
 	}
-	if got, _, _, err := store.NextJetstreamBackfill(ctx); err != nil || got != "" {
-		t.Fatalf("retry ran too early: %q, %v", got, err)
+	if got, err := store.NextJetstreamBackfill(ctx); err != nil || got.DID != "" {
+		t.Fatalf("retry ran too early: %+v, %v", got, err)
 	}
 	if err := store.QueueJetstreamBackfill(ctx, did); err != nil {
 		t.Fatal(err)
 	}
-	got, newerDue, _, err := store.NextJetstreamBackfill(ctx)
-	if err != nil || got != did {
-		t.Fatalf("requeued = %q, %v", got, err)
+	newer, err := store.NextJetstreamBackfill(ctx)
+	if err != nil || newer.DID != did {
+		t.Fatalf("requeued = %+v, %v", newer, err)
 	}
-	if err := store.CompleteJetstreamBackfill(ctx, did, due); err != nil {
+	if err := store.CompleteJetstreamBackfill(ctx, did, job.Due); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _, err = store.NextJetstreamBackfill(ctx)
-	if err != nil || got != did || newerDue.Equal(due) {
-		t.Fatalf("requeue lost by stale completion: %q, %v", got, err)
+	got, err := store.NextJetstreamBackfill(ctx)
+	if err != nil || got.DID != did || newer.Due.Equal(job.Due) {
+		t.Fatalf("requeue lost by stale completion: %+v, %v", got, err)
 	}
 }
 
@@ -191,5 +261,15 @@ func TestJetstreamAuditScopeAndQueue(t *testing.T) {
 	var pending int
 	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM jetstream_backfill`).Scan(&pending); err != nil || pending != 2 {
 		t.Fatalf("pending audit repos = %d, %v", pending, err)
+	}
+	var firstFull, secondFull bool
+	if err := store.pool.QueryRow(ctx, `SELECT full_scan FROM jetstream_backfill WHERE did = $1`, first).Scan(&firstFull); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT full_scan FROM jetstream_backfill WHERE did = $1`, second).Scan(&secondFull); err != nil {
+		t.Fatal(err)
+	}
+	if !firstFull || secondFull {
+		t.Fatalf("audit modes: targeted full=%t, all-only full=%t", firstFull, secondFull)
 	}
 }
