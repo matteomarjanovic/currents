@@ -11,6 +11,34 @@ sync markers. All 260 commits matched TAP's repository mirror after a
 and that TAP was current during this run; it does not establish behavior after
 a long outage or across a cursor gap.
 
+The native appview consumer is now implemented behind `INGEST_SOURCE=jetstream`;
+the default remains `tap`. Its cursor, repo tracking, opt-outs and PDS backfill
+are durable PostgreSQL state. An isolated staging database subscribed to the
+real v2 endpoint, caught up from a one-hour lookback, indexed a 53-save repo
+with exactly the same save and collection URIs as TAP, and resumed from its
+saved cursor after a process restart. A 13-hour run on the normal Mac mini
+staging appview stayed at live witness time. The staging TAP container has
+since been scaled to zero with `TAP_SCALE=0` for a bounded source-only test;
+production still runs TAP.
+
+Raw TAP/appview table counts are not a sufficient convergence check. Staging
+has two long-standing TAP `error` repos whose current PDS says `RepoNotFound`
+but whose old appview rows still hold 6,352 saves. Small active-repo graph
+count differences existed before this switch: some PDS follow records have
+duplicate subjects, one TAP collection URI is no longer on the PDS, and one
+PDS favourite was missing from appview. A targeted staging PDS reconciliation
+restored that favourite without changing the owner's save or collection count.
+These historical discrepancies need a deliberate PDS-authoritative audit and
+missing-repo policy before production cutover.
+
+`appview queue-jetstream-audit --did DID` and `--all` report the number of
+tracked repos and existing saves they would scan. Add `--apply` to enqueue
+the selected scope; the native worker processes it durably. The all-repo scope
+is roughly a million staging saves, so preview it and plan capacity before
+queuing it. An explicit PDS `RepoNotFound` is currently retried without
+removing old appview rows. This preserves data until the missing-repo policy
+and grace period are settled.
+
 ## Behavior the replacement must preserve
 
 - Process collection, save, follow, favourite, and profile records through the
@@ -38,19 +66,19 @@ a long outage or across a cursor gap.
 
 ## Cutover
 
-1. Implement the native consumer behind an explicit ingest-source setting.
-   Keep TAP as the default until the remaining steps pass.
-2. Run the native consumer against an isolated staging database copied from
-   staging. Compare record URIs/CIDs, collection/save counts, follow/favourite
-   edges, account removals, and identity changes with TAP. Test a restart and a
-   forced connection drop.
-3. Switch Mac mini staging to Jetstream, then verify create/update/delete,
-   account deletion and relogin backfill, and sync divergence using test DIDs.
+1. Finish the PDS-authoritative audit of existing repos and a grace-based
+   policy for an explicit `RepoNotFound`. Exercise account deletion, relogin,
+   and sync divergence against controlled test DIDs. Keep TAP as the default.
+2. Finish the Mac mini staging-only soak, then compare appview records and
+   selected PDS snapshots with TAP's frozen mirror. Restore TAP with
+   `TAP_SCALE=1` and `INGEST_SOURCE=tap` if the source-only test fails.
+3. Configure a Jetstream archive API key for restart recovery beyond the live
+   lookback window. Verify archive replay from a saved cursor on staging.
 4. Capture a production database backup, start from a cursor overlapping the
    still-running TAP stream (currently one hour of overlap, after confirming
-   TAP's relay cursor is current), and stop TAP only after the new consumer is
-   caught up. Keep the TAP image and database tables for rollback during the
-   soak.
+   TAP's relay cursor is current), and switch to `INGEST_SOURCE=jetstream`.
+   Set `TAP_SCALE=0` only after the new consumer is caught up. Keep the TAP
+   image and database tables for rollback during the soak.
 
 Hosted Jetstream's live WebSocket needs no API key, but recovery beyond its
 lookback window uses the metered archive and requires a Jetstream API key. The

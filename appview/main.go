@@ -53,6 +53,16 @@ func main() {
 				},
 			},
 			{
+				Name:   "queue-jetstream-audit",
+				Usage:  "inspect or queue PDS reconciliation for tracked repos",
+				Action: runServer,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "did", Usage: "audit only this DID"},
+					&cli.BoolFlag{Name: "all", Usage: "audit every tracked repo"},
+					&cli.BoolFlag{Name: "apply", Usage: "queue the audit instead of only reporting its scope"},
+				},
+			},
+			{
 				Name:   "sync-polar-subscriptions",
 				Usage:  "re-sync the Polar subscription mirror (one-shot, requires subscriptions:read)",
 				Action: runSyncPolarSubscriptions,
@@ -449,7 +459,7 @@ func runServer(cctx *cli.Context) error {
 	if ingestSource != "tap" && ingestSource != "jetstream" {
 		return fmt.Errorf("invalid ingest source %q", ingestSource)
 	}
-	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" {
+	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" || cctx.Command.Name == "queue-jetstream-audit" {
 		mode = cctx.Command.Name
 		if mode == "repair-orphans" && cctx.Bool("now") && cctx.String("did") == "" {
 			return fmt.Errorf("--now requires --did")
@@ -459,9 +469,12 @@ func runServer(cctx *cli.Context) error {
 				return err
 			}
 		}
+		if mode == "queue-jetstream-audit" && (cctx.String("did") != "") == cctx.Bool("all") {
+			return fmt.Errorf("choose exactly one of --did or --all")
+		}
 	}
 	switch mode {
-	case "all", "repair", "repair-orphans", "refresh-handles":
+	case "all", "repair", "repair-orphans", "refresh-handles", "queue-jetstream-audit":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -521,6 +534,23 @@ func runServer(cctx *cli.Context) error {
 	}
 	if mode == "refresh-handles" {
 		return refreshUserHandles(ctx, store, dir, cctx.String("did"), cctx.Bool("dry-run"))
+	}
+	if mode == "queue-jetstream-audit" {
+		did := cctx.String("did")
+		repos, saves, err := store.JetstreamAuditPlan(ctx, did)
+		if err != nil {
+			return err
+		}
+		if did != "" && repos == 0 {
+			return fmt.Errorf("DID is not an active tracked repo: %s", did)
+		}
+		slog.Info("Jetstream PDS audit scope", "did", did, "repos", repos, "indexed_saves", saves, "apply", cctx.Bool("apply"))
+		if cctx.Bool("apply") {
+			queued, err := store.QueueJetstreamAudit(ctx, did)
+			slog.Info("Jetstream PDS audit queued", "repos", queued)
+			return err
+		}
+		return nil
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
 	maintenance := &RepositoryMaintenance{Context: ctx, Store: store, OAuth: oauthClient, Dir: dir}

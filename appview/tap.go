@@ -186,7 +186,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 
 	switch ev.Collection {
 	case collectionNSID:
-		slog.Info("TAP collection received", "uri", atURI, "action", ev.Action, "did", ev.DID)
+		slog.Info("Currents collection received", "source", handler.IngestSource, "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
 			return handler.Store.DeleteCollection(ctx, atURI)
 		}
@@ -202,7 +202,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		return handler.Store.UpsertCollection(ctx, atURI, ev.CID, ev.DID, col.Name, col.Description, parentURI, createdAt)
 
 	case saveNSID:
-		slog.Info("TAP save received", "uri", atURI, "action", ev.Action, "did", ev.DID)
+		slog.Info("Currents save received", "source", handler.IngestSource, "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
 			previous, err := handler.Store.saveCollectionURI(ctx, atURI)
 			if err != nil {
@@ -250,7 +250,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		return nil
 
 	case followNSID:
-		slog.Info("TAP follow received", "uri", atURI, "action", ev.Action, "did", ev.DID)
+		slog.Info("Currents follow received", "source", handler.IngestSource, "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
 			return handler.Store.DeleteFollow(ctx, atURI)
 		}
@@ -264,7 +264,7 @@ func handleTapRecord(ctx context.Context, handler *TapHandler, ev *TapRecordEven
 		return handler.Store.UpsertFollow(ctx, atURI, ev.DID, f.Subject)
 
 	case favouriteNSID:
-		slog.Info("TAP favourite received", "uri", atURI, "action", ev.Action, "did", ev.DID)
+		slog.Info("Currents favourite received", "source", handler.IngestSource, "uri", atURI, "action", ev.Action, "did", ev.DID)
 		if ev.Action == "delete" {
 			return handler.Store.DeleteFavourite(ctx, atURI)
 		}

@@ -161,3 +161,23 @@ func (m *PgStore) RetryJetstreamBackfill(ctx context.Context, did string, due ti
 		WHERE did = $1 AND due_at = $2`, did, due, delaySeconds)
 	return err
 }
+
+func (m *PgStore) JetstreamAuditPlan(ctx context.Context, did string) (int64, int64, error) {
+	var repos, saves int64
+	err := m.pool.QueryRow(ctx, `
+		SELECT count(*), COALESCE(sum(COALESCE(s.n, 0)), 0)
+		FROM jetstream_repo r
+		LEFT JOIN (SELECT author_did, count(*) n FROM save WHERE $1 = '' OR author_did = $1 GROUP BY author_did) s ON s.author_did = r.did
+		WHERE r.state = 'active' AND ($1 = '' OR r.did = $1)
+	`, did).Scan(&repos, &saves)
+	return repos, saves, err
+}
+
+func (m *PgStore) QueueJetstreamAudit(ctx context.Context, did string) (int64, error) {
+	result, err := m.pool.Exec(ctx, `
+		INSERT INTO jetstream_backfill (did)
+		SELECT did FROM jetstream_repo WHERE state = 'active' AND ($1 = '' OR did = $1)
+		ON CONFLICT (did) DO UPDATE SET due_at = NOW(), attempts = 0
+	`, did)
+	return result.RowsAffected(), err
+}

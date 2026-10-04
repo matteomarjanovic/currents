@@ -150,3 +150,46 @@ func TestJetstreamBackfillQueueRetry(t *testing.T) {
 		t.Fatalf("requeue lost by stale completion: %q, %v", got, err)
 	}
 }
+
+func TestJetstreamAuditScopeAndQueue(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	const first = "did:plc:first"
+	const second = "did:plc:second"
+	const removed = "did:plc:removed"
+	for _, did := range []string{first, second} {
+		if _, err := store.RegisterJetstreamRepo(ctx, did); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.OptOutJetstreamRepo(ctx, removed); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		if err := store.UpsertSave(ctx, UpsertSaveParams{
+			URI:       fmt.Sprintf("at://%s/%s/%d", first, saveNSID, i),
+			AuthorDID: first, ContentNSID: "is.currents.content.text", CreatedAt: &testBase,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if repos, saves, err := store.JetstreamAuditPlan(ctx, ""); err != nil || repos != 2 || saves != 2 {
+		t.Fatalf("all audit scope = %d repos, %d saves, %v", repos, saves, err)
+	}
+	if repos, saves, err := store.JetstreamAuditPlan(ctx, first); err != nil || repos != 1 || saves != 2 {
+		t.Fatalf("DID audit scope = %d repos, %d saves, %v", repos, saves, err)
+	}
+	if repos, _, err := store.JetstreamAuditPlan(ctx, removed); err != nil || repos != 0 {
+		t.Fatalf("removed repo appeared in audit: %d, %v", repos, err)
+	}
+	if queued, err := store.QueueJetstreamAudit(ctx, first); err != nil || queued != 1 {
+		t.Fatalf("queued one repo = %d, %v", queued, err)
+	}
+	if queued, err := store.QueueJetstreamAudit(ctx, ""); err != nil || queued != 2 {
+		t.Fatalf("queued all active repos = %d, %v", queued, err)
+	}
+	var pending int
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM jetstream_backfill`).Scan(&pending); err != nil || pending != 2 {
+		t.Fatalf("pending audit repos = %d, %v", pending, err)
+	}
+}
