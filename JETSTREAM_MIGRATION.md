@@ -23,6 +23,11 @@ appview indexed new saves while TAP's mirror count stayed fixed, including a
 save URI present only in appview. TAP was restored afterward, and production
 has not switched.
 
+Database-backed tests now cover account deletion with retained PDS records,
+relogin and full PDS restoration, sync divergence, and replay of older and
+newer commits. A `RepoNotFound` remains an observation and retry: the native
+consumer never deletes the old appview rows on that result.
+
 Raw TAP/appview table counts are not a sufficient convergence check. Staging
 has two long-standing TAP `error` repos whose current PDS says `RepoNotFound`
 but whose old appview rows still hold 6,352 saves. Small active-repo graph
@@ -72,15 +77,21 @@ settled.
 
 ## Cutover
 
-1. Finish the PDS-authoritative audit of existing repos and a grace-based
-   policy for an explicit `RepoNotFound`. Exercise account deletion, relogin,
-   and sync divergence against controlled test DIDs. Keep TAP as the default.
-2. Finish the Mac mini staging-only soak, then compare appview records and
-   selected PDS snapshots with TAP's frozen mirror. Restore TAP with
-   `TAP_SCALE=1` and `INGEST_SOURCE=tap` if the source-only test fails.
-3. Configure a Jetstream archive API key for restart recovery beyond the live
-   lookback window. Verify archive replay from a saved cursor on staging.
-4. Capture a production database backup, start from a cursor overlapping the
+The native code can be delivered before switching ingestion. Its default is
+TAP. This branch intentionally leaves `docker-compose.scaleway.yml` unchanged:
+merging it deploys appview and applies additive migrations but does not set
+`INGEST_SOURCE` or stop TAP. Production Compose configuration changes belong
+to the later cutover step.
+
+1. Merge the dormant appview code with TAP still active and check the normal
+   deployment and migrations. The controlled lifecycle tests and Mac mini
+   source-only soak are complete; staging has been restored to TAP.
+2. Settle the policy for a repeatedly missing PDS repo. The current safe
+   behavior records the error and preserves the rows. Configure a Jetstream
+   archive API key for restart recovery beyond the live lookback window, then
+   verify archive replay from a saved cursor on staging.
+3. Update the production Compose file and environment as a separate cutover
+   change. Capture a production database backup and start from a cursor overlapping the
    still-running TAP stream (currently one hour of overlap, after confirming
    TAP's relay cursor is current), and switch to `INGEST_SOURCE=jetstream`.
    Set `TAP_SCALE=0` only after the new consumer is caught up. Keep the TAP
