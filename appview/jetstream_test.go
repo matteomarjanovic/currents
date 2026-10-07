@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -186,5 +187,129 @@ func TestRepoTrackingKeepsDeletionOptOut(t *testing.T) {
 	}
 	if len(actions) != 2 || actions[0] != "/repos/remove" || actions[1] != "/repos/add" {
 		t.Fatalf("TAP admin actions = %v", actions)
+	}
+}
+
+func TestJetstreamAccountDeletionAndReloginRestoresPDS(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	const did = repairTestDID
+	collectionURI := collectionTestURI("root")
+	saveURI := saveTestURI("one")
+	_, client := newMaintenancePDS(t,
+		testRepositoryRecord("at://"+did+"/"+currentsProfileNSID+"/self", `{"displayName":"Alice"}`),
+		testRepositoryRecord(collectionURI, `{"name":"Root"}`),
+		testRepositoryRecord(saveURI, `{"collection":{"uri":"`+collectionURI+`"},"content":{"$type":"is.currents.content.text"},"text":"Kept on PDS"}`),
+	)
+	handler := jetstreamTestHandler(store, client.Host)
+	s := &Server{Store: store, IngestSource: "jetstream"}
+	if err := s.tapRepos(ctx, "add", did); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileJetstreamRepo(ctx, handler, did, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.tapRepos(ctx, "remove", did); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteUserData(ctx, did, ""); err != nil {
+		t.Fatal(err)
+	}
+	state, _, err := store.JetstreamRepoState(ctx, did)
+	if err != nil || state != "opted_out" {
+		t.Fatalf("deleted account tracking = %q, %v", state, err)
+	}
+	if err := applyJetstreamEvent(ctx, handler, jetstream.Event{DID: did, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+		Operation: jetstream.OpCreate, Collection: collectionNSID, Rkey: "new", Rev: "rev-new",
+		Record: map[string]any{"name": "Must stay hidden"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM collection WHERE author_did = $1`, did).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("opted-out repo was reindexed: %d, %v", count, err)
+	}
+	if err := s.tapRepos(ctx, "add", did); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.NextJetstreamBackfill(ctx)
+	if err != nil || job.DID != did || !job.Full {
+		t.Fatalf("relogin backfill = %+v, %v", job, err)
+	}
+	if err := reconcileJetstreamRepo(ctx, handler, did, job.Full); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM save WHERE uri = $1`, saveURI).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("PDS save not restored on relogin: %d, %v", count, err)
+	}
+	if actor, err := store.GetActorByDID(ctx, did); err != nil || actor == nil || actor.DisplayName != "Alice" {
+		t.Fatalf("PDS profile not restored on relogin: %+v, %v", actor, err)
+	}
+}
+
+func TestJetstreamSyncDivergenceReplacesRepoAndSkipsOldCommits(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	const did = repairTestDID
+	oldCollection := collectionTestURI("old")
+	newCollection := collectionTestURI("new")
+	oldSave := saveTestURI("old")
+	newSave := saveTestURI("new")
+	p, client := newMaintenancePDS(t,
+		testRepositoryRecord("at://"+did+"/"+currentsProfileNSID+"/self", `{"displayName":"Alice"}`),
+		testRepositoryRecord(oldCollection, `{"name":"Old"}`),
+		testRepositoryRecord(oldSave, fmt.Sprintf(`{"collection":{"uri":%q},"content":{"$type":"is.currents.content.text"}}`, oldCollection)),
+	)
+	handler := jetstreamTestHandler(store, client.Host)
+	if _, err := store.RegisterJetstreamRepo(ctx, did); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileJetstreamRepo(ctx, handler, did, true); err != nil {
+		t.Fatal(err)
+	}
+	delete(p.records, oldCollection)
+	delete(p.records, oldSave)
+	p.records[newCollection] = testRepositoryRecord(newCollection, `{"name":"New"}`)
+	p.records[newSave] = testRepositoryRecord(newSave, fmt.Sprintf(`{"collection":{"uri":%q},"content":{"$type":"is.currents.content.text"}}`, newCollection))
+	p.revision++
+	if err := applyJetstreamEvent(ctx, handler, jetstream.Event{DID: did, Kind: jetstream.KindSync, Sync: &jetstream.Sync{Rev: "rev-1"}}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM save WHERE author_did = $1`, did).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("sync did not clear old saves: %d, %v", count, err)
+	}
+	job, err := store.NextJetstreamBackfill(ctx)
+	if err != nil || job.DID != did || !job.Full {
+		t.Fatalf("sync backfill = %+v, %v", job, err)
+	}
+	if err := reconcileJetstreamRepo(ctx, handler, did, job.Full); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		uri  string
+		want int
+	}{{oldSave, 0}, {newSave, 1}} {
+		if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM save WHERE uri = $1`, tc.uri).Scan(&count); err != nil || count != tc.want {
+			t.Fatalf("save %s after sync = %d, %v", tc.uri, count, err)
+		}
+	}
+	if err := applyJetstreamEvent(ctx, handler, jetstream.Event{DID: did, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+		Operation: jetstream.OpCreate, Collection: collectionNSID, Rkey: "old", Rev: "rev-0",
+		Record: map[string]any{"name": "Obsolete"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM collection WHERE uri = $1`, oldCollection).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("old replay resurrected collection: %d, %v", count, err)
+	}
+	if err := applyJetstreamEvent(ctx, handler, jetstream.Event{DID: did, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+		Operation: jetstream.OpCreate, Collection: collectionNSID, Rkey: "later", Rev: "rev-2",
+		Record: map[string]any{"name": "Later"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM collection WHERE uri = $1`, collectionTestURI("later")).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("newer commit was skipped: %d, %v", count, err)
 	}
 }
