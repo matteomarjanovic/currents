@@ -1005,7 +1005,11 @@
 				<Button variant="outline" size="sm" onclick={() => feed.retry()}>Try again</Button>
 			</div>
 		{:else if feed.hasMore}
-			<div bind:this={sentinel} class="h-1"></div>
+			<div bind:this={sentinel} class="flex justify-center py-6">
+				<Button variant="outline" size="sm" onclick={feed.loadMore} disabled={feed.loading}>
+					{feed.loading ? 'Loading…' : 'Load more'}
+				</Button>
+			</div>
 		{/if}
 	{/if}
 </div>
