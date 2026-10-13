@@ -516,9 +516,14 @@
 		})
 	);
 
-	// Infinite scroll: observe a sentinel within this component's scroll container.
+	// Preload at the sentinel; scrolling also advances pages if the observer misses it.
 	let scrollEl = $state<HTMLDivElement>();
 	let sentinel = $state<HTMLDivElement>();
+	function loadNearBottom() {
+		if (scrollEl && scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight <= 1200) {
+			void feed.loadMore();
+		}
+	}
 	$effect(() => {
 		if (!sentinel || !scrollEl) return;
 		const observer = new IntersectionObserver(
@@ -811,6 +816,7 @@
      misfires on the masonry's transform-based layout; we anchor manually instead. -->
 <div
 	bind:this={scrollEl}
+	onscroll={loadNearBottom}
 	class="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] [overflow-anchor:none] md:pb-4"
 >
 	{#if feed.error && visible.length === 0}

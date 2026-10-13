@@ -128,6 +128,52 @@ test('header toggle enters select mode and bulk-labels the selection', async ({ 
 	await expect(page.getByText('2 selected')).toBeHidden();
 });
 
+test('scrolling loads the next page when the intersection observer is silent', async ({ page }) => {
+	const calls: Calls = { labelBulk: [], resave: [], deleted: [] };
+	await page.addInitScript(() => {
+		window.IntersectionObserver = class {
+			root = null;
+			rootMargin = '0px';
+			thresholds = [0];
+			observe() {}
+			unobserve() {}
+			disconnect() {}
+			takeRecords() {
+				return [];
+			}
+		} as typeof IntersectionObserver;
+	});
+	await mockApi(page, calls);
+	const template = collectionSaves()[0];
+	const saves = Array.from({ length: 100 }, (_, i) => ({
+		...template,
+		uri: `at://did:plc:test/is.currents.feed.save/s${i}`,
+		content: { ...template.content, blobCid: `cid${i}` }
+	}));
+	await page.route(`${APPVIEW}/**`, (route) => {
+		const url = new URL(route.request().url());
+		if (!url.pathname.endsWith('getLibrarySaves')) return route.fallback();
+		const start = url.searchParams.has('cursor') ? 50 : 0;
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ saves: saves.slice(start, start + 50), cursor: start ? null : 'next' })
+		});
+	});
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+	await expect(page.locator('[data-uri]')).toHaveCount(50);
+	await page.getByRole('button', { name: 'Select', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all loaded' }).click();
+	await expect(page.getByText('50 selected')).toBeVisible();
+
+	const canvas = page.locator('main[data-slot="sidebar-inset"] > div > div.overflow-y-auto');
+	await canvas.evaluate((el) => (el.scrollTop = el.scrollHeight));
+	await expect(page.locator('[data-uri]')).toHaveCount(100);
+	await page.getByRole('button', { name: 'Select all loaded' }).click();
+	await expect(page.getByText('100 selected')).toBeVisible();
+});
+
 test('the tile menu Select enters the mode with that tile picked, and Copy resaves', async ({
 	page
 }) => {
