@@ -4,6 +4,28 @@ import { concreteImageMime } from '../lib/image-mime';
 const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://api.currents.is';
 const FRONTEND_URL = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
 const AUTH_TTL_MS = 60_000;
+let pixivReferrerReady: Promise<void> | undefined;
+
+function ensurePixivReferrer() {
+	return (pixivReferrerReady ??= browser.declarativeNetRequest.updateSessionRules({
+		removeRuleIds: [1],
+		addRules: [
+			{
+				id: 1,
+				action: {
+					type: 'modifyHeaders',
+					requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://www.pixiv.net/' }]
+				},
+				condition: {
+					urlFilter: '|https://i.pximg.net/',
+					// Downloads from the extension worker have no associated tab.
+					tabIds: [browser.tabs.TAB_ID_NONE],
+					resourceTypes: ['xmlhttprequest']
+				}
+			}
+		]
+	}));
+}
 
 interface AuthCache {
 	did: string;
@@ -132,6 +154,29 @@ async function fetchCollections(did: string): Promise<Collection[]> {
 		return out;
 	} catch {
 		return [];
+	}
+}
+
+// Images inside the content-script panel still obey the page's img-src CSP.
+// X blocks Currents' CDN, but allows data: URLs, so load UI thumbnails here.
+async function fetchUiImage(url: string): Promise<{ dataUrl?: string }> {
+	try {
+		const imageUrl = new URL(url);
+		if (imageUrl.hostname === 'cdn.currents.is' && imageUrl.pathname.startsWith('/img/')) {
+			imageUrl.searchParams.set('optimizer', 'image');
+			imageUrl.searchParams.set('width', '96');
+			imageUrl.searchParams.set('quality', '78');
+		}
+		const resp = await fetch(imageUrl);
+		const mime = resp.headers.get('Content-Type')?.split(';')[0];
+		if (!resp.ok || !mime?.startsWith('image/')) return {};
+		const bytes = new Uint8Array(await resp.arrayBuffer());
+		let binary = '';
+		for (let i = 0; i < bytes.length; i += 0x8000)
+			binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+		return { dataUrl: `data:${mime};base64,${btoa(binary)}` };
+	} catch {
+		return {};
 	}
 }
 
@@ -298,6 +343,8 @@ async function fetchImageBlob(imgUrl: string): Promise<Blob> {
 		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 		return new Blob([bytes], { type: mime });
 	}
+	// Pixiv's image CDN rejects requests without a Pixiv Referer.
+	if (new URL(imgUrl).hostname === 'i.pximg.net') await ensurePixivReferrer();
 	const imgResp = await fetch(imgUrl);
 	if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status}`);
 	return imgResp.blob();
@@ -395,6 +442,10 @@ export default defineBackground(() => {
 		}
 		if (message.type === 'LOOKUP_ALT') {
 			handleLookupAlt(message).then(sendResponse);
+			return true;
+		}
+		if (message.type === 'FETCH_UI_IMAGE') {
+			fetchUiImage(message.url).then(sendResponse);
 			return true;
 		}
 		if (message.type === 'LOG_OUT') {

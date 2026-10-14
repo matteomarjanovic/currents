@@ -45,34 +45,41 @@ export function bestImageUrl(img: HTMLImageElement): string {
 	return absolute(best, img.baseURI);
 }
 
+export function candidateForImage(img: HTMLImageElement): ImageCandidate | null {
+	if (img.closest('.currents-grid-save')) return null;
+	// No box means display:none or detached; hidden means it's there but unseen.
+	const rect = img.getBoundingClientRect();
+	if (rect.width === 0 || rect.height === 0) return null;
+	if (getComputedStyle(img).visibility === 'hidden') return null;
+	// Finished loading with no intrinsic size = broken.
+	if (img.complete && img.naturalWidth === 0) return null;
+
+	const width = img.naturalWidth || Math.round(rect.width);
+	const height = img.naturalHeight || Math.round(rect.height);
+	if (width < MIN_DIM || height < MIN_DIM) return null;
+	const aspect = width / height;
+	if (aspect > MAX_ASPECT || aspect < 1 / MAX_ASPECT) return null;
+
+	const url = bestImageUrl(img);
+	// blob: URLs are scoped to the page's own origin — the background worker
+	// that performs the upload cannot fetch them.
+	if (!/^(https?:|data:)/.test(url)) return null;
+
+	return { url, alt: img.alt.trim().slice(0, 2000), width, height };
+}
+
 export function collectPageImages(doc: Document = document): ImageCandidate[] {
 	const out: ImageCandidate[] = [];
 	const seen = new Set<string>();
 
 	for (const img of Array.from(doc.images)) {
 		if (out.length >= MAX_IMAGES) break;
-
-		// No box means display:none or detached; hidden means it's there but unseen.
-		const rect = img.getBoundingClientRect();
-		if (rect.width === 0 || rect.height === 0) continue;
-		if (getComputedStyle(img).visibility === 'hidden') continue;
-		// Finished loading with no intrinsic size = broken.
-		if (img.complete && img.naturalWidth === 0) continue;
-
-		const width = img.naturalWidth || Math.round(rect.width);
-		const height = img.naturalHeight || Math.round(rect.height);
-		if (width < MIN_DIM || height < MIN_DIM) continue;
-		const aspect = width / height;
-		if (aspect > MAX_ASPECT || aspect < 1 / MAX_ASPECT) continue;
-
-		const url = bestImageUrl(img);
-		// blob: URLs are scoped to the page's own origin — the background worker
-		// that performs the upload cannot fetch them.
-		if (!/^(https?:|data:)/.test(url)) continue;
+		const candidate = candidateForImage(img);
+		if (!candidate) continue;
+		const { url } = candidate;
 		if (seen.has(url)) continue;
 		seen.add(url);
-
-		out.push({ url, alt: img.alt.trim().slice(0, 2000), width, height });
+		out.push(candidate);
 	}
 
 	return out;

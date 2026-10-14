@@ -4,11 +4,15 @@ Browser extension for [Currents](https://currents.is). Save images to your
 collections from any website:
 
 - **One image** — right-click it and choose **Save to Currents**, or use the
-  Currents button on a Pinterest image, to pick a collection and save.
+  Currents button on a Pinterest or Instagram photo, to pick a collection and save.
 - **A whole page** — click the toolbar icon, or right-click anywhere on the page
   and choose **Save images from this page…**. Pick images from the grid, add
   optional details to individual images, then select one or more collections.
   Scroll the page while the panel is open to discover newly loaded images.
+- **Image button** — hover over an image on a selected website to save it. The
+  button starts enabled on Pinterest. In the panel's Settings, add other domains
+  or turn it on for every website. The button stays hidden on currents.is and
+  Instagram videos.
 
 Built with [WXT](https://wxt.dev) + Svelte, Manifest V3.
 

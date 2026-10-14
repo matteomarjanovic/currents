@@ -1,8 +1,15 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
 import { showClipper, loadClipperAuth, type SiteHints } from '../../lib/clipper-store.svelte';
-import { collectPageImages } from './collect-images';
-import { setupPinterestGrid } from './pinterest-grid';
+import { candidateForImage, collectPageImages } from './collect-images';
+import { setupGenericImageButton, setupPinterestGrid } from './image-buttons';
+import { isInstagramHost, resolveInstagramImage } from './instagram-image';
+import { isThreadsHost, resolveThreadsImage } from './threads-image';
+import {
+	isPinterestHost,
+	loadSaveButtonSettings,
+	showButtonOnSite
+} from '../../lib/save-button-settings.svelte';
 import '../../lib/theme.css';
 
 // @font-face rules inside a shadow root are ignored, so the font is declared
@@ -14,12 +21,6 @@ function injectFont() {
 	const style = document.createElement('style');
 	style.textContent = `@font-face{font-family:'Instrument Sans Variable';font-style:normal;font-weight:300 700;font-display:swap;src:url('${browser.runtime.getURL('/fonts/instrument-sans-latin-wght-normal.woff2')}') format('woff2-variations');}`;
 	document.head.appendChild(style);
-}
-
-// Matches pinterest.com and every regional variant: country subdomains
-// (it.pinterest.com), ccTLDs (pinterest.co.uk, pinterest.fr), and www.
-function isPinterestHost(hostname: string): boolean {
-	return /(^|\.)pinterest\.[a-z.]+$/.test(hostname);
 }
 
 // externalSourceURL returns raw only when it is an http(s) URL pointing
@@ -120,7 +121,7 @@ export default defineContentScript({
 			if (message.type === 'SHOW_CLIPPER') {
 				injectFont();
 				const siteHints = extractSiteHints();
-				const altText = contextImage?.url === message.imgUrl ? contextImage.alt : '';
+				const altText = contextImage && contextImage.url === message.imgUrl ? contextImage.alt : '';
 				contextImage = undefined;
 				showClipper({
 					imgUrl: message.imgUrl ?? '',
@@ -143,9 +144,42 @@ export default defineContentScript({
 			}
 		});
 
-		if (isPinterestHost(location.hostname)) {
-			injectFont();
-			setupPinterestGrid();
-		}
+		await loadSaveButtonSettings();
+		const enabled = () => showButtonOnSite(location.hostname);
+		const pinterest = isPinterestHost(location.hostname);
+		const instagram = isInstagramHost(location.hostname);
+		const threads = isThreadsHost(location.hostname);
+		if (pinterest) injectFont();
+		const clearButtons = pinterest
+			? setupPinterestGrid(enabled)
+			: setupGenericImageButton(
+					enabled,
+					(img) => {
+						const candidate = candidateForImage(img);
+						if (!candidate) return;
+						injectFont();
+						const siteHints = extractSiteHints();
+						showClipper({
+							imgUrl: candidate.url,
+							altText: candidate.alt,
+							originUrl:
+								siteHints.originUrl ??
+								(instagram ? img.closest<HTMLAnchorElement>('a[href*="/p/"]')?.href : undefined) ??
+								(threads
+									? img
+											.closest<HTMLAnchorElement>('a[href*="/post/"]')
+											?.href.replace(/\/media\/?$/, '')
+									: undefined) ??
+								location.href,
+							pageTitle: document.title,
+							siteHints
+						});
+						void loadClipperAuth();
+					},
+					instagram ? resolveInstagramImage : threads ? resolveThreadsImage : undefined
+				);
+		browser.storage.onChanged.addListener((changes, area) => {
+			if (area === 'local' && changes.saveButtonSettings) clearButtons();
+		});
 	}
 });

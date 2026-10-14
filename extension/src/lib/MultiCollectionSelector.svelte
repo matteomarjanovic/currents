@@ -11,6 +11,7 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Plus from '@lucide/svelte/icons/plus';
 	import User from '@lucide/svelte/icons/user';
+	import UiImage from './UiImage.svelte';
 
 	interface Props {
 		selected: SvelteSet<string>;
@@ -81,9 +82,8 @@
 
 {#snippet preview(collection: Collection)}
 	{#if collection.previews?.[0]}
-		<img
+		<UiImage
 			src={collection.previews[0].url}
-			alt=""
 			loading="lazy"
 			class="size-10 shrink-0 rounded-lg object-cover"
 		/>

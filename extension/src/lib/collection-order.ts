@@ -20,9 +20,9 @@ export function orderedRoots(items: Collection[], lastUsedUri: string): Collecti
 	const roots = items.filter((item) => !item.parentUri).sort(byActivity);
 	const last = byUri.get(lastUsedUri);
 	return unique([
+		...roots.filter((item) => item.viewer?.pinned),
 		last,
 		last?.parentUri ? byUri.get(last.parentUri) : undefined,
-		...roots.filter((item) => item.viewer?.pinned),
 		...roots
 	]);
 }
@@ -34,8 +34,8 @@ export function orderedSections(
 ): Collection[] {
 	const sections = items.filter((item) => item.parentUri === parentUri).sort(byActivity);
 	return unique([
-		sections.find((item) => item.uri === lastUsedUri),
 		...sections.filter((item) => item.viewer?.pinned),
+		sections.find((item) => item.uri === lastUsedUri),
 		...sections
 	]);
 }

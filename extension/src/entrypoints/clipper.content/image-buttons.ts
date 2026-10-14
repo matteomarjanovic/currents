@@ -1,5 +1,5 @@
 import { showClipper, loadClipperAuth } from '../../lib/clipper-store.svelte';
-import { bestImageUrl } from './collect-images';
+import { bestImageUrl, candidateForImage } from './collect-images';
 
 // Hover button injected into Pinterest pins that opens the Currents save dialog
 // for the pin's image — both masonry grid items and the closeup (single pin)
@@ -36,6 +36,38 @@ ${HOVER_REVEAL}{opacity:1;pointer-events:auto}
 ${GRID_PIN}:has(.${BTN_CLASS}) [data-test-id="pinrep-source-link"]{margin-left:44px;white-space:nowrap}
 `;
 
+let styleInjected = false;
+function ensureStyle() {
+	if (styleInjected) return;
+	styleInjected = true;
+	const style = document.createElement('style');
+	style.textContent = STYLE;
+	document.head.appendChild(style);
+}
+
+function createButton(onClick: () => void): HTMLButtonElement {
+	const btn = document.createElement('button');
+	btn.className = BTN_CLASS;
+	btn.type = 'button';
+	btn.title = 'Save to Currents';
+	btn.setAttribute('aria-label', 'Save to Currents');
+	const icon = document.createElement('img');
+	icon.src = browser.runtime.getURL('/icon/currents.svg');
+	icon.alt = '';
+	btn.appendChild(icon);
+	const stop = (ev: Event) => {
+		ev.preventDefault();
+		ev.stopPropagation();
+	};
+	btn.addEventListener('pointerdown', stop);
+	btn.addEventListener('mousedown', stop);
+	btn.addEventListener('click', (ev) => {
+		stop(ev);
+		onClick();
+	});
+	return btn;
+}
+
 function openClipper(host: HTMLElement) {
 	const img = host.querySelector('img');
 	if (!img) return;
@@ -67,38 +99,18 @@ function resolveHost(target: Element | null): HTMLElement | null {
 	return cu;
 }
 
-export function setupPinterestGrid() {
-	const style = document.createElement('style');
-	style.textContent = STYLE;
-	document.head.appendChild(style);
+export function setupPinterestGrid(enabled: () => boolean): () => void {
+	ensureStyle();
 
 	document.addEventListener(
 		'mouseover',
 		(e) => {
+			if (!enabled()) return;
 			const host = resolveHost(e.target as Element | null);
 			// Attach once per surface.
 			if (!host || host.querySelector(`.${BTN_CLASS}`)) return;
 
-			const btn = document.createElement('button');
-			btn.className = BTN_CLASS;
-			btn.type = 'button';
-			btn.title = 'Save to Currents';
-			const icon = document.createElement('img');
-			icon.src = browser.runtime.getURL('/icon/currents.svg');
-			icon.alt = '';
-			btn.appendChild(icon);
-
-			// Keep the click from reaching Pinterest's pin-open handlers.
-			const stop = (ev: Event) => {
-				ev.preventDefault();
-				ev.stopPropagation();
-			};
-			btn.addEventListener('pointerdown', stop);
-			btn.addEventListener('mousedown', stop);
-			btn.addEventListener('click', (ev) => {
-				stop(ev);
-				openClipper(host);
-			});
+			const btn = createButton(() => openClipper(host));
 
 			// Grid pins anchor on the image wrapper; the closeup attaches to its
 			// wrapper directly. Ensure the anchor is positioned so the absolute button
@@ -130,4 +142,86 @@ export function setupPinterestGrid() {
 		},
 		{ passive: true }
 	);
+	return () => document.querySelectorAll(`.${BTN_CLASS}`).forEach((button) => button.remove());
+}
+
+// One floating button follows the hovered image without changing the page's
+// layout. Site resolvers can map overlay elements back to their images.
+export type HoveredImage = { image: HTMLImageElement; surface: Element };
+
+export function setupGenericImageButton(
+	enabled: () => boolean,
+	openImage: (img: HTMLImageElement) => void,
+	resolve: (target: Element) => HoveredImage | null = (target) =>
+		target instanceof HTMLImageElement ? { image: target, surface: target } : null
+): () => void {
+	ensureStyle();
+	let image: HTMLImageElement | null = null;
+	let surface: Element | null = null;
+	const button = createButton(() => {
+		if (image) openImage(image);
+		hide();
+	});
+	button.style.position = 'fixed';
+	button.style.zIndex = '2147483646';
+	button.style.opacity = '1';
+	button.style.pointerEvents = 'auto';
+	button.style.display = 'none';
+	document.body.appendChild(button);
+
+	function hide() {
+		image = null;
+		surface = null;
+		button.style.display = 'none';
+	}
+
+	function place() {
+		if (!image || !enabled()) return hide();
+		const rect = image.getBoundingClientRect();
+		if (
+			rect.bottom < 48 ||
+			rect.top > innerHeight - 48 ||
+			rect.right < 48 ||
+			rect.left > innerWidth - 48
+		)
+			return hide();
+		button.style.left = `${Math.max(0, rect.left + 12)}px`;
+		button.style.top = `${Math.min(innerHeight - 48, rect.bottom - 48)}px`;
+		button.style.display = 'flex';
+	}
+
+	document.addEventListener(
+		'mouseover',
+		(event) => {
+			if (!enabled() || !(event.target instanceof Element)) return;
+			const hovered = resolve(event.target);
+			if (!hovered) return;
+			const rect = hovered.image.getBoundingClientRect();
+			if (rect.width < 96 || rect.height < 96 || !candidateForImage(hovered.image)) return;
+			image = hovered.image;
+			surface = hovered.surface;
+			place();
+		},
+		true
+	);
+	document.addEventListener(
+		'mouseout',
+		(event) => {
+			if (
+				surface?.contains(event.target as Node) &&
+				!(
+					event.relatedTarget instanceof Node &&
+					(button.contains(event.relatedTarget) || surface.contains(event.relatedTarget))
+				)
+			)
+				hide();
+		},
+		true
+	);
+	button.addEventListener('mouseleave', (event) => {
+		if (!(event.relatedTarget instanceof Node && surface?.contains(event.relatedTarget))) hide();
+	});
+	document.addEventListener('scroll', place, true);
+	window.addEventListener('resize', place);
+	return hide;
 }

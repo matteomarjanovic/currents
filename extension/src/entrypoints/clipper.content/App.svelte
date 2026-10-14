@@ -3,6 +3,8 @@
 	import LoginGate from './LoginGate.svelte';
 	import SinglePicker from './SinglePicker.svelte';
 	import MultiPicker from './MultiPicker.svelte';
+	import SettingsPanel from './SettingsPanel.svelte';
+	import UiImage from '../../lib/UiImage.svelte';
 	import logo from '../../../../frontend/src/lib/assets/logo.svelte?raw';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
@@ -15,11 +17,17 @@
 	// A collection popover is open, so Escape belongs to it, not the dialog.
 	let pickerOpen = $state(false);
 	let profileOpen = $state(false);
+	let settingsOpen = $state(false);
 	let loggingOut = $state(false);
 	let logoutError = $state('');
 	let revealing = $state(true);
 	let entering = $state(true);
 	const frontendUrl = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
+
+	$effect(() => {
+		clipper.session;
+		settingsOpen = false;
+	});
 
 	$effect(() => {
 		if (!clipper.visible) {
@@ -58,6 +66,7 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Escape' || e.defaultPrevented) return;
 		if (profileOpen) profileOpen = false;
+		else if (settingsOpen) settingsOpen = false;
 		else if (!pickerOpen) close();
 	}
 
@@ -99,7 +108,7 @@
 	<div
 		{@attach topLayer}
 		popover="manual"
-		class="fixed top-4 right-4 bottom-auto left-auto isolate z-50 m-0 w-[380px] max-w-[calc(100vw-2rem)] border-0 bg-transparent p-0 font-sans"
+		class="fixed top-4 right-4 bottom-auto left-auto isolate z-50 m-0 w-[380px] max-w-[calc(100vw-2rem)] overflow-visible border-0 bg-transparent p-0 font-sans"
 	>
 		<div
 			class="clipper-panel relative flex max-h-[calc(100vh-2rem)] flex-col gap-3 rounded-3xl bg-popover p-4 pt-3 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 {revealing
@@ -107,7 +116,7 @@
 				: ''} {entering ? 'clipper-entering' : ''} {clipper.closing ? 'clipper-closing' : ''}"
 			role="dialog"
 			aria-modal="false"
-			aria-label="Save to Currents"
+			aria-label={settingsOpen ? 'Currents settings' : 'Save to Currents'}
 			inert={entering || clipper.closing}
 			tabindex="-1"
 		>
@@ -131,7 +140,12 @@
 										class="grid size-6 place-items-center overflow-hidden rounded-full bg-muted"
 									>
 										{#if clipper.userAvatar}
-											<img src={clipper.userAvatar} alt="" class="size-full object-cover" />
+											<UiImage
+												src={clipper.userAvatar}
+												class="size-full object-cover"
+												loading="eager"
+												onFail={() => (clipper.userAvatar = '')}
+											/>
 										{:else}
 											<User class="size-4 text-muted-foreground" />
 										{/if}
@@ -150,7 +164,12 @@
 										class="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-muted"
 									>
 										{#if clipper.userAvatar}
-											<img src={clipper.userAvatar} alt="" class="size-full object-cover" />
+											<UiImage
+												src={clipper.userAvatar}
+												class="size-full object-cover"
+												loading="eager"
+												onFail={() => (clipper.userAvatar = '')}
+											/>
 										{:else}
 											<User class="size-6 text-muted-foreground" />
 										{/if}
@@ -188,14 +207,21 @@
 						</Popover.Root>
 					{/if}
 					<div class="flex items-center -space-x-1">
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							aria-label="Settings"
-							class="cursor-default text-muted-foreground"
-						>
-							<Settings />
-						</Button>
+						{#if !settingsOpen}
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								aria-label="Settings"
+								disabled={clipper.locked}
+								onclick={() => {
+									profileOpen = false;
+									settingsOpen = true;
+								}}
+								class="text-muted-foreground"
+							>
+								<Settings />
+							</Button>
+						{/if}
 						<Button
 							variant="ghost"
 							size="icon-sm"
@@ -210,16 +236,21 @@
 				</div>
 			</header>
 
-			<!-- Keyed on the open, so reopening always starts from a clean form. -->
-			{#key clipper.session}
-				{#if clipper.authState === 'unauthenticated'}
-					<LoginGate />
-				{:else if clipper.mode === 'multi'}
-					<MultiPicker />
-				{:else}
-					<SinglePicker onPickerOpenChange={(open) => (pickerOpen = open)} />
-				{/if}
-			{/key}
+			<!-- Keep the save form mounted so Back returns to the same selection. -->
+			<div class="clipper-save-view {settingsOpen ? 'hidden' : 'contents'}" inert={settingsOpen}>
+				{#key clipper.session}
+					{#if clipper.authState === 'unauthenticated'}
+						<LoginGate />
+					{:else if clipper.mode === 'multi'}
+						<MultiPicker />
+					{:else}
+						<SinglePicker onPickerOpenChange={(open) => (pickerOpen = open)} />
+					{/if}
+				{/key}
+			</div>
+			{#if settingsOpen}
+				<SettingsPanel onBack={() => (settingsOpen = false)} />
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -237,7 +268,7 @@
 		animation: actions-enter 370ms 430ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	:global(.clipper-entering > :not(header)) {
+	:global(.clipper-entering > .clipper-save-view > *) {
 		animation: content-enter 360ms 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
 	}
 
@@ -312,7 +343,7 @@
 		.clipper-revealing,
 		.clipper-entering .clipper-logo,
 		.clipper-entering .clipper-actions,
-		:global(.clipper-entering > :not(header)),
+		:global(.clipper-entering > .clipper-save-view > *),
 		.clipper-closing {
 			animation: none;
 		}

@@ -10,6 +10,7 @@
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import User from '@lucide/svelte/icons/user';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import UiImage from './UiImage.svelte';
 
 	interface Props {
 		collections: Collection[];
@@ -93,9 +94,8 @@
 
 {#snippet preview(col: Collection)}
 	{#if col.previews?.[0]}
-		<img
+		<UiImage
 			src={col.previews[0].url}
-			alt=""
 			loading="lazy"
 			class="size-9 shrink-0 rounded-md object-cover"
 		/>
