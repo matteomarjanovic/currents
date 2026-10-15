@@ -26,6 +26,7 @@
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import SaveLabels from './SaveLabels.svelte';
 
 	interface Props {
 		details: Details;
@@ -33,6 +34,7 @@
 		disabled?: boolean;
 		notePlaceholder?: string;
 		labelsLabel?: string;
+		showLabels?: boolean;
 	}
 
 	let {
@@ -40,20 +42,9 @@
 		labels,
 		disabled = false,
 		notePlaceholder = 'Add a note (optional)',
-		labelsLabel = 'Apply labels:'
+		labelsLabel = 'Apply labels:',
+		showLabels = true
 	}: Props = $props();
-
-	const SELF_LABEL_OPTIONS: { val: string; label: string }[] = [
-		{ val: 'porn', label: 'Porn' },
-		{ val: 'sexual', label: 'Sexual' },
-		{ val: 'nudity', label: 'Nudity' },
-		{ val: 'graphic-media', label: 'Graphic' },
-		{ val: 'currents-ai-generated', label: 'AI-generated' }
-	];
-
-	function toggleSelfLabel(val: string) {
-		if (!labels.delete(val)) labels.add(val);
-	}
 </script>
 
 <div class="flex flex-col gap-1">
@@ -61,22 +52,9 @@
 	<Input type="text" placeholder={notePlaceholder} bind:value={details.note} {disabled} />
 </div>
 
-<span class="-mb-1 text-xs text-muted-foreground">{labelsLabel}</span>
-<div class="flex flex-wrap items-center gap-1.5 text-xs">
-	{#each SELF_LABEL_OPTIONS as opt (opt.val)}
-		{@const active = labels.has(opt.val)}
-		<button
-			type="button"
-			onclick={() => toggleSelfLabel(opt.val)}
-			{disabled}
-			class="rounded-full border px-2 py-0.5 transition-colors {active
-				? 'border-foreground bg-foreground text-background'
-				: 'border-border text-muted-foreground hover:bg-muted'}"
-		>
-			{opt.label}
-		</button>
-	{/each}
-</div>
+{#if showLabels}
+	<SaveLabels {labels} {disabled} label={labelsLabel} />
+{/if}
 
 {#if details.showAttribution}
 	<div class="flex flex-col gap-2">

@@ -3,6 +3,7 @@
 	import { clipper, type Collection } from './clipper-store.svelte';
 	import { orderedRoots, orderedSections } from './collection-order';
 	import { scrollFade } from './scroll-fade';
+	import { useViewNavigation } from './view-navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -25,6 +26,7 @@
 	let description = $state('');
 	let error = $state('');
 	let submitting = $state(false);
+	const navigate = useViewNavigation();
 	let roots = $derived(orderedRoots(clipper.collections, clipper.lastUsedCollectionUri));
 	let sections = $derived(
 		parent ? orderedSections(clipper.collections, parent.uri, clipper.lastUsedCollectionUri) : []
@@ -66,7 +68,7 @@
 				];
 				selected.add(res.uri);
 				if (!createParent) parent = null;
-				cancelCreate();
+				await navigate(cancelCreate, -1);
 			} else if (res.authError) {
 				clipper.authState = 'unauthenticated';
 			} else {
@@ -132,7 +134,9 @@
 			<Textarea placeholder="Description (optional)" bind:value={description} rows={2} {disabled} />
 			{#if error}<p class="text-xs text-destructive">{error}</p>{/if}
 			<div class="flex gap-2">
-				<Button variant="outline" class="flex-1" onclick={cancelCreate}>Cancel</Button>
+				<Button variant="outline" class="flex-1" onclick={() => navigate(cancelCreate, -1)}
+					>Cancel</Button
+				>
 				<Button
 					class="flex-1"
 					onclick={createCollection}
@@ -144,7 +148,7 @@
 		<button
 			type="button"
 			class="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-			onclick={() => (parent = null)}
+			onclick={() => navigate(() => (parent = null), -1)}
 			{disabled}
 		>
 			<ChevronLeft class="size-4" /> All collections
@@ -157,10 +161,11 @@
 		<button
 			type="button"
 			class="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted"
-			onclick={() => {
-				createParent = parent;
-				creating = true;
-			}}
+			onclick={() =>
+				navigate(() => {
+					createParent = parent;
+					creating = true;
+				})}
 			{disabled}
 		>
 			<span class="grid size-10 place-items-center rounded-lg bg-muted"
@@ -206,7 +211,7 @@
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted"
-					onclick={() => (parent = collection)}
+					onclick={() => navigate(() => (parent = collection))}
 					{disabled}
 				>
 					{@render preview(collection)}

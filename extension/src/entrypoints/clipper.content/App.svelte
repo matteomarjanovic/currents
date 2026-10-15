@@ -5,6 +5,7 @@
 	import MultiPicker from './MultiPicker.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import UiImage from '../../lib/UiImage.svelte';
+	import { provideViewNavigation } from '../../lib/view-navigation';
 	import logo from '../../../../frontend/src/lib/assets/logo.svelte?raw';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
@@ -14,23 +15,28 @@
 	import User from '@lucide/svelte/icons/user';
 	import X from '@lucide/svelte/icons/x';
 
-	// A collection popover is open, so Escape belongs to it, not the dialog.
-	let pickerOpen = $state(false);
 	let profileOpen = $state(false);
 	let settingsOpen = $state(false);
 	let loggingOut = $state(false);
 	let logoutError = $state('');
 	let revealing = $state(true);
 	let entering = $state(true);
+	let panel = $state<HTMLDivElement>();
+	let view = $state<HTMLDivElement>();
+	const { navigate, reset: resetNavigation } = provideViewNavigation(() =>
+		panel && view ? { panel, view } : undefined
+	);
 	const frontendUrl = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
 
 	$effect(() => {
 		clipper.session;
+		resetNavigation();
 		settingsOpen = false;
 	});
 
 	$effect(() => {
 		if (!clipper.visible) {
+			resetNavigation();
 			revealing = true;
 			entering = true;
 			return;
@@ -50,15 +56,14 @@
 
 	$effect(() => {
 		if (clipper.closing) {
+			resetNavigation();
 			profileOpen = false;
-			pickerOpen = false;
 		}
 	});
 
 	function close() {
 		// A batch save runs inside the dialog; dismissing it would abandon the run.
 		if (clipper.locked) return;
-		pickerOpen = false;
 		profileOpen = false;
 		hideClipper();
 	}
@@ -66,8 +71,8 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key !== 'Escape' || e.defaultPrevented) return;
 		if (profileOpen) profileOpen = false;
-		else if (settingsOpen) settingsOpen = false;
-		else if (!pickerOpen) close();
+		else if (settingsOpen) void navigate(() => (settingsOpen = false), -1);
+		else close();
 	}
 
 	async function logout() {
@@ -111,6 +116,7 @@
 		class="fixed top-4 right-4 bottom-auto left-auto isolate z-50 m-0 w-[380px] max-w-[calc(100vw-2rem)] overflow-visible border-0 bg-transparent p-0 font-sans"
 	>
 		<div
+			bind:this={panel}
 			class="clipper-panel relative flex max-h-[calc(100vh-2rem)] flex-col gap-3 rounded-3xl bg-popover p-4 pt-3 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 {revealing
 				? 'clipper-revealing'
 				: ''} {entering ? 'clipper-entering' : ''} {clipper.closing ? 'clipper-closing' : ''}"
@@ -215,7 +221,7 @@
 								disabled={clipper.locked}
 								onclick={() => {
 									profileOpen = false;
-									settingsOpen = true;
+									void navigate(() => (settingsOpen = true));
 								}}
 								class="text-muted-foreground"
 							>
@@ -236,21 +242,32 @@
 				</div>
 			</header>
 
-			<!-- Keep the save form mounted so Back returns to the same selection. -->
-			<div class="clipper-save-view {settingsOpen ? 'hidden' : 'contents'}" inert={settingsOpen}>
-				{#key clipper.session}
-					{#if clipper.authState === 'unauthenticated'}
-						<LoginGate />
-					{:else if clipper.mode === 'multi'}
-						<MultiPicker />
-					{:else}
-						<SinglePicker onPickerOpenChange={(open) => (pickerOpen = open)} />
+			<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+				<div
+					bind:this={view}
+					class="clipper-view flex min-h-0 flex-1 flex-col gap-3 outline-none"
+					tabindex="-1"
+				>
+					<!-- Keep the save form mounted so Back returns to the same selection. -->
+					<div
+						class="clipper-save-view {settingsOpen ? 'hidden' : 'contents'}"
+						inert={settingsOpen}
+					>
+						{#key clipper.session}
+							{#if clipper.authState === 'unauthenticated'}
+								<LoginGate />
+							{:else if clipper.mode === 'multi'}
+								<MultiPicker />
+							{:else}
+								<SinglePicker />
+							{/if}
+						{/key}
+					</div>
+					{#if settingsOpen}
+						<SettingsPanel onBack={() => void navigate(() => (settingsOpen = false), -1)} />
 					{/if}
-				{/key}
+				</div>
 			</div>
-			{#if settingsOpen}
-				<SettingsPanel onBack={() => (settingsOpen = false)} />
-			{/if}
 		</div>
 	</div>
 {/if}
@@ -268,7 +285,7 @@
 		animation: actions-enter 370ms 430ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	:global(.clipper-entering > .clipper-save-view > *) {
+	.clipper-entering .clipper-view {
 		animation: content-enter 360ms 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
 	}
 
@@ -343,7 +360,7 @@
 		.clipper-revealing,
 		.clipper-entering .clipper-logo,
 		.clipper-entering .clipper-actions,
-		:global(.clipper-entering > .clipper-save-view > *),
+		.clipper-entering .clipper-view,
 		.clipper-closing {
 			animation: none;
 		}

@@ -4,9 +4,11 @@
 	import { collectPageImages } from './collect-images';
 	import MultiCollectionSelector from '../../lib/MultiCollectionSelector.svelte';
 	import SaveDetails, { newDetails, type Details } from '../../lib/SaveDetails.svelte';
+	import AltTextField from '../../lib/AltTextField.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Textarea } from '$lib/components/ui/textarea';
+	import SaveButton from '../../lib/SaveButton.svelte';
 	import { scrollFade } from '../../lib/scroll-fade';
+	import { useViewNavigation } from '../../lib/view-navigation';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronsDown from '@lucide/svelte/icons/chevrons-down';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -17,6 +19,7 @@
 	// Each image needs one upload and one record per collection. Three images at a
 	// time keeps the user's PDS write budget from being exhausted in one burst.
 	const CONCURRENCY = 3;
+	const navigate = useViewNavigation();
 	type ItemState = 'saving' | 'saved' | 'error';
 	type Step = 'images' | 'details' | 'collections';
 	type ImageDetails = { alt: string; details: Details; labels: SvelteSet<string> };
@@ -98,12 +101,14 @@
 		const candidate = candidates.find((c) => c.url === url);
 		if (!candidate) return;
 		imageDetails[url] ??= {
-			alt: candidate.alt,
+			alt: '',
 			details: newDetails(),
 			labels: new SvelteSet<string>()
 		};
-		editingUrl = url;
-		step = 'details';
+		void navigate(() => {
+			editingUrl = url;
+			step = 'details';
+		});
 	}
 
 	function pendingUris(url: string, uris: string[]) {
@@ -136,7 +141,7 @@
 						type: 'SAVE_IMAGE',
 						imgUrl: url,
 						collectionUris: pendingUris(url, uris),
-						alt: metadata ? metadata.alt.trim() : candidate.alt,
+						alt: metadata?.alt.trim() ?? '',
 						originUrl: clipper.originUrl,
 						text: metadata?.details.note.trim() ?? '',
 						attributionUrl: metadata?.details.attributionUrl.trim() ?? '',
@@ -175,10 +180,12 @@
 	}
 
 	function pickMore() {
-		finished = false;
-		step = 'images';
-		for (const url of selectedUrls) if (states[url] === 'saved') selected.delete(url);
-		states = {};
+		void navigate(() => {
+			finished = false;
+			step = 'images';
+			for (const url of selectedUrls) if (states[url] === 'saved') selected.delete(url);
+			states = {};
+		}, -1);
 	}
 </script>
 
@@ -226,7 +233,7 @@
 						<Button
 							variant="secondary"
 							size="xs"
-							class="absolute top-2 left-2 z-10 rounded-lg bg-background/90 px-2 text-[11px] shadow-sm"
+							class="absolute right-2 bottom-2 z-10 rounded-lg bg-background/90 px-2 text-[11px] shadow-sm"
 							onclick={() => openDetails(candidate.url)}
 						>
 							+ Add details
@@ -237,9 +244,15 @@
 							class="pointer-events-none absolute bottom-1.5 left-1.5 grid size-5 place-items-center rounded-full bg-foreground text-background"
 							><Check class="size-3" /></span
 						>
+						{#if !imageDetails[candidate.url]?.alt.trim()}
+							<span
+								class="pointer-events-none absolute top-6 left-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none text-white"
+								>Alt missing</span
+							>
+						{/if}
 					{/if}
 					<span
-						class="pointer-events-none absolute right-1.5 bottom-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none font-medium text-white tabular-nums shadow-sm"
+						class="pointer-events-none absolute top-1.5 left-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none font-medium text-white tabular-nums shadow-sm"
 						>{candidate.width}×{candidate.height}</span
 					>
 					{#if state === 'saving'}
@@ -260,7 +273,9 @@
 			{/each}
 		</div>
 	{/if}
-	<Button onclick={() => (step = 'collections')} disabled={!selected.size}>Next</Button>
+	<Button onclick={() => navigate(() => (step = 'collections'))} disabled={!selected.size}
+		>Next</Button
+	>
 	{#if canScrollPage && candidates.length < 100 && !finished}
 		<p
 			class="flex shrink-0 items-center justify-center gap-1 text-center text-xs text-muted-foreground"
@@ -277,10 +292,11 @@
 			size="icon-sm"
 			class="rounded-full"
 			aria-label="Back"
-			onclick={() => {
-				editingUrl = '';
-				step = 'images';
-			}}><ChevronLeft class="size-4" /></Button
+			onclick={() =>
+				navigate(() => {
+					editingUrl = '';
+					step = 'images';
+				}, -1)}><ChevronLeft class="size-4" /></Button
 		>
 		<span class="font-medium">Image details</span>
 	</div>
@@ -289,14 +305,11 @@
 			<img src={preview.url} alt="Preview" class="max-h-[24vh] w-full object-contain" />
 		</div>
 		<div use:scrollFade class="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-			<div class="flex flex-col gap-1">
-				<span class="text-xs text-muted-foreground">Alt text</span><Textarea
-					placeholder="Describe the image (optional but recommended)"
-					bind:value={imageDetails[editingUrl].alt}
-					maxlength={2000}
-					rows={2}
-				/>
-			</div>
+			<AltTextField
+				imageUrl={preview.url}
+				suggestion={preview.alt}
+				bind:value={imageDetails[editingUrl].alt}
+			/>
 			<SaveDetails
 				details={imageDetails[editingUrl].details}
 				labels={imageDetails[editingUrl].labels}
@@ -304,10 +317,11 @@
 		</div>
 	{/if}
 	<Button
-		onclick={() => {
-			editingUrl = '';
-			step = 'images';
-		}}>Done</Button
+		onclick={() =>
+			navigate(() => {
+				editingUrl = '';
+				step = 'images';
+			}, -1)}>Done</Button
 	>
 {:else}
 	<div class="flex shrink-0 items-center justify-between gap-2">
@@ -316,13 +330,14 @@
 				size="icon-sm"
 				class="rounded-full"
 				aria-label="Back"
-				onclick={() => (step = 'images')}><ChevronLeft class="size-4" /></Button
+				onclick={() => navigate(() => (step = 'images'), -1)}><ChevronLeft class="size-4" /></Button
 			>
 			<Button
 				variant="link"
 				size="sm"
 				class="h-auto p-0"
-				onclick={() => (creatingCollection = true)}><Plus class="size-4" /> New collection</Button
+				onclick={() => navigate(() => (creatingCollection = true))}
+				><Plus class="size-4" /> New collection</Button
 			>
 		{:else}
 			<span class="font-medium">Choose collections</span>
@@ -333,6 +348,13 @@
 		bind:creating={creatingCollection}
 		disabled={running || finished}
 	/>
+	{#if !creatingCollection && (!finished || !remainingCount)}
+		<SaveButton
+			state={running ? 'saving' : finished ? 'saved' : 'idle'}
+			onclick={run}
+			disabled={!destinations.size || (!finished && !hasPending) || clipper.collectionsLoading}
+		/>
+	{/if}
 	{#if running}
 		<div class="h-1.5 shrink-0 overflow-hidden rounded-full bg-muted">
 			<div
@@ -350,13 +372,5 @@
 				>{:else}<Button variant="outline" class="flex-1" onclick={pickMore}>Pick more</Button>{/if}
 			<Button class="flex-1" onclick={hideClipper}>Done</Button>
 		</div>
-	{:else}
-		<Button
-			onclick={run}
-			disabled={!destinations.size ||
-				!hasPending ||
-				creatingCollection ||
-				clipper.collectionsLoading}>Save</Button
-		>
 	{/if}
 {/if}

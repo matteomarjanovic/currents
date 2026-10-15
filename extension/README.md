@@ -4,7 +4,7 @@ Browser extension for [Currents](https://currents.is). Save images to your
 collections from any website:
 
 - **One image** — right-click it and choose **Save to Currents**, or use the
-  Currents button on a Pinterest or Instagram photo, to pick a collection and save.
+  Currents button on a Pinterest or Instagram photo, to pick one or more collections and save.
 - **A whole page** — click the toolbar icon, or right-click anywhere on the page
   and choose **Save images from this page…**. Pick images from the grid, add
   optional details to individual images, then select one or more collections.
@@ -36,3 +36,11 @@ clean `npm install && npm run zip` reproduces the published extension exactly.
 
 Local development overrides the endpoints via `.env.development` (see
 `.env.example`); `npm run dev` runs against that config with hot reload.
+
+## View transitions
+
+Internal navigation uses `useViewNavigation()` from `src/lib/view-navigation.ts`.
+Pass the state change to `navigate(() => ...)`, with `-1` for Back or Cancel.
+The shared transition slides, fades, and blurs an inert snapshot of the outgoing
+view while keeping live form state mounted. It preserves scroll positions,
+resizes the panel with the content, and skips animation for reduced motion.
