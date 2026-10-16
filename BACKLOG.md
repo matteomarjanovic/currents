@@ -44,8 +44,9 @@ proposing new work; delete an entry when it ships.
   after the rollback window.
 
 - **Collapse the per-field save-edit endpoints into one.** Editing a save's
-  metadata is currently spread over four handlers — `PUT /save/{id}/alt`,
-  `PUT /save/{id}/labels`, `PUT /save/attribution`, `PUT /save/labels/bulk` —
+  metadata is currently spread over five handlers — `PUT /save/{id}/alt`,
+  `PUT /save/{id}/labels`, `PUT /save/attribution`, `PUT /save/labels/bulk`,
+  `PUT /save/{id}/origin-atproto-ref` —
   each re-implementing "read the record, change one field, write the whole thing
   back" (`RepoPutRecord` replaces the record, so every untouched field has to be
   copied across or it's lost). A single PATCH-style endpoint taking optional

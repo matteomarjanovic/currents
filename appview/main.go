@@ -762,6 +762,7 @@ func runServer(cctx *cli.Context) error {
 	registerLegacyAndAPI(http.DefaultServeMux, "GET /save/{id}", srv.GetSave)
 	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}", srv.UpdateSave)
 	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}/alt", srv.UpdateSaveAlt)
+	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}/origin-atproto-ref", srv.UpdateSaveOriginAtprotoRef)
 	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/{id}/labels", srv.UpdateSaveLabels)
 	registerLegacyAndAPI(http.DefaultServeMux, "PUT /save/labels/bulk", srv.UpdateSaveLabelsBulk)
 	registerLegacyAndAPI(http.DefaultServeMux, "DELETE /save/{id}", srv.DeleteSave)

@@ -14,6 +14,7 @@
 	import ColorMenu from '$lib/components/color-menu.svelte';
 	import SaveAltDialog from '$lib/components/save-alt-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
+	import OriginAtprotoRefDialog from './origin-atproto-ref-dialog.svelte';
 	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
@@ -40,6 +41,7 @@
 		save,
 		onClose,
 		onSavesChange,
+		onOriginAtprotoRefChange,
 		onOpenFullScreen,
 		onContinueFullScreenPinch,
 		onFindSimilar,
@@ -48,6 +50,7 @@
 		save: SaveView;
 		onClose: () => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
+		onOriginAtprotoRefChange: (ref: SaveView['originAtprotoRef'] | null) => void;
 		onOpenFullScreen: (save: SaveView) => void;
 		onContinueFullScreenPinch: (
 			save: SaveView,
@@ -118,6 +121,7 @@
 	let altDialogOpen = $state(false);
 	let attributionDialogOpen = $state(false);
 	let labelDialogOpen = $state(false);
+	let originRefDialogOpen = $state(false);
 
 	let altOverride = $state<string | null>(null);
 	let attributionOverride = $state<SaveAttribution | null>(null);
@@ -130,6 +134,7 @@
 		altOverride = null;
 		attributionOverride = null;
 		addedLabels = [];
+		originRefDialogOpen = false;
 		imagePointers.clear();
 	});
 
@@ -415,6 +420,39 @@
 					</section>
 				{/if}
 
+				{#if save.originAtprotoRef || isOwnSave}
+					<section class="flex flex-col gap-1.5">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+								AT Protocol source
+							</h3>
+							{#if isOwnSave}
+								<Button
+									variant="ghost"
+									size="sm"
+									class="-mr-2 h-7 text-xs"
+									aria-label={save.originAtprotoRef
+										? 'Edit AT Protocol source'
+										: 'Add AT Protocol source'}
+									onclick={() => (originRefDialogOpen = true)}
+								>
+									{save.originAtprotoRef ? 'Edit' : 'Add'}
+								</Button>
+							{/if}
+						</div>
+						{#if save.originAtprotoRef}
+							<dl class="space-y-1 text-sm text-muted-foreground">
+								<dt>Record URI</dt>
+								<dd class="break-all select-text">{save.originAtprotoRef.uri}</dd>
+								<dt>Record CID</dt>
+								<dd class="break-all select-text">{save.originAtprotoRef.cid}</dd>
+							</dl>
+						{:else}
+							<p class="text-sm text-muted-foreground">No AT Protocol source recorded.</p>
+						{/if}
+					</section>
+				{/if}
+
 				{#if hasAttribution || canAttribute}
 					<section class="flex flex-col gap-1.5">
 						<div class="flex items-center justify-between gap-2">
@@ -548,6 +586,14 @@
 
 {#if canEditAlt}
 	<SaveAltDialog bind:open={altDialogOpen} {save} onSaved={(next) => (altOverride = next)} />
+{/if}
+
+{#if isOwnSave}
+	<OriginAtprotoRefDialog
+		bind:open={originRefDialogOpen}
+		{save}
+		onSaved={onOriginAtprotoRefChange}
+	/>
 {/if}
 
 {#if canAttribute}

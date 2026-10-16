@@ -713,6 +713,9 @@
 			onSavesChange={(saves) => {
 				if (selection) selection.save.viewer = { ...(selection.save.viewer ?? {}), saves };
 			}}
+			onOriginAtprotoRefChange={(ref) => {
+				if (selection) selection.save.originAtprotoRef = ref ?? undefined;
+			}}
 			onOpenFullScreen={openFullScreen}
 			onContinueFullScreenPinch={continueFullScreenPinch}
 			onFindSimilar={findSimilar}

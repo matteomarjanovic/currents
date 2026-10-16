@@ -50,15 +50,16 @@ type imageView struct {
 }
 
 type saveView struct {
-	URI       string           `json:"uri"`
-	Author    profileView      `json:"author"`
-	Content   any              `json:"content"`
-	Text      string           `json:"text,omitempty"`
-	OriginURL string           `json:"originUrl,omitempty"`
-	ResaveOf  *strongRef       `json:"resaveOf,omitempty"`
-	CreatedAt string           `json:"createdAt"`
-	Viewer    *saveViewerState `json:"viewer,omitempty"`
-	Labels    []labelView      `json:"labels,omitempty"`
+	URI              string           `json:"uri"`
+	Author           profileView      `json:"author"`
+	Content          any              `json:"content"`
+	Text             string           `json:"text,omitempty"`
+	OriginURL        string           `json:"originUrl,omitempty"`
+	OriginAtprotoRef *strongRef       `json:"originAtprotoRef,omitempty"`
+	ResaveOf         *strongRef       `json:"resaveOf,omitempty"`
+	CreatedAt        string           `json:"createdAt"`
+	Viewer           *saveViewerState `json:"viewer,omitempty"`
+	Labels           []labelView      `json:"labels,omitempty"`
 }
 
 // labelView is the compact projection of a label record surfaced in XRPC save responses.
@@ -88,10 +89,11 @@ type saveRecord struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"collection"`
-	Content   json.RawMessage `json:"content"`
-	OriginURL string          `json:"originUrl"`
-	Text      string          `json:"text"`
-	ResaveOf  struct {
+	Content          json.RawMessage `json:"content"`
+	OriginURL        string          `json:"originUrl"`
+	OriginAtprotoRef *strongRef      `json:"originAtprotoRef,omitempty"`
+	Text             string          `json:"text"`
+	ResaveOf         struct {
 		URI string `json:"uri"`
 		CID string `json:"cid"`
 	} `json:"resaveOf"`
@@ -325,6 +327,9 @@ func buildSaveView(row SaveRow, author profileView, includeViewer bool, cdnBaseU
 	}
 	if row.CreatedAt != nil {
 		sv.CreatedAt = row.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	if row.OriginAtprotoURI != "" && row.OriginAtprotoCID != "" {
+		sv.OriginAtprotoRef = &strongRef{URI: row.OriginAtprotoURI, CID: row.OriginAtprotoCID}
 	}
 	if row.ResaveOfURI != "" && row.ResaveOfCID != "" {
 		sv.ResaveOf = &strongRef{URI: row.ResaveOfURI, CID: row.ResaveOfCID}

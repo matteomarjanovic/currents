@@ -971,6 +971,84 @@ func TestViewerBlobSaveURI(t *testing.T) {
 	}
 }
 
+// Provenance belongs to each save and survives both store queries and ingestion.
+func TestSaveOriginAtprotoRefRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const author = "did:plc:originowner"
+	const uri = "at://" + author + "/is.currents.feed.save/one"
+	const otherURI = "at://" + author + "/is.currents.feed.save/two"
+	const collectionURI = "at://" + author + "/is.currents.feed.collection/one"
+	seedCollection(t, s, collectionURI, author, "Sources", "", testBase)
+	p := UpsertSaveParams{
+		URI: uri, AuthorDID: author, CollectionURI: collectionURI,
+		PdsBlobCID: "same-blob", ContentNSID: saveContentImageNSID, CreatedAt: &testBase,
+		OriginAtprotoURI: originTestURI, OriginAtprotoCID: originTestCID,
+	}
+	if err := s.UpsertSave(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	// The same image can be saved from a different post. Provenance is per save.
+	p.URI = otherURI
+	p.CollectionURI = ""
+	p.OriginAtprotoURI = originTestURI + "other"
+	if err := s.UpsertSave(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.GetSavesByURIs(ctx, []string{uri, otherURI}, author)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("GetSavesByURIs = %#v, %v", rows, err)
+	}
+	for _, row := range rows {
+		want := originTestURI
+		if row.URI == otherURI {
+			want += "other"
+		}
+		if row.OriginAtprotoURI != want || row.OriginAtprotoCID != originTestCID {
+			t.Fatalf("unexpected provenance: %#v", row)
+		}
+	}
+	collectionRows, _, err := s.GetSavesPage(ctx, collectionURI, author, 10, "")
+	if err != nil || len(collectionRows) != 1 || collectionRows[0].OriginAtprotoURI != originTestURI {
+		t.Fatalf("collection provenance = %#v, %v", collectionRows, err)
+	}
+	unsortedRows, _, err := s.GetUnsortedSavesPage(ctx, author, author, 10, "")
+	if err != nil || len(unsortedRows) != 1 || unsortedRows[0].OriginAtprotoURI != originTestURI+"other" {
+		t.Fatalf("unsorted provenance = %#v, %v", unsortedRows, err)
+	}
+	libraryRows, _, err := s.GetLibrarySavesPage(ctx, author, author, 10, "")
+	if err != nil || len(libraryRows) != 1 || libraryRows[0].OriginAtprotoCID != originTestCID {
+		t.Fatalf("library provenance = %#v, %v", libraryRows, err)
+	}
+	// Index an updated PDS record without the optional field: the old ref must clear.
+	// An open-union content type keeps this test independent of inference.
+	handler := &TapHandler{Store: s}
+	if err := handleTapRecord(ctx, handler, &TapRecordEvent{
+		DID: author, Collection: saveNSID, Rkey: "two", Action: "update",
+		Record: json.RawMessage(`{"content":{"$type":"is.example.content.item"},"createdAt":"2026-01-01T12:00:00Z"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = s.GetSavesByURIs(ctx, []string{otherURI}, author)
+	if err != nil || len(rows) != 1 || rows[0].OriginAtprotoURI != "" || rows[0].OriginAtprotoCID != "" {
+		t.Fatalf("cleared provenance = %#v, %v", rows, err)
+	}
+	// A later event sets it again through the same ingestion path used by TAP/backfill.
+	record, _ := json.Marshal(map[string]any{
+		"content":          map[string]any{"$type": "is.example.content.item"},
+		"originAtprotoRef": strongRef{URI: originTestURI, CID: originTestCID},
+	})
+	if err := handleTapRecord(ctx, handler, &TapRecordEvent{
+		DID: author, Collection: saveNSID, Rkey: "two", Action: "update", Record: record,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err = s.GetSavesByURIs(ctx, []string{otherURI}, author)
+	if err != nil || len(rows) != 1 || rows[0].OriginAtprotoURI != originTestURI || rows[0].OriginAtprotoCID != originTestCID {
+		t.Fatalf("indexed provenance = %#v, %v", rows, err)
+	}
+}
+
 // TestSaveMimeTypeRoundTrip pins that a save's blob mime type survives the
 // upsert → GetSavesByURIs path (the field the web client reads to freeze GIFs),
 // and that a save whose record omits it reads back as "".

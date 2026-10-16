@@ -571,6 +571,11 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	attrLicense := strings.TrimSpace(r.PostFormValue("attribution_license"))
 	attrCredit := strings.TrimSpace(r.PostFormValue("attribution_credit"))
 	selfLabelVals := parseSelfLabels(r.PostFormValue("labels"))
+	originRef, err := parseOriginAtprotoRef([]byte(r.PostFormValue("originAtprotoRef")))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	// Reject invisible/deleting destinations before spending a blob upload.
 	var collectionStrongRef map[string]any
@@ -672,6 +677,9 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 	if safe := safeOriginURL(url); safe != "" {
 		record["originUrl"] = safe
 	}
+	if originRef != nil {
+		record["originAtprotoRef"] = originRef
+	}
 	if title != "" {
 		record["text"] = title
 	}
@@ -767,12 +775,13 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var existingVal struct {
-		Content   json.RawMessage `json:"content"`
-		CreatedAt string          `json:"createdAt"`
-		OriginURL string          `json:"originUrl"`
-		Text      string          `json:"text"`
-		ResaveOf  json.RawMessage `json:"resaveOf"`
-		Labels    json.RawMessage `json:"labels"`
+		Content          json.RawMessage `json:"content"`
+		CreatedAt        string          `json:"createdAt"`
+		OriginURL        string          `json:"originUrl"`
+		Text             string          `json:"text"`
+		OriginAtprotoRef json.RawMessage `json:"originAtprotoRef"`
+		ResaveOf         json.RawMessage `json:"resaveOf"`
+		Labels           json.RawMessage `json:"labels"`
 	}
 	if existing.Value != nil {
 		json.Unmarshal(*existing.Value, &existingVal)
@@ -812,6 +821,10 @@ func (s *Server) UpdateSave(w http.ResponseWriter, r *http.Request) {
 		record["text"] = title
 	} else if existingVal.Text != "" {
 		record["text"] = existingVal.Text
+	}
+
+	if len(existingVal.OriginAtprotoRef) > 0 && string(existingVal.OriginAtprotoRef) != "null" {
+		record["originAtprotoRef"] = existingVal.OriginAtprotoRef
 	}
 
 	// Preserve resaveOf — not editable
@@ -935,13 +948,14 @@ func (s *Server) putSaveContentForRkey(ctx context.Context, c *atclient.APIClien
 		return fmt.Errorf("get existing: %w", err)
 	}
 	var existingVal struct {
-		Content    json.RawMessage `json:"content"`
-		Collection json.RawMessage `json:"collection"`
-		CreatedAt  string          `json:"createdAt"`
-		OriginURL  string          `json:"originUrl"`
-		Text       string          `json:"text"`
-		ResaveOf   json.RawMessage `json:"resaveOf"`
-		Labels     json.RawMessage `json:"labels"`
+		Content          json.RawMessage `json:"content"`
+		Collection       json.RawMessage `json:"collection"`
+		CreatedAt        string          `json:"createdAt"`
+		OriginURL        string          `json:"originUrl"`
+		Text             string          `json:"text"`
+		OriginAtprotoRef json.RawMessage `json:"originAtprotoRef"`
+		ResaveOf         json.RawMessage `json:"resaveOf"`
+		Labels           json.RawMessage `json:"labels"`
 	}
 	if existing.Value != nil {
 		if err := json.Unmarshal(*existing.Value, &existingVal); err != nil {
@@ -971,6 +985,9 @@ func (s *Server) putSaveContentForRkey(ctx context.Context, c *atclient.APIClien
 	}
 	if existingVal.Text != "" {
 		record["text"] = existingVal.Text
+	}
+	if len(existingVal.OriginAtprotoRef) > 0 && string(existingVal.OriginAtprotoRef) != "null" {
+		record["originAtprotoRef"] = existingVal.OriginAtprotoRef
 	}
 	if existingVal.ResaveOf != nil {
 		var resaveAny any
@@ -1014,13 +1031,14 @@ func applyLabelsToOwnedSave(ctx context.Context, c *atclient.APIClient, did *syn
 		return nil, false, false, fmt.Errorf("get record: %w", err)
 	}
 	var existingVal struct {
-		Content    json.RawMessage `json:"content"`
-		Collection json.RawMessage `json:"collection"`
-		CreatedAt  string          `json:"createdAt"`
-		OriginURL  string          `json:"originUrl"`
-		Text       string          `json:"text"`
-		ResaveOf   json.RawMessage `json:"resaveOf"`
-		Labels     *selfLabels     `json:"labels"`
+		Content          json.RawMessage `json:"content"`
+		Collection       json.RawMessage `json:"collection"`
+		CreatedAt        string          `json:"createdAt"`
+		OriginURL        string          `json:"originUrl"`
+		Text             string          `json:"text"`
+		OriginAtprotoRef json.RawMessage `json:"originAtprotoRef"`
+		ResaveOf         json.RawMessage `json:"resaveOf"`
+		Labels           *selfLabels     `json:"labels"`
 	}
 	if existing.Value != nil {
 		if err := json.Unmarshal(*existing.Value, &existingVal); err != nil {
@@ -1072,6 +1090,9 @@ func applyLabelsToOwnedSave(ctx context.Context, c *atclient.APIClient, did *syn
 	}
 	if existingVal.Text != "" {
 		record["text"] = existingVal.Text
+	}
+	if len(existingVal.OriginAtprotoRef) > 0 && string(existingVal.OriginAtprotoRef) != "null" {
+		record["originAtprotoRef"] = existingVal.OriginAtprotoRef
 	}
 	// Do not restore an old collection reference if recovery or another editor
 	// changed the record after we fetched it.
@@ -1483,9 +1504,10 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	// Look up the original save to get blob info, source URL, and attribution
 	var authorDID, blobCID, origOriginURL, origAlt string
 	var origAttrURL, origAttrLicense, origAttrCredit string
+	var origAtprotoURI, origAtprotoCID string
 	err = s.Store.pool.QueryRow(r.Context(),
-		`SELECT author_did, pds_blob_cid, COALESCE(origin_url, ''), COALESCE(alt_text, ''), COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, '') FROM save WHERE uri = $1`, body.SaveURI,
-	).Scan(&authorDID, &blobCID, &origOriginURL, &origAlt, &origAttrURL, &origAttrLicense, &origAttrCredit)
+		`SELECT author_did, pds_blob_cid, COALESCE(origin_url, ''), COALESCE(alt_text, ''), COALESCE(attribution_url, ''), COALESCE(attribution_license, ''), COALESCE(attribution_credit, ''), COALESCE(origin_atproto_uri, ''), COALESCE(origin_atproto_cid, '') FROM save WHERE uri = $1`, body.SaveURI,
+	).Scan(&authorDID, &blobCID, &origOriginURL, &origAlt, &origAttrURL, &origAttrLicense, &origAttrCredit, &origAtprotoURI, &origAtprotoCID)
 	if err != nil {
 		http.Error(w, "save not found", http.StatusNotFound)
 		return
@@ -1576,6 +1598,9 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 	// No collection → an "unsorted" resave that lives on the viewer's profile only.
 	if collectionStrongRef != nil {
 		record["collection"] = collectionStrongRef
+	}
+	if origAtprotoURI != "" && origAtprotoCID != "" {
+		record["originAtprotoRef"] = &strongRef{URI: origAtprotoURI, CID: origAtprotoCID}
 	}
 	if origOriginURL != "" {
 		record["originUrl"] = origOriginURL

@@ -87,6 +87,7 @@ export interface SaveView {
 	content: SaveContentView;
 	text?: string;
 	originUrl?: string;
+	originAtprotoRef?: { uri: string; cid: string };
 	resaveOf?: { uri: string; cid: string };
 	createdAt: string;
 	viewer?: {

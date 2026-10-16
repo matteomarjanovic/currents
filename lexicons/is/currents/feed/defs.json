@@ -144,6 +144,11 @@
           "format": "uri",
           "description": "Original source URL associated with the saved item, if known."
         },
+        "originAtprotoRef": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef",
+          "description": "Strong reference to the AT Protocol record from which this content was saved."
+        },
         "resaveOf": {
           "type": "ref",
           "ref": "com.atproto.repo.strongRef",

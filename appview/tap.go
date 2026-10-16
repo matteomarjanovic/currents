@@ -338,6 +338,10 @@ func handleSaveUpsert(
 		ResaveOfCID:   s.ResaveOf.CID,
 		CreatedAt:     createdAt,
 	}
+	if s.OriginAtprotoRef != nil {
+		base.OriginAtprotoURI = s.OriginAtprotoRef.URI
+		base.OriginAtprotoCID = s.OriginAtprotoRef.CID
+	}
 	if contentNSID == saveContentImageNSID {
 		content, err := decodeSaveImageContent(s.Content)
 		if err != nil {
