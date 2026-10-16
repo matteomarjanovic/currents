@@ -99,33 +99,44 @@ migration_state() {
 	esac
 }
 
+migration_version() {
+	db_id=$(container_id db)
+	[ -n "$db_id" ] || return 1
+	docker exec "$db_id" psql -U appview -d appview -Atqc \
+		'SELECT version FROM schema_migrations LIMIT 1'
+}
+
 appview_responds() {
 	id=$(container_id appview)
 	[ -n "$id" ] || return 1
 	# Cutover B puts OAuth on the root host; the Phase A value loses the login cookie.
 	docker exec "$id" sh -c '[ "$OAUTH_HOSTNAME" = currents.is ]' || return 1
-	docker exec "$id" wget -q -O /dev/null http://127.0.0.1:8080/api/supporter/stats >/dev/null 2>&1
+	docker exec "$id" wget -T 5 -t 1 -q -O /dev/null http://127.0.0.1:8080/api/supporter/stats >/dev/null 2>&1
+}
+
+check_public_appview_url() {
+	if curl -fsS --connect-timeout 2 --max-time "$2" -o /dev/null "$1"; then
+		return 0
+	fi
+	printf 'deploy-main: health check failed: %s (timeout %ss)\n' "$1" "$2" >&2
+	return 1
 }
 
 public_appview_responds() {
-	curl -fsS --connect-timeout 2 --max-time 5 -o /dev/null \
-		https://api.currents.is/api/supporter/stats &&
-		curl -fsS --connect-timeout 2 --max-time 5 -o /dev/null \
-		https://api.currents.is/.well-known/did.json &&
-		curl -fsS --connect-timeout 2 --max-time 5 -o /dev/null \
-		https://api.currents.is/oauth-client-metadata.json &&
-		curl -fsS --connect-timeout 2 --max-time 5 -o /dev/null \
-		'https://api.currents.is/xrpc/is.currents.feed.getFeed?limit=1&personalized=0'
+	check_public_appview_url https://api.currents.is/api/supporter/stats 5 &&
+		check_public_appview_url https://api.currents.is/.well-known/did.json 5 &&
+		check_public_appview_url https://api.currents.is/oauth-client-metadata.json 5 &&
+		check_public_appview_url \
+			'https://api.currents.is/xrpc/is.currents.feed.getFeed?limit=1&personalized=0' 30
 }
 
 wait_for_appview() {
-	i=0
-	while [ "$i" -lt 60 ]; do
+	deadline=$(($(date +%s) + 120))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
 		if container_running appview && [ "$(migration_state)" = clean ] && \
 			appview_responds && public_appview_responds; then
 			return 0
 		fi
-		i=$((i + 1))
 		sleep 2
 	done
 	return 1
@@ -143,16 +154,15 @@ wait_for_clustering() {
 frontend_responds() {
 	id=$(container_id frontend)
 	[ -n "$id" ] || return 1
-	docker exec "$id" wget -q -O /dev/null http://127.0.0.1:3000/ >/dev/null 2>&1
+	docker exec "$id" wget -T 5 -t 1 -q -O /dev/null http://127.0.0.1:3000/ >/dev/null 2>&1
 }
 
 wait_for_frontend() {
-	i=0
-	while [ "$i" -lt 60 ]; do
+	deadline=$(($(date +%s) + 120))
+	while [ "$(date +%s)" -lt "$deadline" ]; do
 		if container_running frontend && frontend_responds; then
 			return 0
 		fi
-		i=$((i + 1))
 		sleep 2
 	done
 	return 1
@@ -194,6 +204,12 @@ deploy_appview() {
 	printf 'deploy-main: taking a fresh database backup before appview\n'
 	systemctl start "$backup_service"
 
+	previous_migration_version=$(migration_version) || fail 'could not read the database migration version'
+	case "$previous_migration_version" in
+		''|*[!0-9]*) fail 'could not read the database migration version' ;;
+	esac
+	[ "$(migration_state)" = clean ] || fail 'database migration state is not clean'
+
 	export APPVIEW_IMAGE="$image"
 	compose up -d --no-deps --no-build --force-recreate appview
 	if wait_for_appview; then
@@ -206,6 +222,11 @@ deploy_appview() {
 	if [ "$(migration_state)" = dirty ]; then
 		logger -t currents-deploy "service=appview sha=$release_sha result=dirty-migration"
 		fail 'schema migration is dirty; automatic rollback was refused'
+	fi
+	current_migration_version=$(migration_version) || current_migration_version=unknown
+	if [ "$(migration_state)" != clean ] || [ "$current_migration_version" != "$previous_migration_version" ]; then
+		logger -t currents-deploy "service=appview sha=$release_sha result=rollback-refused-schema-change"
+		fail "appview health failed; schema changed from $previous_migration_version to $current_migration_version or is unknown; automatic rollback was refused; current image retained for recovery"
 	fi
 
 	printf 'deploy-main: appview health failed; restoring the previous image\n' >&2
