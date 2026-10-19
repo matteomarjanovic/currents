@@ -13,6 +13,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  deployment:
+    name: Deployment scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: sh -n deploy/scaleway/deploy-main-release.sh
+      - run: python3 -m unittest discover -s deploy/scaleway -p 'test_*.py' -v
+
   appview:
     name: Appview
     runs-on: ubuntu-latest

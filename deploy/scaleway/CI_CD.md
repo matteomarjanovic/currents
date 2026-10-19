@@ -9,7 +9,8 @@ releases continue to be built locally.
 1. `.github/workflows/ci.yml` runs on pull requests and `main`.
 2. A green `main` run starts `publish-images.yml`, which builds ARM64 images
    only for changed services, tagged with the full commit SHA in the private
-   `fr-par` registry.
+   `fr-par` registry. Publishing runs on native `ubuntu-24.04-arm` runners;
+   production ARM64 builds do not use QEMU emulation.
 3. A successful image publish starts `deploy-production.yml`. It deploys those
    same changed services automatically.
 4. Inference is deployed first when it changed. The main host then recreates
@@ -20,7 +21,16 @@ The host scripts serialize releases, pull exact tags, retain the prior image,
 and roll back a service that fails health checks. Every appview deployment
 takes a fresh Object Storage database dump first. A dirty migration stops the
 script without attempting an unsafe automatic rollback; down migrations are
-never run.
+never run. A health failure also refuses rollback if the schema version changed
+or its state cannot be confirmed. The new image is retained for operator
+recovery: an older binary may not even start once a new migration is applied.
+
+Internal HTTP probes use a five-second timeout and one attempt. Public metadata
+checks allow five seconds; the feed query allows thirty seconds because a cold
+production query can exceed five seconds. Public probe failures print the URL
+and timeout so the failing check is visible in Actions logs. Readiness retries
+have a two-minute elapsed-time budget; an in-flight bounded probe may finish
+after that deadline. The timeout is not multiplied by sixty retry attempts.
 
 The workflow sends SSH keepalives while the backup runs, so a quiet but healthy
 backup cannot be mistaken for a dropped deployment connection.
@@ -123,8 +133,8 @@ Verify both host-key fingerprints against the Scaleway console before storing
 the `known_hosts` lines. Do not accept a new key merely because `ssh-keyscan`
 returned it. This is especially important after an instance replacement.
 
-Protect `main` with the five CI job names: `Appview`, `Appview DB`, `Frontend`,
-`Inference`, and `Clustering`. Keep Playwright optional for now.
+Protect `main` with the six CI job names: `Appview`, `Appview DB`, `Frontend`,
+`Inference`, `Clustering`, and `Deployment scripts`. Keep Playwright optional for now.
 
 ## First release
 
