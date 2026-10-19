@@ -16,6 +16,25 @@ collections from any website:
 
 Built with [WXT](https://wxt.dev) + Svelte, Manifest V3.
 
+On Bluesky, Mu, Witchsky, Northsky, Blacksky, Anisota, and Tokimeki, post images automatically
+retain the source AT Protocol record's URI and record CID when their ownership can be
+verified, including quoted images and images picked from feeds. The source link
+stays on the client you used. Unknown sources are saved without a reference.
+See [AT Protocol save provenance](../ORIGIN_ATPROTO_REF.md).
+
+Grain gallery photos also retain their individual `social.grain.photo` record
+reference when verified. Their source link points to the containing gallery.
+
+Pckt article covers and content images retain the published document's record
+reference when matched to its page data, including saves from linked feed cards.
+
+Offprint covers, inline images, grids, and carousels also retain their published
+`site.standard.document` reference, including images saved from publication feeds.
+
+Leaflet article images and feed covers retain their document reference after
+matching the selected image to the author's public PDS record. Standard and
+legacy Leaflet documents are supported, including custom-domain publications.
+
 ## Build from source
 
 Prerequisites: Node.js ≥ 20 (built and tested with 24.x) and npm.
@@ -33,6 +52,12 @@ Unpacked builds are written to `.output/chrome-mv3/` and `.output/firefox-mv3/`.
 No configuration is required: the production build targets the live Currents
 services (`https://currents.is` and `https://api.currents.is`) by default, so a
 clean `npm install && npm run zip` reproduces the published extension exactly.
+
+Provenance resolver tests use Node.js 22.6 or newer:
+
+```sh
+node --experimental-strip-types --test tests/*.test.mjs
+```
 
 Local development overrides the endpoints via `.env.development` (see
 `.env.example`); `npm run dev` runs against that config with hot reload.

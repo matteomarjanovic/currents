@@ -1,3 +1,6 @@
+import { detectImageOrigin } from './detect-image-origin';
+import type { ImageOriginHint } from '../../lib/image-origin';
+
 // Finds the images worth offering in the multi-image picker.
 //
 // The filter is the feature: unfiltered, a typical page yields a hundred icons,
@@ -6,6 +9,7 @@
 // image — the right-click-an-image path still saves anything by hand.
 
 export interface ImageCandidate {
+	origin?: ImageOriginHint;
 	url: string;
 	alt: string;
 	// Natural size where known, else the rendered box (lazy images that haven't
@@ -65,7 +69,13 @@ export function candidateForImage(img: HTMLImageElement): ImageCandidate | null 
 	// that performs the upload cannot fetch them.
 	if (!/^(https?:|data:)/.test(url)) return null;
 
-	return { url, alt: img.alt.trim().slice(0, 2000), width, height };
+	return {
+		url,
+		alt: img.alt.trim().slice(0, 2000),
+		width,
+		height,
+		origin: detectImageOrigin(img)
+	};
 }
 
 export function collectPageImages(doc: Document = document): ImageCandidate[] {

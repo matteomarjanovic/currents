@@ -31,7 +31,110 @@ the latest version. The reference remains valid provenance if the source is
 later edited or deleted. It does not verify that the referenced record contains
 the saved image. The extension should associate each image with its containing
 post, including in feeds, threads, and quoted posts; page-level URLs alone are
-insufficient. Extension implementation is deferred.
+insufficient.
+
+### Browser extension: Bluesky and compatible clients
+
+The extension detects post images on `bsky.app`, `mu.social`, `witchsky.app`,
+`northsky.app`, `blacksky.community`, `anisota.net`, and `tokimeki.blue` for right-click saves,
+hover-button saves, and the multi-image picker. These clients share Bluesky post
+record schemas. Each image retains its own candidate post links and CDN or
+direct PDS `getBlob` identity. Anisota's card/quote boundaries are handled
+explicitly so embedded quote links cannot hide the enclosing post's permalink. In the
+worker, the Bluesky adapter resolves handles and fetches candidate posts through
+the client's public AppView: Bluesky for Bluesky/Witchsky/Anisota/Tokimeki, Bluesky with a Eurosky
+fallback for Mu, and Blacksky for Northsky/Blacksky.
+It adds provenance only when the image's repository DID and blob CID match an
+image embedded in the source record. Quoted images reference the quoted record;
+images accompanying a quote reference the enclosing record. `originUrl` points
+to the verified owning post on the client where the image was saved, including
+when saving from a feed or thread. Cross-client permalinks are recognized too.
+
+Tokimeki exposes each timeline post and embedded quote's URI in `data-aturi`.
+Detection uses the nearest such container instead of neighbouring column links.
+Expanded viewer images can match their blob identity to a mounted post image;
+multiple possible source records leave the reference unknown. Media thumbnails
+without a record container or a unique mounted source remain unattributed.
+
+Avatars, banners, videos, and external-link preview thumbnails do not acquire
+a post reference. Unknown ownership, deleted/unavailable posts, and lookup
+failures leave the reference absent and do not prevent saving. Lookup requests
+are public and send no credentials. Image download URLs and manually entered
+alt text are unchanged.
+
+### Browser extension: Grain
+
+On `grain.social`, detection identifies the selected photo's repository DID and
+blob CID from its signed CDN URL and the containing gallery's permalink. This
+works in gallery feed cards and on gallery detail pages. The worker queries
+`social.grain.unspecced.getGallery` without credentials and matches the image to
+a `social.grain.photo` view. Its photo URI and **photo record CID** become the
+strong reference; neither the gallery record nor the gallery-item membership
+record is used. Different images in a gallery retain independent references.
+`originUrl` stays on the containing Grain gallery.
+
+Avatars, unavailable galleries, unmatched photos, and ambiguous duplicate photo
+records leave the reference absent. Saving the image still proceeds normally.
+This adapter covers public gallery routes; private/shared-pool routes that do
+not expose a public gallery reference remain unattributed.
+
+### Browser extension: Pckt
+
+Public articles on `pckt.blog` and its blog subdomains expose a published post's
+`atproto_uri` and `atproto_cid` in their Inertia page data. The adapter matches
+the selected image against that post's cover or image content before capturing
+the complete reference. It uses the current history page state during client
+navigation, and rejects page data belonging to a different URL. The rendered
+page's record CID is retained rather than replaced with a later version.
+
+Feed-card images can resolve through the linked article's public page data,
+fetched by the worker without credentials. Pckt media originals and conversions
+match by their shared media ID; download URLs remain unchanged. Multiple images
+in one article reference the same owning document (`site.standard.document`, or
+legacy `blog.pckt.document`), with the article URL as their web source.
+
+Avatars, website previews, unattached uploads, unpublished/syncing/failed posts,
+and missing references stay unattributed. Mini notes and custom-domain blogs
+without this supported article metadata are not resolved by this adapter.
+
+### Browser extension: Offprint
+
+Public articles on `offprint.app` and its publication subdomains expose the
+published `site.standard.document` URI and record CID in their Inertia page
+data. The adapter matches covers, inline images, image grids, and carousels
+before capturing that reference. It uses the canonical document reference,
+not the secondary `app.offprint.document.article` reference, and retains the
+rendered version during client navigation.
+
+Feed images resolve through their linked public article without credentials.
+CDN originals and conversions match by media ID without changing download URLs.
+Avatars, link previews, unrelated media, drafts, and unsynced articles remain
+unattributed. Missing metadata and lookup failures do not prevent saving.
+Custom-domain publications without a supported Offprint host are not resolved.
+
+### Browser extension: Leaflet
+
+Leaflet images expose their repository DID and blob CID in `/api/atproto_images`
+URLs. Article metadata identifies the document URI; feed and embedded-post
+cards supply their own article links. Detection covers `leaflet.pub`, its
+subdomains, and custom-domain publications exposing Leaflet's AT metadata.
+
+The worker resolves the author's DID to their public PDS and fetches the source
+`site.standard.document` or legacy `pub.leaflet.document` record without
+credentials. It uses that record's CID only when the selected blob matches a
+cover or a Leaflet image block, including nested linear/canvas content. Avatars,
+website preview images, unrelated blobs, and unavailable records stay
+unattributed. The web source remains the containing article, and image download
+URLs are unchanged. Unlike the Pckt/Offprint snapshots, the reference identifies
+the version verified on the PDS at save time.
+
+`image-origin.ts` defines the shared hint/result types, and
+`clipper.content/detect-image-origin.ts` dispatches DOM detection to the
+Bluesky, Grain, Pckt, Offprint, and Leaflet adapters. Source resolution lives in
+`lib/bluesky-origin.ts`, `lib/grain-origin.ts`, `lib/pckt-origin.ts`, and
+`lib/offprint-origin.ts`, and `lib/leaflet-origin.ts`.
+Other Atmosphere apps can add adapters using the same
+per-image transport and multipart field, without changing the save record flow.
 
 ## Editing a save
 

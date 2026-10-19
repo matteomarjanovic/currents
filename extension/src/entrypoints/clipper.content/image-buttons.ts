@@ -27,7 +27,7 @@ const HOVER_REVEAL = [GRID_PIN, ...CLOSEUP_ANY.split(',')]
 	.join(',');
 
 const STYLE = `
-.${BTN_CLASS}{position:absolute;left:12px;bottom:12px;z-index:100;width:36px;height:36px;box-sizing:border-box;border-radius:50%;border:none;margin:0;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .1s,transform .1s}
+.${BTN_CLASS}{position:absolute;left:12px;bottom:12px;z-index:100;width:36px;height:36px;min-width:0!important;min-height:0!important;box-sizing:border-box;border-radius:50%;border:none;margin:0;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .1s,transform .1s}
 ${HOVER_REVEAL}{opacity:1;pointer-events:auto}
 .${BTN_CLASS}:hover{transform:scale(1.08)}
 .${BTN_CLASS} img{width:26px;height:26px;display:block}

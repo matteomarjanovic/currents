@@ -70,7 +70,9 @@
 >
 	<span class="icon-slot" class:expanded={state !== 'idle'} aria-hidden="true">
 		<span class="icon" class:visible={state === 'saving'}><span class="spinner"></span></span>
-		<span class="icon" class:visible={state === 'saved'}><Check class="size-4" /></span>
+		<span class="icon" class:visible={state === 'saved'}
+			><Check class="size-4 text-green-700" /></span
+		>
 	</span>
 	<span class="label" use:morph={label} aria-hidden="true"></span>
 </Button>

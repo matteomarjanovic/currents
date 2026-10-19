@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { clipper, hideClipper } from '../../lib/clipper-store.svelte';
+	import { clipper, hideClipper, CLIPPER_CLOSE_MS } from '../../lib/clipper-store.svelte';
+	import { smokyClose } from '../../lib/smoky-close';
 	import LoginGate from './LoginGate.svelte';
 	import SinglePicker from './SinglePicker.svelte';
 	import MultiPicker from './MultiPicker.svelte';
@@ -58,6 +59,7 @@
 		if (clipper.closing) {
 			resetNavigation();
 			profileOpen = false;
+			if (panel) return smokyClose(panel, CLIPPER_CLOSE_MS);
 		}
 	});
 
@@ -119,7 +121,7 @@
 			bind:this={panel}
 			class="clipper-panel relative flex max-h-[calc(100vh-2rem)] flex-col gap-3 rounded-3xl bg-popover p-4 pt-3 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 {revealing
 				? 'clipper-revealing'
-				: ''} {entering ? 'clipper-entering' : ''} {clipper.closing ? 'clipper-closing' : ''}"
+				: ''} {entering ? 'clipper-entering' : ''}"
 			role="dialog"
 			aria-modal="false"
 			aria-label={settingsOpen ? 'Currents settings' : 'Save to Currents'}
@@ -289,10 +291,6 @@
 		animation: content-enter 360ms 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
 	}
 
-	.clipper-closing {
-		animation: panel-fade-out 220ms ease-out both;
-	}
-
 	@keyframes panel-reveal {
 		0% {
 			clip-path: inset(0 0 calc(100% - 52px) calc(100% - 148px) round 24px);
@@ -349,19 +347,11 @@
 		}
 	}
 
-	@keyframes panel-fade-out {
-		to {
-			opacity: 0;
-			transform: translateY(-6px) scale(0.985);
-		}
-	}
-
 	@media (prefers-reduced-motion: reduce) {
 		.clipper-revealing,
 		.clipper-entering .clipper-logo,
 		.clipper-entering .clipper-actions,
-		.clipper-entering .clipper-view,
-		.clipper-closing {
+		.clipper-entering .clipper-view {
 			animation: none;
 		}
 	}

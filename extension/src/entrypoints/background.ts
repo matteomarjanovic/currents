@@ -1,3 +1,9 @@
+import { resolveBlueskyOrigin } from '../lib/bluesky-origin';
+import { resolveGrainOrigin } from '../lib/grain-origin';
+import { resolvePcktOrigin } from '../lib/pckt-origin';
+import { resolveOffprintOrigin } from '../lib/offprint-origin';
+import { resolveLeafletOrigin } from '../lib/leaflet-origin';
+import type { ImageOriginHint } from '../lib/image-origin';
 import { blobCidFromBytes } from '../lib/blob-cid';
 import { concreteImageMime } from '../lib/image-mime';
 
@@ -231,6 +237,7 @@ async function handleSave(message: {
 	text: string;
 	alt?: string;
 	originUrl: string;
+	imageOrigin?: ImageOriginHint;
 	attributionUrl?: string;
 	attributionLicense?: string;
 	attributionCredit?: string;
@@ -248,6 +255,18 @@ async function handleSave(message: {
 	const auth = await getAuth();
 	if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
+	const origin =
+		message.imageOrigin?.app === 'bluesky'
+			? await resolveBlueskyOrigin(message.imageOrigin)
+			: message.imageOrigin?.app === 'grain'
+				? await resolveGrainOrigin(message.imageOrigin)
+				: message.imageOrigin?.app === 'pckt'
+					? await resolvePcktOrigin(message.imageOrigin)
+					: message.imageOrigin?.app === 'offprint'
+						? await resolveOffprintOrigin(message.imageOrigin)
+						: message.imageOrigin?.app === 'leaflet'
+							? await resolveLeafletOrigin(message.imageOrigin)
+							: undefined;
 	let imageBlob: Blob;
 	try {
 		imageBlob = await fetchImageBlob(message.imgUrl);
@@ -301,7 +320,9 @@ async function handleSave(message: {
 			form.append('collection', uri);
 			if (message.text) form.append('title', message.text);
 			if (message.alt) form.append('alt', message.alt);
-			if (message.originUrl) form.append('url', message.originUrl);
+			const originUrl = origin?.originUrl ?? message.originUrl;
+			if (originUrl) form.append('url', originUrl);
+			if (origin) form.append('originAtprotoRef', JSON.stringify(origin.originAtprotoRef));
 			if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);
 			if (message.attributionLicense)
 				form.append('attribution_license', message.attributionLicense);

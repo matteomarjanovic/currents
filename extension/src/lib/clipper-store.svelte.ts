@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import type { ImageOriginHint } from './image-origin';
 import type { ImageCandidate } from '../entrypoints/clipper.content/collect-images';
 
 export type AuthState = 'authenticated' | 'unauthenticated';
@@ -19,6 +20,7 @@ export interface Collection {
 }
 
 export interface SiteHints {
+	imageOrigin?: ImageOriginHint;
 	attributionCredit?: string;
 	originUrl?: string;
 }
@@ -77,6 +79,7 @@ export const clipper: ClipperState = $state({
 // collections still loading — every caller then kicks off loadClipperAuth() so
 // the dialog never waits on a network round-trip to appear.
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
+export const CLIPPER_CLOSE_MS = 350;
 
 export function showClipper(data: Partial<ClipperState>) {
 	clearTimeout(closeTimer);
@@ -116,7 +119,7 @@ export function hideClipper() {
 	closeTimer = setTimeout(() => {
 		clipper.visible = false;
 		clipper.closing = false;
-	}, 220);
+	}, CLIPPER_CLOSE_MS);
 }
 
 export async function loadClipperAuth() {

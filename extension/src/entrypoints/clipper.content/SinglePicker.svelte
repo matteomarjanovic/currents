@@ -40,6 +40,7 @@
 				text: details.note.trim(),
 				alt: alt.trim(),
 				originUrl: clipper.originUrl,
+				imageOrigin: clipper.siteHints.imageOrigin,
 				attributionUrl: details.attributionUrl.trim(),
 				attributionLicense: details.attributionLicense.trim(),
 				attributionCredit: details.attributionCredit.trim(),

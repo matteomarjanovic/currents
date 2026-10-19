@@ -143,6 +143,7 @@
 						collectionUris: pendingUris(url, uris),
 						alt: metadata?.alt.trim() ?? '',
 						originUrl: clipper.originUrl,
+						imageOrigin: candidate.origin,
 						text: metadata?.details.note.trim() ?? '',
 						attributionUrl: metadata?.details.attributionUrl.trim() ?? '',
 						attributionLicense: metadata?.details.attributionLicense.trim() ?? '',

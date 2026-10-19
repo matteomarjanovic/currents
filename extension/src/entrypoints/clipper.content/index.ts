@@ -1,7 +1,8 @@
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
 import { showClipper, loadClipperAuth, type SiteHints } from '../../lib/clipper-store.svelte';
-import { candidateForImage, collectPageImages } from './collect-images';
+import { bestImageUrl, candidateForImage, collectPageImages } from './collect-images';
+import { detectImageOrigin } from './detect-image-origin';
 import { setupGenericImageButton, setupPinterestGrid } from './image-buttons';
 import { isInstagramHost, resolveInstagramImage } from './instagram-image';
 import { isThreadsHost, resolveThreadsImage } from './threads-image';
@@ -59,7 +60,7 @@ function pinterestSourceUrl(): string | undefined {
 	return externalSourceURL(clickthrough?.href);
 }
 
-function extractSiteHints(): SiteHints {
+function extractSiteHints(img?: HTMLImageElement): SiteHints {
 	const host = location.hostname.replace(/^www\./, '');
 	if (host === 'cosmos.so') {
 		const caption = document.querySelector<HTMLElement>('[data-testid="element-ml-caption"]');
@@ -69,7 +70,7 @@ function extractSiteHints(): SiteHints {
 		const originUrl = pinterestSourceUrl();
 		if (originUrl) return { originUrl };
 	}
-	return {};
+	return { imageOrigin: img ? detectImageOrigin(img) : undefined };
 }
 
 export default defineContentScript({
@@ -100,7 +101,8 @@ export default defineContentScript({
 		host.style.setProperty('margin', '0', 'important');
 		host.style.setProperty('padding', '0', 'important');
 		host.style.setProperty('border', '0', 'important');
-		let contextImage: { url: string; alt: string } | undefined;
+		let contextImage:
+			{ url: string; alt: string; imageOrigin?: SiteHints['imageOrigin'] } | undefined;
 
 		document.addEventListener(
 			'contextmenu',
@@ -112,7 +114,9 @@ export default defineContentScript({
 						: target instanceof Element
 							? target.closest('img')
 							: null;
-				contextImage = img ? { url: img.currentSrc || img.src, alt: img.alt } : undefined;
+				contextImage = img
+					? { url: img.currentSrc || img.src, alt: img.alt, imageOrigin: detectImageOrigin(img) }
+					: undefined;
 			},
 			true
 		);
@@ -120,7 +124,12 @@ export default defineContentScript({
 		browser.runtime.onMessage.addListener((message) => {
 			if (message.type === 'SHOW_CLIPPER') {
 				injectFont();
-				const siteHints = extractSiteHints();
+				const img = Array.from(document.images).find((img) =>
+					[img.currentSrc, img.src, bestImageUrl(img)].includes(message.imgUrl)
+				);
+				const siteHints = extractSiteHints(img);
+				if (contextImage && contextImage.url === message.imgUrl && contextImage.imageOrigin)
+					siteHints.imageOrigin = contextImage.imageOrigin;
 				const altText = contextImage && contextImage.url === message.imgUrl ? contextImage.alt : '';
 				contextImage = undefined;
 				showClipper({
@@ -158,7 +167,7 @@ export default defineContentScript({
 						const candidate = candidateForImage(img);
 						if (!candidate) return;
 						injectFont();
-						const siteHints = extractSiteHints();
+						const siteHints = extractSiteHints(img);
 						showClipper({
 							imgUrl: candidate.url,
 							altText: candidate.alt,
