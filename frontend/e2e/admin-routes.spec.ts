@@ -27,9 +27,16 @@ const overview = {
 		}
 	},
 	background: {
-		missingVisualIdentityCount: 0,
-		distinctMissingBlobCidCount: 0,
-		collectionsMissingEmbeddingCount: 0
+		missingVisualIdentityCount: 193,
+		distinctMissingBlobCidCount: 191,
+		collectionsMissingEmbeddingCount: 1,
+		pendingEnrichmentCount: 2,
+		failedEnrichmentCount: 2,
+		unsupportedMediaCount: 144,
+		invalidMediaCount: 41,
+		unavailableSourceCount: 4,
+		oldestMissingAgeSec: 129 * 86400,
+		oldestPendingAgeSec: 20 * 60
 	},
 	jobs: [],
 	hosts: [
@@ -70,6 +77,22 @@ test('site admins get the operations dashboard at /admin', async ({ page }) => {
 	await expect(page.getByText('24 GB / 60 GB (33 GB free)', { exact: true })).toHaveCount(2);
 	await expect(page.getByText('Root disk', { exact: true })).toBeVisible();
 	await expect(page.getByText('Operating system and Docker storage.')).toBeVisible();
+	const pipeline = page.getByTestId('enrichment-status');
+	for (const [label, count] of [
+		['Pending', 2],
+		['Retry needed', 2],
+		['Unsupported media', 144],
+		['Invalid images', 41],
+		['Source unavailable', 4],
+		['Collection embeddings', 1]
+	] as const) {
+		await expect(
+			pipeline.getByText(label, { exact: true }).locator('..').locator('p').first()
+		).toHaveText(String(count));
+	}
+	await expect(pipeline).toContainText('193 unresolved saves · 191 distinct blobs.');
+	await expect(pipeline).toContainText('Oldest pending: 20m ago');
+	await expect(pipeline).not.toContainText('129d ago');
 });
 
 test('moderators get the review queue at /moderation', async ({ page }) => {

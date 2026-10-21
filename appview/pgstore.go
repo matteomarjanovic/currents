@@ -57,6 +57,12 @@ type SaveBackfillMetrics struct {
 	DistinctMissingBlobCIDCount      int64
 	CollectionsMissingEmbeddingCount int64
 	OldestMissingCreatedAt           *time.Time
+	PendingEnrichmentCount           int64
+	FailedEnrichmentCount            int64
+	UnsupportedMediaCount            int64
+	InvalidMediaCount                int64
+	UnavailableSourceCount           int64
+	OldestPendingCreatedAt           *time.Time
 }
 
 type annSavePage struct {
@@ -2517,8 +2523,8 @@ func (m *PgStore) getSaveBackfillMetrics(ctx context.Context) (SaveBackfillMetri
 	err := m.pool.QueryRow(ctx, `
 		SELECT
 			COUNT(*) AS missing_visual_identity_count,
-			COUNT(DISTINCT pds_blob_cid) AS distinct_missing_blob_cid_count,
-			MIN(created_at) AS oldest_missing_created_at,
+			COUNT(DISTINCT s.pds_blob_cid) AS distinct_missing_blob_cid_count,
+			MIN(s.created_at) AS oldest_missing_created_at,
 			(
 				SELECT COUNT(*)
 				FROM collection c
@@ -2530,14 +2536,27 @@ func (m *PgStore) getSaveBackfillMetrics(ctx context.Context) (SaveBackfillMetri
 					WHERE s.collection_uri = c.uri
 					  AND vi.embedding IS NOT NULL
 				  )
-			) AS collections_missing_embedding_count
-		FROM save
-		WHERE visual_identity_id IS NULL
+			) AS collections_missing_embedding_count,
+			COUNT(*) FILTER (WHERE f.blob_cid IS NULL),
+			COUNT(*) FILTER (WHERE f.kind = 'failed'),
+			COUNT(*) FILTER (WHERE f.kind = 'unsupported'),
+			COUNT(*) FILTER (WHERE f.kind = 'invalid'),
+			COUNT(*) FILTER (WHERE f.kind = 'source_unavailable'),
+			MIN(s.created_at) FILTER (WHERE f.blob_cid IS NULL)
+		FROM save s
+		LEFT JOIN blob_enrichment_failure f ON f.blob_cid = s.pds_blob_cid
+		WHERE s.visual_identity_id IS NULL
 	`).Scan(
 		&metrics.MissingVisualIdentityCount,
 		&metrics.DistinctMissingBlobCIDCount,
 		&metrics.OldestMissingCreatedAt,
 		&metrics.CollectionsMissingEmbeddingCount,
+		&metrics.PendingEnrichmentCount,
+		&metrics.FailedEnrichmentCount,
+		&metrics.UnsupportedMediaCount,
+		&metrics.InvalidMediaCount,
+		&metrics.UnavailableSourceCount,
+		&metrics.OldestPendingCreatedAt,
 	)
 	return metrics, err
 }

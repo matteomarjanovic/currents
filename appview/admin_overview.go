@@ -27,6 +27,12 @@ type adminOverviewBackground struct {
 	DistinctMissingBlobCIDCount      int64  `json:"distinctMissingBlobCidCount"`
 	CollectionsMissingEmbeddingCount int64  `json:"collectionsMissingEmbeddingCount"`
 	OldestMissingAgeSec              *int64 `json:"oldestMissingAgeSec,omitempty"`
+	PendingEnrichmentCount           int64  `json:"pendingEnrichmentCount"`
+	FailedEnrichmentCount            int64  `json:"failedEnrichmentCount"`
+	UnsupportedMediaCount            int64  `json:"unsupportedMediaCount"`
+	InvalidMediaCount                int64  `json:"invalidMediaCount"`
+	UnavailableSourceCount           int64  `json:"unavailableSourceCount"`
+	OldestPendingAgeSec              *int64 `json:"oldestPendingAgeSec,omitempty"`
 }
 
 type adminOverviewResponse struct {
@@ -80,6 +86,11 @@ func (s *Server) APIAdminOverview(w http.ResponseWriter, r *http.Request) {
 			MissingVisualIdentityCount:       background.Saves.MissingVisualIdentityCount,
 			DistinctMissingBlobCIDCount:      background.Saves.DistinctMissingBlobCIDCount,
 			CollectionsMissingEmbeddingCount: background.Saves.CollectionsMissingEmbeddingCount,
+			PendingEnrichmentCount:           background.Saves.PendingEnrichmentCount,
+			FailedEnrichmentCount:            background.Saves.FailedEnrichmentCount,
+			UnsupportedMediaCount:            background.Saves.UnsupportedMediaCount,
+			InvalidMediaCount:                background.Saves.InvalidMediaCount,
+			UnavailableSourceCount:           background.Saves.UnavailableSourceCount,
 		},
 		Jobs:  jobs,
 		Hosts: hosts,
@@ -87,6 +98,10 @@ func (s *Server) APIAdminOverview(w http.ResponseWriter, r *http.Request) {
 	if background.Saves.OldestMissingCreatedAt != nil {
 		age := int64(time.Since(*background.Saves.OldestMissingCreatedAt).Seconds())
 		response.Background.OldestMissingAgeSec = &age
+	}
+	if background.Saves.OldestPendingCreatedAt != nil {
+		age := int64(time.Since(*background.Saves.OldestPendingCreatedAt).Seconds())
+		response.Background.OldestPendingAgeSec = &age
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)

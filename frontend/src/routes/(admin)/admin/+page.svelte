@@ -69,6 +69,12 @@
 			distinctMissingBlobCidCount: number;
 			collectionsMissingEmbeddingCount: number;
 			oldestMissingAgeSec?: number;
+			pendingEnrichmentCount: number;
+			failedEnrichmentCount: number;
+			unsupportedMediaCount: number;
+			invalidMediaCount: number;
+			unavailableSourceCount: number;
+			oldestPendingAgeSec?: number;
 		};
 		jobs: Job[];
 		hosts: Host[];
@@ -291,39 +297,29 @@
 					<Card.Title class="flex items-center gap-2"
 						><Activity class="size-4" />Data pipeline</Card.Title
 					>
-					<Card.Description>Items waiting for enrichment or collection embedding.</Card.Description>
+					<Card.Description>Pending work and recorded enrichment failures.</Card.Description>
 				</Card.Header>
-				<Card.Content class="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-					<div>
-						<p class="text-2xl font-semibold tabular-nums">
-							{overview.background.missingVisualIdentityCount}
-						</p>
-						<p class="text-muted-foreground">Missing identities</p>
-					</div>
-					<div>
-						<p class="text-2xl font-semibold tabular-nums">
-							{overview.background.distinctMissingBlobCidCount}
-						</p>
-						<p class="text-muted-foreground">Distinct blobs</p>
-					</div>
-					<div>
-						<p class="text-2xl font-semibold tabular-nums">
-							{overview.background.collectionsMissingEmbeddingCount}
-						</p>
-						<p class="text-muted-foreground">Collections</p>
-					</div>
-					<div>
-						<p class="text-2xl font-semibold tabular-nums">
-							{overview.background.oldestMissingAgeSec == null
-								? '—'
-								: ago(
-										new Date(
-											Date.now() - overview.background.oldestMissingAgeSec * 1000
-										).toISOString()
-									)}
-						</p>
-						<p class="text-muted-foreground">Oldest item</p>
-					</div>
+				<Card.Content
+					class="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3"
+					data-testid="enrichment-status"
+				>
+					{#each [{ label: 'Pending', count: overview.background.pendingEnrichmentCount }, { label: 'Retry needed', count: overview.background.failedEnrichmentCount }, { label: 'Unsupported media', count: overview.background.unsupportedMediaCount }, { label: 'Invalid images', count: overview.background.invalidMediaCount }, { label: 'Source unavailable', count: overview.background.unavailableSourceCount }, { label: 'Collection embeddings', count: overview.background.collectionsMissingEmbeddingCount }] as item (item.label)}
+						<div>
+							<p class="text-2xl font-semibold tabular-nums">{item.count}</p>
+							<p class="text-muted-foreground">{item.label}</p>
+						</div>
+					{/each}
+					<p class="col-span-2 text-xs text-muted-foreground sm:col-span-3">
+						{overview.background.missingVisualIdentityCount} unresolved saves · {overview.background
+							.distinctMissingBlobCidCount} distinct blobs. Oldest pending: {overview.background
+							.oldestPendingAgeSec == null
+							? '—'
+							: ago(
+									new Date(
+										Date.now() - overview.background.oldestPendingAgeSec * 1000
+									).toISOString()
+								)}
+					</p>
 				</Card.Content>
 			</Card.Root>
 

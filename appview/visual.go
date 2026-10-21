@@ -140,7 +140,7 @@ func (c *InferenceClient) EmbedImage(ctx context.Context, imageBytes []byte, mim
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return ImageEmbedding{}, fmt.Errorf("inference server returned %d: %s", resp.StatusCode, body)
+		return ImageEmbedding{}, &remoteHTTPError{operation: "inference server", status: resp.StatusCode, body: string(body)}
 	}
 
 	var result ImageEmbedding
@@ -427,7 +427,7 @@ func getBlobFromEndpoint(ctx context.Context, pdsEndpoint, authorDID, blobCID st
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("blob fetch returned %d", resp.StatusCode)
+		return nil, "", &remoteHTTPError{operation: "blob fetch", status: resp.StatusCode}
 	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -125,6 +125,19 @@ The admin dashboard's `GET /api/admin/overview` returns live backlog metrics fro
 - collections whose `canonical_embedding` is still missing even though resolved save embeddings exist
 - oldest unresolved save age
 
+The dashboard separates unresolved saves into pending work, attempts needing a
+retry, unsupported media, invalid images, and unavailable sources. The latest
+failure is stored per blob CID in `blob_enrichment_failure`; a successful
+enrichment clears it. Failures shared by multiple saves count once per save,
+while the distinct-blob total remains available. The displayed oldest pending
+age excludes recorded failures. Shutdown cancellation is not recorded as a
+content failure.
+
+Failures are not automatically retried. The repair pass retries every unresolved
+blob, including previously failed sources that may have become available again.
+MP4 video blobs are classified as unsupported before calling image inference.
+Historical failures are classified when the repair pass next attempts them.
+
 It also combines the latest host snapshots, scheduled backup/UMAP/clustering runs, PostgreSQL capacity, and a short inference health check. It is gated by the separate `admin` table.
 
 Run a one-shot repair/backfill pass with:

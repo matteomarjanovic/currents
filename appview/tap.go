@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -500,7 +501,22 @@ func (h *TapHandler) scheduleEmbeddingUpdate(collectionURI string) {
 	h.asyncMu.Unlock()
 }
 
-func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID string) error {
+func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID string) (err error) {
+	defer func() {
+		if ctx.Err() != nil {
+			return
+		}
+		var statusErr error
+		if err != nil {
+			statusErr = handler.Store.RecordBlobEnrichmentFailure(ctx, blobCID, enrichmentFailureKind(err), err.Error())
+		} else {
+			statusErr = handler.Store.ClearBlobEnrichmentFailure(ctx, blobCID)
+		}
+		if statusErr != nil {
+			slog.Warn("recording blob enrichment result failed", "blob_cid", blobCID, "err", statusErr)
+		}
+	}()
+
 	candidates, err := handler.Store.ListBlobSourceCandidates(ctx, blobCID)
 	if err != nil {
 		return err
@@ -513,6 +529,9 @@ func processBlobEnrichment(ctx context.Context, handler *TapHandler, blobCID str
 	source, imageBytes, mimeType, err := fetchBlobFromCandidates(ctx, handler.Store, handler.Dir, candidates, blobCID)
 	if err != nil {
 		return err
+	}
+	if detected := http.DetectContentType(imageBytes); strings.HasPrefix(detected, "video/") {
+		return fmt.Errorf("%w: %s", errUnsupportedMedia, detected)
 	}
 
 	inferResult, err := handler.Inference.EmbedImage(ctx, imageBytes, mimeType)
