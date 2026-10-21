@@ -1,6 +1,6 @@
 module github.com/currents/appview
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/bluesky-social/indigo v0.0.0-20260304205321-05a727c36a1b

@@ -1,4 +1,5 @@
 fastapi
+certifi>=2026.10.19
 uvicorn[standard]
 torch
 torchvision

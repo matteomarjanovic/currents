@@ -4,6 +4,34 @@ After Cutover B, the frontend runs on the Scaleway main VM. The workflows then
 publish and deploy it alongside appview, inference, and clustering. Capacitor
 releases continue to be built locally.
 
+## eMudhra CA compromise (October 2026)
+
+Treat this as an urgent outbound HTTPS client update. See the
+[incident and mitigation tracker](https://emudhra.we-have-a-problem.com/) and
+[Go security release](https://groups.google.com/g/golang-announce/c/66pojueaQek).
+The appview now requires Go 1.26.10, its Debian image checks for the patched
+CA package, and both Python services require certifi 2026.10.19 or newer.
+Publish and deploy all three changed services; source changes do not patch
+running containers.
+
+The ordinary release does **not** update the complete stack:
+
+- Update the system CA packages on both VMs and restart clients using the old
+  trust store. Host updates do not update container trust stores.
+- Refresh TAP and Caddy separately. Verify that their actual Go build versions
+  are 1.26.10 or newer on the 1.26 line, or 1.27.3 or newer; a `latest` tag or a
+  recent pull alone does not establish that they contain the mitigation.
+- Refresh the `amazon/aws-cli:latest` image used by model sync and backups, and
+  verify its bundled CA store is patched. Clustering's certifi requirement does
+  not update this separate image.
+- Check the Node 22 security release status for the frontend; Node embeds its
+  own root store. Updating Alpine's certificates alone does not establish that
+  Node rejects the compromised intermediates.
+
+Verify each relevant HTTPS client rejects the compromised chains using the
+tracker's live endpoints or offline chains, while ordinary requests still
+succeed. A DNS, timeout, or connection error is not a successful distrust test.
+
 ## Release flow
 
 1. `.github/workflows/ci.yml` runs on pull requests and `main`.

@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc g++ libc6-dev curl \
+    libpq-dev gcc g++ libc6-dev ca-certificates curl \
     && ARCH="$(dpkg --print-architecture)" \
     && curl -fsSL "https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-${ARCH}" \
     -o /usr/local/bin/supercronic \
