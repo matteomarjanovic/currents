@@ -25,6 +25,8 @@ aws() {
 		-e AWS_ACCESS_KEY_ID \
 		-e AWS_SECRET_ACCESS_KEY \
 		-e AWS_DEFAULT_REGION \
+		-e AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+		-v /etc/ssl/certs:/etc/ssl/certs:ro \
 		-v "$models:/models" \
 		amazon/aws-cli:latest \
 		--endpoint-url https://s3.fr-par.scw.cloud "$@"

@@ -96,6 +96,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Use the patched host trust store while the upstream image is unpatched.
+    volumes:
+      - /etc/ssl/certs:/etc/ssl/certs:ro
     environment:
       TAP_DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
       # Pinned to us-east on purpose — do NOT revert to the bsky.network
@@ -140,6 +143,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
+      - /etc/ssl/certs:/etc/ssl/certs:ro
       # Phase A is the safe default. Set CADDYFILE=./Caddyfile.scaleway only at Cutover B.
       - type: bind
         source: ${CADDYFILE:-./Caddyfile.scaleway.phase-a}

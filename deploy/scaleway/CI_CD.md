@@ -18,15 +18,17 @@ The ordinary release does **not** update the complete stack:
 
 - Update the system CA packages on both VMs and restart clients using the old
   trust store. Host updates do not update container trust stores.
-- Refresh TAP and Caddy separately. Verify that their actual Go build versions
-  are 1.26.10 or newer on the 1.26 line, or 1.27.3 or newer; a `latest` tag or a
-  recent pull alone does not establish that they contain the mitigation.
-- Refresh the `amazon/aws-cli:latest` image used by model sync and backups, and
-  verify its bundled CA store is patched. Clustering's certifi requirement does
-  not update this separate image.
-- Check the Node 22 security release status for the frontend; Node embeds its
-  own root store. Updating Alpine's certificates alone does not establish that
-  Node rejects the compromised intermediates.
+- TAP and Caddy mount the host's `/etc/ssl/certs` read-only, replacing their
+  stale image trust stores. Apply the updated compose file on the main VM and
+  recreate these two services separately; the release workflow excludes them.
+  Mount the whole directory so Go cannot re-add old roots from certificate
+  files alongside the bundle. Restart both after future host CA updates.
+- The AWS CLI wrappers for backup, backup verification, and model sync also
+  mount that directory and set `AWS_CA_BUNDLE`. Install the updated scripts on
+  their hosts; the release workflow does not install host scripts.
+- The frontend image requires Alpine's patched CA package and starts Node with
+  `--use-openssl-ca` and an explicit `SSL_CERT_FILE`, replacing its bundled
+  CA snapshot for both builds and SSR. Deploy the changed frontend image.
 
 Verify each relevant HTTPS client rejects the compromised chains using the
 tracker's live endpoints or offline chains, while ordinary requests still

@@ -2,7 +2,9 @@
 set -eu
 umask 077
 
-backup_dir=/var/lib/currents-backups
+backup_dir=/mnt/pgdata/currents-backups
+mountpoint -q /mnt/pgdata
+install -d -m 700 "$backup_dir"
 stamp=$(date -u +%Y-%m-%dT%H%M%SZ)
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 name="currents-$stamp.dump"
@@ -56,6 +58,8 @@ aws() {
 		-e AWS_ACCESS_KEY_ID \
 		-e AWS_SECRET_ACCESS_KEY \
 		-e AWS_DEFAULT_REGION \
+		-e AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+		-v /etc/ssl/certs:/etc/ssl/certs:ro \
 		-v "$backup_dir:/backups:ro" \
 		amazon/aws-cli:latest \
 		--endpoint-url https://s3.fr-par.scw.cloud "$@"
