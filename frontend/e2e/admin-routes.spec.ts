@@ -32,7 +32,21 @@ const overview = {
 		collectionsMissingEmbeddingCount: 0
 	},
 	jobs: [],
-	hosts: []
+	hosts: [
+		{
+			host: 'main',
+			reportedAt: new Date().toISOString(),
+			payload: {
+				memory: { totalBytes: 8e9, availableBytes: 4e9 },
+				load1: 0.5,
+				storage: { path: '/mnt/pgdata', totalBytes: 30e9, usedBytes: 16e9, availableBytes: 12e9 },
+				rootStorage: { path: '/', totalBytes: 60e9, usedBytes: 24e9, availableBytes: 33e9 },
+				containers: [],
+				modelVersion: null,
+				modelUpdatedAt: null
+			}
+		}
+	]
 };
 
 async function mockApi(page: Page, role: { admin: boolean; moderatorRole: string | null }) {
@@ -53,6 +67,9 @@ test('site admins get the operations dashboard at /admin', async ({ page }) => {
 
 	await expect(page.getByRole('heading', { name: 'Operations' })).toBeVisible();
 	await expect(page.getByText('PostgreSQL', { exact: true })).toBeVisible();
+	await expect(page.getByText('24 GB / 60 GB (33 GB free)', { exact: true })).toHaveCount(2);
+	await expect(page.getByText('Root disk', { exact: true })).toBeVisible();
+	await expect(page.getByText('Operating system and Docker storage.')).toBeVisible();
 });
 
 test('moderators get the review queue at /moderation', async ({ page }) => {

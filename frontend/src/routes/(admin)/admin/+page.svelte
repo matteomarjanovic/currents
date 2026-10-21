@@ -240,8 +240,10 @@
 					</div>
 					{#if host('main')?.payload.rootStorage}
 						<div class="flex justify-between">
-							<span class="text-muted-foreground">Backup disk free</span><span
-								>{bytes(host('main')!.payload.rootStorage!.availableBytes)}</span
+							<span class="text-muted-foreground">Root disk</span><span
+								>{bytes(host('main')!.payload.rootStorage!.usedBytes)} / {bytes(
+									host('main')!.payload.rootStorage!.totalBytes
+								)} ({bytes(host('main')!.payload.rootStorage!.availableBytes)} free)</span
 							>
 						</div>
 					{/if}
@@ -410,7 +412,9 @@
 								<div class="rounded-md bg-muted/50 p-3 text-sm">
 									<div class="flex justify-between">
 										<span>Root disk (/)</span><span
-											>{bytes(snapshot.payload.rootStorage.availableBytes)} free</span
+											>{bytes(snapshot.payload.rootStorage.usedBytes)} / {bytes(
+												snapshot.payload.rootStorage.totalBytes
+											)} ({bytes(snapshot.payload.rootStorage.availableBytes)} free)</span
 										>
 									</div>
 									<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -420,7 +424,7 @@
 										></div>
 									</div>
 									<p class="mt-1 text-xs text-muted-foreground">
-										Database backups stage on this disk.
+										Operating system and Docker storage.
 									</p>
 								</div>
 							{/if}
