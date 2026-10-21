@@ -1,4 +1,11 @@
-FROM node:22-alpine AS builder
+FROM node:22-alpine AS base
+
+# Use Alpine's patched trust store instead of Node's bundled CA snapshot.
+RUN apk add --no-cache 'ca-certificates>=20261020-r0'
+ENV NODE_OPTIONS=--use-openssl-ca
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+FROM base AS builder
 
 WORKDIR /app
 
@@ -18,7 +25,7 @@ ENV PUBLIC_POLAR_PRODUCT_MONTHLY=$PUBLIC_POLAR_PRODUCT_MONTHLY
 ENV PUBLIC_POLAR_PRODUCT_YEARLY=$PUBLIC_POLAR_PRODUCT_YEARLY
 RUN npm run build
 
-FROM node:22-alpine
+FROM base
 
 WORKDIR /app
 
