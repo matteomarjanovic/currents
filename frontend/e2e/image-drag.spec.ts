@@ -43,11 +43,11 @@ async function mockApi(page: Page) {
 	});
 }
 
-test('a desktop grid image drags its original image URL', async ({ browser }) => {
+test('a desktop grid image drags its original image URL', async ({ browser, baseURL }) => {
 	let context: BrowserContext | undefined;
 	try {
 		context = await browser.newContext({
-			baseURL: 'http://localhost:5173',
+			baseURL,
 			viewport: { width: 1280, height: 800 },
 			hasTouch: false,
 			isMobile: false

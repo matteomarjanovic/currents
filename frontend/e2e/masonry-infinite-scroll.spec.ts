@@ -258,7 +258,7 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 		return max;
 	});
 
-	await page.getByLabel('Adjust personalization').click();
+	await page.getByRole('button', { name: 'Adjust personalization', exact: true }).click();
 	await expect(page.getByRole('menu')).toBeVisible();
 	await expect(page.locator('[data-menu-dismiss-surface]')).toHaveCount(1);
 	await page.keyboard.press('Escape');
@@ -291,7 +291,9 @@ test.describe('masonry column breakpoints', () => {
 		const grid = page.locator('div[style*="grid-template-columns"]').first();
 		await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
 		await expect
-			.poll(() => grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length))
+			.poll(() =>
+				grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+			)
 			.toBe(8);
 
 		releaseSecondPage();
@@ -308,7 +310,9 @@ test.describe('full HD masonry grid', () => {
 		const grid = page.locator('div[style*="grid-template-columns"]').first();
 		await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
 		await expect
-			.poll(() => grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length))
+			.poll(() =>
+				grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+			)
 			.toBe(7);
 	});
 });

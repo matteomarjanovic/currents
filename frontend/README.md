@@ -40,3 +40,14 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## Security dependency override
+
+SvelteKit 2 still requires cookie 0.6. The scoped package override uses cookie
+0.7.2 to fix [CVE-2024-47764](https://github.com/jshttp/cookie/security/advisories/GHSA-pxg6-pf52-xh8x)
+without a SvelteKit 3 migration. Keep it until the chosen SvelteKit release
+depends on a patched cookie version.
+
+Native reconnect browser tests need the secure-preferences JavaScript bridge
+(real plugin or a registration-only test shim): the tests emulate its native
+methods through Capacitor. A local no-op web stub cannot test token persistence.
