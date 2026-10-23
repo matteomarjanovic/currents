@@ -1,3 +1,6 @@
+# Dev UI, OAuth, API and images share dev.currents.is through Nginx.
+# A second-level hostname such as dev.api.currents.is is not covered by Universal SSL.
+
 services:
   db:
     image: pgvector/pgvector:pg18-trixie
@@ -26,11 +29,11 @@ services:
       COOKIE_SAME_SITE: lax
       DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
       OAUTH_HOSTNAME: ${OAUTH_HOSTNAME:-dev.currents.is}
-      SERVICE_HOSTNAME: ${SERVICE_HOSTNAME:-dev.api.currents.is}
+      SERVICE_HOSTNAME: ${SERVICE_HOSTNAME:-dev.currents.is}
       CLIENT_SECRET_KEY: ${CLIENT_SECRET_KEY}
       CLIENT_SECRET_KEY_ID: ${CLIENT_SECRET_KEY_ID:-primary}
       FRONTEND_URL: ${FRONTEND_URL:-https://dev.currents.is}
-      CDN_URL: ${CDN_URL:-https://dev.api.currents.is}
+      CDN_URL: ${CDN_URL:-https://dev.currents.is}
       TAP_URL: ws://tap:2480/channel
       TAP_ADMIN_URL: http://tap:2480
       TAP_ADMIN_PASSWORD: ${TAP_ADMIN_PASSWORD:-}
@@ -62,7 +65,7 @@ services:
     build:
       context: ./frontend
       args:
-        PUBLIC_APPVIEW_URL: ${PUBLIC_APPVIEW_URL:-https://dev.api.currents.is}
+        PUBLIC_APPVIEW_URL: ${PUBLIC_APPVIEW_URL:-https://dev.currents.is}
         PUBLIC_WEB_APPVIEW_URL: ""
         PUBLIC_POLAR_PRODUCT_MONTHLY: ${PUBLIC_POLAR_PRODUCT_MONTHLY:-}
         PUBLIC_POLAR_PRODUCT_YEARLY: ${PUBLIC_POLAR_PRODUCT_YEARLY:-}
@@ -91,7 +94,7 @@ services:
       - appview
     command: tunnel --no-autoupdate --protocol http2 run
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_APPVIEW_TUNNEL_TOKEN:?set the dev.api.currents.is tunnel token}
+      TUNNEL_TOKEN: ${CLOUDFLARE_APPVIEW_TUNNEL_TOKEN:?set the dedicated appview tunnel token}
 
   cloudflared-frontend:
     image: cloudflare/cloudflared:latest
