@@ -205,6 +205,7 @@ func TestSaveOriginAtprotoRefAPI(t *testing.T) {
 		}
 	}))
 	defer pds.Close()
+	stubBlobTransport(t, http.DefaultTransport) // this API regression uses a local fixture PDS
 	key, err := atcrypto.GeneratePrivateKeyP256()
 	if err != nil {
 		t.Fatal(err)

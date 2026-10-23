@@ -257,3 +257,8 @@ See **`MODERATION.md`** for the full pipeline.
 | `GET` | `/api/admin/stats` | Admin | Registration analytics |
 
 See **`MODERATION.md`** for the architecture, label vocabulary, and code locations; **`MODERATION_DEPLOYMENT.md`** for keypair generation, DNS setup, and publishing the `app.bsky.labeler.service` record.
+
+## PDS image-fetch security
+
+Public-network restrictions, byte limits, safe image responses, and practical
+regression checks are documented in [PDS_FETCH_SECURITY.md](PDS_FETCH_SECURITY.md).

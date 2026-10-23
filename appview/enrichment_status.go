@@ -7,6 +7,7 @@ import (
 )
 
 var errUnsupportedMedia = errors.New("unsupported media")
+var errInvalidImage = errors.New("invalid image")
 
 // Preserve the HTTP status so enrichment can distinguish invalid content from
 // a failed request without parsing log messages.
@@ -25,6 +26,9 @@ func (e *remoteHTTPError) Error() string {
 }
 
 func enrichmentFailureKind(err error) string {
+	if errors.Is(err, errInvalidImage) {
+		return "invalid"
+	}
 	if errors.Is(err, errUnsupportedMedia) {
 		return "unsupported"
 	}

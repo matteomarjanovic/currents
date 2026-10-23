@@ -489,7 +489,7 @@ func runServer(cctx *cli.Context) error {
 	// this scope until re-auth, so the client falls back to server-side upload.
 	scopes := []string{"atproto", "repo:is.currents.actor.profile", "repo:is.currents.feed.collection", "repo:is.currents.feed.save", "repo:is.currents.graph.follow", "repo:is.currents.graph.favourite", "blob:image/*", "rpc:com.atproto.repo.uploadBlob?aud=*"}
 	bind := ":8080"
-	dir := identity.DefaultDirectory()
+	dir := publicIdentityDirectory()
 
 	var config oauth.ClientConfig
 	oauthHostname := cctx.String("oauth-hostname")
@@ -855,4 +855,16 @@ func registerLegacyAndAPI(mux *http.ServeMux, pattern string, handler http.Handl
 	method, path, _ := strings.Cut(pattern, " ")
 	mux.HandleFunc(pattern, handler)
 	mux.HandleFunc(method+" /api"+path, handler)
+}
+
+func publicIdentityDirectory() identity.Directory {
+	dir := identity.DefaultDirectory().(*identity.CacheDirectory)
+	// Preserve Indigo's caching/resolution defaults, while protecting the
+	// did:web and HTTP handle requests that precede PDS blob fetching.
+	base := dir.Inner.(*identity.BaseDirectory)
+	transport := base.HTTPClient.Transport.(*http.Transport)
+	transport.Proxy = nil
+	transport.DialContext = publicDialer.DialContext
+	base.HTTPClient.CheckRedirect = checkFetchRedirect
+	return dir
 }

@@ -86,7 +86,7 @@ func TestBlobEnrichmentRecordsFailureAndClearsItOnSuccess(t *testing.T) {
 		{"video", 200, 200, mp4, "unsupported"},
 		{"invalid image", 200, 400, []byte("invalid image"), "invalid"},
 		{"missing source", 404, 200, nil, "source_unavailable"},
-		{"temporary inference failure", 200, 503, []byte("image bytes"), "failed"},
+		{"temporary inference failure", 200, 503, testBlobPNG, "failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			store := newTestStore(t)
@@ -95,13 +95,16 @@ func TestBlobEnrichmentRecordsFailureAndClearsItOnSuccess(t *testing.T) {
 			var success atomic.Bool
 			pds := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if success.Load() {
-					w.Write([]byte("image bytes"))
+					w.Write(testBlobPNG)
 					return
 				}
 				w.WriteHeader(test.blobStatus)
 				w.Write(test.body)
 			}))
 			defer pds.Close()
+			// These lifecycle tests use a local fixture PDS. Network blocking is
+			// tested separately with the production transport in blob_security_test.
+			stubBlobTransport(t, http.DefaultTransport)
 			var inferenceCalls atomic.Int64
 			inference := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				inferenceCalls.Add(1)

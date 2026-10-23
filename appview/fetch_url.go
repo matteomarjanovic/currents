@@ -31,6 +31,33 @@ const (
 
 var errBlockedAddress = errors.New("address not allowed")
 
+// Check the resolved address at connection time, including every redirect and
+// fresh DNS resolution. Untrusted fetches must not use environment proxies,
+// which could resolve the destination outside this check.
+var publicDialer = &net.Dialer{
+	Timeout: 10 * time.Second,
+	Control: func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
+		}
+		if isDisallowedIP(net.ParseIP(host)) {
+			return errBlockedAddress
+		}
+		return nil
+	},
+}
+
+func checkFetchRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("too many redirects")
+	}
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		return errBlockedAddress
+	}
+	return nil
+}
+
 // urlFetchClient fetches arbitrary user-supplied URLs. Because the target is
 // attacker-controlled, it is the appview's SSRF boundary: the dial Control hook
 // re-checks the *resolved* IP right before connecting (so it also covers
@@ -38,36 +65,16 @@ var errBlockedAddress = errors.New("address not allowed")
 var urlFetchClient = &http.Client{
 	Timeout: 20 * time.Second,
 	Transport: &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: 10 * time.Second,
-			Control: func(_, address string, _ syscall.RawConn) error {
-				host, _, err := net.SplitHostPort(address)
-				if err != nil {
-					return err
-				}
-				if isDisallowedIP(net.ParseIP(host)) {
-					return errBlockedAddress
-				}
-				return nil
-			},
-		}).DialContext,
+		DialContext: publicDialer.DialContext,
 	},
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return errors.New("too many redirects")
-		}
-		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-			return errBlockedAddress
-		}
-		return nil
-	},
+	CheckRedirect: checkFetchRedirect,
 }
 
 // isDisallowedIP rejects anything that isn't a routable public address —
 // loopback, private (RFC1918 / ULA), link-local (incl. cloud metadata at
 // 169.254.169.254), unspecified, and multicast.
 func isDisallowedIP(ip net.IP) bool {
-	return ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
+	return ip == nil || !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() ||
 		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsMulticast() || ip.IsInterfaceLocalMulticast()
 }

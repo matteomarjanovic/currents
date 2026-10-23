@@ -10,7 +10,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -25,11 +27,12 @@ import (
 var blobHTTPClient = &http.Client{
 	Timeout: 30 * time.Second,
 	Transport: &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         publicDialer.DialContext,
 		MaxIdleConns:        200,
 		MaxIdleConnsPerHost: 32,
 		IdleConnTimeout:     90 * time.Second,
 	},
+	CheckRedirect: checkFetchRedirect,
 }
 
 // ── Inference client ──────────────────────────────────────────────────────────
@@ -415,8 +418,17 @@ func fetchBlobFromPDS(ctx context.Context, store *PgStore, dir identity.Director
 const blobUserAgent = "currents-appview/1.0 (+https://currents.is)"
 
 func getBlobFromEndpoint(ctx context.Context, pdsEndpoint, authorDID, blobCID string) ([]byte, string, error) {
-	url := fmt.Sprintf("%s/xrpc/com.atproto.sync.getBlob?did=%s&cid=%s", pdsEndpoint, authorDID, blobCID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	u, err := validateFetchURL(pdsEndpoint)
+	if err != nil {
+		return nil, "", err
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, "", fmt.Errorf("invalid PDS endpoint")
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/xrpc/com.atproto.sync.getBlob"
+	u.RawPath = ""
+	u.RawQuery = url.Values{"did": {authorDID}, "cid": {blobCID}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -429,16 +441,61 @@ func getBlobFromEndpoint(ctx context.Context, pdsEndpoint, authorDID, blobCID st
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", &remoteHTTPError{operation: "blob fetch", status: resp.StatusCode}
 	}
-	data, err := io.ReadAll(resp.Body)
+	if resp.ContentLength > maxFetchedBlobSize {
+		return nil, "", fmt.Errorf("%w: blob exceeds %d bytes", errInvalidImage, maxFetchedBlobSize)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchedBlobSize+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("reading blob: %w", err)
 	}
-	return data, resp.Header.Get("Content-Type"), nil
+	if len(data) > maxFetchedBlobSize {
+		return nil, "", fmt.Errorf("%w: blob exceeds %d bytes", errInvalidImage, maxFetchedBlobSize)
+	}
+	mimeType, err := blobImageType(data)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, mimeType, nil
+}
+
+// Match the image lexicon's blob limit. Bound bytes before decoding or proxying.
+const maxFetchedBlobSize = 20_000_000
+
+// Only serve passive raster formats, identified from bytes rather than an
+// attacker-controlled Content-Type. In particular, HTML and SVG must never be
+// returned as active documents from Currents' authenticated origin.
+func blobImageType(data []byte) (string, error) {
+	mimeType := http.DetectContentType(data)
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/x-icon":
+		return mimeType, nil
+	}
+	if bytes.HasPrefix(data, []byte("II\x2a\x00")) || bytes.HasPrefix(data, []byte("MM\x00\x2a")) {
+		return "image/tiff", nil
+	}
+	// ISO BMFF's major brand identifies HEIF/HEIC and AVIF. Do not accept
+	// generic ftyp containers (such as MP4), even if the PDS calls them images.
+	if len(data) >= 16 && string(data[4:8]) == "ftyp" {
+		switch string(data[8:12]) {
+		case "avif", "avis":
+			return "image/avif", nil
+		case "heic", "heix", "hevc", "hevx":
+			return "image/heic", nil
+		case "mif1", "msf1":
+			return "image/heif", nil
+		}
+	}
+	if strings.HasPrefix(mimeType, "video/") {
+		return "", fmt.Errorf("%w: %s", errUnsupportedMedia, mimeType)
+	}
+	return "", fmt.Errorf("%w: unrecognized image bytes (%s)", errInvalidImage, mimeType)
 }
 
 // ── Image proxy ──────────────────────────────────────────────────────────────
 
 func (s *Server) ImageProxy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	did := r.PathValue("did")
 	cid := r.PathValue("cid")
 
@@ -459,14 +516,18 @@ func (s *Server) ImageProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isHEIC(mimeType) {
-		transcoded, transcodedMime, err := s.Inference.TranscodeImage(r.Context(), data, mimeType)
+		transcoded, _, err := s.Inference.TranscodeImage(r.Context(), data, mimeType)
 		if err != nil {
 			slog.Error("image transcode failed", "did", did, "cid", cid, "err", err)
 			http.Error(w, "could not transcode image", http.StatusBadGateway)
 			return
 		}
 		data = transcoded
-		mimeType = transcodedMime
+		mimeType, err = blobImageType(data)
+		if err != nil {
+			http.Error(w, "invalid transcoded image", http.StatusBadGateway)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", mimeType)

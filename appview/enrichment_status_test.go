@@ -13,6 +13,7 @@ func TestEnrichmentFailureKind(t *testing.T) {
 		want string
 	}{
 		{"video", fmt.Errorf("%w: video/mp4", errUnsupportedMedia), "unsupported"},
+		{"invalid blob bytes", fmt.Errorf("%w: unrecognized image", errInvalidImage), "invalid"},
 		{"missing blob", &remoteHTTPError{operation: "blob fetch", status: 400}, "source_unavailable"},
 		{"missing repo wrapped by source fallback", fmt.Errorf("fetching source: %w", &remoteHTTPError{operation: "blob fetch", status: 404}), "source_unavailable"},
 		{"removed source", &remoteHTTPError{operation: "blob fetch", status: 410}, "source_unavailable"},

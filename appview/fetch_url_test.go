@@ -11,18 +11,22 @@ import (
 
 func TestIsDisallowedIP(t *testing.T) {
 	cases := map[string]bool{
-		"8.8.8.8":         false, // public
-		"1.1.1.1":         false,
-		"127.0.0.1":       true,  // loopback
-		"10.0.0.1":        true,  // private
-		"192.168.1.1":     true,  // private
-		"172.16.5.5":      true,  // private
-		"169.254.169.254": true,  // link-local (cloud metadata)
-		"0.0.0.0":         true,  // unspecified
-		"::1":             true,  // loopback v6
-		"fc00::1":         true,  // ULA
-		"fe80::1":         true,  // link-local v6
-		"2606:4700::1111": false, // public v6
+		"8.8.8.8":          false, // public
+		"1.1.1.1":          false,
+		"127.0.0.1":        true,  // loopback
+		"10.0.0.1":         true,  // private
+		"192.168.1.1":      true,  // private
+		"172.16.5.5":       true,  // private
+		"169.254.169.254":  true,  // link-local (cloud metadata)
+		"0.0.0.0":          true,  // unspecified
+		"::1":              true,  // loopback v6
+		"fc00::1":          true,  // ULA
+		"fe80::1":          true,  // link-local v6
+		"2606:4700::1111":  false, // public v6
+		"::ffff:127.0.0.1": true,  // mapped IPv4 must not bypass the check
+		"::ffff:10.0.0.1":  true,
+		"255.255.255.255":  true,
+		"224.0.0.1":        true,
 	}
 	for ipStr, want := range cases {
 		if got := isDisallowedIP(net.ParseIP(ipStr)); got != want {
