@@ -31,6 +31,9 @@ proposing new work; delete an entry when it ships.
   portability and selective recovery. Define recovery-point and recovery-time
   targets, monitor archive lag and WAL disk growth, coordinate retention so backup chains remain restorable,
   and rehearse recovery on an isolated instance to a time before a bad write.
+  Preserve a fresh recovery point before every appview deployment: evaluate a
+  named restore point with confirmed durable WAL archival and a valid base/WAL
+  chain as the future gate.
   Size and test against unique images, embeddings, and index size rather than
   user count. Do not remove the current nightly/per-appview-deployment backups
   until the replacement and recovery procedure have been verified. See
