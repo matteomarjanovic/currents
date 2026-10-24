@@ -112,12 +112,28 @@ Generate one dedicated Ed25519 deployment key. Put its private half in the
 used for administration. Install the public half for a locked
 `currents-deploy` user on both VMs.
 
+Keep root administration public keys in Scaleway instance tags or
+`/root/.ssh/instance_keys` (root-owned, mode `600`), and verify access before
+host maintenance. Scaleway regenerates `/root/.ssh/authorized_keys` at boot
+and when its ecosystem package restarts the key-fetch service; keys added
+only to that generated file can disappear during an ordinary package update.
+Keep deployment keys under the restricted `currents-deploy` account below.
+
 On the main VM, install the scripts from the checked-out repository:
 
 ```sh
 install -o root -g root -m 755 deploy/scaleway/deploy-main-release.sh /usr/local/sbin/currents-deploy-main
 install -o root -g root -m 755 deploy/scaleway/forced-main-command.sh /usr/local/sbin/currents-deploy-main-ssh
+install -d -m 755 /etc/systemd/system/docker.service.d
+install -o root -g root -m 644 deploy/scaleway/docker-pgdata.conf /etc/systemd/system/docker.service.d/currents-pgdata.conf
+systemctl daemon-reload
 ```
+
+The Docker drop-in requires `/mnt/pgdata` to be mounted before Docker starts.
+This prevents PostgreSQL from starting against an empty directory on the root
+disk if the database volume is late or unavailable at boot. Verify the volume
+with `mountpoint /mnt/pgdata` before starting Docker; reloading systemd does
+not restart running containers.
 
 On the inference VM:
 

@@ -488,6 +488,12 @@ mount -a
 git clone https://github.com/<you>/currents.git /opt/currents
 ```
 
+Before enabling Docker, install the database-volume startup guard described in
+[`deploy/scaleway/CI_CD.md`](deploy/scaleway/CI_CD.md#one-time-restricted-ssh-setup).
+The `nofail` mount lets the host boot for recovery without its database disk;
+Docker must still wait for the real `/mnt/pgdata` mount before starting any
+containers.
+
 For the first cutover, keep the existing public behavior:
 
 ```text
