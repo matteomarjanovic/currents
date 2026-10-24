@@ -32,6 +32,48 @@ SELECT sum(blks_hit)::float / nullif(sum(blks_hit) + sum(blks_read), 0)
 FROM pg_stat_database WHERE datname = 'appview';
 ```
 
+## Backup and recovery scaling
+
+Measured 2026-10-24: 916 indexed users, 1.27M saves, 869k visual identities,
+4.30M palette rows, 1.81M import items, and about 12 GB of database storage.
+`visual_identity` alone holds about 4.1 GB of data/TOAST and 4.1 GB of indexes;
+`import_item` holds about 653 MB of data plus 288 MB of indexes. Account count
+does not predict this workload: imports and unique images drive the stored
+data, and deduplicated resaves have a different cost from new images.
+
+The first full zstd level-1 backup on that date completed in 11m22s including
+upload and validation, versus 16m55s for the preceding gzip backup; its archive
+was about 3.5 GB. This is a live-workload comparison, not a throughput guarantee.
+The nightly schedule and fresh backup before every appview deployment remain
+unchanged.
+
+Current backups export every row with `pg_dump`, serializing vector values and
+compressing the result anew. Index definitions are included, but index contents
+must be rebuilt during a logical restore. Faster compression helps the export;
+index quantization helps memory and disk usage, but does not shrink stored
+full-precision embeddings or eliminate the export/restore work.
+
+Logical dumps remain useful for portability and selective recovery. As primary
+disaster recovery at larger data volumes, use physical base backups plus
+continuous WAL archiving, with incremental/differential backups where useful.
+This avoids repeatedly serializing the whole logical dataset and permits
+recovery to a chosen time within the retained, complete backup/WAL history.
+Physical backups include indexes, trading a larger full baseline for avoiding
+index rebuilds on restore. Changed files, WAL volume, storage throughput, and
+restore/replay time still need measurement; PITR is not an instant restore or
+zero-data-loss guarantee, and a replica alone does not protect against bad
+writes or deletions.
+
+Evaluate pgBackRest against the existing Docker, ARM64, and Scaleway Object
+Storage setup. Set explicit loss and downtime budgets, measure backup/restore
+throughput, monitor archive failures and retained WAL growth, and test isolated
+recovery before retiring the current policy. This work is tracked in
+`BACKLOG.md`; nightly and per-appview-deployment logical backups remain enabled.
+
+References: [PostgreSQL backup guidance](https://www.postgresql.org/docs/18/app-pgdump.html),
+[continuous archiving and PITR](https://www.postgresql.org/docs/18/continuous-archiving.html),
+and [pgBackRest](https://pgbackrest.org/user-guide.html).
+
 ## Phase 0 — now (≤ ~1M visual identities): do nothing
 
 The 8 GB instance holds a ~1.5 GB hot set with 2–3× headroom. Housekeeping

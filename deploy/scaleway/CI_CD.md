@@ -65,6 +65,12 @@ after that deadline. The timeout is not multiplied by sixty retry attempts.
 The workflow sends SSH keepalives while the backup runs, so a quiet but healthy
 backup cannot be mistaken for a dropped deployment connection.
 
+Database dumps use PostgreSQL 18's native zstd compression at level 1. Restore
+with a PostgreSQL 18 `pg_restore` built with zstd support, as in the production
+Postgres image. Compression does not change backup contents or the nightly and
+per-appview-deployment backup requirements. Long-term physical backups and
+point-in-time recovery are tracked in `BACKLOG.md` and `SCALING.md`.
+
 The main-host script must use `/opt/currents/.env.production`, with
 `OAUTH_HOSTNAME=currents.is`. `.env.production.phase-a` is historical rollback
 configuration: using it during a normal release restores the API-host OAuth

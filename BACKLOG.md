@@ -23,6 +23,19 @@ proposing new work; delete an entry when it ships.
 
 ## Engineering
 
+- **Physical PostgreSQL backups and point-in-time recovery.** Replace repeated
+  full logical dumps as the primary disaster-recovery mechanism with periodic
+  physical base backups plus continuously archived WAL in Object Storage.
+  Evaluate pgBackRest for incremental/differential backups, parallel recovery,
+  and S3-compatible storage; retain logical dumps for portability and selective
+  recovery. Define recovery-point and recovery-time targets, monitor archive lag
+  and WAL disk growth, coordinate retention so backup chains remain restorable,
+  and rehearse recovery on an isolated instance to a time before a bad write.
+  Size and test against unique images, embeddings, and index size rather than
+  user count. Do not remove the current nightly/per-appview-deployment backups
+  until the replacement and recovery procedure have been verified. See
+  `SCALING.md` for the measured baseline and recovery tradeoffs.
+
 - **Scaleway migration (completed 2026-09-13).** Motivation: the
   2026-08-04 incident — the mac mini's ISP had a degraded route to
   `relay1.us-west` and TAP fell hours behind (mitigated by pinning

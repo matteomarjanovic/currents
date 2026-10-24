@@ -898,13 +898,14 @@ Three layers, cheapest first:
    ```
 
    `deploy/scaleway/backup-postgres.sh` runs from a persistent systemd timer at
-   04:10 UTC with up to ten minutes of jitter. It creates a custom-format dump,
+   04:10 UTC with up to ten minutes of jitter. It creates a custom-format dump
+   with PostgreSQL's native `--compress=zstd:1` (lossless, faster compression),
    validates the archive catalog, uploads both the dump and a SHA-256 sidecar
    under `s3://obj-curr-db-backups/postgres/`, and removes its root-only local
    temporary files. The bucket's 30-day lifecycle rule handles retention.
-   Dump and restore staging uses `/mnt/pgdata/currents-backups` on Block Storage;
-   the root disk is too small for current dumps. The scripts require the volume
-   to be mounted and create the staging directory with mode 0700.
+   Dump and restore staging uses `/mnt/pgdata/currents-backups` on Block Storage.
+   The scripts require the volume to be mounted and create the staging
+   directory with mode 0700.
 
    The first run on 2026-08-17 captured the 4.8 GB rehearsal database as
    `currents-2026-08-17T101732Z.dump`: 993,408,454 bytes, uploaded in about four

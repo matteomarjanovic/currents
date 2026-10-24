@@ -66,7 +66,7 @@ aws() {
 }
 
 docker exec currents-db-1 \
-	pg_dump -U appview -d appview --format=custom >"$archive"
+	pg_dump -U appview -d appview --format=custom --compress=zstd:1 >"$archive"
 test -s "$archive"
 docker exec -i currents-db-1 pg_restore --list <"$archive" >/dev/null
 
