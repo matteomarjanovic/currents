@@ -26,10 +26,10 @@ proposing new work; delete an entry when it ships.
 - **Physical PostgreSQL backups and point-in-time recovery.** Replace repeated
   full logical dumps as the primary disaster-recovery mechanism with periodic
   physical base backups plus continuously archived WAL in Object Storage.
-  Evaluate pgBackRest for incremental/differential backups, parallel recovery,
-  and S3-compatible storage; retain logical dumps for portability and selective
-  recovery. Define recovery-point and recovery-time targets, monitor archive lag
-  and WAL disk growth, coordinate retention so backup chains remain restorable,
+  Evaluate pgBackRest for block-level incremental/differential backups,
+  parallel recovery, and S3-compatible storage; retain logical dumps for
+  portability and selective recovery. Define recovery-point and recovery-time
+  targets, monitor archive lag and WAL disk growth, coordinate retention so backup chains remain restorable,
   and rehearse recovery on an isolated instance to a time before a bad write.
   Size and test against unique images, embeddings, and index size rather than
   user count. Do not remove the current nightly/per-appview-deployment backups

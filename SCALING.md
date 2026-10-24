@@ -47,6 +47,12 @@ was about 3.5 GB. This is a live-workload comparison, not a throughput guarantee
 The nightly schedule and fresh backup before every appview deployment remain
 unchanged.
 
+The production WAL counter on that date showed about 121 GB generated since
+2026-10-07 (roughly 17 days). This is raw WAL generation, not a forecast of
+compressed archive storage. Size PITR retention using measured write volume
+and index-page churn; evaluate block-level incrementals because HNSW updates
+can change existing index files broadly even when relatively few rows change.
+
 Current backups export every row with `pg_dump`, serializing vector values and
 compressing the result anew. Index definitions are included, but index contents
 must be rebuilt during a logical restore. Faster compression helps the export;

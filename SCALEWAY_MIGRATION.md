@@ -931,6 +931,11 @@ currents-verify-postgres-backup currents-<timestamp>.dump
 the SHA-256 and archive catalog, restores into a uniquely named temporary
 database with `--exit-on-error`, requires a clean schema migration and zero
 invalid indexes, then removes the temporary database and downloaded files.
+This helper creates the temporary database inside the running PostgreSQL
+cluster. Check capacity for the downloaded archive, another full database,
+WAL, and index-build scratch space first. As the catalog grows, rehearse on a
+separate scratch cluster with adequate disk and vector-index build memory
+instead of consuming the live database volume's remaining space.
 The first Object Storage round-trip and full restore passed on 2026-08-17 in
 about 30 minutes with 497,307 saves, 356,769 visual identities, 6,067
 collections, 543 users, schema migration 45 clean, and zero invalid indexes.
