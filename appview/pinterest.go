@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -328,147 +327,270 @@ func ListSections(ctx context.Context, boardID, boardURL string) ([]PinterestSec
 	return out, nil
 }
 
-// IteratePins paginates BoardFeedResource for boardID. When filterSectionPins
-// is true, only pins not assigned to any section are returned (used when the
-// board's sections are imported separately). See iteratePinResource for the
-// callback contract.
-func IteratePins(ctx context.Context, boardID, boardURL, startBookmark string, filterSectionPins bool, fn func(pin PinterestPin, nextBookmark string) error) (string, error) {
-	buildOptions := func(bookmark string) map[string]any {
-		o := map[string]any{
-			"board_id":            boardID,
-			"page_size":           250,
-			"field_set_key":       "react_grid_pin",
-			"filter_section_pins": filterSectionPins,
-			"add_vase":            true,
-			"is_react":            true,
-		}
-		if bookmark != "" {
-			o["bookmarks"] = []string{bookmark}
-		}
-		return o
-	}
-	return iteratePinResource(ctx, "BoardFeedResource", boardURL, boardURL, startBookmark, buildOptions, fn)
+// PinterestClient keeps one anonymous visitor session across a user's import.
+// Pinterest restricts some visitors to a preview; retrying with the same cookie
+// does not remove that restriction.
+type PinterestClient struct {
+	http    *http.Client
+	healthy bool
 }
 
-// IterateSectionPins paginates BoardSectionPinsResource for sectionID.
-// sectionURL (e.g. "/user/board/section/") primes the session cookie and is
-// used as the source_url.
-func IterateSectionPins(ctx context.Context, sectionID, sectionURL, startBookmark string, fn func(pin PinterestPin, nextBookmark string) error) (string, error) {
-	buildOptions := func(bookmark string) map[string]any {
-		o := map[string]any{
-			"section_id": sectionID,
-			// BoardSectionPinsResource caps page_size at 50 (BoardFeedResource allows 250).
-			"page_size":     50,
-			"field_set_key": "react_grid_pin",
-		}
-		if bookmark != "" {
-			o["bookmarks"] = []string{bookmark}
-		}
-		return o
-	}
-	return iteratePinResource(ctx, "BoardSectionPinsResource", sectionURL, sectionURL, startBookmark, buildOptions, fn)
+const pinterestSessionAttempts = 5
+
+var pinterestRetryDelay = time.Second
+
+type PinterestPage struct {
+	Pins        []PinterestPin
+	Count       int // actual pins, excluding recommendation modules
+	Unsupported int
+	Next        string
+	First       bool
 }
 
-// iteratePinResource paginates a Pinterest pin-grid resource. primeURL is
-// visited first to prime an unauth session cookie — without it Pinterest
-// returns 403. fn is called for every pin that has an "orig" image; pins
-// without one (videos, story pins) are skipped. nextBookmark passed to fn is
-// the cursor for that page; persist it in list_cursor to resume after a crash.
-func iteratePinResource(ctx context.Context, resource, primeURL, sourceURL, startBookmark string, buildOptions func(bookmark string) map[string]any, fn func(pin PinterestPin, nextBookmark string) error) (string, error) {
+func newPinterestClient() *PinterestClient {
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Timeout: 30 * time.Second, Jar: jar}
-	primeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, pinterestBase+primeURL, nil)
-	if err != nil {
-		return startBookmark, err
-	}
-	primeReq.Header.Set("User-Agent", pinterestUA)
-	primeReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-	primeReq.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	primeResp, err := client.Do(primeReq)
-	if err != nil {
-		return startBookmark, fmt.Errorf("priming session: %w", err)
-	}
-	io.Copy(io.Discard, primeResp.Body)
-	primeResp.Body.Close()
+	client := *pinterestHTTP
+	client.Jar = jar
+	return &PinterestClient{http: &client}
+}
 
-	bookmark := startBookmark
-	for {
-		data, err := json.Marshal(map[string]any{"options": buildOptions(bookmark), "context": map[string]any{}})
-		if err != nil {
-			return bookmark, err
+func waitPinterest(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+type pinterestHTTPError struct{ status int }
+
+func (e pinterestHTTPError) Error() string {
+	return fmt.Sprintf("Pinterest returned HTTP %d", e.status)
+}
+
+func (p *PinterestClient) get(ctx context.Context, endpoint string, prime bool, retry func() error) ([]byte, error) {
+	var last error
+	for attempt := range 3 {
+		if attempt > 0 {
+			if err := retry(); err != nil {
+				return nil, err
+			}
+			if err := waitPinterest(ctx, time.Duration(attempt)*pinterestRetryDelay); err != nil {
+				return nil, err
+			}
 		}
-		q := url.Values{}
-		q.Set("source_url", sourceURL)
-		q.Set("data", string(data))
-		endpoint := fmt.Sprintf("%s/resource/%s/get/?%s", pinterestBase, resource, q.Encode())
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return bookmark, err
+			return nil, err
 		}
 		req.Header.Set("User-Agent", pinterestUA)
-		req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
-		req.Header.Set("X-Requested-With", "XMLHttpRequest")
-		req.Header.Set("X-Pinterest-AppState", "active")
-		req.Header.Set("X-Pinterest-PWS-Handler", "www/[username]/[slug].js")
-		req.Header.Set("Referer", "https://www.pinterest.com/")
-		resp, err := client.Do(req)
+		if prime {
+			req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+			req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+		} else {
+			req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
+			req.Header.Set("X-Requested-With", "XMLHttpRequest")
+			req.Header.Set("X-Pinterest-AppState", "active")
+			req.Header.Set("X-Pinterest-PWS-Handler", "www/[username]/[slug].js")
+			req.Header.Set("Referer", pinterestBase+"/")
+		}
+		resp, err := p.http.Do(req)
 		if err != nil {
-			return bookmark, err
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			last = err
+			continue
 		}
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 16*1024*1024))
 		resp.Body.Close()
-		if readErr != nil {
-			return bookmark, readErr
-		}
 		if resp.StatusCode != http.StatusOK {
-			preview := body
-			if len(preview) > 512 {
-				preview = preview[:512]
+			last = pinterestHTTPError{resp.StatusCode}
+			if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
+				return nil, last
 			}
-			return bookmark, fmt.Errorf("%s: status %d: %s", resource, resp.StatusCode, string(preview))
+			continue
 		}
-
-		var result struct {
-			ResourceResponse struct {
-				Data []struct {
-					ID     string `json:"id"`
-					Link   string `json:"link"`
-					Images struct {
-						Orig struct {
-							URL string `json:"url"`
-						} `json:"orig"`
-					} `json:"images"`
-				} `json:"data"`
-				Bookmark json.RawMessage `json:"bookmark"` // string or []string
-			} `json:"resource_response"`
+		if readErr != nil {
+			last = readErr
+			continue
 		}
-		if err := json.Unmarshal(body, &result); err != nil {
-			return bookmark, fmt.Errorf("parsing %s response: %w", resource, err)
-		}
-
-		next := extractBookmark(result.ResourceResponse.Bookmark)
-		for _, p := range result.ResourceResponse.Data {
-			if p.Images.Orig.URL == "" {
-				slog.Info("pinterest: skipping pin without orig image", "pin_id", p.ID, "link", p.Link, "url", fmt.Sprintf("https://www.pinterest.com/pin/%s/", p.ID))
-				continue
-			}
-			if err := fn(PinterestPin{ID: p.ID, ImageURL: p.Images.Orig.URL, SourceURL: externalSourceURL(p.Link)}, next); err != nil {
-				return bookmark, err
-			}
-		}
-		bookmark = next
-		if bookmark == "" || bookmark == "-end-" {
-			return bookmark, nil
-		}
+		return body, nil
 	}
+	return nil, last
 }
 
-// extractBookmark handles the bookmark field which Pinterest returns as either
-// a plain string or a JSON array of strings.
-func extractBookmark(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
+func (p *PinterestClient) prime(ctx context.Context, path string, retry func() error) error {
+	_, err := p.get(ctx, pinterestBase+path, true, retry)
+	return err
+}
+
+func (p *PinterestClient) page(ctx context.Context, resource, path string, options map[string]any, retry func() error) (PinterestPage, error) {
+	data, err := json.Marshal(map[string]any{"options": options, "context": map[string]any{}})
+	if err != nil {
+		return PinterestPage{}, err
 	}
+	q := url.Values{"source_url": {path}, "data": {string(data)}}
+	body, err := p.get(ctx, pinterestBase+"/resource/"+resource+"/get/?"+q.Encode(), false, retry)
+	if err != nil {
+		return PinterestPage{}, err
+	}
+	var result struct {
+		Response *struct {
+			Status string `json:"status"`
+			Data   []struct {
+				ID     string `json:"id"`
+				Type   string `json:"type"`
+				Link   string `json:"link"`
+				Images struct {
+					Orig struct {
+						URL string `json:"url"`
+					} `json:"orig"`
+				} `json:"images"`
+			} `json:"data"`
+			Bookmark json.RawMessage `json:"bookmark"`
+		} `json:"resource_response"`
+		Resource struct {
+			Options struct {
+				Bookmarks []string `json:"bookmarks"`
+			} `json:"options"`
+		} `json:"resource"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return PinterestPage{}, fmt.Errorf("parsing Pinterest response: %w", err)
+	}
+	if result.Response == nil || (result.Response.Status != "" && result.Response.Status != "success") {
+		return PinterestPage{}, fmt.Errorf("Pinterest did not return a pin listing")
+	}
+	page := PinterestPage{Next: extractBookmark(result.Response.Bookmark)}
+	if page.Next == "" && len(result.Resource.Options.Bookmarks) > 0 {
+		page.Next = result.Resource.Options.Bookmarks[0]
+	}
+	for _, pin := range result.Response.Data {
+		if pin.ID == "" || (pin.Type != "" && pin.Type != "pin") {
+			continue
+		}
+		page.Count++
+		if pin.Images.Orig.URL == "" {
+			page.Unsupported++
+			continue
+		}
+		page.Pins = append(page.Pins, PinterestPin{ID: pin.ID, ImageURL: pin.Images.Orig.URL, SourceURL: externalSourceURL(pin.Link)})
+	}
+	return page, nil
+}
+
+func pinterestBoardOptions(board string, filter bool) map[string]any {
+	return map[string]any{"board_id": board, "page_size": 250, "field_set_key": "react_grid_pin", "filter_section_pins": filter, "add_vase": true, "is_react": true}
+}
+
+func (p PinterestPage) ended() bool { return p.Next == "" || p.Next == "-end-" }
+func (p PinterestPage) preview(expected int) bool {
+	return p.ended() && p.Count <= 25 && expected > p.Count
+}
+
+// Iterate stores complete pages only. A preview may contribute new images, but
+// never establishes that a large board has been completely listed.
+func iteratePinterest(p **PinterestClient, ctx context.Context, job ImportJobRow, onPage func(PinterestPage) error, retry func() error) error {
+	path := job.SourceBoardURL
+	rootPath := path
+	if job.SourceSectionID != "" {
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) >= 2 {
+			rootPath = "/" + parts[0] + "/" + parts[1] + "/"
+		}
+	}
+	for attempt := range pinterestSessionAttempts {
+		if *p == nil || attempt > 0 {
+			if attempt > 0 {
+				if err := retry(); err != nil {
+					return err
+				}
+				if err := waitPinterest(ctx, time.Duration(attempt)*pinterestRetryDelay); err != nil {
+					return err
+				}
+			}
+			*p = newPinterestClient()
+			if err := (*p).prime(ctx, rootPath, retry); err != nil {
+				*p = nil
+				return err
+			}
+		}
+		// Sections and section-filtered boards have no comparable expected
+		// count. Check their whole parent board before trusting a new session.
+		if !(*p).healthy && (job.SourceSectionID != "" || job.FilterSectionPins || job.ListCursor != "") && max(job.BoardPinCount, job.ExpectedCount) > 25 {
+			probe, err := (*p).page(ctx, "BoardFeedResource", rootPath, pinterestBoardOptions(job.SourceBoardID, false), retry)
+			if err != nil {
+				return err
+			}
+			if probe.preview(max(job.BoardPinCount, job.ExpectedCount)) {
+				if attempt == pinterestSessionAttempts-1 {
+					*p = nil
+					return fmt.Errorf("Pinterest kept returning a limited board preview")
+				}
+				continue
+			}
+			(*p).healthy = !probe.ended() || probe.Count >= max(job.BoardPinCount, job.ExpectedCount)
+		}
+		bookmark := job.ListCursor
+		if attempt > 0 {
+			bookmark = ""
+		}
+		seen := map[string]bool{}
+		first := true
+		for {
+			resource := "BoardFeedResource"
+			options := pinterestBoardOptions(job.SourceBoardID, job.FilterSectionPins)
+			if job.SourceSectionID != "" {
+				resource = "BoardSectionPinsResource"
+				options = map[string]any{"section_id": job.SourceSectionID, "page_size": 50, "field_set_key": "react_grid_pin"}
+			}
+			if bookmark != "" {
+				options["bookmarks"] = []string{bookmark}
+			}
+			page, err := (*p).page(ctx, resource, path, options, retry)
+			if err != nil {
+				return err
+			}
+			page.First = first && bookmark == ""
+			preview := first && bookmark == "" && page.preview(job.ExpectedCount)
+			if preview {
+				page.Next = "" // a new attempt must start at page one
+			} else if page.ended() {
+				page.Next = "-end-"
+			}
+			if err := onPage(page); err != nil {
+				return err
+			}
+			if preview {
+				if attempt == pinterestSessionAttempts-1 {
+					*p = nil
+					return fmt.Errorf("Pinterest kept returning a limited board preview")
+				}
+				break
+			}
+			if !page.ended() {
+				(*p).healthy = true
+			}
+			if page.ended() {
+				return nil
+			}
+			if seen[page.Next] || page.Next == bookmark {
+				return fmt.Errorf("Pinterest repeated a page instead of continuing the board")
+			}
+			seen[page.Next] = true
+			bookmark = page.Next
+			first = false
+		}
+	}
+	return nil
+}
+
+// extractBookmark handles Pinterest's string and string-array formats.
+func extractBookmark(raw json.RawMessage) string {
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
 		return s

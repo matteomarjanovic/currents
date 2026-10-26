@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -33,6 +34,15 @@ func main() {
 		Usage:  "AT Protocol appview server",
 		Action: runServer,
 		Commands: []*cli.Command{
+			{
+				Name:   "repair-pinterest-imports",
+				Usage:  "inspect or queue recovery of legacy truncated Pinterest imports",
+				Action: runServer,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "did", Usage: "repair only this account (required when applying)"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "report candidates and destination checks without queuing repairs"},
+				},
+			},
 			{
 				Name:   "repair-orphans",
 				Usage:  "promote orphaned sections and move orphaned saves to Unsorted on their PDS",
@@ -459,8 +469,11 @@ func runServer(cctx *cli.Context) error {
 	if ingestSource != "tap" && ingestSource != "jetstream" {
 		return fmt.Errorf("invalid ingest source %q", ingestSource)
 	}
-	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" || cctx.Command.Name == "queue-jetstream-audit" {
+	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" || cctx.Command.Name == "queue-jetstream-audit" || cctx.Command.Name == "repair-pinterest-imports" {
 		mode = cctx.Command.Name
+		if mode == "repair-pinterest-imports" && cctx.String("did") == "" && !cctx.Bool("dry-run") {
+			return fmt.Errorf("applying Pinterest repair requires --did; use --dry-run for the global plan")
+		}
 		if mode == "repair-orphans" && cctx.Bool("now") && cctx.String("did") == "" {
 			return fmt.Errorf("--now requires --did")
 		}
@@ -474,7 +487,7 @@ func runServer(cctx *cli.Context) error {
 		}
 	}
 	switch mode {
-	case "all", "repair", "repair-orphans", "refresh-handles", "queue-jetstream-audit":
+	case "all", "repair", "repair-orphans", "refresh-handles", "queue-jetstream-audit", "repair-pinterest-imports":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -557,6 +570,14 @@ func runServer(cctx *cli.Context) error {
 		return nil
 	}
 	oauthClient := oauth.NewClientApp(&config, store)
+	if mode == "repair-pinterest-imports" {
+		w := &ImportWorker{Store: store, OAuth: oauthClient}
+		report, err := w.repairPinterestImports(ctx, cctx.String("did"), cctx.Bool("dry-run"))
+		if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
+			return encodeErr
+		}
+		return err
+	}
 	maintenance := &RepositoryMaintenance{Context: ctx, Store: store, OAuth: oauthClient, Dir: dir}
 	if mode == "repair-orphans" {
 		_, err := maintenance.repairOrphans(ctx, cctx.String("did"), cctx.Bool("dry-run"), cctx.Bool("now"))
@@ -771,6 +792,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/import/pinterest/boards", srv.APIPinterestBoards)
 	http.HandleFunc("GET /api/import/pinterest/sections", srv.APIPinterestSections)
 	http.HandleFunc("POST /api/import/pinterest/jobs", srv.APICreatePinterestJob)
+	http.HandleFunc("GET /api/import/sessions", srv.APIListImportSessions)
+	http.HandleFunc("POST /api/import/sessions/{id}/retry", srv.APIRetryImportSession)
 	http.HandleFunc("GET /api/import/active-session", srv.APIGetActiveImportSession)
 	http.HandleFunc("GET /api/import/sessions/{id}", srv.APIGetImportSession)
 	http.HandleFunc("GET /api/blob/alt", srv.APIGetBlobAlt)

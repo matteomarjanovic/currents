@@ -1531,7 +1531,7 @@ func TestImportJobExpectedCount(t *testing.T) {
 	boardJob := newJob("Beach/Swimsuit", 40)
 	pins := make([]PinterestPin, 0, 37)
 	for i := 0; i < 37; i++ {
-		pins = append(pins, PinterestPin{ID: fmt.Sprintf("pin%d", i), ImageURL: "https://i.pinimg.com/x.jpg"})
+		pins = append(pins, PinterestPin{ID: fmt.Sprintf("pin%d", i), ImageURL: fmt.Sprintf("https://i.pinimg.com/%d.jpg", i)})
 	}
 	if n, err := s.BulkInsertImportItems(ctx, boardJob, did, pins); err != nil || n != 37 {
 		t.Fatalf("BulkInsertImportItems = %d, %v; want 37, nil", n, err)

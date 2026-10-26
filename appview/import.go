@@ -169,6 +169,7 @@ func (s *Server) APICreatePinterestJob(w http.ResponseWriter, r *http.Request) {
 		SourceSectionID:     body.PinterestSectionID,
 		FilterSectionPins:   body.FilterSectionPins,
 		ExpectedCount:       expected,
+		BoardPinCount:       body.PinterestPinCount,
 		TargetCollectionURI: body.CollectionURI,
 	})
 	if err != nil {
@@ -194,26 +195,12 @@ func (s *Server) APIGetImportSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("loading session: %s", err), http.StatusInternalServerError)
 		return
 	}
-	type jobView struct {
-		JobID     string `json:"jobId"`
-		BoardName string `json:"boardName"`
-		Status    string `json:"status"`
-		Queued    int    `json:"queued"`
-		Running   int    `json:"running"`
-		Done      int    `json:"done"`
-		Failed    int    `json:"failed"`
-		Expected  int    `json:"expected"`
-	}
 	out := struct {
-		SessionID string    `json:"sessionId"`
-		Jobs      []jobView `json:"jobs"`
-	}{SessionID: sessionID, Jobs: make([]jobView, 0, len(jobs))}
-	for _, j := range jobs {
-		out.Jobs = append(out.Jobs, jobView{
-			JobID: j.JobID, BoardName: j.BoardName, Status: j.Status,
-			Queued: j.Queued, Running: j.Running, Done: j.Done, Failed: j.Failed,
-			Expected: j.Expected,
-		})
+		SessionID string             `json:"sessionId"`
+		Jobs      []SessionJobStatus `json:"jobs"`
+	}{sessionID, jobs}
+	if out.Jobs == nil {
+		out.Jobs = []SessionJobStatus{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
@@ -335,6 +322,7 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 		}
 	}()
 	ctx := w.Context
+	var pinterest *PinterestClient
 
 	for {
 		if ctx.Err() != nil {
@@ -346,7 +334,7 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 			slog.Warn("listing import jobs", "did", did, "err", err)
 		}
 		for _, job := range listing {
-			w.runListingStage(ctx, job)
+			w.runListingStage(ctx, job, &pinterest)
 			if ctx.Err() != nil {
 				return
 			}
@@ -360,6 +348,7 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 		if err != nil {
 			slog.Warn("counting recent import creates", "did", did, "err", err)
 		} else if hourly >= importHourlyCreateBudget || daily >= importDailyCreateBudget {
+			_ = w.Store.setImportPhase(ctx, did, "", "waiting")
 			slog.Debug("import write budget exhausted, waiting", "did", did, "hourly", hourly, "daily", daily)
 			select {
 			case <-ctx.Done():
@@ -397,11 +386,14 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 			// pause this drain; the watchdog restarts it and the import resumes
 			// once a valid session is available again.
 			_ = w.Store.PauseImportItem(ctx, item.ID)
+			_ = w.Store.setImportPhase(ctx, did, item.JobID, "reconnect")
 			slog.Warn("import paused: no valid session", "did", did)
 			return
 		}
 
+		_ = w.Store.setImportPhase(ctx, did, item.JobID, "saving")
 		if w.processItem(ctx, item, did, oauthSess) {
+			_ = w.Store.setImportPhase(ctx, did, item.JobID, "waiting")
 			select {
 			case <-ctx.Done():
 				return
@@ -443,48 +435,51 @@ func (w *ImportWorker) resumeLatestSession(ctx context.Context, did string) *oau
 	return sess
 }
 
-func (w *ImportWorker) runListingStage(ctx context.Context, job ImportJobRow) {
-	batch := make([]PinterestPin, 0, 100)
-	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
-		if _, err := w.Store.BulkInsertImportItems(ctx, job.ID, job.OwnerDID, batch); err != nil {
-			slog.Warn("inserting import items", "job_id", job.ID, "err", err)
-		}
-		batch = batch[:0]
-	}
-
-	onPin := func(p PinterestPin, nextBookmark string) error {
-		batch = append(batch, p)
-		if len(batch) >= 100 {
-			flush()
-			if cerr := w.Store.UpdateImportJobCursor(ctx, job.ID, nextBookmark); cerr != nil {
-				slog.Warn("updating list cursor", "job_id", job.ID, "err", cerr)
-			}
-		}
-		return nil
-	}
-
-	var last string
-	var err error
-	if job.SourceSectionID != "" {
-		last, err = IterateSectionPins(ctx, job.SourceSectionID, job.SourceBoardURL, job.ListCursor, onPin)
-	} else {
-		last, err = IteratePins(ctx, job.SourceBoardID, job.SourceBoardURL, job.ListCursor, job.FilterSectionPins, onPin)
-	}
-	flush()
-
-	if err != nil {
-		_ = w.Store.UpdateImportJobStatus(ctx, job.ID, "failed", err.Error())
-		slog.Warn("listing pinterest board failed", "job_id", job.ID, "board", job.SourceBoardURL, "err", err)
+func (w *ImportWorker) runListingStage(ctx context.Context, job ImportJobRow, pinterest **PinterestClient) {
+	if job.ListCursor == "-end-" {
+		_ = w.Store.finishImportListing(ctx, job.ID, "")
 		return
 	}
-	_ = w.Store.UpdateImportJobCursor(ctx, job.ID, last)
-	if err := w.Store.UpdateImportJobStatus(ctx, job.ID, "running", ""); err != nil {
-		slog.Warn("marking job running", "job_id", job.ID, "err", err)
+	// Historical section jobs did not store their parent's count. Obtain it
+	// when repairing them so a restricted visitor cannot silently omit pins.
+	if job.BoardPinCount == 0 && (job.SourceSectionID != "" || job.FilterSectionPins) {
+		var username string
+		if err := w.Store.pool.QueryRow(ctx, `SELECT username FROM import_session WHERE id=$1`, job.SessionID).Scan(&username); err != nil {
+			return
+		}
+		boards, err := ListBoards(ctx, username)
+		if err != nil {
+			_ = w.Store.finishImportListing(ctx, job.ID, "Could not check the Pinterest board. Please retry.")
+			return
+		}
+		for _, board := range boards {
+			if board.ID == job.SourceBoardID {
+				job.BoardPinCount = board.PinCount
+				break
+			}
+		}
 	}
-	slog.Info("listing complete", "job_id", job.ID, "board", job.SourceBoardURL)
+	var storeErr error
+	retry := func() error { return w.Store.setImportPhase(ctx, job.OwnerDID, job.ID, "retrying") }
+	err := iteratePinterest(pinterest, ctx, job, func(page PinterestPage) error {
+		_, storeErr = w.Store.storeImportPage(ctx, job.ID, job.OwnerDID, page, true)
+		return storeErr
+	}, retry)
+	if ctx.Err() != nil || errors.Is(err, errImportCancelled) {
+		return
+	}
+	if storeErr != nil {
+		slog.Warn("storing import page; keeping cursor for retry", "job_id", job.ID, "err", storeErr)
+		return
+	}
+	message := ""
+	if err != nil {
+		message = "Pinterest's listing was incomplete. You can retry missing images."
+		slog.Warn("listing Pinterest board incomplete", "job_id", job.ID, "err", err)
+	}
+	if err := w.Store.finishImportListing(ctx, job.ID, message); err != nil {
+		slog.Warn("finishing import listing", "job_id", job.ID, "err", err)
+	}
 }
 
 func (w *ImportWorker) failOrRequeue(ctx context.Context, item *ImportItemRow, reason string) {
