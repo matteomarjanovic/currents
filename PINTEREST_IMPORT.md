@@ -5,21 +5,21 @@ do not need a signed-in Pinterest browser or extension.
 
 ## Two distinct listing limitations
 
-The October 2026 production investigation of `graceeaw.bsky.social` /
-`graceylouwho` found some anonymous visitor sessions returned approximately
+The October 2026 production investigation found some anonymous visitor
+sessions returned approximately
 25 pins and ended pagination for boards containing hundreds or thousands.
 Replacing only `_pinterest_sess` switched the behavior in both directions.
 A working session stayed pageable across other boards; changing request
 options or cache-busting a restricted session did not help.
 
 All five large boards in a four-attempt sample produced a pageable session.
-For example, My Posh Picks yielded 3,665 actual pins against an advertised
+For example, one large board yielded 3,665 actual pins against an advertised
 3,671, whereas its latest production import had queued only 24 images.
 This is evidence for fresh-session recovery, not a permanent success-rate
 guarantee. No production records were changed during the investigation.
 
 A smaller omission persists with healthy pagination. Two fresh healthy runs
-returned the same 769 of 849 pins for Nailed it! and 187 of 230 for art.
+returned the same 769 of 849 pins for one board and 187 of 230 for another.
 The widget endpoint still reported the advertised totals. These returned
 pins all had original images; the extra item without one was a recommendation
 module. Earlier investigation measured approximately 9% omitted across a
