@@ -13,7 +13,7 @@ export const BLUESKY_APIS: Record<string, readonly string[]> = {
 
 interface Embed {
 	$type?: string;
-	images?: { image: { ref: { $link: string } } }[];
+	images?: { image: { ref: { $link: string } }; alt?: string }[];
 	media?: Embed;
 }
 
@@ -30,13 +30,13 @@ function findOrigin(value: unknown, hint: BlueskyImageOriginHint): ImageOrigin |
 	const post = value as Post;
 	const embed = (post.record ?? post.value)?.embed;
 	const images = embed?.$type === 'app.bsky.embed.recordWithMedia' ? embed.media : embed;
-	if (
-		post.uri?.startsWith(`at://${hint.did}/app.bsky.feed.post/`) &&
-		post.cid &&
-		images?.$type === 'app.bsky.embed.images' &&
-		images.images?.some((image) => image.image.ref.$link === hint.blobCid)
-	) {
+	const image =
+		images?.$type === 'app.bsky.embed.images'
+			? images.images?.find((image) => image.image.ref.$link === hint.blobCid)
+			: undefined;
+	if (post.uri?.startsWith(`at://${hint.did}/app.bsky.feed.post/`) && post.cid && image) {
 		return {
+			...(image.alt?.trim() ? { alt: image.alt } : {}),
 			originAtprotoRef: { uri: post.uri, cid: post.cid },
 			originUrl: `https://${hint.client}/profile/${hint.did}/post/${post.uri.split('/').at(-1)}`
 		};

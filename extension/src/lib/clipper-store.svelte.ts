@@ -79,7 +79,7 @@ export const clipper: ClipperState = $state({
 // collections still loading — every caller then kicks off loadClipperAuth() so
 // the dialog never waits on a network round-trip to appear.
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
-export const CLIPPER_CLOSE_MS = 350;
+export const CLIPPER_CLOSE_MS = 250;
 
 export function showClipper(data: Partial<ClipperState>) {
 	clearTimeout(closeTimer);

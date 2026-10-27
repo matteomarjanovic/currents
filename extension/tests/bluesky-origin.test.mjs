@@ -172,3 +172,24 @@ test('unknown clients do not trigger network requests', async () => {
 	};
 	assert.equal(await resolveBlueskyOrigin({ ...hint, client: 'unrelated.example' }), undefined);
 });
+
+test('only the matched Bluesky image supplies dedicated alt text, including quotes', async () => {
+	const matching = structuredClone(post);
+	matching.record.embed.images = [
+		{ alt: 'Wrong image alt', image: { ref: { $link: 'another-blob' } } },
+		{ alt: 'A red fox asleep in snow', image: { ref: { $link: blobCid } } }
+	];
+	mock([matching]);
+	assert.equal((await resolveBlueskyOrigin(hint)).alt, 'A red fox asleep in snow');
+	mock([
+		{
+			uri: 'outer',
+			record: {},
+			embed: { record: { record: { uri, cid: recordCid, value: matching.record } } }
+		}
+	]);
+	assert.equal((await resolveBlueskyOrigin(hint)).alt, 'A red fox asleep in snow');
+	matching.record.embed.images[1].alt = '  ';
+	mock([matching]);
+	assert.equal((await resolveBlueskyOrigin(hint)).alt, undefined);
+});

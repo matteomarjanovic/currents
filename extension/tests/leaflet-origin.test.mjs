@@ -161,3 +161,25 @@ test('DID web identities resolve their PDS and unavailable lookups remain option
 	};
 	assert.equal(await resolveLeafletOrigin(hint), undefined);
 });
+
+test('Leaflet uses the matching image block alt, never other blocks or cover descriptions', async () => {
+	const article = structuredClone(document);
+	article.value.content.pages[0].blocks = [
+		{
+			block: {
+				$type: 'pub.leaflet.blocks.image',
+				image: { ref: { $link: 'another-blob' } },
+				alt: 'Wrong image'
+			}
+		},
+		{ block: { ...image, alt: 'A bicycle beside a stone wall' } }
+	];
+	mock(article);
+	assert.equal((await resolveLeafletOrigin(hint)).alt, 'A bicycle beside a stone wall');
+	const cover = structuredClone(document);
+	cover.value.content = undefined;
+	cover.value.coverImage = { ref: { $link: blobCid } };
+	cover.value.description = 'Article summary';
+	mock(cover);
+	assert.equal((await resolveLeafletOrigin(hint)).alt, undefined);
+});

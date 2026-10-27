@@ -1,9 +1,5 @@
-import { resolveBlueskyOrigin } from '../lib/bluesky-origin';
-import { resolveGrainOrigin } from '../lib/grain-origin';
-import { resolvePcktOrigin } from '../lib/pckt-origin';
-import { resolveOffprintOrigin } from '../lib/offprint-origin';
-import { resolveLeafletOrigin } from '../lib/leaflet-origin';
-import type { ImageOriginHint } from '../lib/image-origin';
+import { resolveImageOrigin } from '../lib/resolve-image-origin';
+import type { ImageOrigin, ImageOriginHint } from '../lib/image-origin';
 import { blobCidFromBytes } from '../lib/blob-cid';
 import { concreteImageMime } from '../lib/image-mime';
 
@@ -238,6 +234,7 @@ async function handleSave(message: {
 	alt?: string;
 	originUrl: string;
 	imageOrigin?: ImageOriginHint;
+	resolvedOrigin?: ImageOrigin;
 	attributionUrl?: string;
 	attributionLicense?: string;
 	attributionCredit?: string;
@@ -255,18 +252,7 @@ async function handleSave(message: {
 	const auth = await getAuth();
 	if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
-	const origin =
-		message.imageOrigin?.app === 'bluesky'
-			? await resolveBlueskyOrigin(message.imageOrigin)
-			: message.imageOrigin?.app === 'grain'
-				? await resolveGrainOrigin(message.imageOrigin)
-				: message.imageOrigin?.app === 'pckt'
-					? await resolvePcktOrigin(message.imageOrigin)
-					: message.imageOrigin?.app === 'offprint'
-						? await resolveOffprintOrigin(message.imageOrigin)
-						: message.imageOrigin?.app === 'leaflet'
-							? await resolveLeafletOrigin(message.imageOrigin)
-							: undefined;
+	const origin = message.resolvedOrigin ?? (await resolveImageOrigin(message.imageOrigin));
 	let imageBlob: Blob;
 	try {
 		imageBlob = await fetchImageBlob(message.imgUrl);
@@ -459,6 +445,12 @@ export default defineBackground(() => {
 	browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		if (message.type === 'SAVE_IMAGE') {
 			handleSave(message).then(sendResponse);
+			return true;
+		}
+		if (message.type === 'RESOLVE_IMAGE_ORIGIN') {
+			resolveImageOrigin(message.imageOrigin)
+				.then((origin) => sendResponse({ origin }))
+				.catch(() => sendResponse({}));
 			return true;
 		}
 		if (message.type === 'LOOKUP_ALT') {

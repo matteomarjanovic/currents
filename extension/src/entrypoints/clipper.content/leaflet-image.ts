@@ -19,6 +19,22 @@ export function leafletImageOrigin(img: HTMLImageElement): LeafletImageOriginHin
 	const card = img.closest('.postItemMedium, .postLinkLarge');
 	const link = card?.querySelector<HTMLAnchorElement>(':scope > a.publishedPostLink[href]');
 	if (card) return link ? { app: 'leaflet', ...identity, pages: [link.href] } : undefined;
+	const reader = img.closest('.readerLeafletPost');
+	if (reader) {
+		// The reader keeps the feed URL/head, but the article's main page ID
+		// carries its record URI. Subpages use their own IDs beside that main page.
+		const page =
+			img.closest('[id^="post-page-at://"]') ?? reader.querySelector('[id^="post-page-at://"]');
+		const record = leafletDocumentUri(page?.id.slice('post-page-'.length) || '');
+		if (!record) return;
+		const [did, , rkey] = record.slice(5).split('/');
+		return {
+			app: 'leaflet',
+			...identity,
+			uri: record,
+			pages: [`https://leaflet.pub/p/${encodeURIComponent(did)}/${rkey}`]
+		};
+	}
 	const record = leafletDocumentUri(uri || canonical || '');
 	if (record)
 		return { app: 'leaflet', ...identity, uri: record, pages: [location.href.split('#')[0]] };

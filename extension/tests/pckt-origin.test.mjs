@@ -128,3 +128,25 @@ test('failed lookups and non-Pckt pages leave provenance unknown', async () => {
 		undefined
 	);
 });
+
+test('Pckt uses authored image alt while excluding captions and upload filenames', () => {
+	const article = structuredClone(page);
+	const blocks = structuredClone(content);
+	blocks.content[0].attrs.alt = 'A blue heron standing in shallow water';
+	blocks.content[0].attrs.title = 'A caption';
+	article.props.post.content = JSON.stringify(blocks);
+	assert.equal(
+		pcktPageOrigin(article, image, source).alt,
+		'A blue heron standing in shallow water'
+	);
+	for (const alt of ['', '  ', 'photo.png', 'Photo.png']) {
+		blocks.content[0].attrs.alt = alt;
+		article.props.post.content = JSON.stringify(blocks);
+		assert.equal(pcktPageOrigin(article, image, source).alt, undefined);
+	}
+	const filenameImage = image.replace('photo.png', 'Summer-holiday.jpg');
+	blocks.content[0].attrs.src = filenameImage;
+	blocks.content[0].attrs.alt = 'Summer holiday.jpg';
+	article.props.post.content = JSON.stringify(blocks);
+	assert.equal(pcktPageOrigin(article, filenameImage, source).alt, undefined);
+});

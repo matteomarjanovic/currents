@@ -17,10 +17,21 @@ function imageKey(raw: string) {
 	return url.href;
 }
 
-function mediaMatches(media: unknown, key: string): boolean {
-	if (!media || typeof media !== 'object') return false;
-	if (Array.isArray(media)) return media.some((item) => mediaMatches(item, key));
-	const data = media as Record<string, unknown>;
+interface Media {
+	alt_text?: string;
+	[key: string]: unknown;
+}
+
+function findMedia(media: unknown, key: string): Media | undefined {
+	if (!media || typeof media !== 'object') return;
+	if (Array.isArray(media)) {
+		for (const item of media) {
+			const match = findMedia(item, key);
+			if (match) return match;
+		}
+		return;
+	}
+	const data = media as Media;
 	return [
 		'url',
 		'thumbnail',
@@ -33,24 +44,36 @@ function mediaMatches(media: unknown, key: string): boolean {
 	].some((field) => {
 		const src = data[field];
 		return typeof src === 'string' && /^https?:/.test(src) && imageKey(src) === key;
-	});
+	})
+		? data
+		: undefined;
 }
 
-function contentHasImage(value: unknown, key: string): boolean {
-	if (!value || typeof value !== 'object') return false;
-	if (Array.isArray(value)) return value.some((item) => contentHasImage(item, key));
+function findContentImage(value: unknown, key: string): { alt?: string } | undefined {
+	if (!value || typeof value !== 'object') return;
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			const image = findContentImage(item, key);
+			if (image) return image;
+		}
+		return;
+	}
 	const block = value as {
 		type?: string;
-		attrs?: { mediaData?: unknown; src?: string };
+		attrs?: { mediaData?: unknown; src?: string; alt?: string; altText?: string };
 		content?: unknown;
 	};
-	if (
-		['singleImage', 'imageGrid', 'imageCarousel'].includes(block.type ?? '') &&
-		mediaMatches(block.attrs?.mediaData, key)
-	)
-		return true;
-	if (block.type === 'image' && block.attrs?.src && imageKey(block.attrs.src) === key) return true;
-	return contentHasImage(block.content, key);
+	if (['singleImage', 'imageGrid', 'imageCarousel'].includes(block.type ?? '')) {
+		const media = findMedia(block.attrs?.mediaData, key);
+		if (media)
+			return {
+				alt:
+					block.type === 'singleImage' ? (block.attrs?.altText ?? media.alt_text) : media.alt_text
+			};
+	}
+	if (block.type === 'image' && block.attrs?.src && imageKey(block.attrs.src) === key)
+		return block.attrs;
+	return findContentImage(block.content, key);
 }
 
 interface Article {
@@ -89,8 +112,12 @@ export function offprintPageOrigin(
 	)
 		return;
 	const key = imageKey(imageUrl);
-	if (!mediaMatches(article.published_cover, key) && !contentHasImage(article.content, key)) return;
+	const cover = findMedia(article.published_cover, key);
+	const image = findContentImage(article.content, key);
+	if (!cover && !image) return;
+	const alt = image?.alt ?? cover?.alt_text;
 	return {
+		...(alt?.trim() ? { alt } : {}),
 		originAtprotoRef: { uri: article.atp_uri, cid: article.atp_cid },
 		originUrl: source.origin + source.pathname + source.search
 	};

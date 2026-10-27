@@ -52,4 +52,6 @@ export type ImageOriginHint =
 export interface ImageOrigin {
 	originAtprotoRef: StrongRef;
 	originUrl: string;
+	// Only the matched image's dedicated accessibility text, never a caption.
+	alt?: string;
 }

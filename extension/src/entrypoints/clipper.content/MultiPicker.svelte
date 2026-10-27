@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
 	import { clipper, hideClipper, rememberCollection } from '../../lib/clipper-store.svelte';
+	import { imageMetadata } from '../../lib/image-metadata.svelte';
 	import { collectPageImages } from './collect-images';
 	import MultiCollectionSelector from '../../lib/MultiCollectionSelector.svelte';
 	import SaveDetails, { newDetails, type Details } from '../../lib/SaveDetails.svelte';
@@ -22,7 +23,10 @@
 	const navigate = useViewNavigation();
 	type ItemState = 'saving' | 'saved' | 'error';
 	type Step = 'images' | 'details' | 'collections';
-	type ImageDetails = { alt: string; details: Details; labels: SvelteSet<string> };
+	type ImageDetails = ReturnType<typeof imageMetadata> & {
+		details: Details;
+		labels: SvelteSet<string>;
+	};
 	let step = $state<Step>('images');
 	let candidates = $state([...clipper.candidates]);
 	const selected = new SvelteSet<string>();
@@ -94,17 +98,23 @@
 	});
 
 	function toggle(url: string) {
-		if (!selected.delete(url)) selected.add(url);
+		if (!selected.delete(url)) {
+			selected.add(url);
+			detailsFor(url);
+		}
+	}
+
+	function detailsFor(url: string) {
+		return (imageDetails[url] ??= {
+			...imageMetadata(candidates.find((c) => c.url === url)?.origin),
+			details: newDetails(),
+			labels: new SvelteSet<string>()
+		});
 	}
 
 	function openDetails(url: string) {
-		const candidate = candidates.find((c) => c.url === url);
-		if (!candidate) return;
-		imageDetails[url] ??= {
-			alt: '',
-			details: newDetails(),
-			labels: new SvelteSet<string>()
-		};
+		if (!candidates.some((c) => c.url === url)) return;
+		detailsFor(url);
 		void navigate(() => {
 			editingUrl = url;
 			step = 'details';
@@ -134,14 +144,16 @@
 				if (!url) return;
 				const candidate = candidates.find((c) => c.url === url);
 				if (!candidate) continue;
-				const metadata = imageDetails[url];
+				const metadata = detailsFor(url);
 				states[url] = 'saving';
 				try {
+					await metadata.ready;
 					const res = await browser.runtime.sendMessage({
 						type: 'SAVE_IMAGE',
 						imgUrl: url,
 						collectionUris: pendingUris(url, uris),
-						alt: metadata?.alt.trim() ?? '',
+						alt: metadata.data.alt.trim(),
+						resolvedOrigin: metadata.data.origin,
 						originUrl: clipper.originUrl,
 						imageOrigin: candidate.origin,
 						text: metadata?.details.note.trim() ?? '',
@@ -245,7 +257,7 @@
 							class="pointer-events-none absolute bottom-1.5 left-1.5 grid size-5 place-items-center rounded-full bg-foreground text-background"
 							><Check class="size-3" /></span
 						>
-						{#if !imageDetails[candidate.url]?.alt.trim()}
+						{#if !imageDetails[candidate.url]?.data.alt.trim()}
 							<span
 								class="pointer-events-none absolute top-6 left-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none text-white"
 								>Alt missing</span
@@ -309,7 +321,8 @@
 			<AltTextField
 				imageUrl={preview.url}
 				suggestion={preview.alt}
-				bind:value={imageDetails[editingUrl].alt}
+				bind:value={imageDetails[editingUrl].data.alt}
+				oninput={() => (imageDetails[editingUrl].data.edited = true)}
 			/>
 			<SaveDetails
 				details={imageDetails[editingUrl].details}

@@ -59,8 +59,7 @@ without a record container or a unique mounted source remain unattributed.
 Avatars, banners, videos, and external-link preview thumbnails do not acquire
 a post reference. Unknown ownership, deleted/unavailable posts, and lookup
 failures leave the reference absent and do not prevent saving. Lookup requests
-are public and send no credentials. Image download URLs and manually entered
-alt text are unchanged.
+are public and send no credentials. Image download URLs are unchanged.
 
 ### Browser extension: Grain
 
@@ -119,6 +118,13 @@ URLs. Article metadata identifies the document URI; feed and embedded-post
 cards supply their own article links. Detection covers `leaflet.pub`, its
 subdomains, and custom-domain publications exposing Leaflet's AT metadata.
 
+In Leaflet's client-side reader, the URL and head metadata remain on the feed.
+Detection reads the document URI from the opened article's main page DOM ID,
+then performs the same image-to-record verification. Reader saves use Leaflet's
+`/p/{did}/{rkey}` article permalink as their web source. Switching articles uses
+the newly rendered page ID, including when the feed cards are unmounted. Missing
+document IDs remain unattributed rather than falling back to stale head metadata.
+
 The worker resolves the author's DID to their public PDS and fetches the source
 `site.standard.document` or legacy `pub.leaflet.document` record without
 credentials. It uses that record's CID only when the selected blob matches a
@@ -126,7 +132,7 @@ cover or a Leaflet image block, including nested linear/canvas content. Avatars,
 website preview images, unrelated blobs, and unavailable records stay
 unattributed. The web source remains the containing article, and image download
 URLs are unchanged. Unlike the Pckt/Offprint snapshots, the reference identifies
-the version verified on the PDS at save time.
+the version verified on the PDS during the metadata lookup.
 
 `image-origin.ts` defines the shared hint/result types, and
 `clipper.content/detect-image-origin.ts` dispatches DOM detection to the
@@ -135,6 +141,25 @@ Bluesky, Grain, Pckt, Offprint, and Leaflet adapters. Source resolution lives in
 `lib/offprint-origin.ts`, and `lib/leaflet-origin.ts`.
 Other Atmosphere apps can add adapters using the same
 per-image transport and multipart field, without changing the save record flow.
+
+### Image alt text
+
+The adapters also return dedicated alt text for the matched image, when present.
+Bluesky-compatible clients use the embedded image's `alt`; Grain uses the photo
+view's `alt`, never its rendered gallery-title/caption fallback. Leaflet uses the
+matched image block's `alt` (a cover alone has no dedicated alt field). Pckt uses
+image-content `attrs.alt`, excluding its upload-filename default; Offprint uses
+single-image `attrs.altText` or media `alt_text`, and per-item media `alt_text`
+for grids/carousels. Captions, titles, article summaries, and arbitrary DOM alt
+attributes are never used as fallbacks.
+
+Single mode starts the lookup when the form mounts; multi mode starts one per
+selected image. The field is editable, limited to 2,000 characters, and never
+overwritten after the user types or clears it. Saving waits for that image's
+pending lookup, then reuses the resolved source record/version. An empty or
+explicitly cleared field stays empty; the worker does not refill it at save
+time. Unknown sources and failed lookups leave the field empty without blocking
+saving. The paused generic suggestion UI remains paused.
 
 ## Editing a save
 

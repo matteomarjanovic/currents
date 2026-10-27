@@ -135,3 +135,34 @@ test('unavailable articles and unsupported hosts never block saving', async () =
 		undefined
 	);
 });
+
+test('Offprint uses dedicated block altText instead of captions or default media text', () => {
+	const article = structuredClone(page);
+	article.props.article.content.content[0].attrs.altText = 'A small white boat on a lake';
+	article.props.article.content.content[0].attrs.mediaData.alt_text = 'Library alt';
+	assert.equal(offprintPageOrigin(article, image, source).alt, 'A small white boat on a lake');
+	article.props.article.content.content[0].attrs.altText = '';
+	assert.equal(offprintPageOrigin(article, image, source).alt, undefined);
+	delete article.props.article.content.content[0].attrs.altText;
+	assert.equal(offprintPageOrigin(article, image, source).alt, 'Library alt');
+	article.props.article.content.content[0].attrs.mediaData.alt_text = '';
+	article.props.article.content.content[0].content = [{ type: 'text', text: 'A caption' }];
+	assert.equal(offprintPageOrigin(article, image, source).alt, undefined);
+});
+test('Offprint grids and carousels use each matched media item alt independently', () => {
+	for (const type of ['imageGrid', 'imageCarousel']) {
+		const article = structuredClone(page);
+		article.props.article.content.content = [
+			{
+				type,
+				attrs: {
+					mediaData: [
+						{ url: 'https://cdn.offprint.app/p/999/other.jpg', alt_text: 'Wrong image' },
+						{ url: image, alt_text: 'Three birds on a fence' }
+					]
+				}
+			}
+		];
+		assert.equal(offprintPageOrigin(article, image, source).alt, 'Three birds on a fence');
+	}
+});

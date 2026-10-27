@@ -18,25 +18,46 @@ function imageKey(raw: string) {
 	return url.href;
 }
 
-function contentHasImage(node: unknown, key: string): boolean {
-	if (!node || typeof node !== 'object') return false;
-	if (Array.isArray(node)) return node.some((child) => contentHasImage(child, key));
+interface ContentImage {
+	src?: string;
+	url?: string;
+	alt?: string;
+}
+
+function findContentImage(node: unknown, key: string): ContentImage | undefined {
+	if (!node || typeof node !== 'object') return;
+	if (Array.isArray(node)) {
+		for (const child of node) {
+			const image = findContentImage(child, key);
+			if (image) return image;
+		}
+		return;
+	}
 	const block = node as {
 		type?: string;
-		attrs?: { src?: string; images?: { src?: string; url?: string }[] };
+		attrs?: ContentImage & { images?: ContentImage[] };
 		content?: unknown;
 	};
 	if ((block.type === 'imageUpload' || block.type === 'image') && block.attrs?.src) {
-		if (imageKey(block.attrs.src) === key) return true;
+		if (imageKey(block.attrs.src) === key) return block.attrs;
 	}
-	if (
-		block.attrs?.images?.some((image) => {
-			const src = image.src || image.url;
-			return src && imageKey(src) === key;
-		})
-	)
-		return true;
-	return contentHasImage(block.content, key);
+	const image = block.attrs?.images?.find((image) => {
+		const src = image.src || image.url;
+		return src && imageKey(src) === key;
+	});
+	return image ?? findContentImage(block.content, key);
+}
+
+function authoredAlt(image?: ContentImage) {
+	if (!image?.alt?.trim()) return;
+	// Pckt seeds attrs.alt from the upload filename. It isn't authored alt text.
+	const filename = decodeURIComponent(new URL(image.src || image.url!).pathname.split('/').at(-1)!);
+	const normalize = (s: string) =>
+		s
+			.replace(/\\u[0-9a-f]{4}/gi, '')
+			.replace(/[^\p{L}\p{N}]/gu, '')
+			.toLowerCase();
+	return normalize(image.alt) === normalize(filename) ? undefined : image.alt;
 }
 
 interface Post {
@@ -79,11 +100,20 @@ export function pcktPageOrigin(
 	const cover = [post.cover_image_url, post.cover_image_original_url].some(
 		(src) => src && imageKey(src) === key
 	);
-	if (!cover) {
-		const content = typeof post.content === 'string' ? JSON.parse(post.content) : post.content;
-		if (!contentHasImage(content, key)) return;
+	let content = post.content;
+	if (typeof content === 'string') {
+		try {
+			content = JSON.parse(content);
+		} catch {
+			if (!cover) return;
+			content = undefined;
+		}
 	}
+	const image = findContentImage(content, key);
+	if (!cover && !image) return;
+	const alt = authoredAlt(image);
 	return {
+		...(alt ? { alt } : {}),
 		originAtprotoRef: { uri: post.atproto_uri, cid: post.atproto_cid },
 		originUrl: source.origin + source.pathname + source.search
 	};

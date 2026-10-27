@@ -122,7 +122,17 @@
 <div use:scrollFade class="min-h-0 flex-1 overflow-y-auto">
 	{#if creating}
 		<div class="flex flex-col gap-2 pt-1">
-			<p class="text-base font-semibold">New {createParent ? 'section' : 'collection'}</p>
+			<div class="flex items-center gap-2">
+				<Button
+					variant="outline"
+					size="icon-sm"
+					class="rounded-full"
+					aria-label="Back"
+					disabled={disabled || submitting}
+					onclick={() => navigate(cancelCreate, -1)}><ChevronLeft class="size-4" /></Button
+				>
+				<p class="text-base font-semibold">New {createParent ? 'section' : 'collection'}</p>
+			</div>
 			<Input
 				placeholder={createParent ? 'Section name' : 'Collection name'}
 				{disabled}
@@ -133,16 +143,9 @@
 			/>
 			<Textarea placeholder="Description (optional)" bind:value={description} rows={2} {disabled} />
 			{#if error}<p class="text-xs text-destructive">{error}</p>{/if}
-			<div class="flex gap-2">
-				<Button variant="outline" class="flex-1" onclick={() => navigate(cancelCreate, -1)}
-					>Cancel</Button
-				>
-				<Button
-					class="flex-1"
-					onclick={createCollection}
-					disabled={!name.trim() || submitting || disabled}>Create</Button
-				>
-			</div>
+			<Button onclick={createCollection} disabled={!name.trim() || submitting || disabled}
+				>Create</Button
+			>
 		</div>
 	{:else if parent}
 		<button

@@ -32,12 +32,15 @@ export function leafletHtmlDocument(html: string) {
 	}
 }
 
-function hasImage(value: unknown, blobCid: string): boolean {
-	if (!value || typeof value !== 'object') return false;
-	if (Array.isArray(value)) return value.some((child) => hasImage(child, blobCid));
-	const block = value as { $type?: string; image?: { ref?: { $link?: string } } };
-	if (block.$type === 'pub.leaflet.blocks.image') return block.image?.ref?.$link === blobCid;
-	return Object.values(value).some((child) => hasImage(child, blobCid));
+function findImage(value: unknown, blobCid: string): { alt?: string } | undefined {
+	if (!value || typeof value !== 'object') return;
+	const block = value as { $type?: string; alt?: string; image?: { ref?: { $link?: string } } };
+	if (block.$type === 'pub.leaflet.blocks.image')
+		return block.image?.ref?.$link === blobCid ? block : undefined;
+	for (const child of Object.values(value)) {
+		const image = findImage(child, blobCid);
+		if (image) return image;
+	}
 }
 
 async function get(url: string) {
@@ -89,9 +92,13 @@ export async function resolveLeafletOrigin(
 						: value.content?.$type === 'pub.leaflet.content'
 							? value.content
 							: undefined;
-				if (value.coverImage?.ref?.$link !== hint.blobCid && !hasImage(content, hint.blobCid))
-					continue;
-				return { originAtprotoRef: { uri, cid: record.cid }, originUrl };
+				const image = findImage(content, hint.blobCid);
+				if (value.coverImage?.ref?.$link !== hint.blobCid && !image) continue;
+				return {
+					...(image?.alt?.trim() ? { alt: image.alt } : {}),
+					originAtprotoRef: { uri, cid: record.cid },
+					originUrl
+				};
 			} catch {
 				// A missing article or record can still leave another candidate to check.
 			}

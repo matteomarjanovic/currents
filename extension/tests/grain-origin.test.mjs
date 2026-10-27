@@ -98,3 +98,12 @@ test('unsupported gallery links do not cause arbitrary network requests', async 
 		undefined
 	);
 });
+
+test('Grain uses the photo alt field and never a gallery title or caption fallback', async () => {
+	mock([{ ...photo, alt: 'A cormorant drying its wings', caption: 'At the lake' }]);
+	assert.equal((await resolveGrainOrigin(hint)).alt, 'A cormorant drying its wings');
+	for (const alt of [undefined, '', '  ']) {
+		mock([{ ...photo, alt, title: 'At the lake', caption: 'At the lake, photo 1 of 2' }]);
+		assert.equal((await resolveGrainOrigin(hint)).alt, undefined);
+	}
+});

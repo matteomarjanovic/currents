@@ -14,6 +14,7 @@ interface Photo {
 	cid: string;
 	thumb: string;
 	fullsize: string;
+	alt?: string;
 }
 
 export async function resolveGrainOrigin(
@@ -44,6 +45,7 @@ export async function resolveGrainOrigin(
 			}) as Photo[];
 			if (new Set(photos.map((photo) => photo.uri)).size !== 1) continue;
 			return {
+				...(photos[0].alt?.trim() ? { alt: photos[0].alt } : {}),
 				originAtprotoRef: { uri: photos[0].uri, cid: photos[0].cid },
 				originUrl: url.href
 			};

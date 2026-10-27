@@ -9,6 +9,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { scrollFade } from '../../lib/scroll-fade';
 	import { useViewNavigation } from '../../lib/view-navigation';
+	import { imageMetadata } from '../../lib/image-metadata.svelte';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Plus from '@lucide/svelte/icons/plus';
 
@@ -22,7 +23,7 @@
 	let editingDetails = $state(false);
 	let width = $state(0);
 	let height = $state(0);
-	let alt = $state('');
+	const { data: metadata, ready: metadataReady } = imageMetadata(clipper.siteHints.imageOrigin);
 	const details = $state(newDetails(clipper.siteHints.attributionCredit ?? ''));
 	const labels = new SvelteSet<string>();
 	const navigate = useViewNavigation();
@@ -33,12 +34,14 @@
 		saveState = 'saving';
 		clipper.locked = true;
 		try {
+			await metadataReady;
 			const response = await browser.runtime.sendMessage({
 				type: 'SAVE_IMAGE',
 				imgUrl: clipper.imgUrl,
 				collectionUris,
 				text: details.note.trim(),
-				alt: alt.trim(),
+				alt: metadata.alt.trim(),
+				resolvedOrigin: metadata.origin,
 				originUrl: clipper.originUrl,
 				imageOrigin: clipper.siteHints.imageOrigin,
 				attributionUrl: details.attributionUrl.trim(),
@@ -110,7 +113,7 @@
 					disabled={busy}
 					onclick={() => navigate(() => (editingDetails = true))}>+ Add details</Button
 				>
-				{#if !alt.trim()}
+				{#if !metadata.alt.trim()}
 					<span
 						class="pointer-events-none absolute top-6 left-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] leading-none text-white"
 						>Alt missing</span
@@ -132,7 +135,8 @@
 		<AltTextField
 			imageUrl={clipper.imgUrl}
 			suggestion={clipper.altText}
-			bind:value={alt}
+			bind:value={metadata.alt}
+			oninput={() => (metadata.edited = true)}
 			disabled={busy}
 		/>
 

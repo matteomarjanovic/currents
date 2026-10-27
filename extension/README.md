@@ -35,6 +35,17 @@ Leaflet article images and feed covers retain their document reference after
 matching the selected image to the author's public PDS record. Standard and
 legacy Leaflet documents are supported, including custom-domain publications.
 
+For these supported AT Protocol apps, dedicated alt text from the matched image
+prefills its editable details field in both single and multi-image saves.
+Captions, filenames, and generic page alt attributes are not copied. Editing or
+clearing the field takes precedence over any pending source lookup.
+
+Alt-text regression checks: after building the extension and installing the
+frontend dependencies, run `node tests/alt-autofill.browser.mjs` from `extension/`.
+These use mocked pages, public metadata responses, and save endpoints.
+`node tests/leaflet-reader.browser.mjs` covers Leaflet's client-side reader,
+including changing articles without navigating away from the feed URL.
+
 ## Build from source
 
 Prerequisites: Node.js ≥ 20 (built and tested with 24.x) and npm.

@@ -7,8 +7,15 @@
 		suggestion?: string;
 		value: string;
 		disabled?: boolean;
+		oninput?: () => void;
 	}
-	let { imageUrl, suggestion = '', value = $bindable(''), disabled = false }: Props = $props();
+	let {
+		imageUrl,
+		suggestion = '',
+		value = $bindable(''),
+		disabled = false,
+		oninput
+	}: Props = $props();
 	const id = $props.id();
 	/* Suggestions are paused; keep the implementation for a future revisit.
 	let networkSuggestion = $state('');
@@ -41,6 +48,7 @@
 		{id}
 		placeholder="Describe the image for people who use screen readers (optional)"
 		bind:value
+		{oninput}
 		{disabled}
 		maxlength={2000}
 		rows={2}
