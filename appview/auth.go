@@ -286,7 +286,8 @@ func (s *Server) serveExtensionSessionBridge(w http.ResponseWriter, token string
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "origin")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; form-action "+strings.TrimRight(s.ServiceURL, "/"))
+	// Chrome checks form-action against the API's redirect back to the frontend too.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; form-action "+strings.TrimRight(s.ServiceURL, "/")+" "+strings.TrimRight(s.FrontendURL, "/"))
 	extensionSessionBridgePage.Execute(w, struct{ Action, Token string }{
 		Action: strings.TrimRight(s.ServiceURL, "/") + "/oauth/extension-session",
 		Token:  token,

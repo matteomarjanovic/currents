@@ -147,6 +147,11 @@ func TestExtensionSessionBridgeSetsAPIHostCookie(t *testing.T) {
 	if got := bridgePage.Header().Get("Referrer-Policy"); got != "origin" {
 		t.Fatalf("bridge referrer policy = %q, want origin for the form POST", got)
 	}
+	// Both the initial POST and its redirect destination must be allowed; Chrome
+	// otherwise leaves the user on the bridge instead of the countdown page.
+	if got := bridgePage.Header().Get("Content-Security-Policy"); got != "default-src 'none'; script-src 'unsafe-inline'; form-action https://api.currents.is https://currents.is" {
+		t.Fatalf("bridge CSP must allow only the API and frontend form destinations: %q", got)
+	}
 	if !strings.Contains(bridgePage.Body.String(), `action="https://api.currents.is/oauth/extension-session"`) ||
 		!strings.Contains(bridgePage.Body.String(), `name="token" value="`+token+`"`) {
 		t.Fatalf("extension bridge page does not submit the session to the API host: %s", bridgePage.Body.String())
