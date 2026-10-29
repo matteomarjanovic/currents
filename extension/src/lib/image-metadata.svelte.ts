@@ -9,7 +9,7 @@ export function imageMetadata(hint?: ImageOriginHint) {
 	});
 	const ready = hint
 		? browser.runtime
-				.sendMessage({ type: 'RESOLVE_IMAGE_ORIGIN', imageOrigin: hint })
+				.sendMessage($state.snapshot({ type: 'RESOLVE_IMAGE_ORIGIN', imageOrigin: hint }))
 				.then((response) => {
 					data.origin = response?.origin;
 					if (!data.edited && !data.alt && data.origin?.alt)

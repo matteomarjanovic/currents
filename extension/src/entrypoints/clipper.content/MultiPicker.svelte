@@ -148,20 +148,22 @@
 				states[url] = 'saving';
 				try {
 					await metadata.ready;
-					const res = await browser.runtime.sendMessage({
-						type: 'SAVE_IMAGE',
-						imgUrl: url,
-						collectionUris: pendingUris(url, uris),
-						alt: metadata.data.alt.trim(),
-						resolvedOrigin: metadata.data.origin,
-						originUrl: clipper.originUrl,
-						imageOrigin: candidate.origin,
-						text: metadata?.details.note.trim() ?? '',
-						attributionUrl: metadata?.details.attributionUrl.trim() ?? '',
-						attributionLicense: metadata?.details.attributionLicense.trim() ?? '',
-						attributionCredit: metadata?.details.attributionCredit.trim() ?? '',
-						labels: metadata ? [...metadata.labels].join(',') : ''
-					});
+					const res = await browser.runtime.sendMessage(
+						$state.snapshot({
+							type: 'SAVE_IMAGE',
+							imgUrl: url,
+							collectionUris: pendingUris(url, uris),
+							alt: metadata.data.alt.trim(),
+							resolvedOrigin: metadata.data.origin,
+							originUrl: clipper.originUrl,
+							imageOrigin: candidate.origin,
+							text: metadata?.details.note.trim() ?? '',
+							attributionUrl: metadata?.details.attributionUrl.trim() ?? '',
+							attributionLicense: metadata?.details.attributionLicense.trim() ?? '',
+							attributionCredit: metadata?.details.attributionCredit.trim() ?? '',
+							labels: metadata ? [...metadata.labels].join(',') : ''
+						})
+					);
 					if (res.savedCollections?.length) {
 						for (const uri of res.savedCollections) successfulDestinations.add(uri);
 						savedByUrl[url] = [...new Set([...(savedByUrl[url] ?? []), ...res.savedCollections])];

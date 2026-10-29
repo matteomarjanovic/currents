@@ -131,6 +131,25 @@ try {
 		host = domain;
 		await page.goto(`https://${host}/`, { waitUntil: 'domcontentloaded' });
 		await page.locator('currents-clipper').waitFor({ state: 'attached' });
+		// Firefox clones extension messages; enforce that boundary in Chromium too.
+		const session = await context.newCDPSession(page);
+		const worlds = [];
+		session.on('Runtime.executionContextCreated', ({ context }) => worlds.push(context));
+		await session.send('Runtime.enable');
+		const world = worlds.find(
+			(world) => world.origin === `chrome-extension://${new URL(worker.url()).hostname}`
+		);
+		expect(world).toBeDefined();
+		const result = await session.send('Runtime.evaluate', {
+			contextId: world.id,
+			expression: `(() => {
+				const sendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+				chrome.runtime.sendMessage = async (message, ...args) =>
+					sendMessage(structuredClone(message), ...args);
+			})()`
+		});
+		expect(result.exceptionDetails).toBeUndefined();
+		await session.detach();
 	}
 	async function open(i = 0) {
 		await page.locator(`#image${i}`).dispatchEvent('contextmenu');

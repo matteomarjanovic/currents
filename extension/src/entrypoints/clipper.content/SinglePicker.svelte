@@ -35,20 +35,22 @@
 		clipper.locked = true;
 		try {
 			await metadataReady;
-			const response = await browser.runtime.sendMessage({
-				type: 'SAVE_IMAGE',
-				imgUrl: clipper.imgUrl,
-				collectionUris,
-				text: details.note.trim(),
-				alt: metadata.alt.trim(),
-				resolvedOrigin: metadata.origin,
-				originUrl: clipper.originUrl,
-				imageOrigin: clipper.siteHints.imageOrigin,
-				attributionUrl: details.attributionUrl.trim(),
-				attributionLicense: details.attributionLicense.trim(),
-				attributionCredit: details.attributionCredit.trim(),
-				labels: Array.from(labels).join(',')
-			});
+			const response = await browser.runtime.sendMessage(
+				$state.snapshot({
+					type: 'SAVE_IMAGE',
+					imgUrl: clipper.imgUrl,
+					collectionUris,
+					text: details.note.trim(),
+					alt: metadata.alt.trim(),
+					resolvedOrigin: metadata.origin,
+					originUrl: clipper.originUrl,
+					imageOrigin: clipper.siteHints.imageOrigin,
+					attributionUrl: details.attributionUrl.trim(),
+					attributionLicense: details.attributionLicense.trim(),
+					attributionCredit: details.attributionCredit.trim(),
+					labels: Array.from(labels).join(',')
+				})
+			);
 			for (const uri of response.savedCollections ?? []) saved.add(uri);
 			rememberCollection(response.savedCollections?.findLast((uri: string) => !!uri) ?? '');
 			if (response.ok) {
