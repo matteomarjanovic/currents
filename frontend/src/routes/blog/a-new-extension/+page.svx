@@ -1,0 +1,33 @@
+---
+title: A new extension
+description:
+    The redesigned Currents browser extension introduces quick-save buttons, multi-image saving, and better interoperability with Atmosphere apps.
+date: '2026-10-28'
+standardSiteRkey: '3myxgn5ulbsyr'
+---
+
+One of the most convenient ways to save images to Currents while navigating the web is using the browser extension. Following some suggestions from users, I redesigned both the saving flows and the UI, trying to make it more pleasant and immediate to use.
+
+The first addition is a button with the Currents logo, placed at the bottom left of images on any website, that lets you quickly save single images to your collections. From the extension settings (top right gear button), you can decide if you want to see that quick-save button on images on any website, or only on specific websites. You can still use the "right-click → Save to Currents" method if you prefer.
+
+<video src="/blog/extension-single-image.mp4" autoplay muted loop playsinline disablepictureinpicture aria-label="Saving a single image with the Currents browser extension"></video>
+
+Another new feature is the possibility to save multiple images from the same page: it just takes one click on the extension icon to open a grid view to select the images you want, and add details to them, like notes, alt text, labels, attribution. Once the images are selected, you can just select the collections you want to save them to, and click the save button.
+
+<video src="/blog/extension-multiple-images.mp4" autoplay muted loop playsinline disablepictureinpicture aria-label="Selecting and saving multiple images with the Currents browser extension"></video>
+
+One last new thing is a step forward in interoperability with the rest of the Atmosphere<span id="atmosphere-note-ref"></span>[\*](#atmosphere-note "Read the note about the Atmosphere"): every time you save an image from a compatible Atmosphere app, the save will carry a reference to the specific record that contained the image. For this first version, the supported apps are [Bluesky](https://bsky.app), [mu](https://mu.social), [Blacksky](https://blacksky.community), [Northsky](https://northsky.app), [Anisota](https://anisota.net), [Witchsky](https://witchsky.app), [Tokimeki](https://tokimeki.blue) (microblogging apps), [Grain](https://grain.social) (photo sharing app), [Pckt](https://pckt.blog), [Offprint](https://offprint.app), [Leaflet](https://leaflet.pub) (blogging).
+If one of your favorite Atmosphere apps is missing, reach out and it will be added! For now, the raw reference will show up in the saved image details in *organize* mode, but I plan to add a nice card in image details in explore mode, which displays a human-readable view of the original record, as well as the possibility to open it with the app of choice.
+
+The new extension is available on the stores ([Chrome](https://chromewebstore.google.com/detail/save-to-currents/kdifjldjjhopgdhppjpknloichglmmdi), [Firefox](https://addons.mozilla.org/en-US/firefox/addon/save-to-currents/)), don't hesitate to try it out and give feedback!
+
+Now I'll be working on refining the mobile app, which will soon submit for review to the app stores. As always, you can leave any suggestions on the [UserInput board](https://userinput.app/s/did:plc:jaur46k6ijyfvl4lojza7eic/3mob6zfay3e2d) (you can log in with your Currents username), where you can also check what I'm currently focusing on.
+
+As of today, there are almost 1000 registered users, and 4 paying supporters, and I'm so grateful for that. The project is not financially sustainable yet, but your feedback has been so positive so far and I'm enjoying the journey.
+
+Thanks for reading!
+
+Matteo
+
+---
+[\*](#atmosphere-note-ref "Back to the paragraph about the Atmosphere")<span id="atmosphere-note"></span> the Atmosphere is the ecosystem of apps built on [AT Protocol](https://atproto.com), a technology developed by Bluesky. Such apps let you use one account to access them all, while keeping you in control of your data. Currents is one of them, and we'll have a dedicated page for explaining what that means to nontechnical people in our user guide, which is on the roadmap. Check out [ATStore](https://atstore.fyi/) for a list of the apps in the ecosystem.
