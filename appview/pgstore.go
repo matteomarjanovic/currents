@@ -3153,26 +3153,23 @@ type ClusterMedoid struct {
 // filtered to those that have a precomputed canonical embedding.
 func (m *PgStore) GetCollectionsByImportance(ctx context.Context, viewerDID string, topN int) ([]CollectionImportance, error) {
 	rows, err := m.pool.Query(ctx, `
-		WITH ranked AS (
+		WITH scores AS MATERIALIZED (
 			SELECT
-				c.uri,
-				c.canonical_embedding,
-				SUM(EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)) AS score
-			FROM save s
-			JOIN collection c ON c.uri = s.collection_uri
-			WHERE s.author_did = $1
-			  AND s.created_at IS NOT NULL
-			  AND c.canonical_embedding IS NOT NULL
-			  AND NOT EXISTS (
-				  SELECT 1 FROM feed_pref fp
-				  WHERE fp.viewer_did = $1
-				    AND c.uri = ANY(fp.excluded_collections)
-			  )
-			GROUP BY c.uri, c.canonical_embedding
+				collection_uri,
+				SUM(EXP(-0.01 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400)) AS score
+			FROM save
+			WHERE author_did = $1 AND created_at IS NOT NULL
+			GROUP BY collection_uri
 		)
-		SELECT uri, canonical_embedding, score
-		FROM ranked
-		ORDER BY score DESC, uri ASC
+		SELECT c.uri, c.canonical_embedding, scores.score
+		FROM scores
+		JOIN collection c ON c.uri = scores.collection_uri
+		WHERE c.canonical_embedding IS NOT NULL
+		  AND NOT EXISTS (
+			  SELECT 1 FROM feed_pref fp
+			  WHERE fp.viewer_did = $1 AND c.uri = ANY(fp.excluded_collections)
+		  )
+		ORDER BY scores.score DESC, c.uri ASC
 		LIMIT $2
 	`, viewerDID, topN)
 	if err != nil {
@@ -3370,7 +3367,31 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			WHERE v.author_did = $1 AND v.pds_blob_cid = s.pds_blob_cid
 		)`
 	}
+	// ln(score) preserves the popularity × decay × daily-jitter ordering while
+	// avoiding decimal EXP for every image (and floating-point EXP underflow on
+	// old saves). Zero-saver identities keep their zero-score position at the end.
+	// Rank only IDs first: carrying image metadata through this join spills to disk.
 	query := `
+		WITH ranked AS MATERIALIZED (
+			SELECT s.uri, (
+				COALESCE(LN(NULLIF(vi.saver_count, 0)::double precision), '-Infinity'::double precision)
+				- 0.1::double precision * EXTRACT(EPOCH FROM (NOW() - s.created_at))::double precision / 86400
+				+ LN(0.8::double precision + 0.4::double precision * (hashtext(s.uri || current_date::text) & 2147483647) / 2147483648.0)
+			) AS score
+			FROM visual_identity vi
+			JOIN save s ON s.uri = vi.canonical_save_uri
+			WHERE s.author_did <> ALL($4)
+			  AND (vi.junk_score IS NULL OR vi.junk_score < $5)
+			  AND ($1 = '' OR NOT EXISTS (
+			      SELECT 1 FROM hidden_feed_image h
+			      WHERE h.viewer_did = $1 AND h.visual_identity_id = vi.id
+			  ))
+			  AND s.created_at IS NOT NULL
+			  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
+			  ` + excludeClause + `
+			ORDER BY score DESC
+			LIMIT $2 OFFSET $3
+		)
 		SELECT
 			s.uri,
 			s.pds_blob_cid,
@@ -3409,23 +3430,9 @@ func (m *PgStore) GetGlobalFeedSaves(ctx context.Context, viewerDID string, excl
 			s.dominant_colors,
 			COALESCE(s.alt_text, ''),
 			COALESCE(s.mime_type, '')
-		FROM visual_identity vi
-		JOIN save s ON s.uri = vi.canonical_save_uri
-		WHERE s.author_did <> ALL($4)
-		  AND (vi.junk_score IS NULL OR vi.junk_score < $5)
-		  AND ($1 = '' OR NOT EXISTS (
-		      SELECT 1 FROM hidden_feed_image h
-		      WHERE h.viewer_did = $1 AND h.visual_identity_id = vi.id
-		  ))
-		  AND s.created_at IS NOT NULL
-		  AND NOT EXISTS (SELECT 1 FROM blob_moderation_state b WHERE b.blob_cid = s.pds_blob_cid AND b.harm_state = 'blocked')
-		  ` + excludeClause + `
-		ORDER BY (
-			vi.saver_count
-			* EXP(-0.1 * EXTRACT(EPOCH FROM (NOW() - s.created_at)) / 86400)
-			* (0.8 + 0.4 * (hashtext(s.uri || current_date::text) & 2147483647) / 2147483648.0)
-		) DESC
-		LIMIT $2 OFFSET $3
+		FROM ranked
+		JOIN save s ON s.uri = ranked.uri
+		ORDER BY ranked.score DESC
 	`
 	rows, err := m.pool.Query(ctx, query, viewerDID, limit, offset, m.cfg.HiddenDIDs, feedJunkScoreMax)
 	if err != nil {

@@ -49,13 +49,16 @@ The feed is implemented as a small set of candidate pools, mixed together with w
 The global pool is a single query over all visual identities, ranked by a **time-decayed popularity score**:
 
 ```
-score = save_count × exp(−0.01 × age_in_days)
+score = saver_count × exp(−0.1 × age_in_days) × daily_jitter
 ```
 
-- `save_count` rewards images that have been saved by multiple users.
-- The exponential decay (same formula used elsewhere in the app, e.g. collection importance) means a 100-day-old image's score is ~37% of a brand-new image with the same save count. A 1-year-old image decays to ~2.5%.
-- No minimum `save_count` — every image with a visual identity appears. Unpopular or new images simply rank lower.
+- `saver_count` counts distinct saving users, so one user saving an image into several collections does not inflate popularity.
+- Exponential decay gives a 10-day-old image ~37% of a brand-new image's score at the same popularity.
+- `daily_jitter` is in `[0.8, 1.2)`, seeded by `(save URI, current_date)`, so it rotates daily and stays stable within a day.
+- No minimum `saver_count` — every eligible image with a visual identity can appear. Unpopular or old images simply rank lower.
 - When the feed is purely global, pagination is a clean offset over this single sorted result set.
+
+The query evaluates `ln(score)` with native double-precision arithmetic rather than computing a decimal exponential for every image. This is the same ordering: `ln(saver_count) − 0.1 × age_in_days + ln(daily_jitter)`. Zero-saver rows sort last. It selects the page's IDs before loading image metadata and viewer state, so the ranking join carries only the fields it needs. Filters still apply before pagination; no ranking cache or freshness delay is introduced.
 
 ### Positive personalization (`personalized > 0`)
 
@@ -137,7 +140,9 @@ For each pool, the server prefetches a deeper ANN page than the outward-facing p
 fetchLimit = max(limit × 3, limit + 25)
 ```
 
-This gives the mixer enough headroom to skip duplicates and still fill the page.
+This gives the mixer enough headroom to skip duplicates and still fill the page. Personal's up-to-three ANN queries run concurrently, retaining their original pool positions before mixing; completion order never determines ranking or cursor offsets. New worlds retains sequential cluster selection because each choice excludes earlier successful choices.
+
+Collection importance is aggregated over the viewer's saves before joining collection embeddings. A covering `(author_did, pds_blob_cid)` index also supplies collection URIs, timestamps and save URIs, serving both this aggregation and per-candidate viewer lookups without scanning the save heap.
 
 Feed assembly then works in two phases:
 

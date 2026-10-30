@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/syntax"
@@ -1785,24 +1787,39 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		selectRng := rand.New(rand.NewSource(cursorState.Seed))
 		mixRng := rand.New(rand.NewSource(cursorState.Seed ^ feedMixSeedSalt))
-		appendPersonalizedPool := func(key string, embedding []float32, offset int) error {
-			candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, fetchLimit+1, offset)
+		loadPersonalizedPool := func(pool *feedCandidatePool, embedding []float32) error {
+			candidates, err := s.Store.SearchSavesByEmbedding(r.Context(), embedding, viewerStr, excludeSaved, fetchLimit+1, pool.Offset)
 			if err != nil {
 				return err
 			}
-			more := len(candidates) > fetchLimit
-			if more {
+			pool.More = len(candidates) > fetchLimit
+			if pool.More {
 				candidates = candidates[:fetchLimit]
 			}
-			if len(candidates) == 0 {
+			pool.Items = candidates
+			return nil
+		}
+		var poolLoads sync.WaitGroup
+		appendPersonalizedPool := func(key string, embedding []float32, offset int) error {
+			pool := &feedCandidatePool{Key: key, Offset: offset}
+			if requestedMode == feedCursorModePositive {
+				// Reserve the position before starting work: completion order must not
+				// change seeded mixing or cursor offsets. At most three searches run.
+				personalizedPools = append(personalizedPools, pool)
+				poolLoads.Go(func() {
+					if err := loadPersonalizedPool(pool, embedding); err != nil {
+						slog.Error("SearchSavesByEmbedding (feed)", "collection", key, "err", err)
+					}
+				})
 				return nil
 			}
-			personalizedPools = append(personalizedPools, &feedCandidatePool{
-				Key:    key,
-				Offset: offset,
-				Items:  candidates,
-				More:   more,
-			})
+			// New worlds chooses its next cluster only after a successful search.
+			if err := loadPersonalizedPool(pool, embedding); err != nil {
+				return err
+			}
+			if len(pool.Items) > 0 {
+				personalizedPools = append(personalizedPools, pool)
+			}
 			return nil
 		}
 
@@ -1909,6 +1926,10 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		poolLoads.Wait()
+		personalizedPools = slices.DeleteFunc(personalizedPools, func(pool *feedCandidatePool) bool {
+			return len(pool.Items) == 0
+		})
 		if len(personalizedPools) > 0 {
 			colWeight := personalizedWeight / float64(len(personalizedPools))
 			for _, pool := range personalizedPools {
