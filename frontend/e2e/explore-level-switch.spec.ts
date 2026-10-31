@@ -116,3 +116,52 @@ test('the Explore entry route opens the saved default feed', async ({ page }) =>
 
 	await expect(page).toHaveURL(/\/explore\/new-worlds/);
 });
+
+test('an expired feed cursor offers a fresh first page', async ({ page }) => {
+	await mockApi(page);
+	let firstPages = 0;
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getFeed**`, (route) => {
+		if (new URL(route.request().url()).searchParams.has('cursor')) {
+			return route.fulfill({
+				status: 400,
+				contentType: 'application/json',
+				body: JSON.stringify({ error: 'ExpiredCursor' })
+			});
+		}
+		firstPages++;
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				feed: [makeSave(firstPages === 1 ? 1 : 2)],
+				cursor: firstPages === 1 ? 'expired' : null
+			})
+		});
+	});
+	await page.goto('/explore/general');
+	await expect(page.getByRole('alert')).toContainText('The feed has refreshed');
+	await expect(page.locator('img[alt="general-tile-1"]')).toBeVisible();
+	await page.getByRole('button', { name: 'Refresh feed', exact: true }).click();
+	await expect(page.locator('img[alt="general-tile-2"]')).toBeVisible();
+	await expect(page.locator('img[alt="general-tile-1"]')).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	expect(firstPages).toBe(2);
+});
+
+test('a failed feed request can be refreshed', async ({ page }) => {
+	await mockApi(page);
+	let fail = true;
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getFeed**`, (route) => {
+		if (fail) return route.fulfill({ status: 502, body: 'upstream unavailable' });
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ feed: generalFeed })
+		});
+	});
+	await page.goto('/explore/general');
+	await expect(page.getByRole('alert')).toContainText('Couldn’t load the feed');
+	fail = false;
+	await page.getByRole('button', { name: 'Refresh feed', exact: true }).click();
+	await expect(page.locator('img[alt="general-tile-1"]')).toBeVisible();
+});

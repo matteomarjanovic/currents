@@ -837,6 +837,7 @@ func runServer(cctx *cli.Context) error {
 	slog.Info("pds wipe worker started")
 	go maintenance.Run()
 	slog.Info("repository maintenance started")
+	go store.RunGlobalFeedRefresh(ctx)
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)

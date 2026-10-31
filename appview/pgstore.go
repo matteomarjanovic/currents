@@ -3349,7 +3349,7 @@ func (m *PgStore) HideFeedImage(ctx context.Context, viewerDID, saveURI string) 
 	return found, err
 }
 
-// GetGlobalFeedSaves returns saves from across the network, ranked by a
+// GetGlobalFeedSaves serves legacy cursors and first-build warmup, ranked by a
 // time-decayed popularity score: saver_count * exp(-0.1 * age_in_days) —
 // distinct savers, so one user saving an image into many collections doesn't
 // inflate it. A ±20% jitter seeded by (uri, current_date) rotates similarly

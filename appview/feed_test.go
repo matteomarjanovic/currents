@@ -92,6 +92,36 @@ func TestFeedCursorGlobalRejectsSeed(t *testing.T) {
 	}
 }
 
+func TestFeedSnapshotCursorValidation(t *testing.T) {
+	want := feedCursor{Version: 2, Mode: feedCursorModeGlobal, SnapshotID: 17, GlobalOffset: 63}
+	encoded, err := encodeFeedCursor(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeFeedCursor(encoded)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshot round trip = %#v, %v", got, err)
+	}
+	for _, cursor := range []feedCursor{
+		{Version: 1, Mode: feedCursorModeGlobal, SnapshotID: 1},
+		{Version: 2, Mode: feedCursorModeGlobal},
+		{Version: 2, Mode: feedCursorModeGlobal, SnapshotID: -1},
+		{Version: 2, Mode: feedCursorModeGlobal, SnapshotID: 1, GlobalOffset: -1},
+	} {
+		if err := cursor.validate(); err == nil {
+			t.Fatalf("invalid cursor accepted: %#v", cursor)
+		}
+	}
+	pool := &feedCandidatePool{Offset: 3, Positions: []int{7, 12, 19}}
+	if pool.nextOffset() != 3 {
+		t.Fatal("unconsumed pool advanced its position")
+	}
+	pool.consumed = 2
+	if pool.nextOffset() != 12 {
+		t.Fatal("snapshot cursor counted eligible rows instead of absolute positions")
+	}
+}
+
 func TestSampleCollectionsDeterministicAndDistinct(t *testing.T) {
 	cands := []CollectionImportance{
 		{URI: "a", Score: 50},

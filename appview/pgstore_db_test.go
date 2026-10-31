@@ -97,6 +97,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 	t.Helper()
 	_, err := s.pool.Exec(context.Background(), `
 		TRUNCATE save, collection, "user", follow, favourite_collection, pinned_collection,
+			global_feed_snapshot,
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref, hidden_feed_image,
 			label, blob_moderation_state, review_item, report, moderation_event,
 			import_session, admin, operations_job_run, operations_host_snapshot, blob_enrichment_failure,

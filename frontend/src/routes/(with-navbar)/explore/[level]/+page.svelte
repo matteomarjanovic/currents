@@ -45,6 +45,7 @@
 
 		const res = await apiFetch(`/xrpc/is.currents.feed.getFeed?${params}`);
 		const data = await res.json();
+		if (!res.ok) throw new Error(data.error === 'ExpiredCursor' ? 'ExpiredCursor' : 'FeedError');
 		return { items: data.feed, cursor: data.cursor };
 	});
 
@@ -192,7 +193,16 @@
 		longPressSave
 		discoveryFeed
 	/>
-	{#if feed.hasMore}
+	{#if feed.error}
+		<div role="alert" class="flex flex-col items-center gap-3 py-8 text-center">
+			<p class="text-sm text-muted-foreground">
+				{feed.error instanceof Error && feed.error.message === 'ExpiredCursor'
+					? 'The feed has refreshed. Load the latest images to keep exploring.'
+					: 'Couldn’t load the feed. Refresh to try again.'}
+			</p>
+			<Button variant="outline" onclick={refreshFeed}>Refresh feed</Button>
+		</div>
+	{:else if feed.hasMore}
 		<div bind:this={sentinel} class="h-1"></div>
 	{/if}
 {/if}
@@ -202,7 +212,7 @@
      hides the scrollbar, so the button never moves; the latched --sb places it
      on the grid's border while the scrollbar is showing. -->
 <div
-	class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] bottom-[calc(env(safe-area-inset-bottom)-0.125rem)] z-20 hidden md:flex md:right-[calc(1rem+var(--sb)+100%-100vw)] md:bottom-[calc(env(safe-area-inset-bottom)+0.875rem)]"
+	class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] bottom-[calc(env(safe-area-inset-bottom)-0.125rem)] z-20 hidden md:right-[calc(1rem+var(--sb)+100%-100vw)] md:bottom-[calc(env(safe-area-inset-bottom)+0.875rem)] md:flex"
 	style="--sb: {scrollbarInset}px"
 >
 	<PersonalizationButton />

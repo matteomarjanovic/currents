@@ -49,16 +49,22 @@ The feed is implemented as a small set of candidate pools, mixed together with w
 The global pool is a single query over all visual identities, ranked by a **time-decayed popularity score**:
 
 ```
-score = saver_count × exp(−0.1 × age_in_days) × daily_jitter
+score = saver_count × exp(−0.1 × age_in_days) × jitter
 ```
 
 - `saver_count` counts distinct saving users, so one user saving an image into several collections does not inflate popularity.
 - Exponential decay gives a 10-day-old image ~37% of a brand-new image's score at the same popularity.
-- `daily_jitter` is in `[0.8, 1.2)`, seeded by `(save URI, current_date)`, so it rotates daily and stays stable within a day.
+- `jitter` is in `[0.8, 1.2)`, seeded by `(save URI, UTC three-hour bucket)`.
 - No minimum `saver_count` — every eligible image with a visual identity can appear. Unpopular or old images simply rank lower.
-- When the feed is purely global, pagination is a clean offset over this single sorted result set.
+- The complete ordering is built in the background every three hours and stored in PostgreSQL as visual-identity IDs and absolute positions. New images and popularity changes enter this ordering at the next successful refresh.
 
-The query evaluates `ln(score)` with native double-precision arithmetic rather than computing a decimal exponential for every image. This is the same ordering: `ln(saver_count) − 0.1 × age_in_days + ln(daily_jitter)`. Zero-saver rows sort last. It selects the page's IDs before loading image metadata and viewer state, so the ranking join carries only the fields it needs. Filters still apply before pagination; no ranking cache or freshness delay is introduced.
+The builder evaluates `ln(score)` with native double-precision arithmetic: `ln(saver_count) − 0.1 × age_in_days + ln(jitter)`. Zero-saver rows sort last; save URI and visual-identity ID break ties. It stores no image metadata, vectors or viewer state. Reads resolve the current canonical save and apply moderation, junk scores, hidden authors/images and already-saved exclusions before taking a page, so these visibility changes remain immediate.
+
+The refresh worker checks on startup and every minute, building only when the latest version is at least three hours old. A transaction and advisory lock prevent duplicate builds across appviews and publish a complete ranking atomically. Failed builds retain the last successful version and retry on the next check. Only the two latest completed generations are retained.
+
+Staging measurements on 2026-10-31: about 899k ranked images occupied 79 MB per generation including the position index (158 MB for two). The initial build took 15.7 s and a warm refresh 4.5 s; page retrieval used the position index, with a 4.4 ms database plan and about 71 ms median public API time. These are sample measurements, not latency guarantees.
+
+New cursors pin a generation and the last consumed absolute position. Filtering or deleting an earlier image cannot shift later positions, and a background refresh cannot reorder an ongoing scroll. The previous generation remains available across refreshes and app restarts; after it is pruned the API returns `ExpiredCursor`, and Explore offers **Refresh feed**. Existing v1 cursors continue on the legacy daily ranking. Until the first background build completes, new sessions also use that live fallback.
 
 ### Positive personalization (`personalized > 0`)
 
@@ -105,7 +111,7 @@ The seed drives three levers, none of which touches the importance *formula* its
 2. **Which images** within each pool — a seeded start offset in `[0, 60)` per pool (above). This is the lever that gives variety even to viewers with 3 or fewer collections, where collection sampling can't vary the selection.
 3. **Interleaving** — `buildFeedPage`'s weighted pool mixing is seeded from the same seed (a salted derivation, so it's independent of the collection-sampling draws).
 
-The **global feed (`personalized = 0`) is deliberately excluded** from this: it keeps its own `(uri, current_date)` jitter that rotates once a day and stays reproducible within a day, which is what its offset pagination relies on.
+The **global feed (`personalized = 0`) is deliberately excluded** from this per-request seed: it uses the shared three-hour ranking above.
 
 ### Mixing global and personalized pools
 
@@ -154,9 +160,11 @@ Duplicates are removed within a page, and each pool's cursor offset advances by 
 
 Pagination is mode-aware:
 
-- Global mode stores only a single global offset.
+- Global mode stores a snapshot generation and an absolute position (legacy v1 cursors retain their single live-query offset).
 - Positive mode stores collection URIs plus per-collection offsets.
 - Negative mode stores cluster-medoid visual-identity IDs plus per-seed offsets.
+
+Mixed modes also carry the global generation and consumed global position. Global positions advance only for candidates actually consumed by the mixer, including duplicate skips, rather than the full prefetched page.
 
 Because the cursor keeps the chosen pools fixed, page 2 and later continue the same retrieval plan instead of recomputing it.
 

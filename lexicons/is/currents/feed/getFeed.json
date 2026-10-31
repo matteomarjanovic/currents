@@ -5,6 +5,12 @@
     "main": {
       "type": "query",
       "description": "Get a ranked feed of saves from across the network. Auth is optional; if provided, viewer-specific state is included. The personalized flag is only effective for authenticated requests.",
+      "errors": [
+        {
+          "name": "ExpiredCursor",
+          "description": "This global feed ranking has expired. Request a new first page without a cursor."
+        }
+      ],
       "parameters": {
         "type": "params",
         "properties": {

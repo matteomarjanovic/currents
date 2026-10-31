@@ -41,11 +41,12 @@ type feedCursor struct {
 	Collections  []feedCursorCollection `json:"c,omitempty"`
 	Seeds        []feedCursorSeed       `json:"s,omitempty"`
 	GlobalOffset int                    `json:"g,omitempty"`
+	SnapshotID   int64                  `json:"f,omitempty"`
 	// Seed drives per-request variety in the personalized/serendipity feeds
 	// (collection sampling + per-pool start offsets + pool interleaving). Minted
 	// on the first page and carried across pages so pagination stays stable within
 	// a scroll session while a fresh load (new seed) reshuffles. Unused (0) for the
-	// global feed, which keeps its own daily jitter.
+	// global feed, which carries its own shared ranking version.
 	Seed int64 `json:"r,omitempty"`
 }
 
@@ -60,12 +61,13 @@ type feedCursorSeed struct {
 }
 
 type feedCandidatePool struct {
-	Key      string
-	Weight   float64
-	Offset   int
-	Items    []SaveRow
-	More     bool
-	consumed int
+	Key       string
+	Weight    float64
+	Offset    int
+	Items     []SaveRow
+	Positions []int // Absolute positions for a versioned global pool; nil for ANN/legacy pools.
+	More      bool
+	consumed  int
 }
 
 func requestedFeedCursorMode(alpha float64) feedCursorMode {
@@ -92,8 +94,11 @@ func (c feedCursor) validate() error {
 	if !c.Mode.valid() {
 		return fmt.Errorf("unsupported feed cursor mode")
 	}
-	if c.Version != 1 {
+	if c.Version != 1 && c.Version != 2 {
 		return fmt.Errorf("unsupported feed cursor version")
+	}
+	if (c.Version == 1 && c.SnapshotID != 0) || (c.Version == 2 && c.SnapshotID <= 0) {
+		return fmt.Errorf("invalid feed snapshot")
 	}
 	if c.GlobalOffset < 0 {
 		return fmt.Errorf("invalid global offset")
@@ -159,6 +164,9 @@ func decodeFeedCursor(raw string) (feedCursor, error) {
 
 func encodeFeedCursor(cursor feedCursor) (string, error) {
 	cursor.Version = 1
+	if cursor.SnapshotID != 0 {
+		cursor.Version = 2
+	}
 	if cursor.Mode == "" {
 		cursor.Mode = feedCursorModeGlobal
 	}
@@ -256,6 +264,9 @@ func (p *feedCandidatePool) hasRemaining() bool {
 }
 
 func (p *feedCandidatePool) nextOffset() int {
+	if len(p.Positions) > 0 && p.consumed > 0 {
+		return p.Positions[p.consumed-1]
+	}
 	return p.Offset + p.consumed
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -1767,6 +1768,43 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	excludeSaved := r.URL.Query().Get("excludeSaved") == "true" && viewerDID != nil
+	loadGlobalPool := func(limit int) (*feedCandidatePool, error) {
+		pool := &feedCandidatePool{Offset: cursorState.GlobalOffset}
+		// Existing v1 cursors retain their offset-based live ranking. New sessions
+		// use a persisted generation as soon as the first background build is ready.
+		if cursorState.SnapshotID != 0 || r.URL.Query().Get("cursor") == "" {
+			page, err := s.Store.GetGlobalFeedPage(r.Context(), viewerStr, excludeSaved, cursorState.SnapshotID, cursorState.GlobalOffset, limit+1)
+			if err != nil {
+				return nil, err
+			}
+			cursorState.SnapshotID = page.SnapshotID
+			pool.Items, pool.Positions = page.Rows, page.Positions
+		}
+		if cursorState.SnapshotID == 0 {
+			var err error
+			pool.Items, err = s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, limit+1, cursorState.GlobalOffset)
+			if err != nil {
+				return nil, err
+			}
+		}
+		pool.More = len(pool.Items) > limit
+		if pool.More {
+			pool.Items = pool.Items[:limit]
+			if len(pool.Positions) > 0 {
+				pool.Positions = pool.Positions[:limit]
+			}
+		}
+		return pool, nil
+	}
+	writeExpiredCursor := func(err error) bool {
+		if !errors.Is(err, errFeedCursorExpired) {
+			return false
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "ExpiredCursor", "message": "The feed has refreshed. Refresh to load the latest images."})
+		return true
+	}
 
 	var saveRows []SaveRow
 	nextCursor := ""
@@ -1948,32 +1986,31 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if useGlobal {
-			global, err := s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, fetchLimit+1, cursorState.GlobalOffset)
+			global, err := loadGlobalPool(fetchLimit)
 			if err != nil {
+				if writeExpiredCursor(err) {
+					return
+				}
 				slog.Error("GetGlobalFeedSaves", "err", err)
 			} else {
-				more := len(global) > fetchLimit
-				if more {
-					global = global[:fetchLimit]
-				}
-				pools = append(pools, &feedCandidatePool{
-					Weight: globalWeight,
-					Offset: cursorState.GlobalOffset,
-					Items:  global,
-					More:   more,
-				})
+				global.Weight = globalWeight
+				pools = append(pools, global)
 			}
 		}
 
 		saveRows = buildFeedPage(mixRng, pools, limit)
 
-		nextState := feedCursor{Version: 1, Mode: requestedMode, Initialized: true, Seed: cursorState.Seed}
+		nextState := feedCursor{Version: 1, Mode: requestedMode, Initialized: true, Seed: cursorState.Seed, SnapshotID: cursorState.SnapshotID, GlobalOffset: cursorState.GlobalOffset}
+		hasMore := false
 		for _, pool := range pools {
+			if pool.Key == "" {
+				nextState.GlobalOffset = pool.nextOffset()
+			}
 			if !pool.hasMoreAfterPage() {
 				continue
 			}
+			hasMore = true
 			if pool.Key == "" {
-				nextState.GlobalOffset = pool.nextOffset()
 				continue
 			}
 			switch requestedMode {
@@ -1983,7 +2020,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 				nextState.Seeds = append(nextState.Seeds, feedCursorSeed{VisualIdentityID: pool.Key, Offset: pool.nextOffset()})
 			}
 		}
-		if len(nextState.Collections) > 0 || len(nextState.Seeds) > 0 || nextState.GlobalOffset > 0 {
+		if hasMore {
 			nextCursor, err = encodeFeedCursor(nextState)
 			if err != nil {
 				slog.Error("encodeFeedCursor", "err", err)
@@ -1992,21 +2029,19 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		fetchLimit := limit + 1
-		pool := &feedCandidatePool{Weight: 1, Offset: cursorState.GlobalOffset}
-		pool.Items, err = s.Store.GetGlobalFeedSaves(r.Context(), viewerStr, excludeSaved, fetchLimit, cursorState.GlobalOffset)
+		pool, err := loadGlobalPool(limit)
 		if err != nil {
+			if writeExpiredCursor(err) {
+				return
+			}
 			slog.Error("GetGlobalFeedSaves", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		if len(pool.Items) > limit {
-			pool.More = true
-			pool.Items = pool.Items[:limit]
-		}
+		pool.Weight = 1
 		saveRows = buildFeedPage(nil, []*feedCandidatePool{pool}, limit)
 		if pool.hasMoreAfterPage() {
-			nextCursor, err = encodeFeedCursor(feedCursor{Version: 1, Mode: feedCursorModeGlobal, GlobalOffset: pool.nextOffset()})
+			nextCursor, err = encodeFeedCursor(feedCursor{Version: 1, Mode: feedCursorModeGlobal, GlobalOffset: pool.nextOffset(), SnapshotID: cursorState.SnapshotID})
 			if err != nil {
 				slog.Error("encodeFeedCursor", "err", err)
 				http.Error(w, "internal error", http.StatusInternalServerError)
