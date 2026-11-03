@@ -25,6 +25,8 @@ services:
       db:
         condition: service_healthy
     environment:
+      # Interim CVE-2026-98432 mitigation; the Linux kernel still needs a fix.
+      GODEBUG: multipathtcp=0
       SESSION_SECRET: ${SESSION_SECRET}
       COOKIE_SAME_SITE: lax
       DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
@@ -55,6 +57,7 @@ services:
       db:
         condition: service_healthy
     environment:
+      GODEBUG: netdns=go,multipathtcp=0
       TAP_DATABASE_URL: postgres://appview:${DB_PASSWORD:-appview}@db:5432/appview?sslmode=disable
       TAP_RELAY_URL: https://relay1.us-east.bsky.network
       TAP_SIGNAL_COLLECTION: is.currents.actor.profile
@@ -94,6 +97,7 @@ services:
       - appview
     command: tunnel --no-autoupdate --protocol http2 run
     environment:
+      GODEBUG: multipathtcp=0
       TUNNEL_TOKEN: ${CLOUDFLARE_APPVIEW_TUNNEL_TOKEN:?set the dedicated appview tunnel token}
 
   cloudflared-frontend:
@@ -103,6 +107,7 @@ services:
       - nginx
     command: tunnel --no-autoupdate --protocol http2 run
     environment:
+      GODEBUG: multipathtcp=0
       TUNNEL_TOKEN: ${CLOUDFLARE_FRONTEND_TUNNEL_TOKEN:?set the dev.currents.is tunnel token}
 
   clustering:

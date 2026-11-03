@@ -51,6 +51,8 @@ services:
       tap:
         condition: service_started
     environment:
+      # Interim CVE-2026-98432 mitigation; the host kernel still needs a fix.
+      GODEBUG: multipathtcp=0
       SESSION_SECRET: ${SESSION_SECRET}
       COOKIE_SAME_SITE: lax
       DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
@@ -100,6 +102,7 @@ services:
     volumes:
       - /etc/ssl/certs:/etc/ssl/certs:ro
     environment:
+      GODEBUG: netdns=go,multipathtcp=0
       TAP_DATABASE_URL: postgres://appview:${DB_PASSWORD:?}@db:5432/appview?sslmode=disable
       # Pinned to us-east on purpose — do NOT revert to the bsky.network
       # alias; see the note in docker-compose.mac-mini.yml history and
@@ -136,6 +139,8 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      GODEBUG: multipathtcp=0
     depends_on:
       - appview
     ports:

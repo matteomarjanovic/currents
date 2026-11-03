@@ -23,6 +23,13 @@ proposing new work; delete an entry when it ships.
 
 ## Engineering
 
+- **CVE-2026-98432 kernel remediation.** Both production VMs have persistent
+  IPv4-options filtering, and Caddy/appview/TAP have MPTCP disabled. They still
+  run Ubuntu `7.0.0-38-generic`; on 2026-10-31 the fixed `7.0.0-43.43` build
+  was not yet available. Install a vendor-confirmed fixed kernel on both VMs,
+  reboot, and verify the running versions before retiring the mitigations.
+  See `deploy/CVE-2026-98432.md` for rollout evidence and startup dependencies.
+
 - **Physical PostgreSQL backups and point-in-time recovery.** Replace repeated
   full logical dumps as the primary disaster-recovery mechanism with periodic
   physical base backups plus continuously archived WAL in Object Storage.

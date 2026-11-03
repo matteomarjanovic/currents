@@ -4,6 +4,14 @@ After Cutover B, the frontend runs on the Scaleway main VM. The workflows then
 publish and deploy it alongside appview, inference, and clustering. Capacitor
 releases continue to be built locally.
 
+## CVE-2026-98432 (October 2026)
+
+Both production VMs run the dedicated IPv4-options filter service, and Docker
+checks the filter before starting. Caddy, appview, and TAP disable MPTCP through
+the production Compose file. These are interim mitigations while Ubuntu's
+fixed kernel is pending; preserve them during host replacement and deployment.
+See [rollout evidence, installed files, and kernel follow-up](../CVE-2026-98432.md).
+
 ## eMudhra CA compromise (October 2026)
 
 Treat this as an urgent outbound HTTPS client update. See the
