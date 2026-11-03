@@ -4720,6 +4720,27 @@ func (m *PgStore) GetFollowURI(ctx context.Context, followerDID, subjectDID stri
 	return uri, nil
 }
 
+// FollowURIs returns the viewer's follow records for the requested actors.
+func (m *PgStore) FollowURIs(ctx context.Context, viewerDID string, actorDIDs []string) (map[string]string, error) {
+	rows, err := m.pool.Query(ctx, `
+		SELECT subject_did, uri FROM follow
+		WHERE follower_did = $1 AND subject_did = ANY($2)
+	`, viewerDID, actorDIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	follows := make(map[string]string)
+	for rows.Next() {
+		var did, uri string
+		if err := rows.Scan(&did, &uri); err != nil {
+			return nil, err
+		}
+		follows[did] = uri
+	}
+	return follows, rows.Err()
+}
+
 // CountFollows returns how many actors follow did (followers) and how many did follows (follows).
 func (m *PgStore) CountFollows(ctx context.Context, did string) (followers, follows int, err error) {
 	err = m.pool.QueryRow(ctx, `

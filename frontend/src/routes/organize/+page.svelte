@@ -335,12 +335,16 @@
      so an svh shell falls short of the visible viewport and leaks a strip of body
      background at the bottom. dvh tracks the live viewport (and can't jitter here,
      since the page itself never scrolls). -->
-<Sidebar.Provider bind:open={sidebarOpen} class="h-dvh overflow-hidden">
+<Sidebar.Provider
+	bind:open={sidebarOpen}
+	class="h-dvh overflow-hidden"
+	style="--sidebar: color-mix(in srgb, var(--background) 60%, var(--muted) 40%);"
+>
 	<OrganizeSidebarLeft {selectedUri} {unsorted} />
 	<!-- The inset must stay a direct sibling of the sidebar: its gutter margins come
 	     from `peer-data-[variant=inset]` classes, and Tailwind's peer-* is a sibling
 	     combinator, so wrapping it would silently drop them. So the inset keeps the
-	     margins but hands its panel look (rounding/background/shadow) to the inner
+	     margins but hands its panel look (rounding/background/border) to the inner
 	     div below, leaving it free to act as the column that the panel and the bulk
 	     bar stack inside. -->
 	<Sidebar.Inset
@@ -348,11 +352,11 @@
 	>
 		<!-- The rounded panel. flex-1, so when the bar slides in below it the panel
 		     shrinks to make room — the same reflow the sidebars cause horizontally.
-		     Rounding/shadow are md-only: below that the inset has no gutter and the
+		     Rounding/border are md-only: below that the inset has no gutter and the
 		     view is edge-to-edge, where rounded corners would just expose the page
 		     background behind them. -->
 		<div
-			class="flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-2xl md:shadow-sm"
+			class="flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-2xl md:ring-1 md:ring-border/50 md:ring-inset"
 		>
 			<header
 				class="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b px-4 pt-[env(safe-area-inset-top)]"

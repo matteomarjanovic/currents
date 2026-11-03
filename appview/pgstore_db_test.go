@@ -15,12 +15,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gorilla/sessions"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -113,6 +115,71 @@ func truncateAll(t *testing.T, s *PgStore) {
 }
 
 var testBase = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+func TestFollowListViewerState(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const viewer = "did:plc:viewer"
+	const subject = "did:plc:subject"
+	const alice = "did:plc:alice"
+	const bob = "did:plc:bob"
+	for _, did := range []string{viewer, subject, alice, bob} {
+		if err := s.CreateUser(ctx, UserRecord{DID: did, Handle: did[8:] + ".test", CreatedAt: testBase}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, pair := range [][2]string{
+		{subject, alice}, {subject, bob}, {alice, subject}, {bob, subject},
+		{viewer, alice}, {viewer, "did:plc:outside"}, {"did:plc:other", bob},
+	} {
+		uri := fmt.Sprintf("at://%s/is.currents.graph.follow/%d", pair[0], i)
+		if err := s.UpsertFollow(ctx, uri, pair[0], pair[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantURI := "at://" + viewer + "/is.currents.graph.follow/4"
+	follows, err := s.FollowURIs(ctx, viewer, []string{alice, bob})
+	if err != nil || len(follows) != 1 || follows[alice] != wantURI {
+		t.Fatalf("viewer follows = %v, %v", follows, err)
+	}
+	empty, err := s.FollowURIs(ctx, viewer, []string{})
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty follows = %v, %v", empty, err)
+	}
+	srv := &Server{Store: s, CookieStore: sessions.NewCookieStore([]byte("follow-list-test"))}
+	token, err := srv.encodeSessionToken(viewer, "session", "viewer.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"followers", "follows"} {
+		for _, authenticated := range []bool{false, true} {
+			req := httptest.NewRequest("GET", "/?actor="+subject, nil)
+			if authenticated {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+			res := httptest.NewRecorder()
+			srv.xrpcFollowList(res, req, kind)
+			var body map[string][]struct {
+				DID    string `json:"did"`
+				Viewer *struct {
+					Following string `json:"following"`
+				} `json:"viewer"`
+			}
+			if res.Code != 200 || json.Unmarshal(res.Body.Bytes(), &body) != nil || len(body[kind]) != 2 {
+				t.Fatalf("%s authenticated=%v: %d %s", kind, authenticated, res.Code, res.Body.String())
+			}
+			for _, actor := range body[kind] {
+				if authenticated && actor.DID == alice {
+					if actor.Viewer == nil || actor.Viewer.Following != wantURI {
+						t.Fatalf("%s Alice viewer state = %+v", kind, actor.Viewer)
+					}
+				} else if actor.Viewer != nil {
+					t.Fatalf("%s unexpected viewer state for %s: %+v", kind, actor.DID, actor.Viewer)
+				}
+			}
+		}
+	}
+}
 
 func TestAdminOperationsAccess(t *testing.T) {
 	s := newTestStore(t)

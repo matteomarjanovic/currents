@@ -62,6 +62,11 @@
 		selectedUri?: string;
 		onSelect?: (uri: string) => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
+		// Menu hosts keep the dialog mounted after their inline list closes.
+		onCreateCollection?: (
+			parent: CollectionView | null,
+			onCreated: (collection: CollectionView) => void
+		) => void;
 	}
 
 	let {
@@ -73,7 +78,8 @@
 		open = $bindable(false),
 		selectedUri,
 		onSelect,
-		onSavesChange
+		onSavesChange,
+		onCreateCollection
 	}: Props = $props();
 
 	let pickerMode = $derived(!item);
@@ -208,6 +214,10 @@
 	}
 
 	function openCreate(parent: CollectionView | null) {
+		if (onCreateCollection) {
+			onCreateCollection(parent, handleCreated);
+			return;
+		}
 		createParent = parent;
 		open = false;
 		createOpen = true;

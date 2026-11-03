@@ -30,6 +30,7 @@
 		// is under the overlay and never fires while the detail is open.
 		loadMore?: () => void | Promise<void>;
 		onViewFullScreen?: (save: SaveView) => void;
+		onOpen?: () => void;
 		reservePageScrollbarGutter?: boolean;
 	}
 
@@ -42,6 +43,7 @@
 		discoveryFeed = false,
 		loadMore,
 		onViewFullScreen,
+		onOpen,
 		reservePageScrollbarGutter = true
 	}: Props = $props();
 
@@ -162,7 +164,12 @@
 			{@const ratio = tileRatio(image?.width, image?.height)}
 			<!-- The frame owns its size, so off-screen contents can be skipped without
 			     changing masonry geometry or the scroll position. -->
-			<Frame width={ratio.width} height={ratio.height} style="content-visibility: auto;">
+			<Frame
+				width={ratio.width}
+				height={ratio.height}
+				data-save-uri={item.uri}
+				style="content-visibility: auto;"
+			>
 				<div
 					class="h-full w-full overflow-hidden rounded-lg"
 					style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
@@ -180,7 +187,10 @@
 							{onViewFullScreen}
 							mobile={viewportWidth !== undefined && viewportWidth < 768}
 							preloadControls={nearby.has(item.uri)}
-							onOpen={(depth) => setSaveSequence(gridId, visibleItems, loadMore, depth)}
+							onOpen={(depth) => {
+								onOpen?.();
+								setSaveSequence(gridId, visibleItems, loadMore, depth);
+							}}
 						/>
 					{/if}
 				</div>

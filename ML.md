@@ -105,6 +105,8 @@ Negative personalization starts from the same sampled viewer collections, but sw
 
 Users expect a fresh page load to change what they see. The personalized and serendipity feeds get this from a single per-request **seed**, minted on the first page (cursor-less request) and carried through the cursor across pages. A refresh sends no cursor, so it mints a new seed and reshuffles; scrolling reuses the cursor's seed, so pagination stays stable within a session.
 
+Client-side navigation resumes the existing feed instead of refreshing it. Explore keeps one in-memory set of loaded saves, continuation cursor, and viewport anchor per feed level. Back from another Currents page and switching from Organize to Explore restore those images and their position after masonry layout; the Explore entry point resumes the last level used. The cache is scoped to the viewer and excluded collections. Explicit Refresh and browser reload still start fresh; nothing is persisted to browser storage. An expired continuation cursor leaves loaded images visible and offers Refresh.
+
 The seed drives three levers, none of which touches the importance *formula* itself — they are all sampling on top of the existing ranking:
 
 1. **Which collections** feed the pools — seed-weighted sampling of 3 from the top-5 (above).

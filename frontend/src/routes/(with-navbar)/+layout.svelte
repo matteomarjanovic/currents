@@ -15,6 +15,8 @@
 	import { apiFetch } from '$lib/api';
 	import { isNative } from '$lib/platform';
 	import { lockBodyScroll } from '$lib/scroll-lock';
+	import { exploreFeedRestoration } from '$lib/stores/explore-feed-restoration.svelte';
+	import type { SaveView } from '$lib/types';
 	import { activateSaveSequence } from '$lib/save-sequence.svelte';
 	import type { LayoutData } from './$types';
 
@@ -79,6 +81,13 @@
 	let saveStack = $derived(page.state.saveStack ?? (page.state.save ? [page.state.save] : []));
 	let saveOverlayOpen = $derived(saveStack.length > 0);
 	let activeSaveDepth = $derived(saveStack.length - 1);
+	let lastSaveStack = $state.raw<SaveView[]>([]);
+	$effect.pre(() => {
+		if (saveStack.length) lastSaveStack = saveStack;
+	});
+	let displayedSaveStack = $derived(
+		saveOverlayOpen ? saveStack : exploreFeedRestoration.holdingOverlay ? lastSaveStack : []
+	);
 	$effect(() => {
 		if (saveOverlayOpen) return lockBodyScroll();
 	});
@@ -116,8 +125,12 @@
 	{/if}
 {/if}
 
-{#each saveStack as save, i (i)}
-	<SaveDetailOverlay {save} active={i === activeSaveDepth} />
+{#each displayedSaveStack as save, i (i)}
+	<SaveDetailOverlay
+		{save}
+		active={saveOverlayOpen && i === activeSaveDepth}
+		closing={!saveOverlayOpen}
+	/>
 {/each}
 
 <LoginDialog />

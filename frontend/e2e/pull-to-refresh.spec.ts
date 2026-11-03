@@ -37,6 +37,16 @@ async function emulateNativeApp(page: Page) {
 	// Capacitor detects Android from this bridge before its client module initializes.
 	await page.addInitScript(() => {
 		Object.defineProperty(window, 'androidBridge', { value: {}, configurable: true });
+		Object.assign(window, {
+			Capacitor: {
+				PluginHeaders: [
+					{ name: 'SecurePreferences', methods: [{ name: 'get', rtype: 'promise' }] }
+				],
+				async nativePromise() {
+					return { value: null };
+				}
+			}
+		});
 	});
 }
 

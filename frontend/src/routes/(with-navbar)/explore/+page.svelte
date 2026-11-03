@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { exploreFeedScope, lastExploreFeed } from '$lib/explore-feed';
 	import {
 		feedPreferences,
 		feedPreferencesLoaded,
@@ -23,8 +24,11 @@
 		}
 		void (async () => {
 			if (!feedPreferencesLoaded.value) await loadFeedPreferences();
+			const scope = exploreFeedScope(auth.user?.did ?? '', feedPreferences.excludedCollections);
 			await goto(
-				resolve('/(with-navbar)/explore/[level]', { level: feedPreferences.defaultFeed }),
+				resolve('/(with-navbar)/explore/[level]', {
+					level: lastExploreFeed(scope) ?? feedPreferences.defaultFeed
+				}),
 				{ replaceState: true }
 			);
 		})();

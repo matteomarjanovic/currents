@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { apiFetch } from '$lib/api';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
@@ -11,19 +11,52 @@
 	import Compass from '@lucide/svelte/icons/compass';
 	import Upload from '@lucide/svelte/icons/upload';
 	import Download from '@lucide/svelte/icons/download';
-	import { findFeedLevel } from '$lib/feed-levels';
+	import { findFeedLevel, type FeedLevelSlug } from '$lib/feed-levels';
+	import {
+		exploreFeedScope,
+		resumeExploreFeed,
+		rememberExploreFeed,
+		forgetExploreFeed,
+		type FeedPosition
+	} from '$lib/explore-feed';
+	import { bodyScrollY, scrollBodyTo } from '$lib/scroll-lock';
+	import {
+		feedPreferences,
+		feedPreferencesLoaded,
+		loadFeedPreferences
+	} from '$lib/stores/feed-preferences.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { preferences } from '$lib/stores/preferences.svelte';
+	import { exploreFeedRestoration } from '$lib/stores/explore-feed-restoration.svelte';
 	import {
 		endExploreSaveSession,
 		startExploreSaveSession
 	} from '$lib/stores/save-suggestions.svelte';
 
 	const level = $derived(findFeedLevel(page.params.level));
+	const scope = $derived(
+		exploreFeedScope(auth.user?.did ?? '', feedPreferences.excludedCollections)
+	);
+	let activeLevel: FeedLevelSlug | undefined;
+	let activeScope = '';
+	let positionBeforeOverlay: FeedPosition | undefined;
+	let ready = $state(false);
+	let pendingPosition = $state<FeedPosition | null>(null);
+	let gridRoot: HTMLDivElement | undefined = $state();
 
 	onMount(() => {
 		startExploreSaveSession(preferences.saveSuggestionMode);
-		return endExploreSaveSession;
+		return () => {
+			endExploreSaveSession();
+			exploreFeedRestoration.holdingOverlay = false;
+		};
+	});
+	$effect(() => {
+		if (auth.checked && auth.user) {
+			untrack(() => {
+				if (!feedPreferencesLoaded.value) void loadFeedPreferences();
+			});
+		}
 	});
 
 	// Unknown slugs and auth-only feeds for logged-out visitors fall back to general.
@@ -49,6 +82,106 @@
 		return { items: data.feed, cursor: data.cursor };
 	});
 
+	function rememberFeed() {
+		if (!activeLevel || pendingPosition || (feed.items.length === 0 && feed.hasMore)) return;
+		const visible = [...(gridRoot?.querySelectorAll<HTMLElement>('[data-save-uri]') ?? [])]
+			.map((element) => ({ uri: element.dataset.saveUri!, rect: element.getBoundingClientRect() }))
+			.filter(({ rect }) => rect.bottom > 0 && rect.top < window.innerHeight)
+			.sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)[0];
+		const position =
+			document.body.classList.contains('scroll-locked') && positionBeforeOverlay
+				? positionBeforeOverlay
+				: {
+						y: bodyScrollY(),
+						anchor: visible ? { uri: visible.uri, top: visible.rect.top } : undefined
+					};
+		positionBeforeOverlay = position;
+		rememberExploreFeed(activeScope, activeLevel, {
+			items: $state.snapshot(feed.items),
+			cursor: feed.cursor,
+			error: feed.error,
+			position
+		});
+	}
+
+	beforeNavigate(() => rememberFeed());
+
+	let overlayWasOpen = false;
+	$effect.pre(() => {
+		const overlayOpen = !!page.state.save || (page.state.saveStack?.length ?? 0) > 0;
+		if (overlayWasOpen && !overlayOpen) {
+			// Body unlocking restores synchronously, but browser/history restoration
+			// can run later. Reapply the feed anchor after the normal grid settles.
+			untrack(() => {
+				if (!pendingPosition && positionBeforeOverlay) pendingPosition = positionBeforeOverlay;
+				if (pendingPosition) exploreFeedRestoration.holdingOverlay = true;
+			});
+		}
+		overlayWasOpen = overlayOpen;
+	});
+
+	// Restore pages before scrolling, including when SvelteKit reuses this route
+	// for a different feed. An old request cannot append to the newly active feed.
+	$effect(() => {
+		if (!auth.checked || !level || (!auth.user && level.value !== 0)) return;
+		const slug = level.slug;
+		const nextScope = scope;
+		untrack(() => {
+			if (activeLevel === slug && activeScope === nextScope) return;
+			if (activeScope === nextScope) rememberFeed();
+			activeLevel = slug;
+			activeScope = nextScope;
+			const cached = resumeExploreFeed(nextScope, slug);
+			positionBeforeOverlay = cached?.position;
+			feed.reset(cached);
+			pendingPosition = cached && cached.items.length > 0 ? cached.position : null;
+			ready = true;
+			if (!cached) {
+				scrollBodyTo(0);
+				void feed.loadMore();
+			}
+		});
+	});
+
+	// Restore before the next paint, then refine the anchor on each frame until
+	// masonry settles. Waiting to scroll until it settles exposes the page's top.
+	$effect(() => {
+		if (!gridRoot || !pendingPosition) return;
+		const root = gridRoot;
+		const position = pendingPosition;
+		// The locked body's width can differ from the normal page (scrollbar
+		// gutter). Keep the saved offset underneath an image; align its anchor
+		// only after that overlay closes and the normal grid width is restored.
+		if (page.state.save || (page.state.saveStack?.length ?? 0) > 0) {
+			scrollBodyTo(position.y);
+			return;
+		}
+		scrollBodyTo(position.y);
+		let previousHeight = -1;
+		let frame: number;
+		const restore = () => {
+			const height = root.getBoundingClientRect().height;
+			const anchor = position.anchor
+				? [...root.querySelectorAll<HTMLElement>('[data-save-uri]')].find(
+						(element) => element.dataset.saveUri === position.anchor?.uri
+					)
+				: undefined;
+			const y = anchor
+				? bodyScrollY() + anchor.getBoundingClientRect().top - position.anchor!.top
+				: position.y;
+			scrollBodyTo(Math.max(0, y));
+			if (height === previousHeight) {
+				pendingPosition = null;
+				exploreFeedRestoration.holdingOverlay = false;
+			} else {
+				previousHeight = height;
+				frame = requestAnimationFrame(restore);
+			}
+		};
+		frame = requestAnimationFrame(restore);
+		return () => cancelAnimationFrame(frame);
+	});
+
 	// Personal / New worlds rank against the user's collections; a brand-new user
 	// gets nothing back. Show them how to get started instead of a blank grid.
 	const showEmpty = $derived(
@@ -60,6 +193,8 @@
 
 	function loadFeedIfNearEnd() {
 		if (
+			!ready ||
+			pendingPosition ||
 			!sentinel ||
 			!feed.hasMore ||
 			feed.loading ||
@@ -70,6 +205,9 @@
 	}
 
 	function refreshFeed() {
+		if (activeLevel) forgetExploreFeed(activeScope, activeLevel);
+		pendingPosition = null;
+		scrollBodyTo(0);
 		feed.reset();
 		return feed.loadMore();
 	}
@@ -98,7 +236,7 @@
 		if (!sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting) void feed.loadMore();
+				if (entries[0].isIntersecting) loadFeedIfNearEnd();
 			},
 			{ rootMargin: `${feedLoadAhead}px 0px` }
 		);
@@ -124,32 +262,11 @@
 	// dependent on a later viewport resize.
 	$effect(() => {
 		void feed.items.length;
+		void ready;
+		void pendingPosition;
 		if (!sentinel) return;
 		const frame = requestAnimationFrame(loadFeedIfNearEnd);
 		return () => cancelAnimationFrame(frame);
-	});
-
-	// The sentinel's observer above covers the initial load; this effect only
-	// needs to react to the level actually *changing* (switching feed levels
-	// reuses this component — the route param changes, not the instance). It
-	// still runs on mount too, since `$effect` always fires once immediately —
-	// skip that first run, or every page load would reset and refetch a feed
-	// that just loaded, tearing down tiles (and anything mid-interaction with
-	// one, like a long press) out from under themselves.
-	let skipNextLevelEffect = true;
-	$effect(() => {
-		void level?.value;
-		if (skipNextLevelEffect) {
-			skipNextLevelEffect = false;
-			return;
-		}
-		const timeout = setTimeout(() => {
-			untrack(() => {
-				feed.reset();
-				feed.loadMore();
-			});
-		}, 300);
-		return () => clearTimeout(timeout);
 	});
 </script>
 
@@ -186,13 +303,16 @@
 		</div>
 	</div>
 {:else}
-	<MasonryGrid
-		items={feed.items}
-		loading={feed.loading}
-		loadMore={feed.loadMore}
-		longPressSave
-		discoveryFeed
-	/>
+	<div bind:this={gridRoot}>
+		<MasonryGrid
+			items={feed.items}
+			loading={feed.loading}
+			loadMore={feed.loadMore}
+			onOpen={rememberFeed}
+			longPressSave
+			discoveryFeed
+		/>
+	</div>
 	{#if feed.error}
 		<div role="alert" class="flex flex-col items-center gap-3 py-8 text-center">
 			<p class="text-sm text-muted-foreground">

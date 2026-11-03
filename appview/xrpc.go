@@ -1546,6 +1546,11 @@ func (s *Server) XRPCGetFavouriteCollections(w http.ResponseWriter, r *http.Requ
 // xrpcFollowList serves both getFollowers (actors following the subject) and
 // getFollows (actors the subject follows); kind is the response array key.
 func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind string) {
+	viewerDID, err := s.optionalAuth(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	actorParam := r.URL.Query().Get("actor")
 	if actorParam == "" {
 		http.Error(w, `{"error":"InvalidRequest","message":"actor is required"}`, http.StatusBadRequest)
@@ -1585,7 +1590,6 @@ func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind str
 	}
 
 	var rows []ActorRow
-	var err error
 	if kind == "followers" {
 		rows, err = s.Store.GetFollowers(r.Context(), actorDID.String(), limit, offset)
 	} else {
@@ -1597,17 +1601,30 @@ func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind str
 		return
 	}
 
+	type followViewerState struct {
+		Following string `json:"following,omitempty"`
+	}
 	type profileView struct {
-		DID         string `json:"did"`
-		Handle      string `json:"handle"`
-		DisplayName string `json:"displayName,omitempty"`
-		Description string `json:"description,omitempty"`
-		Avatar      string `json:"avatar,omitempty"`
-		Supporter   bool   `json:"supporter,omitempty"`
+		DID         string             `json:"did"`
+		Handle      string             `json:"handle"`
+		DisplayName string             `json:"displayName,omitempty"`
+		Description string             `json:"description,omitempty"`
+		Avatar      string             `json:"avatar,omitempty"`
+		Supporter   bool               `json:"supporter,omitempty"`
+		Viewer      *followViewerState `json:"viewer,omitempty"`
 	}
 	memberDIDs := make([]string, 0, len(rows))
 	for _, row := range rows {
 		memberDIDs = append(memberDIDs, row.DID)
+	}
+	var follows map[string]string
+	if viewerDID != nil {
+		follows, err = s.Store.FollowURIs(r.Context(), viewerDID.String(), memberDIDs)
+		if err != nil {
+			slog.Error("hydrate follow state", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 	supporters, err := s.Store.SupporterDIDs(r.Context(), memberDIDs)
 	if err != nil {
@@ -1616,14 +1633,18 @@ func (s *Server) xrpcFollowList(w http.ResponseWriter, r *http.Request, kind str
 	}
 	views := make([]profileView, 0, len(rows))
 	for _, row := range rows {
-		views = append(views, profileView{
+		view := profileView{
 			DID:         row.DID,
 			Handle:      row.Handle,
 			DisplayName: row.DisplayName,
 			Description: row.Description,
 			Avatar:      row.Avatar,
 			Supporter:   supporters[row.DID],
-		})
+		}
+		if uri := follows[row.DID]; uri != "" {
+			view.Viewer = &followViewerState{Following: uri}
+		}
+		views = append(views, view)
 	}
 
 	resp := map[string]any{kind: views}

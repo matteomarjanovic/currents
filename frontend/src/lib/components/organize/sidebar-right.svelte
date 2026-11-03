@@ -360,17 +360,22 @@
 					</h3>
 					<div class="flex flex-wrap items-center gap-1.5">
 						{#each savedIn as c (c.saveUri)}
-							<Badge variant="secondary" class="gap-1 py-0.5 pr-0.5 font-normal">
-								<span class="pl-0.5">{c.name}</span>
+							<Badge variant="secondary" class="h-auto gap-0 p-0 font-normal">
+								<a
+									href={c.uri ? `/organize?c=${encodeURIComponent(c.uri)}` : '/organize?unsorted=1'}
+									class="px-2 py-1 transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+								>
+									{c.name}
+								</a>
 								<button
 									type="button"
 									disabled={removingSaveUri !== null}
 									onclick={() => removeFrom(c)}
 									aria-label="Remove from {c.name}"
 									title="Remove from {c.name}"
-									class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-background hover:text-destructive disabled:opacity-50"
+									class="self-stretch border-l border-border px-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:bg-background focus-visible:text-destructive focus-visible:outline-none disabled:opacity-50"
 								>
-									<Trash2 class="size-3" />
+									<Trash2 class="size-3 -translate-x-px" />
 								</button>
 							</Badge>
 						{/each}

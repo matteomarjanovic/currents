@@ -124,6 +124,48 @@ test('search in one owned collection offers direct remove and move', async ({ pa
 	await expect.poll(() => calls.deleted).toContain('interiors');
 });
 
+for (const menu of ['context', 'options'] as const) {
+	for (const action of ['Copy', 'Move'] as const) {
+		test(`${menu} menu ${action} creates a collection and uses it as the destination`, async ({
+			page
+		}) => {
+			const calls: Calls = { resave: [], deleted: [] };
+			await mockApi(page, calls, [{ collectionUri: INTERIORS, saveUri: saveUri('interiors') }]);
+			await page.route(`${APPVIEW}/api/collection`, (route) =>
+				route.fulfill({ json: { uri: collectionUri('new') } })
+			);
+			await page.setViewportSize({ width: 1280, height: 800 });
+			await page.goto('/organize');
+			await search(page, [INTERIORS]);
+			if (menu === 'context') {
+				await page.locator('[data-uri]').first().click({ button: 'right' });
+			} else {
+				await page.getByRole('button', { name: 'Options', exact: true }).first().click();
+			}
+			await page.getByRole('menuitem', { name: `${action} to collection`, exact: true }).hover();
+			const submenu = page.locator(
+				`[data-slot="${menu === 'context' ? 'context' : 'dropdown'}-menu-sub-content"] > div`
+			);
+			await expect(submenu).toHaveCSS('scrollbar-width', 'none');
+			const create = page.getByRole('button', { name: /Create new collection/ });
+			await create.click();
+			const dialog = page.getByRole('dialog', { name: 'Create collection', exact: true });
+			await expect(dialog).toBeVisible();
+			await expect(page.getByRole('menu')).toHaveCount(0);
+			await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('New collection');
+			await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+			await expect.poll(() => calls.resave.length).toBe(1);
+			expect(JSON.parse(calls.resave[0])).toEqual({
+				saveUri: saveUri('interiors'),
+				collectionUri: collectionUri('new')
+			});
+			if (action === 'Move') await expect.poll(() => calls.deleted).toContain('interiors');
+			else expect(calls.deleted).toEqual([]);
+			await expect(dialog).toBeHidden();
+		});
+	}
+}
+
 test('desktop bulk actions stay on one line and fade the scroll edges', async ({ page }) => {
 	const calls: Calls = { resave: [], deleted: [] };
 	await mockApi(page, calls, [{ collectionUri: INTERIORS, saveUri: saveUri('interiors') }]);

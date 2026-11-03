@@ -114,8 +114,8 @@
 	];
 
 	const AI_OPTIONS: { val: AiVisibility; label: string }[] = [
-		{ val: 'show', label: 'Show' },
-		{ val: 'hide', label: 'Hide' }
+		{ val: 'show', label: 'Show images' },
+		{ val: 'hide', label: 'Hide images' }
 	];
 
 	const DEFAULT_FEED_OPTIONS: { value: FeedLevelSlug; label: string }[] = [
@@ -345,16 +345,16 @@
 							<div>
 								<h3 class="text-sm font-medium">AI-generated content</h3>
 								<p class="text-sm text-muted-foreground">
-									How should images detected as AI-generated appear?
+									Choose whether to see images labeled as AI-generated.
 								</p>
 							</div>
 							<div
 								class="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"
 							>
 								<div class="flex flex-col gap-0.5">
-									<span class="text-sm font-medium">AI-generated</span>
+									<span class="text-sm font-medium">Image visibility</span>
 									<span class="text-xs text-muted-foreground">
-										When shown, a small "AI" badge appears in the corner.
+										Show images with an AI badge, or hide them entirely.
 									</span>
 								</div>
 								<div

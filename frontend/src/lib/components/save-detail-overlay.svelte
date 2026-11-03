@@ -2,7 +2,11 @@
 	import SaveDetail from '$lib/components/save-detail.svelte';
 	import type { SaveView } from '$lib/types';
 
-	let { save, active }: { save: SaveView; active: boolean } = $props();
+	let {
+		save,
+		active,
+		closing = false
+	}: { save: SaveView; active: boolean; closing?: boolean } = $props();
 	let scrollRoot: HTMLDivElement | undefined = $state();
 </script>
 
@@ -12,7 +16,9 @@
 	data-active={active}
 	inert={!active}
 	aria-hidden={active ? undefined : 'true'}
-	class="fixed inset-0 z-50 overflow-y-auto app-muted-wash [overflow-anchor:none]"
+	class="fixed inset-0 z-50 app-muted-wash [overflow-anchor:none] {closing
+		? 'overflow-hidden'
+		: 'overflow-y-auto'}"
 >
 	<SaveDetail {save} {scrollRoot} {active} />
 </div>

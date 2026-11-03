@@ -30,7 +30,7 @@ type Calls = { resave: string[]; deleted: string[]; unsortedUrls: string[] };
 async function mockApi(page: Page, calls: Calls) {
 	const collectionSave = saveUri('interiors');
 	const unsortedSave = saveUri('unsorted');
-	await page.route(`${APPVIEW}/**`, (route) => {
+	await page.context().route(`${APPVIEW}/**`, (route) => {
 		const request = route.request();
 		const url = request.url();
 		const json = (body: unknown) =>
@@ -45,6 +45,7 @@ async function mockApi(page: Page, calls: Calls) {
 		}
 		if (url.includes('/api/me/role')) return json({ role: 'user' });
 		if (url.includes('/api/me')) return json(me);
+		if (url.includes('getProfile')) return json(me);
 		if (url.includes('/api/supporter/status'))
 			return json({ active: true, subscribed: true, colorTrialsLeft: 0 });
 		if (url.includes('getActorCollections')) return json({ collections: COLLECTIONS });
@@ -63,9 +64,89 @@ async function mockApi(page: Page, calls: Calls) {
 				saves: [imageSave(collectionSave, [{ collectionUri: INTERIORS, saveUri: collectionSave }])]
 			});
 		}
+		if (url.includes('getSaves')) {
+			return json({
+				saves: [imageSave(collectionSave, [{ collectionUri: INTERIORS, saveUri: collectionSave }])]
+			});
+		}
 		return json({ saves: [] });
 	});
 }
+
+test.describe('Organize image links', () => {
+	test.use({ hasTouch: false, isMobile: false });
+	for (const method of ['ControlOrMeta', 'middle', 'context', 'options'] as const) {
+		test(`${method} opens the image detail in another tab and preserves Organize`, async ({
+			page,
+			context
+		}) => {
+			const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+			await mockApi(page, calls);
+			await page.setViewportSize({ width: 1280, height: 800 });
+			await page.goto('/organize');
+			const tile = page.locator('[data-uri]').first();
+			await tile.click();
+			await expect(page.getByRole('button', { name: 'Remove from Interiors' })).toBeVisible();
+			await expect(tile).toHaveAttribute('href', `/profile/${me.handle}/save/interiors`);
+			const newTab = context.waitForEvent('page');
+			if (method === 'middle') await tile.click({ button: 'middle' });
+			else if (method === 'ControlOrMeta') await tile.click({ modifiers: ['ControlOrMeta'] });
+			else {
+				if (method === 'context') await tile.click({ button: 'right' });
+				else await page.getByRole('button', { name: 'Options', exact: true }).first().click();
+				await page.getByRole('menuitem', { name: 'Open in new tab', exact: true }).click();
+			}
+			const opened = await newTab;
+			await expect(opened).toHaveURL(`/profile/${me.handle}/save/interiors`);
+			await expect(
+				opened.getByRole('button', { name: 'Go back', exact: true }).first()
+			).toBeVisible();
+			await expect(page).toHaveURL('/organize');
+			await expect(page.getByRole('button', { name: 'Remove from Interiors' })).toBeVisible();
+			await opened.close();
+		});
+	}
+});
+
+test('right sidebar collection segment opens the collection in Organize', async ({ page }) => {
+	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+	await mockApi(page, calls);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+	await page.locator('[data-uri]').first().click();
+
+	const chip = page.locator('[data-slot="badge"]').filter({
+		has: page.getByRole('button', { name: 'Remove from Interiors' })
+	});
+	await chip.getByRole('link', { name: 'Interiors', exact: true }).click();
+
+	await expect(page).toHaveURL(`/organize?c=${encodeURIComponent(INTERIORS)}`);
+	expect(calls.deleted).toEqual([]);
+	expect(calls.resave).toEqual([]);
+});
+
+test('right sidebar Unsorted segment opens Unsorted in Organize', async ({ page }) => {
+	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+	await mockApi(page, calls);
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.goto('/organize');
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getLibrarySaves?**`, (route) =>
+		route.fulfill({
+			json: {
+				saves: [
+					imageSave(saveUri('unsorted'), [{ collectionUri: '', saveUri: saveUri('unsorted') }])
+				]
+			}
+		})
+	);
+	await page.reload();
+	await page.locator('[data-uri]').first().click();
+	await page.getByRole('link', { name: 'Unsorted', exact: true }).click();
+
+	await expect(page).toHaveURL('/organize?unsorted=1');
+	await expect(page.locator(`[data-uri="${saveUri('unsorted')}"]`)).toBeVisible();
+	expect(calls.deleted).toEqual([]);
+});
 
 test('right sidebar removes a membership and preserves the last image in Unsorted', async ({
 	page

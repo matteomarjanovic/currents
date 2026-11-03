@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { BalancedMasonryGrid, Frame } from '@masonry-grid/svelte';
 	import { apiFetch } from '$lib/api';
 	import { resaveWithFallback } from '$lib/resave';
-	import { getImageContent, type SaveView } from '$lib/types';
+	import { getImageContent, type CollectionView, type SaveView } from '$lib/types';
 	import type { SvelteSet } from 'svelte/reactivity';
 	import { selectedSaves, selectableUris, type BulkApi } from '$lib/organize-bulk';
 	import { isCropped, tileRatio } from '$lib/image-ratio';
@@ -19,11 +19,12 @@
 	import { drawerScrollSwipe } from '$lib/drawer-scroll-swipe';
 	import { Button } from '$lib/components/ui/button';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
+	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import { emitSaveRemoved, onSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { requireSupporter } from '$lib/stores/supporter.svelte';
-	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
+	import { copyLink, copyImage, downloadImage, shareLink, saveLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
 	import { toast } from 'svelte-sonner';
 	import { preferences, type LastSaveRemovalAction } from '$lib/stores/preferences.svelte';
@@ -38,6 +39,7 @@
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Scan from '@lucide/svelte/icons/scan';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import FolderInput from '@lucide/svelte/icons/folder-input';
@@ -382,6 +384,22 @@
 	let drawerTarget = $state<SaveView | null>(null);
 	let drawerOpen = $state(false);
 	let drawerMode = $state<'copy' | 'move'>('copy');
+	let createCollectionOpen = $state(false);
+	let createCollectionParent = $state<CollectionView | null>(null);
+	let collectionCreated = $state<((collection: CollectionView) => void) | null>(null);
+	let contextMenuUri = $state<string | null>(null);
+	let dropdownMenuUri = $state<string | null>(null);
+	async function openCreateCollection(
+		parent: CollectionView | null,
+		onCreated: (collection: CollectionView) => void
+	) {
+		createCollectionParent = parent;
+		collectionCreated = onCreated;
+		contextMenuUri = null;
+		dropdownMenuUri = null;
+		await tick();
+		createCollectionOpen = true;
+	}
 	function openCopyDrawer(item: SaveView) {
 		drawerTarget = item;
 		drawerMode = 'copy';
@@ -629,7 +647,10 @@
 	}
 	// Open: capture the clicked tile's offset BEFORE opening — mounting the panel
 	// reflows the grid immediately, so the post-open layout is already wrong.
-	function selectTile(item: SaveView) {
+	function selectTile(event: MouseEvent, item: SaveView) {
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
+			return;
+		event.preventDefault();
 		const el = scrollEl ? tileByUri(item.uri) : null;
 		const recorded = el && scrollEl ? tileTop(el, scrollEl) : null;
 		onSelectSave(item);
@@ -668,6 +689,12 @@
 		<Scan />
 		View full screen
 	</Menu.Item>
+	{#if !native}
+		<Menu.Item onSelect={() => window.open(saveLink(item), '_blank', 'noopener,noreferrer')}>
+			<ExternalLink />
+			Open in new tab
+		</Menu.Item>
+	{/if}
 	<Menu.Item onSelect={() => onFindSimilar(item)}>
 		<Sparkles />
 		Find similar in library
@@ -688,10 +715,11 @@
 			     backdrop-blur) stays fixed and covers every row; scrolling the panel
 			     itself drags the blur layer away, leaving revealed rows see-through. -->
 			<Menu.SubContent class="w-64 overflow-hidden p-0">
-				<div class="max-h-[50vh] overflow-y-auto p-1.5">
+				<div class="scrollbar-hide max-h-[50vh] overflow-y-auto p-1.5">
 					<CollectionSelector
 						{item}
 						variant="inline"
+						onCreateCollection={openCreateCollection}
 						onSavesChange={(saves) => onItemSavesChange(item, saves)}
 					/>
 				</div>
@@ -713,8 +741,12 @@
 					Move to collection
 				</Menu.SubTrigger>
 				<Menu.SubContent class="w-64 overflow-hidden p-0">
-					<div class="max-h-[50vh] overflow-y-auto p-1.5">
-						<CollectionSelector variant="inline" onSelect={(uri) => moveToCollection(item, uri)} />
+					<div class="scrollbar-hide max-h-[50vh] overflow-y-auto p-1.5">
+						<CollectionSelector
+							variant="inline"
+							onCreateCollection={openCreateCollection}
+							onSelect={(uri) => moveToCollection(item, uri)}
+						/>
 					</div>
 				</Menu.SubContent>
 			</Menu.Sub>
@@ -934,14 +966,17 @@
 									{/if}
 								</button>
 							{:else}
-								<ContextMenu.Root>
+								<ContextMenu.Root
+									open={contextMenuUri === item.uri}
+									onOpenChange={(open) => (contextMenuUri = open ? item.uri : null)}
+								>
 									<ContextMenu.Trigger>
 										{#snippet child({ props })}
-											<button
+											<a
 												{...props}
-												type="button"
+												href="/profile/{item.author.handle}/save/{item.uri.split('/').pop()}"
 												data-uri={item.uri}
-												onclick={() => selectTile(item)}
+												onclick={(event) => selectTile(event, item)}
 												class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-[box-shadow] group-hover:ring-2 {selectedSaveUri ===
 												item.uri
 													? 'ring-2 ring-primary'
@@ -951,7 +986,7 @@
 													: undefined}
 											>
 												{@render tileMedia(item, image, ratio)}
-											</button>
+											</a>
 										{/snippet}
 									</ContextMenu.Trigger>
 									<!-- overflow-*-visible so the collection submenus (which render
@@ -964,7 +999,10 @@
 								<!-- Options button: opens the same menu as right-click, anchored to the button.
 								     Always visible on touch (no hover), revealed on hover on desktop, and kept
 								     visible while its menu is open. -->
-								<DropdownMenu.Root>
+								<DropdownMenu.Root
+									open={dropdownMenuUri === item.uri}
+									onOpenChange={(open) => (dropdownMenuUri = open ? item.uri : null)}
+								>
 									<DropdownMenu.Trigger>
 										{#snippet child({ props })}
 											<Button
@@ -1013,6 +1051,13 @@
 		{/if}
 	{/if}
 </div>
+
+<CollectionCreateDialog
+	bind:open={createCollectionOpen}
+	parent={createCollectionParent?.uri}
+	parentName={createCollectionParent?.name}
+	onCreated={(collection) => collectionCreated?.(collection)}
+/>
 
 <!-- Mobile "Copy/Move to collection": a shared bottom drawer (desktop uses the inline submenu). -->
 <Drawer.Root bind:open={drawerOpen}>
