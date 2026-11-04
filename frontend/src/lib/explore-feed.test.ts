@@ -3,6 +3,7 @@ import {
 	exploreFeedScope,
 	forgetExploreFeed,
 	lastExploreFeed,
+	peekExploreFeed,
 	rememberExploreFeed,
 	resumeExploreFeed,
 	type ExploreFeedState
@@ -20,6 +21,9 @@ describe('Explore navigation cache', () => {
 		const scope = exploreFeedScope('viewer-one', []);
 		rememberExploreFeed(scope, 'general', state);
 		rememberExploreFeed(scope, 'personal', { ...state, cursor: 'personal-cursor' });
+		expect(lastExploreFeed(scope)).toBe('personal');
+		expect(peekExploreFeed(scope, 'general')).toEqual(state);
+		expect(peekExploreFeed(exploreFeedScope('someone-else', []), 'general')).toBeUndefined();
 		expect(lastExploreFeed(scope)).toBe('personal');
 		expect(resumeExploreFeed(scope, 'general')).toEqual(state);
 		expect(lastExploreFeed(scope)).toBe('general');

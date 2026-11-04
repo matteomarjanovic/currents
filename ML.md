@@ -107,6 +107,8 @@ Users expect a fresh page load to change what they see. The personalized and ser
 
 Client-side navigation resumes the existing feed instead of refreshing it. Explore keeps one in-memory set of loaded saves, continuation cursor, and viewport anchor per feed level. Back from another Currents page and switching from Organize to Explore restore those images and their position after masonry layout; the Explore entry point resumes the last level used. The cache is scoped to the viewer and excluded collections. Explicit Refresh and browser reload still start fresh; nothing is persisted to browser storage. An expired continuation cursor leaves loaded images visible and offers Refresh.
 
+On browsers with View Transitions, cached cross-page returns keep the outgoing page snapshot visible until the feed anchor is restored. The snapshot update callback waits only for navigation; grid readiness is awaited afterward, because that callback pauses the animation frames masonry needs. Image-overlay returns keep their separate retained-DOM handoff. Other page navigations have no transition.
+
 The seed drives three levers, none of which touches the importance *formula* itself — they are all sampling on top of the existing ranking:
 
 1. **Which collections** feed the pools — seed-weighted sampling of 3 from the top-5 (above).

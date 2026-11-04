@@ -102,6 +102,69 @@ async function switchLevel(page: Page, name: string) {
 	await page.getByRole('menuitemradio', { name, exact: true }).click();
 }
 
+async function recordPageHandoffs(page: Page, outgoingSelector: string) {
+	await page.evaluate((selector) => {
+		const start = document.startViewTransition.bind(document);
+		const from = location.pathname;
+		const outgoing = document.querySelector(selector);
+		const handoffs: {
+			from: string;
+			sourceRetained: boolean;
+			ready?: { oldOpacity: string; newOpacity: string };
+			finished?: { path: string; y: number };
+		}[] = [];
+		const record = () => {
+			document.documentElement.dataset.testPageHandoffs = JSON.stringify(handoffs);
+		};
+		document.startViewTransition = (update) => {
+			const handoff: (typeof handoffs)[number] = {
+				from,
+				sourceRetained: outgoing?.isConnected === true
+			};
+			handoffs.push(handoff);
+			const transition = start(update);
+			transition.ready.then(
+				() => {
+					handoff.ready = {
+						oldOpacity: getComputedStyle(document.documentElement, '::view-transition-old(root)')
+							.opacity,
+						newOpacity: getComputedStyle(document.documentElement, '::view-transition-new(root)')
+							.opacity
+					};
+					record();
+				},
+				() => {}
+			);
+			transition.finished.then(
+				() => {
+					handoff.finished = { path: location.pathname, y: scrollY };
+					record();
+				},
+				() => {}
+			);
+			return transition;
+		};
+	}, outgoingSelector);
+}
+
+async function expectPageHandoff(page: Page, from: string, path: string, y: number) {
+	await expect
+		.poll(() => page.locator('html').getAttribute('data-test-page-handoffs'))
+		.toContain('finished');
+	const handoffs = await page.evaluate(() =>
+		JSON.parse(document.documentElement.dataset.testPageHandoffs!)
+	);
+	expect(handoffs).toEqual([
+		{
+			from,
+			sourceRetained: true,
+			ready: { oldOpacity: '1', newOpacity: '0' },
+			finished: { path, y }
+		}
+	]);
+	await expect(page.locator('html')).not.toHaveAttribute('data-explore-feed-return');
+}
+
 test.describe('desktop Explore restoration', () => {
 	test.use({ viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false });
 
@@ -115,14 +178,55 @@ test.describe('desktop Explore restoration', () => {
 		await expect(page.locator('[data-save-uri]')).toHaveCount(70);
 		await page.getByRole('tab', { name: 'Organize', exact: true }).click();
 		await expect(page).toHaveURL('/organize');
+		await recordPageHandoffs(page, '[data-slot="sidebar-wrapper"]');
 		await page.getByRole('tab', { name: 'Explore', exact: true }).click();
 		await expect(page).toHaveURL('/explore/new-worlds');
 		await expectPosition(page, saved);
+		await expectPageHandoff(page, '/organize', '/explore/new-worlds', saved.y);
 		await expect(page.locator('[data-save-uri]')).toHaveCount(70);
 		expect(calls).toEqual([
 			{ level: '-1', cursor: null },
 			{ level: '-1', cursor: '-1:1:next' }
 		]);
+	});
+
+	test('Back from a profile keeps its snapshot visible until the cached feed is positioned', async ({
+		page
+	}) => {
+		const { calls } = await mockApi(page);
+		await page.goto('/explore/general');
+		const saved = await position(page);
+		await page.getByRole('button', { name: 'Profile menu' }).click();
+		await page.getByRole('menuitem', { name: /Go to profile/ }).click();
+		await expect(page).toHaveURL(`/profile/${me.handle}`);
+		await recordPageHandoffs(page, 'h1');
+		await page.goBack();
+		await expect(page).toHaveURL('/explore/general');
+		await expectPosition(page, saved);
+		await expectPageHandoff(page, `/profile/${me.handle}`, '/explore/general', saved.y);
+		expect(calls).toEqual([{ level: '0', cursor: null }]);
+	});
+
+	test('same-level navigation does not wait for a grid remount', async ({ page }) => {
+		const { calls } = await mockApi(page);
+		await page.goto('/explore/general');
+		await position(page);
+		await recordPageHandoffs(page, 'main');
+		await page.evaluate(() => {
+			const link = document.createElement('a');
+			link.href = '/explore/general?view=same';
+			link.textContent = 'Same feed';
+			link.style.cssText = 'position:fixed;top:80px;left:20px;z-index:100';
+			document.body.append(link);
+		});
+		await page.getByRole('link', { name: 'Same feed', exact: true }).click();
+		await expect(page).toHaveURL('/explore/general?view=same');
+		await page.evaluate(
+			() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+		);
+		await expect(page.locator('html')).not.toHaveAttribute('data-explore-feed-return');
+		await expect(page.locator('html')).not.toHaveAttribute('data-test-page-handoffs');
+		expect(calls).toEqual([{ level: '0', cursor: null }]);
 	});
 
 	test('Back through a profile and image restores the feed without refetching', async ({

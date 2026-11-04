@@ -27,7 +27,10 @@
 	} from '$lib/stores/feed-preferences.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { preferences } from '$lib/stores/preferences.svelte';
-	import { exploreFeedRestoration } from '$lib/stores/explore-feed-restoration.svelte';
+	import {
+		exploreFeedRestoration,
+		finishExploreFeedReturn
+	} from '$lib/stores/explore-feed-restoration.svelte';
 	import {
 		endExploreSaveSession,
 		startExploreSaveSession
@@ -135,6 +138,7 @@
 			positionBeforeOverlay = cached?.position;
 			feed.reset(cached);
 			pendingPosition = cached && cached.items.length > 0 ? cached.position : null;
+			if (!pendingPosition) finishExploreFeedReturn();
 			ready = true;
 			if (!cached) {
 				scrollBodyTo(0);
@@ -173,6 +177,7 @@
 			if (height === previousHeight) {
 				pendingPosition = null;
 				exploreFeedRestoration.holdingOverlay = false;
+				finishExploreFeedReturn();
 			} else {
 				previousHeight = height;
 				frame = requestAnimationFrame(restore);

@@ -1,11 +1,19 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { dev } from '$app/environment';
-	import { afterNavigate } from '$app/navigation';
+	import { afterNavigate, onNavigate } from '$app/navigation';
+	import { page } from '$app/state';
 	import { mode } from 'mode-watcher';
 	import { initApp } from '$lib/app-init';
 	import { isIos, isNative } from '$lib/platform';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { findFeedLevel } from '$lib/feed-levels';
+	import { exploreFeedScope, lastExploreFeed, peekExploreFeed } from '$lib/explore-feed';
+	import { feedPreferences } from '$lib/stores/feed-preferences.svelte';
+	import {
+		waitForExploreFeedReturn,
+		finishExploreFeedReturn
+	} from '$lib/stores/explore-feed-restoration.svelte';
 	import { loadModerationPrefs, modPrefsLoaded } from '$lib/stores/moderation-prefs.svelte';
 	import { loadPreferences, preferences, preferencesLoaded } from '$lib/stores/preferences.svelte';
 	import { setExploreSaveSuggestionMode } from '$lib/stores/save-suggestions.svelte';
@@ -22,7 +30,75 @@
 
 	let { children } = $props();
 
+	let feedReturnTransition: ViewTransition | undefined;
+	let finishFeedNavigation = () => {};
+	onNavigate((navigation) => {
+		const to = navigation.to;
+		const entry = to?.route.id === '/(with-navbar)/explore';
+		const destination =
+			to?.route.id === '/(with-navbar)/explore/[level]' && to.url.pathname.startsWith('/explore/');
+		if (feedReturnTransition) {
+			const transition = feedReturnTransition;
+			const finish = finishFeedNavigation;
+			if (destination)
+				navigation.complete.then(finish, () => {
+					finish();
+					transition.skipTransition();
+				});
+			else if (!entry) {
+				finish();
+				transition.skipTransition();
+			}
+			return;
+		}
+		if ((!entry && !destination) || !document.startViewTransition) return;
+		const scope = exploreFeedScope(auth.user?.did ?? '', feedPreferences.excludedCollections);
+		const level = entry ? lastExploreFeed(scope) : findFeedLevel(to?.params?.level)?.slug;
+		// A same-level route update reuses the live grid; it has no restore to await.
+		if (
+			destination &&
+			navigation.from?.route.id === to?.route.id &&
+			navigation.from?.params?.level === level
+		)
+			return;
+		if (!level || !peekExploreFeed(scope, level)?.items.length) return;
+		const gridReady = waitForExploreFeedReturn();
+		const navigationReady = new Promise<void>((resolve) => {
+			finishFeedNavigation = resolve;
+		});
+		const finish = finishFeedNavigation;
+		return new Promise<void>((continueNavigation) => {
+			document.documentElement.dataset.exploreFeedReturn = '';
+			const transition = document.startViewTransition(async () => {
+				continueNavigation();
+				await navigationReady;
+			});
+			feedReturnTransition = transition;
+			if (destination)
+				navigation.complete.then(finish, () => {
+					finish();
+					transition.skipTransition();
+				});
+			// Await grid frames only after the update callback: view transitions pause
+			// requestAnimationFrame during that callback, which masonry needs to settle.
+			Promise.all([transition.ready, gridReady]).then(
+				() => transition.skipTransition(),
+				() => transition.skipTransition()
+			);
+			const cleanup = () => {
+				finishExploreFeedReturn();
+				feedReturnTransition = undefined;
+				delete document.documentElement.dataset.exploreFeedReturn;
+			};
+			transition.finished.then(cleanup, cleanup);
+		});
+	});
+
 	afterNavigate(() => {
+		if (page.status >= 400 && feedReturnTransition) {
+			finishFeedNavigation();
+			feedReturnTransition.skipTransition();
+		}
 		if (!isIos()) return;
 		// SvelteKit switches history entries to manual scroll restoration after mounting.
 		// WKWebView then rejects a back-swipe snapshot when that entry was captured at a

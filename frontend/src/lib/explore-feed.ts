@@ -35,6 +35,10 @@ export function resumeExploreFeed(nextScope: string, level: FeedLevelSlug) {
 	return feeds.get(level);
 }
 
+export function peekExploreFeed(nextScope: string, level: FeedLevelSlug) {
+	return scope === nextScope ? feeds.get(level) : undefined;
+}
+
 export function rememberExploreFeed(
 	nextScope: string,
 	level: FeedLevelSlug,
