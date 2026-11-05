@@ -5,6 +5,53 @@ missing appview rows are not proof that a PDS record was deleted. Maintenance
 repairs surviving records on the PDS and lets TAP update the appview normally.
 It does not recreate deleted records or recover missing image blobs.
 
+## AT Protocol account deletion (TAP)
+
+Deleting an account at its PDS does not emit an individual delete for every
+Currents record. TAP delivers this as an `identity` event with `isActive: false`
+and `status: "deleted"`. The appview handles that status before validating the
+handle, removes the account's mirrored profile, collections, saves, follows and
+favourites, cancels pending imports and maintenance jobs, and removes its OAuth
+sessions. It does not write to the PDS or change billing/subscriptions.
+Other users' independent saves, follows and favourites remain intact; deleting
+saves re-elects shared visual identities' canonical saves as usual.
+
+A persistent `tap_deleted_repo` marker blocks buffered record events from
+recreating deleted content. Cleanup shares the repository lock with imports and
+account writes, is safe to repeat after partial failure, and is acknowledged to
+TAP only after it succeeds. A later explicit active event clears the marker only
+after a fresh DID lookup and confirmation that the current PDS is active, so an
+old buffered active event cannot undo a historical cleanup. Temporary
+deactivation, suspension and takedown do not trigger this deletion flow.
+
+For accounts deleted before this handler was deployed, use the one-shot audit:
+
+```sh
+# Preview every indexed account; no cleanup or deletion markers are written.
+appview purge-deleted-accounts
+
+# Inspect the account that originally exposed the missing handler.
+appview purge-deleted-accounts --did did:plc:gz2idxdnl7jbo6c2guxcxwdc
+
+# Recheck and clean confirmed deletions, globally or with the same --did filter.
+appview purge-deleted-accounts --apply
+```
+
+The audit requires an explicit inactive/deleted status from the relay (default:
+`https://relay1.us-east.bsky.network`; override with `--relay-url`) and a fresh
+DID lookup whose current PDS confirms deletion or returns the structured
+`RepoNotFound` error. A broken handle, an arbitrary 404, a PDS outage, or a relay
+that disagrees with an active current PDS never authorizes cleanup. Failed checks
+leave that account untouched and produce a nonzero exit status; other confirmed
+accounts can still be processed. Owners without profile rows and markers from
+interrupted cleanups are included. Logs report each confirmed DID and totals.
+
+Use the deployed database environment and take the normal backup before
+applying. As with the other appview commands, startup applies pending schema
+migrations even when the audit itself is only a preview. This is an operator
+command, not a periodic sweep; run it after deploying the handler to remove
+historical leftovers. No Jetstream configuration is required.
+
 ## Orphan recovery
 
 The appview runs a recovery pass at startup and every 24 hours. It uses the

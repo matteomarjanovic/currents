@@ -141,7 +141,7 @@ func handleTapConn(ctx context.Context, conn *websocket.Conn, handler *TapHandle
 			if evt.Record == nil {
 				continue
 			}
-			if err := handleTapRecord(ctx, handler, evt.Record); err != nil {
+			if err := applyTapRecord(ctx, handler, evt.Record); err != nil {
 				if !errors.Is(err, errSkipRecord) {
 					slog.Error("TAP record handler error", "err", err, "collection", evt.Record.Collection, "action", evt.Record.Action, "did", evt.Record.DID, "rkey", evt.Record.Rkey)
 					continue // transient; don't ack, TAP will redeliver
@@ -169,6 +169,45 @@ func handleTapConn(ctx context.Context, conn *websocket.Conn, handler *TapHandle
 }
 
 func handleTapIdentity(ctx context.Context, handler *TapHandler, ev *TapIdentityEvent) error {
+	// TAP folds account status changes into identity events. A deleted account
+	// often has an invalid handle, so handle its status before parsing the handle.
+	if ev.Status == "deleted" && !ev.IsActive {
+		unlock, err := handler.Store.lockRepository(ctx, ev.DID)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		return handler.Store.deleteIndexedAccount(ctx, ev.DID)
+	}
+	if ev.Status == "active" && ev.IsActive {
+		unlock, err := handler.Store.lockRepository(ctx, ev.DID)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		var deleted bool
+		if err := handler.Store.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tap_deleted_repo WHERE did = $1)`, ev.DID).Scan(&deleted); err != nil {
+			return err
+		}
+		if deleted {
+			// A historical audit can overtake buffered active events. Only the
+			// current PDS can authorize removing its deletion marker again.
+			if err := handler.Dir.Purge(ctx, syntax.DID(ev.DID).AtIdentifier()); err != nil {
+				return err
+			}
+			ident, err := handler.Dir.LookupDID(ctx, syntax.DID(ev.DID))
+			if err != nil {
+				return err
+			}
+			status, missing, err := readRepoAccountStatus(ctx, ident.PDSEndpoint(), ev.DID)
+			if err != nil || missing || !*status.Active {
+				return err
+			}
+			if _, err := handler.Store.pool.Exec(ctx, `DELETE FROM tap_deleted_repo WHERE did = $1`, ev.DID); err != nil {
+				return err
+			}
+		}
+	}
 	handle, err := syntax.ParseHandle(ev.Handle)
 	if err != nil || handle.IsInvalidHandle() {
 		return nil // No valid handle to index.

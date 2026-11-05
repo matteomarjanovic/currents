@@ -103,7 +103,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref, hidden_feed_image,
 			label, blob_moderation_state, review_item, report, moderation_event,
 			import_session, admin, operations_job_run, operations_host_snapshot, blob_enrichment_failure,
-			collection_delete_job, orphan_record, jetstream_backfill, jetstream_repo, jetstream_cursor
+			collection_delete_job, orphan_record, jetstream_backfill, jetstream_repo, jetstream_cursor, tap_deleted_repo
 		RESTART IDENTITY CASCADE
 	`)
 	if err != nil {

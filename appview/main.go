@@ -35,6 +35,16 @@ func main() {
 		Action: runServer,
 		Commands: []*cli.Command{
 			{
+				Name:   "purge-deleted-accounts",
+				Usage:  "inspect confirmed AT Protocol account deletions; remove indexed content only with --apply",
+				Action: runServer,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "did", Usage: "restrict inspection and cleanup to this DID"},
+					&cli.StringFlag{Name: "relay-url", Value: "https://relay1.us-east.bsky.network", Usage: "relay used to verify deleted account status"},
+					&cli.BoolFlag{Name: "apply", Usage: "remove confirmed deleted accounts from the index"},
+				},
+			},
+			{
 				Name:   "repair-pinterest-imports",
 				Usage:  "inspect or queue recovery of legacy truncated Pinterest imports",
 				Action: runServer,
@@ -469,7 +479,7 @@ func runServer(cctx *cli.Context) error {
 	if ingestSource != "tap" && ingestSource != "jetstream" {
 		return fmt.Errorf("invalid ingest source %q", ingestSource)
 	}
-	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" || cctx.Command.Name == "queue-jetstream-audit" || cctx.Command.Name == "repair-pinterest-imports" {
+	if cctx.Command.Name == "repair-orphans" || cctx.Command.Name == "refresh-handles" || cctx.Command.Name == "queue-jetstream-audit" || cctx.Command.Name == "repair-pinterest-imports" || cctx.Command.Name == "purge-deleted-accounts" {
 		mode = cctx.Command.Name
 		if mode == "repair-pinterest-imports" && cctx.String("did") == "" && !cctx.Bool("dry-run") {
 			return fmt.Errorf("applying Pinterest repair requires --did; use --dry-run for the global plan")
@@ -487,7 +497,7 @@ func runServer(cctx *cli.Context) error {
 		}
 	}
 	switch mode {
-	case "all", "repair", "repair-orphans", "refresh-handles", "queue-jetstream-audit", "repair-pinterest-imports":
+	case "all", "repair", "repair-orphans", "refresh-handles", "queue-jetstream-audit", "repair-pinterest-imports", "purge-deleted-accounts":
 	default:
 		return fmt.Errorf("invalid mode %q", mode)
 	}
@@ -547,6 +557,9 @@ func runServer(cctx *cli.Context) error {
 	}
 	if mode == "refresh-handles" {
 		return refreshUserHandles(ctx, store, dir, cctx.String("did"), cctx.Bool("dry-run"))
+	}
+	if mode == "purge-deleted-accounts" {
+		return purgeDeletedAccounts(ctx, store, dir, cctx.String("relay-url"), cctx.String("did"), cctx.Bool("apply"))
 	}
 	if mode == "queue-jetstream-audit" {
 		did := cctx.String("did")
