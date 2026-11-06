@@ -150,8 +150,8 @@
 			);
 			const handle = auth.user?.handle ?? '';
 			await goto(handle ? `/profile/${handle}` : '/', {
-				replaceState: true,
-				invalidateAll: true
+				replace: true,
+				refreshAll: true
 			});
 		} catch {
 			deleting = false;

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { PUBLIC_APPVIEW_URL } from '$app/env/public';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -247,7 +247,7 @@
 						<Field>
 							<Button type="submit" class="w-full" disabled={inFlight}>Login</Button>
 							<FieldDescription class="text-center">
-								Don't have an Atmosphere account? <a href={resolve('/register')}>Sign up</a>
+								Don't have an Atmosphere account? <a href={resolve('register')}>Sign up</a>
 							</FieldDescription>
 						</Field>
 					</FieldGroup>
@@ -256,7 +256,7 @@
 		</Card.Content>
 	</Card.Root>
 	<FieldDescription class="px-6 text-center">
-		By clicking continue, you agree to our <a href={resolve('/terms')}>Terms of Service</a>
-		and <a href={resolve('/privacy')}>Privacy Policy</a>.
+		By clicking continue, you agree to our <a href={resolve('terms')}>Terms of Service</a>
+		and <a href={resolve('privacy')}>Privacy Policy</a>.
 	</FieldDescription>
 </div>

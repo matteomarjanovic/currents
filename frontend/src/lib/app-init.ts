@@ -95,8 +95,8 @@ export async function initApp(): Promise<void> {
 				const collectionUri = url.searchParams.get('c');
 				await goto(
 					collectionUri
-						? `${resolve('/organize')}?c=${encodeURIComponent(collectionUri)}`
-						: resolve('/organize')
+						? `${resolve('organize')}?c=${encodeURIComponent(collectionUri)}`
+						: resolve('organize')
 				);
 				return;
 			}

@@ -17,14 +17,14 @@
 <div class="min-h-svh px-4 py-8 md:px-8">
 	<div class="mx-auto flex max-w-3xl flex-col gap-6">
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-			<a href={resolve('/')} class="flex h-5 items-center gap-2 font-medium">
+			<a href={resolve('')} class="flex h-5 items-center gap-2 font-medium">
 				<LogoMerged />
 			</a>
 			<div class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-				<a class="underline underline-offset-4" href={resolve('/terms')}>Terms</a>
-				<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy</a>
-				<a class="underline underline-offset-4" href={resolve('/refunds')}>Refunds</a>
-				<a class="underline underline-offset-4" href={resolve('/')}>Go to app</a>
+				<a class="underline underline-offset-4" href={resolve('terms')}>Terms</a>
+				<a class="underline underline-offset-4" href={resolve('privacy')}>Privacy</a>
+				<a class="underline underline-offset-4" href={resolve('refunds')}>Refunds</a>
+				<a class="underline underline-offset-4" href={resolve('')}>Go to app</a>
 				<ThemeToggle />
 			</div>
 		</div>

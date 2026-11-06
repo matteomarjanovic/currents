@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL, PUBLIC_WEB_APPVIEW_URL } from '$env/static/public';
+import { PUBLIC_APPVIEW_URL, PUBLIC_WEB_APPVIEW_URL } from '$app/env/public';
 import { isNative } from './platform';
 import { getAuthToken } from './auth-storage';
 

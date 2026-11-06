@@ -10,6 +10,6 @@ import { share } from './stores/share.svelte';
 // is what svelte/no-navigation-without-resolve checks for.
 export function gotoAfterLogin(): Promise<void> {
 	return share.pending
-		? goto(resolve('/(without-navbar)/share'))
-		: goto(resolve('/(with-navbar)/explore'));
+		? goto(resolve('share'))
+		: goto(resolve('explore'));
 }

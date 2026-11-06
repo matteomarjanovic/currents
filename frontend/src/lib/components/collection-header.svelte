@@ -27,10 +27,7 @@
 	// You can favourite only other people's collections, and only when signed in.
 	// The count is shown here and updated optimistically by the toggle's onChange.
 	const loggedIn = $derived(!!auth.user);
-	let favouriteCount = $state(0);
-	$effect(() => {
-		favouriteCount = collection.favouriteCount ?? 0;
-	});
+	let favouriteCount = $derived(collection.favouriteCount ?? 0);
 
 	function goBack() {
 		if (history.length > 1) {

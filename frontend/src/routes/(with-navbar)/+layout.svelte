@@ -65,7 +65,7 @@
 
 		if (!user && !isPublic) {
 			// On native the login entry point is the welcome screen at '/', not the web /login route.
-			goto(native ? resolve('/') : resolve('/login'));
+			goto(native ? resolve('') : resolve('login'));
 		}
 	});
 
@@ -74,7 +74,7 @@
 		// it lets browser Back return to the page that preceded Currents instead of bouncing
 		// through / and immediately entering Explore again.
 		if (auth.checked && auth.user && isHome) {
-			goto(resolve('/(with-navbar)/explore'), { replaceState: true });
+			goto(resolve('explore'), { replace: true });
 		}
 	});
 

@@ -1,4 +1,4 @@
-import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+import { PUBLIC_APPVIEW_URL } from '$app/env/public';
 import { registerPlugin } from '@capacitor/core';
 import { isIos, isNative } from './platform';
 

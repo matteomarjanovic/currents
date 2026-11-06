@@ -24,7 +24,7 @@
 </svelte:head>
 
 <main class="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-	<a href={resolve('/')} class="mb-12 h-5 text-foreground" aria-label="Currents home">
+	<a href={resolve('')} class="mb-12 h-5 text-foreground" aria-label="Currents home">
 		<Logo />
 	</a>
 
@@ -42,7 +42,7 @@
 		{detail}
 	</p>
 
-	<a href={resolve('/explore')} class="mt-8">
+	<a href={resolve('explore')} class="mt-8">
 		<Button size="lg" class="gap-2 rounded-full px-8">
 			<ArrowLeft class="size-4" />
 			Back to explore

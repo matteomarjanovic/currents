@@ -47,9 +47,9 @@
 	}
 
 	function selectItem(i: number) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		url.searchParams.set('personalization', OPTIONS[i].slug);
-		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+		goto(url, { replace: true, reset: false });
 		isVisible = false;
 	}
 

@@ -25,7 +25,7 @@
 	<div class="mx-auto flex max-w-5xl flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
 		<div class="space-y-3 text-center sm:text-left">
 			<a
-				href={resolve('/')}
+				href={resolve('')}
 				class="mx-auto block h-5 w-fit text-lg font-semibold text-foreground sm:mx-0"
 			>
 				<Logo />
@@ -85,38 +85,38 @@
 			>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/blog')}
+					href={resolve('blog')}
 					onclick={handleBlog}
 				>
 					Blog
 				</a>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/support-us')}
+					href={resolve('support-us')}
 				>
 					Support the project
 				</a>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/support')}
+					href={resolve('support')}
 				>
 					Help &amp; support
 				</a>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/terms')}
+					href={resolve('terms')}
 				>
 					Terms of Service
 				</a>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/privacy')}
+					href={resolve('privacy')}
 				>
 					Privacy Policy
 				</a>
 				<a
 					class="underline-offset-4 transition-colors hover:text-foreground hover:underline"
-					href={resolve('/refunds')}
+					href={resolve('refunds')}
 				>
 					Refund Policy
 				</a>

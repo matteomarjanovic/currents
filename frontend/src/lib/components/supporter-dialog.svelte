@@ -63,7 +63,7 @@
 		<p class="text-xs text-muted-foreground">
 			<a
 				class="underline underline-offset-4 hover:text-foreground"
-				href={resolve('/support-us')}
+				href={resolve('support-us')}
 				onclick={(e) => {
 					// /support-us redirects to / on native; on Android open it in the system browser.
 					if (isAndroid()) {

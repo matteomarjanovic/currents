@@ -25,10 +25,10 @@
 	</div>
 
 	<div class="flex w-full max-w-sm flex-col gap-3 px-6">
-		<a href={resolve('/login')} class="block">
+		<a href={resolve('login')} class="block">
 			<Button size="lg" class="w-full rounded-full">Log in</Button>
 		</a>
-		<a href={resolve('/register')} class="block">
+		<a href={resolve('register')} class="block">
 			<Button variant="outline" size="lg" class="w-full rounded-full">Sign up</Button>
 		</a>
 	</div>

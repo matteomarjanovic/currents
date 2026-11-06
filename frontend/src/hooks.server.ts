@@ -1,6 +1,6 @@
-import { env } from '$env/dynamic/private';
-import { PUBLIC_APPVIEW_URL, PUBLIC_WEB_APPVIEW_URL } from '$env/static/public';
-import type { Handle, HandleFetch } from '@sveltejs/kit';
+import { APPVIEW_INTERNAL_URL } from '$app/env/private';
+import { PUBLIC_APPVIEW_URL, PUBLIC_WEB_APPVIEW_URL } from '$app/env/public';
+import type { Handle, HandleFetch } from '@sveltejs/kit/hooks';
 
 // app.html's og:image/twitter:image are a site-wide default that can't be templated per-route;
 // strip them when an SSR/prerendered page provides its own so crawlers do not see conflicts.
@@ -31,7 +31,7 @@ const APPVIEW_PATHS = ['/api/', '/xrpc/', '/oauth/', '/img/'];
 // Browser requests are routed by Caddy and never pass through SvelteKit. Server-side loads use
 // this hook to reach appview over the Compose network and carry the incoming host-only cookie.
 export const handleFetch: HandleFetch = async ({ event, request, fetch }) => {
-	const internalBase = env.APPVIEW_INTERNAL_URL?.replace(/\/$/, '');
+	const internalBase = APPVIEW_INTERNAL_URL?.replace(/\/$/, '');
 	if (!internalBase) return fetch(request);
 
 	const url = new URL(request.url);

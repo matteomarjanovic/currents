@@ -68,11 +68,11 @@
 		// The route only exists inside the native shell; the web share target still
 		// routes to /upload (see share-target.ts).
 		if (!isNative()) {
-			goto(resolve('/'));
+			goto(resolve(''));
 			return;
 		}
 		pending = untrack(() => share.pending);
-		if (!pending) goto(resolve('/'));
+		if (!pending) goto(resolve(''));
 
 		return () => {
 			for (const u of objectUrls) URL.revokeObjectURL(u);
@@ -111,7 +111,7 @@
 	function bounceToLogin() {
 		auth.user = null;
 		if (pending) share.pending = pending;
-		goto(resolve('/'));
+		goto(resolve(''));
 	}
 
 	async function loadFromUrl(pageUrl: string) {
@@ -182,7 +182,7 @@
 			const { SendIntent } = await import('send-intent');
 			SendIntent.finish();
 		} catch {
-			goto(resolve('/'));
+			goto(resolve(''));
 		}
 	}
 

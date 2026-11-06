@@ -81,6 +81,7 @@ services:
       context: ./frontend
       args:
         PUBLIC_WEB_APPVIEW_URL: ""
+        ORIGIN: ${ORIGIN:-https://currents.is}
         PUBLIC_POLAR_PRODUCT_MONTHLY: ${PUBLIC_POLAR_PRODUCT_MONTHLY:-}
         PUBLIC_POLAR_PRODUCT_YEARLY: ${PUBLIC_POLAR_PRODUCT_YEARLY:-}
     restart: unless-stopped

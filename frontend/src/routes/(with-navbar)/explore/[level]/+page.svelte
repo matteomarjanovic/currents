@@ -65,9 +65,9 @@
 	// Unknown slugs and auth-only feeds for logged-out visitors fall back to general.
 	$effect(() => {
 		if (!level) {
-			goto('/explore/general', { replaceState: true });
+			goto('/explore/general', { replace: true });
 		} else if (auth.checked && !auth.user && level.value !== 0) {
-			goto('/explore/general', { replaceState: true });
+			goto('/explore/general', { replace: true });
 		}
 	});
 
@@ -107,7 +107,9 @@
 		});
 	}
 
-	beforeNavigate(() => rememberFeed());
+	beforeNavigate((navigation) => {
+		if (!navigation.shallow) rememberFeed();
+	});
 
 	let overlayWasOpen = false;
 	$effect.pre(() => {

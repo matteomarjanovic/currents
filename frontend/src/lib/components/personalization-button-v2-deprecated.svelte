@@ -67,14 +67,14 @@
 
 	async function commitValue(v: number) {
 		const nextValue = clamp(v);
-		const target = resolve(buildExploreHref(nextValue));
+		const target = resolve(buildExploreHref(nextValue).slice(1) as `explore/${string}`);
 
 		committedValue = nextValue;
 		activeValue = nextValue;
 		open = false;
 
 		try {
-			await goto(target, { replaceState: true, keepFocus: true, noScroll: true });
+			await goto(target, { replace: true, reset: false });
 		} catch {
 			committedValue = null;
 			activeValue = selectedValue;

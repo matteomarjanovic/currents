@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { apiFetch } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -45,12 +45,12 @@
 
 	// URL is the source of truth — derived values re-run load() on any navigation.
 	let category = $derived(
-		($page.url.searchParams.get('category') ?? '') as '' | 'nsfw' | 'violence' | 'other'
+		(page.url.searchParams.get('category') ?? '') as '' | 'nsfw' | 'violence' | 'other'
 	);
 	let order = $derived(
-		($page.url.searchParams.get('order') ?? 'priority') as 'priority' | 'oldest' | 'newest'
+		(page.url.searchParams.get('order') ?? 'priority') as 'priority' | 'oldest' | 'newest'
 	);
-	let offset = $derived(Math.max(0, parseInt($page.url.searchParams.get('offset') ?? '0', 10)));
+	let offset = $derived(Math.max(0, parseInt(page.url.searchParams.get('offset') ?? '0', 10)));
 
 	let items = $state<Item[]>([]);
 	let loading = $state(true);
@@ -86,7 +86,7 @@
 	}
 
 	function navigate(params: { category?: string; order?: string; offset?: number }) {
-		const url = new URL($page.url);
+		const url = new URL(page.url.href);
 		const cat = params.category ?? category;
 		const ord = params.order ?? order;
 		const off = params.offset ?? 0;

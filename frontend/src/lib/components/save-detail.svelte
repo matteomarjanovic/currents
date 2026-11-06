@@ -1048,7 +1048,7 @@
 
 <!-- Mobile floating home button: full wordmark, pinned at top center. -->
 <a
-	href={resolve('/')}
+	href={resolve('')}
 	aria-label="Go to home"
 	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
 	style="top: calc(env(safe-area-inset-top) + 2rem)"

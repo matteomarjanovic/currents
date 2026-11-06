@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { dev } from '$app/environment';
+	import { dev } from '$app/env';
 	import { afterNavigate, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { mode } from 'mode-watcher';
@@ -33,6 +33,7 @@
 	let feedReturnTransition: ViewTransition | undefined;
 	let finishFeedNavigation = () => {};
 	onNavigate((navigation) => {
+		if (navigation.shallow) return;
 		const to = navigation.to;
 		const entry = to?.route.id === '/(with-navbar)/explore';
 		const destination =
@@ -94,7 +95,8 @@
 		});
 	});
 
-	afterNavigate(() => {
+	afterNavigate((navigation) => {
+		if (navigation.shallow) return;
 		if (page.status >= 400 && feedReturnTransition) {
 			finishFeedNavigation();
 			feedReturnTransition.skipTransition();
@@ -116,8 +118,7 @@
 		// by Capacitor, where a worker is unwanted (guard: isNative); and under `vite dev` the
 		// worker is served on a different path, so we skip it there (test it via build/preview).
 		if (!dev && !isNative() && 'serviceWorker' in navigator) {
-			// updateViaCache 'none' keeps sw.js AND its importScripts (share-target-sw.js) fresh
-			// on update checks instead of being served from the HTTP cache.
+			// Always check the bundled worker for updates without an HTTP cache hit.
 			navigator.serviceWorker
 				.register('/sw.js', { updateViaCache: 'none' })
 				.then((reg) => {

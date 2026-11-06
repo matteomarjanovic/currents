@@ -121,5 +121,5 @@ export async function consumeWebShare(): Promise<void> {
 	} catch (err) {
 		console.warn('share-target: failed to process web share', err);
 	}
-	await goto('/upload', { replaceState: true });
+	await goto('/upload', { replace: true });
 }

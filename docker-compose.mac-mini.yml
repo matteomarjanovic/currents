@@ -70,6 +70,7 @@ services:
       args:
         PUBLIC_APPVIEW_URL: ${PUBLIC_APPVIEW_URL:-https://dev.currents.is}
         PUBLIC_WEB_APPVIEW_URL: ""
+        ORIGIN: ${ORIGIN:-https://dev.currents.is}
         PUBLIC_POLAR_PRODUCT_MONTHLY: ${PUBLIC_POLAR_PRODUCT_MONTHLY:-}
         PUBLIC_POLAR_PRODUCT_YEARLY: ${PUBLIC_POLAR_PRODUCT_YEARLY:-}
     restart: unless-stopped

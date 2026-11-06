@@ -150,7 +150,7 @@ test('appending a masonry page preserves the scroll position', async ({ page }) 
 	const grid = page.locator('div[style*="grid-template-columns"]').first();
 	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(21);
 	await grid.evaluate((element) => {
-		const sentinel = element.parentElement?.nextElementSibling;
+		const sentinel = element.closest('[data-masonry-grid]')?.parentElement?.nextElementSibling;
 		if (!sentinel) throw new Error('missing infinite-scroll sentinel');
 		const sentinelTop = sentinel.getBoundingClientRect().top + window.scrollY;
 		window.scrollTo(0, sentinelTop - window.innerHeight - 200);
@@ -194,7 +194,7 @@ test('scrolling still paginates if masonry misses its intersection update', asyn
 	const grid = page.locator('div[style*="grid-template-columns"]').first();
 	await expect.poll(() => grid.evaluate((element) => element.children.length)).toBe(21);
 	await grid.evaluate((element) => {
-		const sentinel = element.parentElement?.nextElementSibling;
+		const sentinel = element.closest('[data-masonry-grid]')?.parentElement?.nextElementSibling;
 		if (!sentinel) throw new Error('missing infinite-scroll sentinel');
 		const sentinelTop = sentinel.getBoundingClientRect().top + window.scrollY;
 		window.scrollTo(0, sentinelTop - window.innerHeight - 200);
@@ -238,7 +238,7 @@ test('a signed-in page append keeps the feed interactive and suggestions batched
 	});
 
 	await grid.evaluate((element) => {
-		const sentinel = element.parentElement?.nextElementSibling;
+		const sentinel = element.closest('[data-masonry-grid]')?.parentElement?.nextElementSibling;
 		if (!sentinel) throw new Error('missing infinite-scroll sentinel');
 		const sentinelTop = sentinel.getBoundingClientRect().top + window.scrollY;
 		window.scrollTo(0, sentinelTop - window.innerHeight - 200);

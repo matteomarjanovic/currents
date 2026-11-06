@@ -168,12 +168,12 @@
 		// Back means browser Back, including returning to the external page that opened Currents.
 		// Only use the Explore fallback when this tab truly has no previous history entry.
 		if (history.length > 1) history.back();
-		else goto(resolve('/(with-navbar)/explore'));
+		else goto(resolve('explore'));
 	}
 
 	function openPinterestImport() {
 		markFeatureSeen(FEATURE_PINTEREST_IMPORT);
-		goto(resolve('/(with-navbar)/import/pinterest'));
+		goto(resolve('import/pinterest'));
 	}
 
 	// Public pages render before the browser auth refresh finishes, so `user` can become known
@@ -251,7 +251,7 @@
 	// app / PWA, otherwise navigate in-app.
 	function openBlog() {
 		if (shouldOpenExternally()) openExternal('/blog');
-		else goto(resolve('/blog'));
+		else goto(resolve('blog'));
 	}
 
 	async function openFeedback() {
@@ -271,7 +271,7 @@
 		if (!supporter.subscribed) markFeatureSeen(FEATURE_BECOME_SUPPORTER);
 		if (isAndroid()) openExternal('/support-us');
 		else if (isIos()) openSettings('subscription');
-		else goto(resolve('/support-us'));
+		else goto(resolve('support-us'));
 	}
 
 	$effect(() => {
@@ -388,7 +388,7 @@
 {/snippet}
 
 {#snippet loginButton(size: 'default' | 'lg')}
-	<a href={resolve('/login')} class="pointer-events-auto shrink-0">
+	<a href={resolve('login')} class="pointer-events-auto shrink-0">
 		<Button variant="default" {size} class="rounded-full px-5">Log in</Button>
 	</a>
 {/snippet}
@@ -460,7 +460,7 @@
 				<FolderPlus class="size-4" />
 				Create collection
 			</DropdownMenu.Item>
-			<DropdownMenu.Item onclick={() => goto(resolve('/(with-navbar)/upload'))}>
+			<DropdownMenu.Item onclick={() => goto(resolve('upload'))}>
 				<ImagePlus class="size-4" />
 				Upload images
 			</DropdownMenu.Item>
@@ -660,14 +660,14 @@
 			{#if landing}
 				<a
 					in:fade={{ duration: 250, easing: cubicOut }}
-					href={resolve('/')}
+					href={resolve('')}
 					class="pointer-events-auto h-5 shrink-0 text-lg font-semibold text-foreground"><Logo /></a
 				>
 			{:else}
 				{#if showLogo}
 					<a
 						in:fade={{ duration: 250, easing: cubicOut }}
-						href={resolve('/')}
+						href={resolve('')}
 						aria-label="Go to home"
 						class="pointer-events-auto hidden h-5 shrink-0 text-lg font-semibold text-foreground md:block"
 						><Logo /></a
@@ -685,7 +685,7 @@
 			     live in the bottom cluster instead. -->
 				<a
 					in:fade={{ duration: 250, easing: cubicOut }}
-					href={resolve('/')}
+					href={resolve('')}
 					aria-label="Go to home"
 					class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
 					style="top: calc(env(safe-area-inset-top) + 2rem)"

@@ -23,6 +23,13 @@ proposing new work; delete an entry when it ships.
 
 ## Engineering
 
+- **Svelte build dependency advisory.** `deepmerge` 4.3.1 has no published fix
+  for [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4).
+  It remains in `@sveltejs/vite-plugin-svelte` for merging trusted build
+  configuration; the 11 low-severity frontend audit findings all trace to this
+  one dependency. Upgrade when a supported fix is available; do not use the
+  obsolete SvelteKit/adapter downgrades suggested by `npm audit fix --force`.
+
 - **CVE-2026-98432 kernel remediation.** Both production VMs have persistent
   IPv4-options filtering, and Caddy/appview/TAP have MPTCP disabled. They still
   run Ubuntu `7.0.0-38-generic`; on 2026-10-31 the fixed `7.0.0-43.43` build

@@ -18,7 +18,7 @@
 	// while it's preview-gated.
 	onMount(async () => {
 		if (isNative()) {
-			goto(resolve('/'));
+			goto(resolve(''));
 			return;
 		}
 		// This route lives outside (with-navbar)/(without-navbar), so nothing else populates

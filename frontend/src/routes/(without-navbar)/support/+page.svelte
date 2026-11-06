@@ -18,7 +18,7 @@
 	<div class="mx-auto flex max-w-3xl flex-col gap-6">
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			<a
-				href={resolve('/')}
+				href={resolve('')}
 				aria-label="Currents home"
 				class="flex h-5 items-center gap-2 font-medium"
 			>
@@ -28,10 +28,10 @@
 				aria-label="Support navigation"
 				class="flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
 			>
-				<a class="underline underline-offset-4" href={resolve('/terms')}>Terms</a>
-				<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy</a>
-				<a class="underline underline-offset-4" href={resolve('/refunds')}>Refunds</a>
-				<a class="underline underline-offset-4" href={resolve('/')}>Go to app</a>
+				<a class="underline underline-offset-4" href={resolve('terms')}>Terms</a>
+				<a class="underline underline-offset-4" href={resolve('privacy')}>Privacy</a>
+				<a class="underline underline-offset-4" href={resolve('refunds')}>Refunds</a>
+				<a class="underline underline-offset-4" href={resolve('')}>Go to app</a>
 				<ThemeToggle />
 			</nav>
 		</div>
@@ -67,7 +67,7 @@
 						<a class="underline underline-offset-4" href="mailto:refunds@currents.is"
 							>refunds@currents.is</a
 						>. Include the email address used at checkout and your order number if available. Read
-						our <a class="underline underline-offset-4" href={resolve('/refunds')}>Refund Policy</a>
+						our <a class="underline underline-offset-4" href={resolve('refunds')}>Refund Policy</a>
 						for eligibility and details.
 					</p>
 					<p>
@@ -84,7 +84,7 @@
 						<a class="underline underline-offset-4" href="mailto:privacy@currents.is"
 							>privacy@currents.is</a
 						>. You can also start account deletion under <strong>Settings → Account</strong>. Our
-						<a class="underline underline-offset-4" href={resolve('/privacy')}>Privacy Policy</a>
+						<a class="underline underline-offset-4" href={resolve('privacy')}>Privacy Policy</a>
 						explains deletion options, retention, and how we handle your information.
 					</p>
 				</section>

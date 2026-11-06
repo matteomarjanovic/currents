@@ -34,7 +34,7 @@
 			return;
 		}
 		if (slug === selected.slug) return;
-		goto(`/explore/${slug}`, { replaceState: true, keepFocus: true, noScroll: true });
+		goto(`/explore/${slug}`, { replace: true, reset: false });
 	}
 </script>
 

@@ -1,4 +1,4 @@
-import { PUBLIC_POLAR_PRODUCT_MONTHLY, PUBLIC_POLAR_PRODUCT_YEARLY } from '$env/static/public';
+import { PUBLIC_POLAR_PRODUCT_MONTHLY, PUBLIC_POLAR_PRODUCT_YEARLY } from '$app/env/public';
 import { PolarEmbedCheckout } from '@polar-sh/checkout/embed';
 import { mode } from 'mode-watcher';
 import { toast } from 'svelte-sonner';

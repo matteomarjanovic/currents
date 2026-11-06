@@ -19,6 +19,6 @@
 			? (raw as SettingsSection)
 			: 'account';
 		openSettings(section);
-		goto(resolve('/(with-navbar)/explore'), { replaceState: true });
+		goto(resolve('explore'), { replace: true });
 	});
 </script>

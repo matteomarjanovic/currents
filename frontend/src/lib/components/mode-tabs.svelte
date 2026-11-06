@@ -41,11 +41,11 @@
 		value = next;
 		if (next === 'organize') void markFeatureSeen(FEATURE_ORGANIZE_MODE);
 		if (next === routeMode) return;
-		await goto(next === 'organize' ? resolve('/organize') : resolve('/(with-navbar)/explore'));
+		await goto(next === 'organize' ? resolve('organize') : resolve('explore'));
 	}
 
 	function openExplore() {
-		if (routeMode === 'explore') void goto(resolve('/(with-navbar)/explore'));
+		if (routeMode === 'explore') void goto(resolve('explore'));
 	}
 
 	$effect(() => {
@@ -65,7 +65,7 @@
 	style:--mode-transition-name={viewTransitionName}
 >
 	<a
-		href={routeMode === 'organize' ? resolve('/organize') : resolve('/')}
+		href={routeMode === 'organize' ? resolve('organize') : resolve('')}
 		class="flex size-[46px] shrink-0 items-center justify-center rounded-full border border-border bg-primary-foreground/80 bg-clip-padding text-foreground backdrop-blur-sm"
 		aria-label="Currents"
 	>

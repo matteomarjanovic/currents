@@ -1,5 +1,5 @@
-import { browser } from '$app/environment';
-import { PUBLIC_UMAMI_SCRIPT_URL, PUBLIC_UMAMI_WEBSITE_ID } from '$env/static/public';
+import { browser } from '$app/env';
+import { PUBLIC_UMAMI_SCRIPT_URL, PUBLIC_UMAMI_WEBSITE_ID } from '$app/env/public';
 import { isNative, platform } from '$lib/platform';
 import {
 	sanitizeAnalyticsReferrer,

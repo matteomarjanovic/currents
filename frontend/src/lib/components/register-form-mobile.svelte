@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PUBLIC_APPVIEW_URL } from '$env/static/public';
+	import { PUBLIC_APPVIEW_URL } from '$app/env/public';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -117,7 +117,7 @@
 				</Field>
 				<Field>
 					<FieldDescription class="text-center">
-						Already have an account? <a href={resolve('/login')}>Log in</a>
+						Already have an account? <a href={resolve('login')}>Log in</a>
 					</FieldDescription>
 				</Field>
 			</FieldGroup>
@@ -129,7 +129,7 @@
 		</a>
 	</div>
 	<FieldDescription class="px-6 text-center">
-		By clicking continue, you agree to our <a href={resolve('/terms')}>Terms of Service</a>
-		and <a href={resolve('/privacy')}>Privacy Policy</a>.
+		By clicking continue, you agree to our <a href={resolve('terms')}>Terms of Service</a>
+		and <a href={resolve('privacy')}>Privacy Policy</a>.
 	</FieldDescription>
 </div>

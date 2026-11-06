@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { apiFetch } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -18,8 +18,8 @@
 	const limit = 50;
 
 	// URL is the source of truth — derived values re-run load() on any navigation.
-	let q = $derived($page.url.searchParams.get('q') ?? '');
-	let offset = $derived(Math.max(0, parseInt($page.url.searchParams.get('offset') ?? '0', 10)));
+	let q = $derived(page.url.searchParams.get('q') ?? '');
+	let offset = $derived(Math.max(0, parseInt(page.url.searchParams.get('offset') ?? '0', 10)));
 
 	// Local mirror of the search box: a writable $derived seeded from the URL, so
 	// typing overrides it and any navigation re-seeds it. Debounced back into the URL.
@@ -58,7 +58,7 @@
 	}
 
 	function navigate(params: { q?: string; offset?: number }) {
-		const url = new URL($page.url);
+		const url = new URL(page.url.href);
 		const query = params.q ?? q;
 		const off = params.offset ?? 0;
 		if (query) url.searchParams.set('q', query);

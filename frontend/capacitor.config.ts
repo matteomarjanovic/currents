@@ -4,7 +4,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
 	appId: 'is.currents.app',
 	appName: 'Currents',
-	// Written only by a CAPACITOR=1 build (see svelte.config.js). A plain `npm run build` writes
+	// Written only by a CAPACITOR=1 build (see svelte-options.js). A plain `npm run build` writes
 	// build/, whose bundle is broken inside the webview — pointing here means `cap sync` errors
 	// on a missing directory rather than silently packaging it.
 	webDir: 'build-mobile',

@@ -18,7 +18,7 @@
 		redirecting = true;
 		if (!auth.user) {
 			goto(resolve('/(with-navbar)/explore/[level]', { level: 'general' }), {
-				replaceState: true
+				replace: true
 			});
 			return;
 		}
@@ -29,7 +29,7 @@
 				resolve('/(with-navbar)/explore/[level]', {
 					level: lastExploreFeed(scope) ?? feedPreferences.defaultFeed
 				}),
-				{ replaceState: true }
+				{ replace: true }
 			);
 		})();
 	});

@@ -170,7 +170,7 @@
 					<p class="text-xs text-muted-foreground">
 						{#if polarConfigured}
 							Payments are handled by Polar. Cancel anytime — see the
-							<a class="underline underline-offset-4" href={resolve('/refunds')}>Refund Policy</a>.
+							<a class="underline underline-offset-4" href={resolve('refunds')}>Refund Policy</a>.
 						{:else}
 							Supporter subscriptions are opening soon.
 						{/if}
@@ -358,7 +358,7 @@
 						Yes. Open Settings → Subscription → Manage and cancel in a couple of clicks. You keep
 						supporter features until the end of the period you've paid for. And if you change your
 						mind right after subscribing, your first payment is fully refundable within 14 days (see
-						the <a class="underline underline-offset-4" href={resolve('/refunds')}>Refund Policy</a
+						the <a class="underline underline-offset-4" href={resolve('refunds')}>Refund Policy</a
 						>).
 					</Accordion.Content>
 				</Accordion.Item>

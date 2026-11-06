@@ -1,4 +1,4 @@
-import { browser, building } from '$app/environment';
+import { browser, building } from '$app/env';
 import { apiFetch } from '$lib/api';
 import type { LayoutLoad } from './$types';
 

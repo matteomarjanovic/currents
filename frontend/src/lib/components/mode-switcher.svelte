@@ -39,14 +39,14 @@
 			label: 'Explore',
 			description: 'Discover new images',
 			icon: Compass,
-			open: () => goto(resolve('/(with-navbar)/explore'))
+			open: () => goto(resolve('explore'))
 		},
 		{
 			value: 'organize',
 			label: 'Organize',
 			description: 'Curate your library',
 			icon: Folders,
-			open: () => goto(resolve('/organize'))
+			open: () => goto(resolve('organize'))
 		}
 	] as const;
 

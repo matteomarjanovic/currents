@@ -230,7 +230,7 @@
 						<Field>
 							<Button type="submit" class="w-full">Login</Button>
 							<FieldDescription class="text-center">
-								Don't have an Atmosphere account? <a href={resolve('/register')}>Sign up</a>
+								Don't have an Atmosphere account? <a href={resolve('register')}>Sign up</a>
 							</FieldDescription>
 						</Field>
 					</FieldGroup>
@@ -239,7 +239,7 @@
 		</Card.Content>
 	</Card.Root>
 	<FieldDescription class="px-6 text-center">
-		By clicking continue, you agree to our <a href={resolve('/terms')}>Terms of Service</a>
-		and <a href={resolve('/privacy')}>Privacy Policy</a>.
+		By clicking continue, you agree to our <a href={resolve('terms')}>Terms of Service</a>
+		and <a href={resolve('privacy')}>Privacy Policy</a>.
 	</FieldDescription>
 </div>

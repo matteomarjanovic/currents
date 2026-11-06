@@ -37,7 +37,7 @@
 		<!-- Standard.site verification for this document — https://standard.site/docs/verification.
 		     Juttu (comments) reads this same tag via an exact `rel="site.standard.document"` selector
 		     to resolve which Bluesky thread to show, so the rel value can't have anything added to
-		     it — svelte.config.js's handleInvalidUrl keeps the prerender crawler from choking on the
+		     it — svelte-options.js's handleInvalidUrl keeps the prerender crawler from choking on the
 		     at:// href (a valid AT-URI, but not a parseable WHATWG URL) instead.
 		     https://juttu.app/getting-started/installation/ -->
 		<link

@@ -19,7 +19,7 @@
 
 <div class="flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
 	<div class="flex w-full max-w-sm flex-col gap-6">
-		<a href={resolve('/')} class="flex h-5 items-center gap-2 self-center font-medium">
+		<a href={resolve('')} class="flex h-5 items-center gap-2 self-center font-medium">
 			<LogoMerged />
 		</a>
 		{#if native}
@@ -113,7 +113,7 @@
 							</Field>
 							<Field>
 								<FieldDescription class="text-center">
-									Already have an account? <a href={resolve('/login')}>Log in</a>
+									Already have an account? <a href={resolve('login')}>Log in</a>
 								</FieldDescription>
 							</Field>
 						</FieldGroup>
@@ -125,8 +125,8 @@
 					</a>
 				</div>
 				<FieldDescription class="px-6 text-center">
-					By clicking continue, you agree to our <a href={resolve('/terms')}>Terms of Service</a>
-					and <a href={resolve('/privacy')}>Privacy Policy</a>.
+					By clicking continue, you agree to our <a href={resolve('terms')}>Terms of Service</a>
+					and <a href={resolve('privacy')}>Privacy Policy</a>.
 				</FieldDescription>
 			</div>
 		{/if}

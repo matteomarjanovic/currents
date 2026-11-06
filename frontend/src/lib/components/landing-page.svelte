@@ -61,7 +61,7 @@
 
 				<div class="flex items-center justify-center gap-4">
 					<a
-						href={resolve('/explore')}
+						href={resolve('explore')}
 						onclick={() => trackEvent('landing_cta_clicked', { destination: 'explore' })}
 					>
 						<Button size="lg" class="gap-2 rounded-full px-8 text-base shadow-lg shadow-black/20">
