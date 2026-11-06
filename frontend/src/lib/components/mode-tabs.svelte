@@ -2,6 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { prefersReducedMotion } from 'svelte/motion';
+	import { MotionDiv } from '@humanspeak/svelte-motion';
 	import * as Tabs from '$lib/components/ui/animated-tabs';
 	import LogoIcon from '$lib/assets/logo-icon.svelte';
 	import { modeTabsState } from '$lib/mode-tabs.svelte';
@@ -73,15 +75,30 @@
 	</a>
 
 	{#if auth.user}
-		<Tabs.Root {value} onValueChange={switchMode} class="gap-0">
+		<Tabs.Root {value} onValueChange={switchMode} animated={false} class="gap-0">
 			<Tabs.List
 				aria-label="Currents mode"
-				class="h-[35px]! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding backdrop-blur-sm"
+				class="relative h-[35px]! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding backdrop-blur-sm"
 			>
-				<Tabs.Trigger value="explore" class="h-full rounded-full" onclick={openExplore}
-					>Explore</Tabs.Trigger
+				<MotionDiv
+					data-mode-indicator
+					aria-hidden="true"
+					initial={false}
+					animate={{ x: value === 'organize' ? '100%' : '0%' }}
+					transition={prefersReducedMotion.current
+						? { duration: 0 }
+						: { type: 'spring', stiffness: 500, damping: 30 }}
+					class="pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/2)] rounded-full border border-border bg-background dark:border-input dark:bg-input/30"
+				/>
+				<Tabs.Trigger
+					value="explore"
+					class="h-full rounded-full data-[state=active]:border-transparent! data-[state=active]:bg-transparent! data-[state=active]:shadow-none!"
+					onclick={openExplore}>Explore</Tabs.Trigger
 				>
-				<Tabs.Trigger value="organize" class="h-full rounded-full">
+				<Tabs.Trigger
+					value="organize"
+					class="h-full rounded-full data-[state=active]:border-transparent! data-[state=active]:bg-transparent! data-[state=active]:shadow-none!"
+				>
 					<span class="relative">
 						Organize
 						{#if showOrganizeNew && routeMode === 'explore'}

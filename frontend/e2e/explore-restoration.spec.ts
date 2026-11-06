@@ -295,6 +295,42 @@ test.describe('desktop Explore restoration', () => {
 		await expect(explore).toHaveAttribute('aria-selected', 'true');
 	});
 
+	test('mode indicator slides horizontally after scrolling', async ({ page }) => {
+		await mockApi(page);
+		await page.goto('/explore/general');
+		await page.evaluate(() => document.documentElement.classList.add('dark'));
+		await expect(page.getByRole('tab', { name: 'Explore', exact: true })).toHaveCSS(
+			'border-top-color',
+			'rgba(0, 0, 0, 0)'
+		);
+		await position(page, 2100);
+		const indicator = page.locator('[data-mode-tabs]:visible [data-mode-indicator]');
+		const start = await indicator.boundingBox();
+		expect(start).not.toBeNull();
+		await page.evaluate(() => {
+			const indicator = document.querySelector<HTMLElement>(
+				'[data-mode-tabs]:not([inert]) [data-mode-indicator]'
+			)!;
+			const positions: number[] = [];
+			(window as unknown as { indicatorPositions: number[] }).indicatorPositions = positions;
+			const sample = () => {
+				positions.push(indicator.getBoundingClientRect().y);
+				if (positions.length < 40) requestAnimationFrame(sample);
+			};
+			requestAnimationFrame(sample);
+		});
+		await page.getByRole('tab', { name: 'Organize', exact: true }).click();
+		await expect(page).toHaveURL('/organize');
+		await expect
+			.poll(async () => (await indicator.boundingBox())!.x)
+			.toBeGreaterThan(start!.x + 50);
+		const positions = await page.evaluate(
+			() => (window as unknown as { indicatorPositions: number[] }).indicatorPositions
+		);
+		expect(positions.length).toBeGreaterThan(0);
+		expect(positions.every((y) => Math.abs(y - start!.y) < 2)).toBe(true);
+	});
+
 	test('Organize → Explore resumes the last level, loaded pages, cursor and position', async ({
 		page
 	}) => {
