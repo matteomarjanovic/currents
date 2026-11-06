@@ -1,3 +1,5 @@
+import { isPinterestHost } from './pinterest-source';
+export { isPinterestHost } from './pinterest-source';
 import { browser } from 'wxt/browser';
 
 const KEY = 'saveButtonSettings';
@@ -8,10 +10,6 @@ export const saveButtonSettings = $state({
 	domains: [...defaults.domains],
 	ready: false
 });
-
-export function isPinterestHost(hostname: string): boolean {
-	return /(^|\.)pinterest\.[a-z.]+$/.test(hostname);
-}
 
 export function isCurrentsHost(hostname: string): boolean {
 	const host = hostname.toLowerCase().replace(/^www\./, '');

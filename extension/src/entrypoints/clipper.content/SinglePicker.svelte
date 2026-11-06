@@ -44,6 +44,7 @@
 					alt: metadata.alt.trim(),
 					resolvedOrigin: metadata.origin,
 					originUrl: clipper.originUrl,
+					pinterestPinUrl: clipper.siteHints.pinterestPinUrl,
 					imageOrigin: clipper.siteHints.imageOrigin,
 					attributionUrl: details.attributionUrl.trim(),
 					attributionLicense: details.attributionLicense.trim(),

@@ -1,3 +1,4 @@
+import { pinterestImageSource } from './pinterest-image';
 import { detectImageOrigin } from './detect-image-origin';
 import type { ImageOriginHint } from '../../lib/image-origin';
 
@@ -9,6 +10,8 @@ import type { ImageOriginHint } from '../../lib/image-origin';
 // image — the right-click-an-image path still saves anything by hand.
 
 export interface ImageCandidate {
+	originUrl?: string;
+	pinterestPinUrl?: string;
 	origin?: ImageOriginHint;
 	url: string;
 	alt: string;
@@ -71,6 +74,7 @@ export function candidateForImage(img: HTMLImageElement): ImageCandidate | null 
 
 	return {
 		url,
+		...pinterestImageSource(img),
 		alt: img.alt.trim().slice(0, 2000),
 		width,
 		height,

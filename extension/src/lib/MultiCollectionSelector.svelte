@@ -119,7 +119,7 @@
 	</button>
 {/snippet}
 
-<div use:scrollFade class="min-h-0 flex-1 overflow-y-auto">
+<div use:scrollFade class="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
 	{#if creating}
 		<div class="flex flex-col gap-2 pt-1">
 			<div class="flex items-center gap-2">

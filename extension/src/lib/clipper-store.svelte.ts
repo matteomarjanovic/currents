@@ -20,6 +20,7 @@ export interface Collection {
 }
 
 export interface SiteHints {
+	pinterestPinUrl?: string;
 	imageOrigin?: ImageOriginHint;
 	attributionCredit?: string;
 	originUrl?: string;

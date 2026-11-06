@@ -1,3 +1,4 @@
+import { pinterestImageSource } from './pinterest-image';
 import { mount, unmount } from 'svelte';
 import App from './App.svelte';
 import { showClipper, loadClipperAuth, type SiteHints } from '../../lib/clipper-store.svelte';
@@ -24,52 +25,14 @@ function injectFont() {
 	document.head.appendChild(style);
 }
 
-// externalSourceURL returns raw only when it is an http(s) URL pointing
-// somewhere other than Pinterest itself; otherwise undefined.
-function externalSourceURL(raw: string | null | undefined): string | undefined {
-	if (!raw) return undefined;
-	let u: URL;
-	try {
-		u = new URL(raw);
-	} catch {
-		return undefined;
-	}
-	if (u.protocol !== 'http:' && u.protocol !== 'https:') return undefined;
-	if (isPinterestHost(u.hostname) || u.hostname.replace(/^www\./, '') === 'pin.it') {
-		return undefined;
-	}
-	return raw;
-}
-
-// pinterestSourceUrl resolves a Pinterest pin's original external source from
-// the closeup page. og:see_also carries it in the head; the visible
-// clickthrough anchor is a second independent signal. Returns undefined when
-// the pin has no external source (caller falls back to the pin URL).
-function pinterestSourceUrl(): string | undefined {
-	if (!/\/pin\/\d+/.test(location.pathname)) return undefined;
-
-	const ogSeeAlso = document.querySelector<HTMLMetaElement>(
-		'meta[property="og:see_also"]'
-	)?.content;
-	const fromMeta = externalSourceURL(ogSeeAlso);
-	if (fromMeta) return fromMeta;
-
-	const clickthrough = document.querySelector<HTMLAnchorElement>(
-		'a[data-test-id="clickthrough-link"]'
-	);
-	return externalSourceURL(clickthrough?.href);
-}
-
 function extractSiteHints(img?: HTMLImageElement): SiteHints {
 	const host = location.hostname.replace(/^www\./, '');
 	if (host === 'cosmos.so') {
 		const caption = document.querySelector<HTMLElement>('[data-testid="element-ml-caption"]');
 		if (caption) return { attributionCredit: caption.textContent?.trim() };
 	}
-	if (isPinterestHost(location.hostname)) {
-		const originUrl = pinterestSourceUrl();
-		if (originUrl) return { originUrl };
-	}
+	const pinterest = img ? pinterestImageSource(img) : undefined;
+	if (pinterest) return pinterest;
 	return { imageOrigin: img ? detectImageOrigin(img) : undefined };
 }
 
@@ -102,7 +65,13 @@ export default defineContentScript({
 		host.style.setProperty('padding', '0', 'important');
 		host.style.setProperty('border', '0', 'important');
 		let contextImage:
-			{ url: string; alt: string; imageOrigin?: SiteHints['imageOrigin'] } | undefined;
+			| {
+					url: string;
+					alt: string;
+					imageOrigin?: SiteHints['imageOrigin'];
+					pinterest?: ReturnType<typeof pinterestImageSource>;
+			  }
+			| undefined;
 
 		document.addEventListener(
 			'contextmenu',
@@ -115,7 +84,12 @@ export default defineContentScript({
 							? target.closest('img')
 							: null;
 				contextImage = img
-					? { url: img.currentSrc || img.src, alt: img.alt, imageOrigin: detectImageOrigin(img) }
+					? {
+							url: img.currentSrc || img.src,
+							alt: img.alt,
+							imageOrigin: detectImageOrigin(img),
+							pinterest: pinterestImageSource(img)
+						}
 					: undefined;
 			},
 			true
@@ -130,6 +104,8 @@ export default defineContentScript({
 				const siteHints = extractSiteHints(img);
 				if (contextImage && contextImage.url === message.imgUrl && contextImage.imageOrigin)
 					siteHints.imageOrigin = contextImage.imageOrigin;
+				if (contextImage && contextImage.url === message.imgUrl && contextImage.pinterest)
+					Object.assign(siteHints, contextImage.pinterest);
 				const altText = contextImage && contextImage.url === message.imgUrl ? contextImage.alt : '';
 				contextImage = undefined;
 				showClipper({

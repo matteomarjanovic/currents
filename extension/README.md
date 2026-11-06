@@ -16,6 +16,13 @@ collections from any website:
 
 Built with [WXT](https://wxt.dev) + Svelte, Manifest V3.
 
+Pinterest saves use the pin's external source when exposed by its own image card
+or detail page, across right-click, hover-button, and multi-image saves. Grid
+pins without a visible source use a public pin-page lookup without credentials.
+Missing or inaccessible sources fall back to the individual pin URL. Page-level
+source metadata is used only for the main pin image, never neighbouring pins.
+Run `node tests/pinterest-source.browser.mjs` after building to check these flows.
+
 On Bluesky, Mu, Witchsky, Northsky, Blacksky, Anisota, and Tokimeki, post images automatically
 retain the source AT Protocol record's URI and record CID when their ownership can be
 verified, including quoted images and images picked from feeds. The source link

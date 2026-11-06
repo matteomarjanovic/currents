@@ -1,3 +1,4 @@
+import { pinterestPinUrl, resolvePinterestSource } from '../lib/pinterest-source';
 import { resolveImageOrigin } from '../lib/resolve-image-origin';
 import type { ImageOrigin, ImageOriginHint } from '../lib/image-origin';
 import { blobCidFromBytes } from '../lib/blob-cid';
@@ -234,6 +235,7 @@ async function handleSave(message: {
 	alt?: string;
 	originUrl: string;
 	imageOrigin?: ImageOriginHint;
+	pinterestPinUrl?: string;
 	resolvedOrigin?: ImageOrigin;
 	attributionUrl?: string;
 	attributionLicense?: string;
@@ -253,6 +255,9 @@ async function handleSave(message: {
 	if (!auth) return { ok: false, error: 'Not logged in', authError: true };
 
 	const origin = message.resolvedOrigin ?? (await resolveImageOrigin(message.imageOrigin));
+	let originUrl = origin?.originUrl ?? message.originUrl;
+	if (message.pinterestPinUrl && pinterestPinUrl(originUrl))
+		originUrl = (await resolvePinterestSource(message.pinterestPinUrl)) ?? originUrl;
 	let imageBlob: Blob;
 	try {
 		imageBlob = await fetchImageBlob(message.imgUrl);
@@ -306,7 +311,6 @@ async function handleSave(message: {
 			form.append('collection', uri);
 			if (message.text) form.append('title', message.text);
 			if (message.alt) form.append('alt', message.alt);
-			const originUrl = origin?.originUrl ?? message.originUrl;
 			if (originUrl) form.append('url', originUrl);
 			if (origin) form.append('originAtprotoRef', JSON.stringify(origin.originAtprotoRef));
 			if (message.attributionUrl) form.append('attribution_url', message.attributionUrl);

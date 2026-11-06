@@ -1,3 +1,4 @@
+import { pinterestImageSource } from './pinterest-image';
 import { showClipper, loadClipperAuth } from '../../lib/clipper-store.svelte';
 import { bestImageUrl, candidateForImage } from './collect-images';
 
@@ -74,10 +75,13 @@ function openClipper(host: HTMLElement) {
 	// Grid pins carry the id directly; on the closeup it's in the URL.
 	const pinId =
 		host.getAttribute('data-test-pin-id') ?? location.pathname.match(/\/pin\/(\d+)/)?.[1] ?? null;
+	const source = pinterestImageSource(img);
 	showClipper({
 		imgUrl: bestImageUrl(img),
 		altText: img.alt,
-		originUrl: pinId ? `https://www.pinterest.com/pin/${pinId}/` : location.href,
+		originUrl:
+			source?.originUrl ?? (pinId ? `https://www.pinterest.com/pin/${pinId}/` : location.href),
+		siteHints: source ?? {},
 		pageTitle: document.title
 	});
 	void loadClipperAuth();
