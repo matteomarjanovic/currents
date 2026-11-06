@@ -30,6 +30,7 @@
 			page.url.pathname === '/terms' ||
 			page.url.pathname === '/privacy' ||
 			page.url.pathname === '/refunds' ||
+			page.url.pathname === '/support' ||
 			page.url.pathname === '/' ||
 			page.url.pathname === '/explore' ||
 			// Single-image pages are public. Per-label moderation still applies, but viewing a shared
