@@ -8,6 +8,10 @@
 
 /* Preserve the outgoing page while a cached feed restores its masonry/scroll.
    No crossfade: reveal the live feed only after its anchor is ready. */
+/* Keep scrollbar geometry while hiding captured/live scrollbar chrome during the handoff. */
+html[data-explore-feed-return] {
+	scrollbar-color: transparent transparent;
+}
 html[data-explore-feed-return]::view-transition-group(root) {
 	animation: none;
 }
@@ -17,6 +21,23 @@ html[data-explore-feed-return]::view-transition-old(root) {
 html[data-explore-feed-return]::view-transition-new(root) {
 	opacity: 0;
 	animation: none;
+}
+/* Naming the wrapper permanently isolates its children's backdrop blur. Only
+   separate it from the page snapshot during the actual handoff. */
+html[data-explore-feed-return] [data-mode-tabs] {
+	view-transition-name: var(--mode-transition-name, none);
+}
+/* The persistent switcher stays live above the held page snapshot. */
+html[data-explore-feed-return]::view-transition-group(mode-switcher) {
+	animation: none;
+}
+html[data-explore-feed-return]::view-transition-old(mode-switcher) {
+	display: none;
+}
+html[data-explore-feed-return]::view-transition-new(mode-switcher) {
+	animation: none;
+	opacity: 1;
+	mix-blend-mode: normal;
 }
 @keyframes explore-feed-return-hold {
 	from,

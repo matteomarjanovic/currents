@@ -351,7 +351,7 @@
 	let toTopEl: HTMLDivElement | undefined = $state();
 	let scrollbarInset = $state(0);
 	function measureScrollbarInset() {
-		let p = toTopEl?.parentElement ?? null;
+		let p = scrollRoot ?? toTopEl?.parentElement ?? null;
 		let w = null;
 		while (p) {
 			const o = getComputedStyle(p).overflowY;
@@ -367,10 +367,15 @@
 		if (w > 0) scrollbarInset = w;
 	}
 	$effect(() => {
-		if (!toTopEl) return;
+		if (!scrollRoot && !toTopEl) return;
 		measureScrollbarInset();
+		const observer = new ResizeObserver(measureScrollbarInset);
+		if (scrollRoot) observer.observe(scrollRoot);
 		window.addEventListener('resize', measureScrollbarInset);
-		return () => window.removeEventListener('resize', measureScrollbarInset);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measureScrollbarInset);
+		};
 	});
 
 	$effect(() => {
@@ -1055,10 +1060,13 @@
 
 <ModeTabs detail={active} />
 
-{#if active && showScrolledActions && !isMobile.current}
-	<div class="pointer-events-none" transition:fade={{ duration: 200, easing: cubicOut }}>
-		<TopBar user={auth.user} actionsOnly />
-	</div>
+<!-- Keep the scroll fade local: deactivating an overlay removes its bar immediately. -->
+{#if active && !isMobile.current}
+	{#if showScrolledActions}
+		<div class="pointer-events-none" transition:fade={{ duration: 200, easing: cubicOut }}>
+			<TopBar user={auth.user} actionsOnly scrollbarInset={scrollRoot ? scrollbarInset : 0} />
+		</div>
+	{/if}
 {/if}
 
 <!-- Floating actions: revealed once the primary view scrolls out of sight. -->

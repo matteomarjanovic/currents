@@ -201,7 +201,7 @@
 {@render children()}
 
 <!-- One persistent desktop instance: route layouts only provide its destination anchor. -->
-<ModeTabs />
+<ModeTabs viewTransitionName="mode-switcher" />
 
 <!-- Mounted once at the root so every mode (explore, organize, save pages) can
      open it via the settingsDialog store. -->

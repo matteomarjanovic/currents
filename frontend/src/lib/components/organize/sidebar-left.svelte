@@ -239,7 +239,12 @@
 									{/snippet}
 								</Sidebar.MenuButton>
 							</Sidebar.MenuItem>
-							{#each tree as node (node.root.uri)}
+							{#each tree as node, i (node.root.uri)}
+								{#if i === 0 || (tree[i - 1].root.viewer?.pinned && !node.root.viewer?.pinned)}
+									<li aria-hidden="true" class="py-1">
+										<Sidebar.Separator class="data-[orientation=horizontal]:w-auto" />
+									</li>
+								{/if}
 								<Collapsible.Root
 									class="group/collapsible"
 									open={node.open}

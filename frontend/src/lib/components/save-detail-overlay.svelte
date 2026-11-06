@@ -20,5 +20,8 @@
 		? 'overflow-hidden'
 		: 'overflow-y-auto'}"
 >
-	<SaveDetail {save} {scrollRoot} {active} />
+	<!-- Mount only once scrollRoot is bound; window scroll belongs to the feed. -->
+	{#if scrollRoot}
+		<SaveDetail {save} {scrollRoot} {active} />
+	{/if}
 </div>

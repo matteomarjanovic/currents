@@ -110,7 +110,13 @@ async function recordPageHandoffs(page: Page, outgoingSelector: string) {
 		const handoffs: {
 			from: string;
 			sourceRetained: boolean;
-			ready?: { oldOpacity: string; newOpacity: string };
+			ready?: {
+				oldOpacity: string;
+				newOpacity: string;
+				switcherOldDisplay: string;
+				switcherNewOpacity: string;
+				scrollbarColor: string;
+			};
 			finished?: { path: string; y: number };
 		}[] = [];
 		const record = () => {
@@ -129,7 +135,16 @@ async function recordPageHandoffs(page: Page, outgoingSelector: string) {
 						oldOpacity: getComputedStyle(document.documentElement, '::view-transition-old(root)')
 							.opacity,
 						newOpacity: getComputedStyle(document.documentElement, '::view-transition-new(root)')
-							.opacity
+							.opacity,
+						switcherOldDisplay: getComputedStyle(
+							document.documentElement,
+							'::view-transition-old(mode-switcher)'
+						).display,
+						switcherNewOpacity: getComputedStyle(
+							document.documentElement,
+							'::view-transition-new(mode-switcher)'
+						).opacity,
+						scrollbarColor: getComputedStyle(document.documentElement).scrollbarColor
 					};
 					record();
 				},
@@ -158,15 +173,127 @@ async function expectPageHandoff(page: Page, from: string, path: string, y: numb
 		{
 			from,
 			sourceRetained: true,
-			ready: { oldOpacity: '1', newOpacity: '0' },
+			ready: {
+				oldOpacity: '1',
+				newOpacity: '0',
+				switcherOldDisplay: 'none',
+				switcherNewOpacity: '1',
+				scrollbarColor: 'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)'
+			},
 			finished: { path, y }
 		}
 	]);
 	await expect(page.locator('html')).not.toHaveAttribute('data-explore-feed-return');
+	await expect(page.locator('html')).toHaveCSS('scrollbar-color', 'auto');
+	await expect(page.locator('[data-mode-tabs]').first()).toHaveCSS('view-transition-name', 'none');
 }
 
 test.describe('desktop Explore restoration', () => {
 	test.use({ viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false });
+
+	test('opening and closing a detail never flashes its toolbar over the feed', async ({ page }) => {
+		await mockApi(page);
+		await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
+			route.fulfill({
+				json: { saves: Array.from({ length: 30 }, (_, i) => image('related', 1, i)) }
+			})
+		);
+		await page.goto('/explore/general');
+		const saved = await position(page);
+		await page.evaluate(() => {
+			const flashes: { active: boolean; top: number }[] = [];
+			document.documentElement.dataset.testToolbarFlashes = '[]';
+			const frame = () => {
+				for (const root of document.querySelectorAll('[data-save-detail-overlay]')) {
+					const active = root.getAttribute('data-active') === 'true';
+					if ((!active || root.scrollTop <= 10) && root.querySelector('header.fixed')) {
+						flashes.push({ active, top: root.scrollTop });
+						document.documentElement.dataset.testToolbarFlashes = JSON.stringify(flashes);
+					}
+				}
+				requestAnimationFrame(frame);
+			};
+			requestAnimationFrame(frame);
+		});
+		await page.locator(`[data-save-uri="${saved.uri}"] a`).first().click();
+		const overlay = page.locator('[data-save-detail-overlay]');
+		await expect(overlay.locator('section a.block').first()).toBeAttached();
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+		await expect(overlay.locator('header.fixed')).toHaveCount(0);
+		await overlay.evaluate((el) => el.scrollTo(0, 100));
+		await expect(overlay.locator('header.fixed')).toBeVisible();
+		await page.goBack();
+		await expect(overlay).toHaveCount(0);
+		await expectPosition(page, saved);
+		await expect(page.locator('html')).toHaveAttribute('data-test-toolbar-flashes', '[]');
+	});
+
+	for (const entry of ['overlay', 'page']) {
+		test(`detail toolbar keeps a gap beside the scrollbar (${entry})`, async ({ page }) => {
+			await mockApi(page);
+			await page.route(`${APPVIEW}/xrpc/is.currents.feed.getSaves?**`, (route) =>
+				route.fulfill({ json: { saves: [image('0', 1, 0)] } })
+			);
+			await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
+				route.fulfill({
+					json: { saves: Array.from({ length: 30 }, (_, i) => image('related', 1, i)) }
+				})
+			);
+			if (entry === 'overlay') {
+				await page.goto('/explore/general');
+				await page.locator('[data-save-uri] a').first().click();
+			} else await page.goto(`/profile/${me.handle}/save/0-1-0`);
+			await page.locator('section a.block').first().waitFor({ state: 'attached' });
+			// Custom desktop scrollbars exercise a classic gutter even on macOS.
+			await page.addStyleTag({
+				content:
+					'::-webkit-scrollbar { width: 24px; } [data-save-detail-overlay] { scrollbar-gutter: stable; }'
+			});
+			const root = page.locator('[data-save-detail-overlay]');
+			if (entry === 'overlay') await root.evaluate((el) => el.scrollTo(0, 30));
+			else await page.evaluate(() => scrollTo(0, 30));
+			const toolbar = page
+				.locator('header.fixed')
+				.filter({ has: page.getByRole('button', { name: 'Profile menu' }) });
+			await expect(toolbar).toBeVisible();
+			await expect
+				.poll(() =>
+					toolbar.evaluate((header) => {
+						const root = header.closest('[data-save-detail-overlay]');
+						const edge = root
+							? root.getBoundingClientRect().left + root.clientWidth
+							: document.documentElement.clientWidth;
+						return Math.round(edge - header.lastElementChild!.getBoundingClientRect().right);
+					})
+				)
+				.toBe(16);
+			if (entry === 'overlay')
+				expect(await root.evaluate((el) => el.offsetWidth - el.clientWidth)).toBe(24);
+		});
+	}
+
+	test('mode switcher supports keyboard navigation', async ({ page }) => {
+		await mockApi(page);
+		await page.goto('/explore/general');
+		const explore = page.getByRole('tab', { name: 'Explore', exact: true });
+		await expect(explore).toHaveAttribute('aria-selected', 'true');
+		await explore.focus();
+		await page.keyboard.press('ArrowRight');
+		await expect(page).toHaveURL('/organize');
+		await expect(page.getByRole('tab', { name: 'Organize', exact: true })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await page.getByRole('tab', { name: 'Organize', exact: true }).focus();
+		await page.keyboard.press('ArrowLeft');
+		await expect(page).toHaveURL('/explore/general');
+		await expect(explore).toHaveAttribute('aria-selected', 'true');
+	});
 
 	test('Organize → Explore resumes the last level, loaded pages, cursor and position', async ({
 		page
@@ -330,6 +457,7 @@ test.describe('desktop Explore restoration', () => {
 		await expect(page).toHaveURL('/explore/general');
 		await expect(page.locator('[data-save-uri]')).toHaveCount(50);
 		await expectPosition(page, saved);
+		await expect(page.locator('html')).not.toHaveAttribute('data-explore-feed-return');
 		await position(page, 2100);
 		await expect(page.locator('[data-save-uri]')).toHaveCount(70);
 		expect(calls).toEqual([

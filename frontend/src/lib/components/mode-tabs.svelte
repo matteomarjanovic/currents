@@ -15,7 +15,8 @@
 
 	type AppMode = 'explore' | 'organize';
 
-	let { detail = false }: { detail?: boolean } = $props();
+	let { detail = false, viewTransitionName }: { detail?: boolean; viewTransitionName?: string } =
+		$props();
 
 	let value = $state<AppMode>('explore');
 
@@ -60,25 +61,27 @@
 		? 'opacity-100'
 		: 'pointer-events-none opacity-0'}"
 	style="top: calc(env(safe-area-inset-top) + 0.75rem)"
+	data-mode-tabs
+	style:--mode-transition-name={viewTransitionName}
 >
 	<a
 		href={routeMode === 'organize' ? resolve('/organize') : resolve('/')}
 		class="flex size-[46px] shrink-0 items-center justify-center rounded-full border border-border bg-primary-foreground/80 bg-clip-padding text-foreground backdrop-blur-sm"
 		aria-label="Currents"
 	>
-		<span class="size-[34px]"><LogoIcon /></span>
+		<span class="flex size-[34px] items-center justify-center"><LogoIcon /></span>
 	</a>
 
 	{#if auth.user}
 		<Tabs.Root {value} onValueChange={switchMode} class="gap-0">
 			<Tabs.List
 				aria-label="Currents mode"
-				class="h-9! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding backdrop-blur-sm"
+				class="h-[35px]! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding backdrop-blur-sm"
 			>
-				<Tabs.Trigger value="explore" class="rounded-full" onclick={openExplore}
+				<Tabs.Trigger value="explore" class="h-full rounded-full" onclick={openExplore}
 					>Explore</Tabs.Trigger
 				>
-				<Tabs.Trigger value="organize" class="rounded-full">
+				<Tabs.Trigger value="organize" class="h-full rounded-full">
 					<span class="relative">
 						Organize
 						{#if showOrganizeNew && routeMode === 'explore'}

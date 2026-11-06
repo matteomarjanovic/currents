@@ -241,9 +241,9 @@
 			<div
 				class="flex items-center justify-between gap-2 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]"
 			>
-				<Tabs.List>
-					<Tabs.Trigger value="details">Details</Tabs.Trigger>
-					<Tabs.Trigger value="similar">Related</Tabs.Trigger>
+				<Tabs.List class="h-[35px]!">
+					<Tabs.Trigger value="details" class="h-full">Details</Tabs.Trigger>
+					<Tabs.Trigger value="similar" class="h-full">Related</Tabs.Trigger>
 				</Tabs.List>
 				<Button variant="ghost" size="icon-sm" onclick={onClose} aria-label="Close details">
 					<X class="size-4" />

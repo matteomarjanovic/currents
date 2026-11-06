@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { devicePixelRatio } from 'svelte/reactivity/window';
 	import { apiFetch, logoutUrl } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { isNative, isAndroid, isIos, isMobileWeb, isStandalonePwa } from '$lib/platform';
@@ -70,13 +71,15 @@
 		landing = false,
 		showLogo = false,
 		actionsOnly = false,
-		mobileOnly = false
+		mobileOnly = false,
+		scrollbarInset = 0
 	}: {
 		user: { did: string; handle: string; displayName?: string; avatar?: string } | null;
 		landing?: boolean;
 		showLogo?: boolean;
 		actionsOnly?: boolean;
 		mobileOnly?: boolean;
+		scrollbarInset?: number;
 	} = $props();
 
 	// Android and web need the raised mobile bar; iOS keeps extra room for its native layout.
@@ -391,18 +394,39 @@
 {/snippet}
 
 {#snippet burgerIcon(open: boolean, mobile = false)}
-	<span class="relative block size-4 {mobile ? 'scale-[1.15]' : ''}">
-		<span
-			class="absolute top-[4px] left-0 h-0.5 w-4 rounded-full bg-current transition-transform duration-200 {open
-				? 'translate-y-[3px] rotate-45'
+	{@const ratio = devicePixelRatio.current ?? 1}
+	<!-- Target 6 CSS pixels, snapping the separation to whole physical pixels. -->
+	{@const offset = ((Math.round(6 * ratio) / ratio / 2) * 24) / (mobile ? 22 : 20)}
+	<svg
+		class="size-5"
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="2"
+		stroke-linecap="round"
+		aria-hidden="true"
+	>
+		<line
+			x1="5"
+			y1={12 - offset}
+			x2="19"
+			y2={12 - offset}
+			style:translate="0 {open ? offset : 0}px"
+			class="origin-center transition-transform duration-200 [transform-box:fill-box] {open
+				? 'rotate-45'
 				: ''}"
-		></span>
-		<span
-			class="absolute top-[10px] left-0 h-0.5 w-4 rounded-full bg-current transition-transform duration-200 {open
-				? '-translate-y-[3px] -rotate-45'
+		/>
+		<line
+			x1="5"
+			y1={12 + offset}
+			x2="19"
+			y2={12 + offset}
+			style:translate="0 {open ? -offset : 0}px"
+			class="origin-center transition-transform duration-200 [transform-box:fill-box] {open
+				? '-rotate-45'
 				: ''}"
-		></span>
-	</span>
+		/>
+	</svg>
 {/snippet}
 
 {#snippet plusMenu(
@@ -422,7 +446,12 @@
 					type="button"
 					aria-label="Add"
 				>
-					<Plus class="size-5" />
+					<Plus
+						class="size-5 transition-transform duration-200 motion-reduce:transition-none {openMenu ===
+						id
+							? 'rotate-45'
+							: ''}"
+					/>
 				</Button>
 			{/snippet}
 		</DropdownMenu.Trigger>
@@ -615,7 +644,8 @@
 
 {#if actionsOnly && !mobileOnly}
 	<header
-		class="pointer-events-none fixed top-0 z-50 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3"
+		class="pointer-events-none fixed inset-x-0 top-0 z-50 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] items-center px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3"
+		style:right="{scrollbarInset}px"
 	>
 		<div class="flex-1"></div>
 		{#if user}{@render desktopActions()}{/if}
