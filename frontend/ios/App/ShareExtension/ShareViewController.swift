@@ -46,7 +46,7 @@ private struct AuthConfig {
 			let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
 			let token = obj["token"]
 		else { return nil }
-		let base = obj["apiUrl"].flatMap(URL.init(string:)) ?? URL(string: "https://api.currents.is")!
+		let base = obj["apiUrl"].flatMap(URL.init(string:)) ?? URL(string: "https://currents.is")!
 		return AuthConfig(token: token, apiUrl: base)
 	}
 }

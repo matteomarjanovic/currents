@@ -259,7 +259,12 @@
 										<CollectionActions collection={node.root} variant="context" {onDeleted}>
 											<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
 												{#snippet child({ props })}
-													<a href={hrefFor(node.root.uri)} {...props} onclick={closeSidebar}>
+													<a
+														href={hrefFor(node.root.uri)}
+														{...props}
+														draggable="false"
+														onclick={closeSidebar}
+													>
 														<Folder
 															class={node.root.viewer?.pinned
 																? 'opacity-0'
@@ -288,6 +293,7 @@
 															<CollectionActions collection={section} variant="context" {onDeleted}>
 																<Sidebar.MenuSubButton
 																	href={hrefFor(section.uri)}
+																	draggable="false"
 																	isActive={selectedUri === section.uri}
 																	onclick={closeSidebar}
 																	class="pr-8"

@@ -29,7 +29,9 @@
 		{...restProps}
 	>
 		{#snippet child({ props, wrapperProps, open })}
+			<!-- Cover the sidebar sheet (z-50); the menu follows at the same layer. -->
 			<MenuDismissSurface
+				class="z-50"
 				{open}
 				onDismiss={() =>
 					ref?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))}

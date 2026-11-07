@@ -204,6 +204,48 @@ test('the tile menu Select enters the mode with that tile picked, and Copy resav
 	expect(body.collectionUri).toBe(INTERIORS);
 });
 
+test('mobile: image long-press opens actions without dragging or selecting a tile', async ({
+	page
+}) => {
+	await mockApi(page, { labelBulk: [], resave: [], deleted: [] });
+	await page.route('https://example.com/*.jpg', (route) =>
+		route.fulfill({
+			contentType: 'image/svg+xml',
+			body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" />'
+		})
+	);
+	await page.goto('/organize');
+	const firstTile = page.locator('a[data-uri]').first();
+	await expect(firstTile).toBeVisible();
+	expect(await firstTile.evaluate((element) => (element as HTMLAnchorElement).draggable)).toBe(
+		false
+	);
+	await expect(firstTile.locator('img')).toHaveCSS('-webkit-user-drag', 'none');
+	const menu = page.locator('[data-slot=context-menu-content][data-state=open]');
+	const details = page.getByRole('button', { name: 'Close details', exact: true });
+	const imageBox = (await firstTile.boundingBox())!;
+	const touch = await page.context().newCDPSession(page);
+	await touch.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: [{ x: imageBox.x + imageBox.width / 2, y: imageBox.y + imageBox.height / 2 }]
+	});
+	await expect(menu).toBeVisible();
+	await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await expect(menu).toBeVisible();
+	await expect(details).toBeHidden();
+
+	// The menu covers part of the neighbouring tile; dismiss over the first tile's
+	// top-left corner so the tap is on the image and outside the menu.
+	const box = (await firstTile.boundingBox())!;
+	await page.touchscreen.tap(box.x + 12, box.y + 12);
+	await expect(menu).toHaveCount(0);
+	await expect(details).toBeHidden();
+	await expect(page.getByRole('button', { name: 'Done selecting', exact: true })).toBeHidden();
+
+	await page.locator('a[data-uri]').nth(1).tap();
+	await expect(details).toBeVisible();
+});
+
 test('My library can remove one membership without losing the deduplicated image', async ({
 	page
 }) => {

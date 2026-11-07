@@ -16,7 +16,8 @@ The native project layout:
 ## 0. Prerequisites on the backend (one-time)
 
 Identical to Android — the released app talks to whatever `PUBLIC_APPVIEW_URL` was baked in at build
-time. Point it at the **production** appview and make sure that appview:
+time. Point it at `https://currents.is`; production Caddy routes appview paths there. The AT Protocol
+service identity remains `api.currents.is`. Make sure the appview:
 
 - CORS allows `capacitor://localhost` and `https://localhost`, and the `Authorization` header.
 - `MOBILE_REDIRECT_SCHEMES` includes `currents://` (default).
@@ -26,7 +27,7 @@ time. Point it at the **production** appview and make sure that appview:
 
 ```bash
 cd frontend
-# Release points at the production appview (.env.production → https://api.currents.is).
+# Release points native requests at currents.is (.env.production).
 # CAPAWESOME_TOKEN is needed to install @capawesome-team/* (see §7); it's in frontend/.env.
 npm ci
 npm run build:mobile     # CAPACITOR=1 vite build (mode=production) + cap sync
@@ -126,7 +127,7 @@ Sanity-check the archive installs and the release build still logs in / uploads 
 ## Checklist before each release
 
 - [ ] `PUBLIC_APPVIEW_URL` = production; prod backend has mobile CORS + `currents://` + `GET /oauth/login`
-- [ ] `npm run build:mobile` (production mode) — verify `build-mobile/` baked `https://api.currents.is`
+- [ ] `npm run build:mobile` (production mode) — verify `build-mobile/` baked `https://currents.is`
 - [ ] `MARKETING_VERSION` + `CURRENT_PROJECT_VERSION` bumped on **both** targets
 - [ ] Both targets signed with the team; App Group registered on the portal
 - [ ] Archive uploads cleanly (no export-compliance / provisioning prompts)

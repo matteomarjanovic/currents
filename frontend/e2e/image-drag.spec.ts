@@ -18,7 +18,7 @@ const save = {
 	viewer: { saves: [] }
 };
 
-async function mockApi(page: Page) {
+async function mockApi(page: Page, signedIn: boolean) {
 	await page.route('https://cdn.currents.is/**', (route) =>
 		route.fulfill({
 			status: 200,
@@ -35,69 +35,75 @@ async function mockApi(page: Page) {
 				body: JSON.stringify(value)
 			});
 
-		if (url.includes('/api/me')) return json(null);
+		if (url.includes('/api/me/role')) return json({ role: 'user' });
+		if (url.includes('/api/me')) return json(signedIn ? save.author : null);
 		if (url.includes('getFeed')) return json({ feed: [save], cursor: null });
+		if (url.includes('getLibrarySaves')) return json({ saves: [save], cursor: null });
+		if (url.includes('getActorCollections') || url.includes('getFavouriteCollections'))
+			return json({ collections: [] });
 		if (url.includes('features/seen')) return json({ seen: [] });
 		if (url.includes('moderation/prefs')) return json({ adult: 'blur', aiGenerated: 'show' });
 		return json({});
 	});
 }
 
-test('a desktop grid image drags its original image URL', async ({ browser, baseURL }) => {
-	let context: BrowserContext | undefined;
-	try {
-		context = await browser.newContext({
-			baseURL,
-			viewport: { width: 1280, height: 800 },
-			hasTouch: false,
-			isMobile: false
-		});
-		const page = await context.newPage();
-		await mockApi(page);
-		await page.goto('/explore/general');
+for (const path of ['/explore/general', '/organize']) {
+	test(`a desktop ${path} image drags its original image URL`, async ({ browser, baseURL }) => {
+		let context: BrowserContext | undefined;
+		try {
+			context = await browser.newContext({
+				baseURL,
+				viewport: { width: 1280, height: 800 },
+				hasTouch: false,
+				isMobile: false
+			});
+			const page = await context.newPage();
+			await mockApi(page, path === '/organize');
+			await page.goto(path);
 
-		const image = page.getByAltText('draggable reference');
-		await expect(image).toBeVisible();
-		await expect(image).toHaveCSS('-webkit-user-drag', 'auto');
+			const image = page.getByAltText('draggable reference');
+			await expect(image).toBeVisible();
+			await expect(image).toHaveCSS('-webkit-user-drag', 'auto');
 
-		await page.evaluate(() => {
-			const dragWindow = window as typeof window & {
-				dragResult?: { tag: string; uri: string; plain: string; types: string[] };
-			};
-			document.addEventListener(
-				'dragstart',
-				(event) => {
-					dragWindow.dragResult = {
-						tag: (event.target as HTMLElement).tagName,
-						uri: event.dataTransfer?.getData('text/uri-list') ?? '',
-						plain: event.dataTransfer?.getData('text/plain') ?? '',
-						types: [...(event.dataTransfer?.types ?? [])]
-					};
-				},
-				{ once: true }
+			await page.evaluate(() => {
+				const dragWindow = window as typeof window & {
+					dragResult?: { tag: string; uri: string; plain: string; types: string[] };
+				};
+				document.addEventListener(
+					'dragstart',
+					(event) => {
+						dragWindow.dragResult = {
+							tag: (event.target as HTMLElement).tagName,
+							uri: event.dataTransfer?.getData('text/uri-list') ?? '',
+							plain: event.dataTransfer?.getData('text/plain') ?? '',
+							types: [...(event.dataTransfer?.types ?? [])]
+						};
+					},
+					{ once: true }
+				);
+			});
+
+			const box = await image.boundingBox();
+			if (!box) throw new Error('missing image bounds');
+			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+			await page.mouse.down();
+			await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 40, {
+				steps: 10
+			});
+			await page.mouse.up();
+
+			const dragResult = await page.evaluate(
+				() =>
+					(
+						window as typeof window & {
+							dragResult?: { tag: string; uri: string; plain: string; types: string[] };
+						}
+					).dragResult
 			);
-		});
-
-		const box = await image.boundingBox();
-		if (!box) throw new Error('missing image bounds');
-		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-		await page.mouse.down();
-		await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 40, {
-			steps: 10
-		});
-		await page.mouse.up();
-
-		const dragResult = await page.evaluate(
-			() =>
-				(
-					window as typeof window & {
-						dragResult?: { tag: string; uri: string; plain: string; types: string[] };
-					}
-				).dragResult
-		);
-		expect(dragResult).toMatchObject({ tag: 'IMG', uri: IMAGE_URL, plain: IMAGE_URL });
-		expect(dragResult?.types).toContain('Files');
-	} finally {
-		await context?.close();
-	}
-});
+			expect(dragResult).toMatchObject({ tag: 'IMG', uri: IMAGE_URL, plain: IMAGE_URL });
+			expect(dragResult?.types).toContain('Files');
+		} finally {
+			await context?.close();
+		}
+	});
+}

@@ -6,22 +6,24 @@ This doc is the checklist.
 
 ## 0. Prerequisites on the backend (one-time)
 
-The released app talks to whatever `PUBLIC_APPVIEW_URL` was baked in at build time. Point it at the
-**production** appview (not `api-dev`), and make sure that appview runs the mobile code from this branch:
+The released app talks to whatever `PUBLIC_APPVIEW_URL` was baked in at build time. Point it at
+`https://currents.is`; the production Caddy routes appview paths to the appview service. The AT
+Protocol service identity remains `api.currents.is`. Make sure the production appview runs the
+mobile code from this branch:
 
 - CORS allows `capacitor://localhost` and `https://localhost`, and the `Authorization` header.
 - `MOBILE_REDIRECT_SCHEMES` includes `is.currents.app://` (Android) and `currents://`
   (iOS and older Android builds); both are included by default.
 - `GET /oauth/login` is registered (native in-app-browser flow).
 
-(We verified all of this against `api-dev.currents.is`; production must have the same.)
+(The production Compose Caddy routes these endpoints on `currents.is`.)
 
 ## 1. Production web build
 
 ```bash
 cd frontend
-# .env for release — point at the production appview, NOT api-dev:
-#   PUBLIC_APPVIEW_URL=https://api.currents.is   (or whatever prod is)
+# .env.production points native requests at the production root host:
+#   PUBLIC_APPVIEW_URL=https://currents.is
 #   CAPAWESOME_TOKEN=...   (needed to install @capawesome-team/* — see §6)
 set -a; . ./.env; set +a
 npm ci

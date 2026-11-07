@@ -648,6 +648,12 @@
 	// Open: capture the clicked tile's offset BEFORE opening — mounting the panel
 	// reflows the grid immediately, so the post-open layout is already wrong.
 	function selectTile(event: MouseEvent, item: SaveView) {
+		// The click generated when a long-press ends belongs to the menu gesture.
+		if (contextMenuUri !== null) {
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
 			return;
 		event.preventDefault();
@@ -975,9 +981,10 @@
 											<a
 												{...props}
 												href="/profile/{item.author.handle}/save/{item.uri.split('/').pop()}"
+												draggable="false"
 												data-uri={item.uri}
 												onclick={(event) => selectTile(event, item)}
-												class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-[box-shadow] group-hover:ring-2 {selectedSaveUri ===
+												class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-[box-shadow] select-none [-webkit-touch-callout:none] group-hover:ring-2 {selectedSaveUri ===
 												item.uri
 													? 'ring-2 ring-primary'
 													: ''}"

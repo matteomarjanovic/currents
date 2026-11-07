@@ -1,7 +1,7 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 
 // Collection actions in organize mode: right-click on a sidebar row (desktop)
-// and the three-dots menu beside the breadcrumb (the only way in on touch).
+// and long-press on a sidebar row or the three-dots menu beside the breadcrumb (touch).
 // "Move into" re-parents a collection — the one operation that writes a new
 // `parent` onto the collection record.
 
@@ -47,6 +47,72 @@ async function mockApi(page: Page, onPut?: (body: string) => void) {
 }
 
 const menu = (page: Page) => page.locator('[data-state=open][data-slot$=menu-content]');
+
+async function longPress(page: Page, row: Locator) {
+	const box = (await row.boundingBox())!;
+	const touch = await page.context().newCDPSession(page);
+	await touch.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }]
+	});
+	await expect(menu(page).getByRole('menuitem', { name: 'Pin', exact: true })).toBeVisible();
+	await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await expect(menu(page)).toBeVisible();
+}
+
+for (const name of ['Interiors', 'Kyoto']) {
+	test(`mobile: long-pressing ${name} opens actions without dragging or navigating`, async ({
+		page
+	}) => {
+		await mockApi(page);
+		await page.goto('/organize');
+		await page.getByRole('button', { name: 'Toggle Sidebar' }).tap();
+		const sidebar = page.locator('[data-sidebar=sidebar][data-mobile=true]');
+		if (name === 'Kyoto') {
+			await sidebar.getByRole('button', { name: 'Toggle sections' }).tap();
+		}
+		const row = sidebar.getByRole('link', { name, exact: true });
+		await expect(row).toBeVisible();
+		expect(await row.evaluate((element) => (element as HTMLAnchorElement).draggable)).toBe(false);
+		await expect(row).toHaveCSS('-webkit-user-drag', 'none');
+		await longPress(page, row);
+		await expect(page).toHaveURL(/\/organize$/);
+
+		// Tap where Travel sits, even though the menu's dismissal layer covers it.
+		const travel = sidebar.getByRole('link', { name: 'Travel', exact: true });
+		const travelBox = (await travel.boundingBox())!;
+		await page.touchscreen.tap(travelBox.x + 12, travelBox.y + travelBox.height / 2);
+		await expect(menu(page)).toHaveCount(0);
+		await expect(sidebar).toBeVisible();
+		await expect(page).toHaveURL(/\/organize$/);
+
+		// The next tap is an ordinary collection selection.
+		await travel.tap();
+		await expect(page).toHaveURL(`/organize?c=${encodeURIComponent(TRAVEL)}`);
+		await expect(sidebar).toBeHidden();
+	});
+}
+
+test('mobile: a long-press menu can pin a collection without closing the sidebar', async ({
+	page
+}) => {
+	await mockApi(page);
+	await page.goto('/organize');
+	await page.getByRole('button', { name: 'Toggle Sidebar' }).tap();
+	const sidebar = page.locator('[data-sidebar=sidebar][data-mobile=true]');
+	const row = sidebar.getByRole('link', { name: 'Interiors', exact: true });
+	await expect(row).toBeVisible();
+	await longPress(page, row);
+
+	const pinRequest = page.waitForRequest(
+		(request) => request.url().endsWith('/api/collections/pinned') && request.method() === 'PUT'
+	);
+	await menu(page).getByRole('menuitem', { name: 'Pin', exact: true }).tap();
+	expect((await pinRequest).postDataJSON()).toEqual({ collectionUri: INTERIORS, pinned: true });
+	await expect(menu(page)).toHaveCount(0);
+	await expect(sidebar.getByRole('button', { name: 'Unpin Interiors' })).toBeVisible();
+	await expect(page).toHaveURL(/\/organize$/);
+});
 
 test('desktop: right-clicking a collection row opens its actions', async ({ page }) => {
 	await mockApi(page);

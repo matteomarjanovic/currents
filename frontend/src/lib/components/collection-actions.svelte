@@ -46,6 +46,7 @@
 	let createSectionOpen = $state(false);
 	let deleteOpen = $state(false);
 	let deleting = $state(false);
+	let contextOpen = $state(false);
 
 	const rkey = $derived(collection.uri.split('/').pop() ?? '');
 	const isSection = $derived(!!collection.parentUri);
@@ -194,10 +195,20 @@
 {/snippet}
 
 {#if variant === 'context'}
-	<ContextMenu.Root>
-		<ContextMenu.Trigger>
+	<ContextMenu.Root bind:open={contextOpen}>
+		<ContextMenu.Trigger class="[-webkit-touch-callout:none] [&_a]:[-webkit-user-drag:none]">
 			{#snippet child({ props })}
-				<div {...props}>{@render children?.()}</div>
+				<div
+					{...props}
+					onclickcapture={(event) => {
+						// Releasing the long-press must not activate the row's link.
+						if (!contextOpen) return;
+						event.preventDefault();
+						event.stopPropagation();
+					}}
+				>
+					{@render children?.()}
+				</div>
 			{/snippet}
 		</ContextMenu.Trigger>
 		<!-- overflow-*-visible so the "Move into" submenu isn't clipped by the
