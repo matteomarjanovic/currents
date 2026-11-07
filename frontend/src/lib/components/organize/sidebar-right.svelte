@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { linear, cubicInOut } from 'svelte/easing';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -11,6 +12,9 @@
 	import SaveImage from '$lib/components/save-image.svelte';
 	import SimilarPanel from '$lib/components/organize/similar-panel.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
+	import CollectionHoverCard from '$lib/components/collection-hover-card.svelte';
+	import { apiFetch } from '$lib/api';
+	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import ColorMenu from '$lib/components/color-menu.svelte';
 	import SaveAltDialog from '$lib/components/save-alt-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
@@ -24,7 +28,12 @@
 	import { removalAction, removeSaveRecord } from '$lib/save-removal';
 	import { emitSaveRemoved } from '$lib/stores/save-events.svelte';
 	import { toast } from 'svelte-sonner';
-	import { getImageContent, type SaveAttribution, type SaveView } from '$lib/types';
+	import {
+		getImageContent,
+		type CollectionView,
+		type SaveAttribution,
+		type SaveView
+	} from '$lib/types';
 	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
 	import X from '@lucide/svelte/icons/x';
@@ -150,13 +159,42 @@
 	let savedIn = $derived.by(() => {
 		const known = [...collections.items, ...favouriteCollections.items];
 		return (save.viewer?.saves ?? []).map((s) => {
-			if (s.collectionUri === '') return { uri: '', name: 'Unsorted', saveUri: s.saveUri };
+			if (s.collectionUri === '')
+				return { uri: '', name: 'Unsorted', saveUri: s.saveUri, collection: undefined };
 			const c = known.find((x) => x.uri === s.collectionUri);
 			return {
 				uri: s.collectionUri,
 				name: c?.name ?? 'Untitled collection',
+				collection: c,
 				saveUri: s.saveUri
 			};
+		});
+	});
+
+	let previewUri = $state('');
+	function setPreview(uri: string, open: boolean) {
+		if (open) previewUri = uri;
+		else if (previewUri === uri) previewUri = '';
+	}
+	const imageCollections = useInfiniteScroll<CollectionView>(async (cursor) => {
+		const params = new URLSearchParams({ uri: save.uri, limit: '50' });
+		if (cursor) params.set('cursor', cursor);
+		const response = await apiFetch(`/xrpc/is.currents.feed.getImageCollections?${params}`);
+		if (!response.ok) throw new Error('Could not load collections');
+		const data = await response.json();
+		return { items: data.collections ?? [], cursor: data.cursor };
+	});
+	let otherCollections = $derived(
+		imageCollections.items.filter(
+			(collection) => (collection.author?.did ?? collection.uri.split('/')[2]) !== auth.user?.did
+		)
+	);
+	$effect(() => {
+		void save.uri;
+		untrack(() => {
+			previewUri = '';
+			imageCollections.reset();
+			void imageCollections.loadMore();
 		});
 	});
 
@@ -356,26 +394,41 @@
 
 				<section class="flex flex-col gap-1.5">
 					<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-						Saved in
+						In your collections
 					</h3>
 					<div class="flex flex-wrap items-center gap-1.5">
 						{#each savedIn as c (c.saveUri)}
-							<Badge variant="secondary" class="h-auto gap-0 p-0 font-normal">
-								<a
+							<Badge variant="secondary" class="h-7 max-w-full gap-0 p-0 text-[13px] font-normal">
+								<CollectionHoverCard
+									collection={c.collection ?? { uri: c.uri, name: c.name }}
 									href={c.uri ? `/organize?c=${encodeURIComponent(c.uri)}` : '/organize?unsorted=1'}
-									class="px-2 py-1 transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+									disabled={sidebar.isMobile || !c.collection}
+									side="top"
+									align="center"
+									open={previewUri === c.uri && !!c.uri}
+									onOpenChange={(open) => setPreview(c.uri, open)}
 								>
-									{c.name}
-								</a>
+									{#snippet child({ props })}
+										<a
+											{...props}
+											href={c.uri
+												? `/organize?c=${encodeURIComponent(c.uri)}`
+												: '/organize?unsorted=1'}
+											class="flex h-full min-w-0 items-center px-2.5 transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+										>
+											<span class="truncate">{c.name}</span>
+										</a>
+									{/snippet}
+								</CollectionHoverCard>
 								<button
 									type="button"
 									disabled={removingSaveUri !== null}
 									onclick={() => removeFrom(c)}
 									aria-label="Remove from {c.name}"
 									title="Remove from {c.name}"
-									class="self-stretch border-l border-border px-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:bg-background focus-visible:text-destructive focus-visible:outline-none disabled:opacity-50"
+									class="self-stretch border-l border-border px-1.75 text-muted-foreground transition-colors hover:bg-background hover:text-destructive focus-visible:bg-background focus-visible:text-destructive focus-visible:outline-none disabled:opacity-50"
 								>
-									<Trash2 class="size-3 -translate-x-px" />
+									<Trash2 class="size-[13px] -translate-x-px" />
 								</button>
 							</Badge>
 						{/each}
@@ -390,15 +443,67 @@
 									type="button"
 									class={cn(
 										badgeVariants({ variant: 'outline' }),
-										'cursor-pointer gap-1 border-dashed text-muted-foreground hover:bg-muted hover:text-foreground'
+										'h-7 cursor-pointer gap-1 border-dashed px-2.5 py-0 text-[13px] font-normal text-muted-foreground hover:bg-muted hover:text-foreground'
 									)}
 								>
 									<Plus />
-									Save to collection…
+									Save to new collection
 								</button>
 							{/snippet}
 						</CollectionSelector>
 					</div>
+				</section>
+
+				<section class="flex flex-col gap-1.5" data-other-collections>
+					<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+						In other collections
+					</h3>
+					<div class="flex flex-wrap items-center gap-1.5">
+						{#each otherCollections as collection (collection.uri)}
+							<CollectionHoverCard
+								{collection}
+								disabled={sidebar.isMobile}
+								side="top"
+								align="center"
+								showFavourite
+								href={`/profile/${collection.author?.handle ?? collection.uri.split('/')[2]}/collection/${collection.uri.split('/').pop()}`}
+								onFavouriteChange={(_, favouriteUri) => {
+									collection.viewer = { ...collection.viewer, favourite: favouriteUri };
+								}}
+								open={previewUri === collection.uri}
+								onOpenChange={(open) => setPreview(collection.uri, open)}
+							>
+								{#snippet child({ props })}
+									<Badge
+										{...props}
+										href={`/profile/${collection.author?.handle ?? collection.uri.split('/')[2]}/collection/${collection.uri.split('/').pop()}`}
+										variant="secondary"
+										class="h-7 max-w-full px-2.5 text-[13px] font-normal"
+									>
+										<span class="truncate">{collection.name}</span>
+									</Badge>
+								{/snippet}
+							</CollectionHoverCard>
+						{/each}
+					</div>
+					{#if imageCollections.loading}
+						<p class="text-sm text-muted-foreground">Loading collections…</p>
+					{:else if imageCollections.error}
+						<Button variant="ghost" size="sm" class="w-fit" onclick={imageCollections.retry}
+							>Retry loading collections</Button
+						>
+					{:else if otherCollections.length === 0}
+						<p class="text-sm text-muted-foreground">No other collections yet.</p>
+					{/if}
+					{#if imageCollections.hasMore && !imageCollections.error}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="w-fit"
+							disabled={imageCollections.loading}
+							onclick={() => imageCollections.loadMore()}>Show more</Button
+						>
+					{/if}
 				</section>
 
 				{#if save.text}

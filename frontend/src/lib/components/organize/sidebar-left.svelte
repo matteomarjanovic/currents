@@ -23,6 +23,7 @@
 	import Logo from '$lib/assets/logo.svelte';
 	import { trackOrganizeSidebar } from '$lib/mode-tabs.svelte';
 	import CollectionActions from '$lib/components/collection-actions.svelte';
+	import CollectionHoverCard from '$lib/components/collection-hover-card.svelte';
 	import CollectionCreateDialog from '$lib/components/collection-create-dialog.svelte';
 	import CollectionPinToggle from './collection-pin-toggle.svelte';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
@@ -59,6 +60,11 @@
 	let query = $state('');
 	let q = $derived(query.trim().toLowerCase());
 	let createCollectionOpen = $state(false);
+	let previewUri = $state('');
+	function setPreview(uri: string, open: boolean) {
+		if (open) previewUri = uri;
+		else if (previewUri === uri) previewUri = '';
+	}
 
 	function handleCollectionCreated(collection: CollectionView) {
 		addCollection(collection);
@@ -257,23 +263,36 @@
 										<!-- Right-click/long-press actions on the row; the opened collection's
 										     header breadcrumb also exposes them through its "…" button. -->
 										<CollectionActions collection={node.root} variant="context" {onDeleted}>
-											<Sidebar.MenuButton isActive={selectedUri === node.root.uri} class="h-8">
-												{#snippet child({ props })}
-													<a
-														href={hrefFor(node.root.uri)}
-														{...props}
-														draggable="false"
-														onclick={closeSidebar}
+											<CollectionHoverCard
+												collection={node.root}
+												disabled={sidebar.isMobile}
+												open={previewUri === node.root.uri}
+												onOpenChange={(open) => setPreview(node.root.uri, open)}
+											>
+												{#snippet child({ props: hoverProps })}
+													<Sidebar.MenuButton
+														{...hoverProps}
+														isActive={selectedUri === node.root.uri}
+														class="h-8"
 													>
-														<Folder
-															class={node.root.viewer?.pinned
-																? 'opacity-0'
-																: 'group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0'}
-														/>
-														<span class="min-w-0 flex-1 truncate">{node.root.name}</span>
-													</a>
+														{#snippet child({ props })}
+															<a
+																href={hrefFor(node.root.uri)}
+																{...props}
+																draggable="false"
+																onclick={closeSidebar}
+															>
+																<Folder
+																	class={node.root.viewer?.pinned
+																		? 'opacity-0'
+																		: 'group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0'}
+																/>
+																<span class="min-w-0 flex-1 truncate">{node.root.name}</span>
+															</a>
+														{/snippet}
+													</Sidebar.MenuButton>
 												{/snippet}
-											</Sidebar.MenuButton>
+											</CollectionHoverCard>
 										</CollectionActions>
 										<CollectionPinToggle collection={node.root} placement="icon" />
 										{#if node.sections.length > 0}
@@ -291,15 +310,25 @@
 													{#each node.sections as section (section.uri)}
 														<Sidebar.MenuSubItem>
 															<CollectionActions collection={section} variant="context" {onDeleted}>
-																<Sidebar.MenuSubButton
-																	href={hrefFor(section.uri)}
-																	draggable="false"
-																	isActive={selectedUri === section.uri}
-																	onclick={closeSidebar}
-																	class="pr-8"
+																<CollectionHoverCard
+																	collection={section}
+																	disabled={sidebar.isMobile}
+																	open={previewUri === section.uri}
+																	onOpenChange={(open) => setPreview(section.uri, open)}
 																>
-																	<span>{section.name}</span>
-																</Sidebar.MenuSubButton>
+																	{#snippet child({ props })}
+																		<Sidebar.MenuSubButton
+																			{...props}
+																			href={hrefFor(section.uri)}
+																			draggable="false"
+																			isActive={selectedUri === section.uri}
+																			onclick={closeSidebar}
+																			class="pr-8"
+																		>
+																			<span>{section.name}</span>
+																		</Sidebar.MenuSubButton>
+																	{/snippet}
+																</CollectionHoverCard>
 															</CollectionActions>
 															<CollectionPinToggle collection={section} />
 														</Sidebar.MenuSubItem>
@@ -349,14 +378,27 @@
 							<Sidebar.Menu>
 								{#each favourites as fav (fav.uri)}
 									<Sidebar.MenuItem>
-										<Sidebar.MenuButton isActive={selectedUri === fav.uri} class="h-8">
-											{#snippet child({ props })}
-												<a href={hrefFor(fav.uri)} {...props} onclick={closeSidebar}>
-													<Star />
-													<span>{fav.name}</span>
-												</a>
+										<CollectionHoverCard
+											collection={fav}
+											disabled={sidebar.isMobile}
+											open={previewUri === fav.uri}
+											onOpenChange={(open) => setPreview(fav.uri, open)}
+										>
+											{#snippet child({ props: hoverProps })}
+												<Sidebar.MenuButton
+													{...hoverProps}
+													isActive={selectedUri === fav.uri}
+													class="h-8"
+												>
+													{#snippet child({ props })}
+														<a href={hrefFor(fav.uri)} {...props} onclick={closeSidebar}>
+															<Star />
+															<span>{fav.name}</span>
+														</a>
+													{/snippet}
+												</Sidebar.MenuButton>
 											{/snippet}
-										</Sidebar.MenuButton>
+										</CollectionHoverCard>
 									</Sidebar.MenuItem>
 								{/each}
 								{#if favourites.length === 0 && !favouriteCollections.loaded}

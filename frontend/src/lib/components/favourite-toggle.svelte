@@ -15,7 +15,7 @@
 	// rejects self-favourites).
 	interface Props {
 		collection: CollectionView;
-		onChange?: (favourited: boolean) => void;
+		onChange?: (favourited: boolean, favouriteUri?: string) => void;
 		labelFrom?: 'sm' | 'never';
 	}
 	let { collection, onChange, labelFrom = 'sm' }: Props = $props();
@@ -48,7 +48,7 @@
 				if (out.status === 'ok') {
 					favourited = true;
 					favouriteUri = out.uri;
-					onChange?.(true);
+					onChange?.(true, out.uri);
 					toast.success(`Added '${collection.name}' to favourites`);
 				} else if (out.status === 'scope-missing') {
 					scopeMissing = true;
@@ -63,7 +63,7 @@
 <Toggle
 	variant="outline"
 	size="sm"
-	class="shrink-0 self-start"
+	class="shrink-0 self-start {labelFrom === 'never' ? 'size-8 min-w-8 rounded-full p-0' : ''}"
 	aria-label={favourited ? 'Remove from favourites' : 'Add to favourites'}
 	disabled={loading || !collection.cid}
 	bind:pressed={() => favourited, () => toggle()}

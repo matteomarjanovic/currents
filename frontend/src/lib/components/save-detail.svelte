@@ -17,6 +17,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import FavouriteToggle from '$lib/components/favourite-toggle.svelte';
+	import CollectionHoverCard from '$lib/components/collection-hover-card.svelte';
 	import SupporterBadge from '$lib/components/supporter-badge.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
@@ -554,12 +555,18 @@
 		return { items: data.collections ?? [], cursor: data.cursor };
 	});
 	let collectionsAccordionValue = $state('');
+	let collectionPreviewUri = $state('');
+	function setCollectionPreview(uri: string, open: boolean) {
+		if (open) collectionPreviewUri = uri;
+		else if (collectionPreviewUri === uri) collectionPreviewUri = '';
+	}
 
 	$effect(() => {
 		void currentUri;
 		untrack(() => {
 			imageCollections.reset();
 			collectionsAccordionValue = '';
+			collectionPreviewUri = '';
 		});
 	});
 
@@ -712,69 +719,91 @@
 	{/if}
 {/snippet}
 
-{#snippet imageCollectionsSection()}
+{#snippet imageCollectionsSection(desktop: boolean)}
 	<Accordion.Root type="single" bind:value={collectionsAccordionValue}>
-		<Accordion.Item value="collections">
+		<Accordion.Item value="collections" class="[&_[data-slot=accordion-content]]:px-3">
 			<Accordion.Trigger>In other collections</Accordion.Trigger>
-			<Accordion.Content>
+			<Accordion.Content class="pb-3">
 				{#if imageCollections.loading && imageCollections.items.length === 0}
 					<div class="flex justify-center py-3"><Spinner /></div>
 				{:else if imageCollections.items.length === 0}
 					<p class="px-1 py-1 text-sm text-muted-foreground">Not in any collections yet.</p>
 				{:else}
 					<div class="max-h-72 overflow-y-auto">
-						<Item.Group class="gap-1 pr-1">
+						<Item.Group class="gap-1">
 							{#each imageCollections.items as c (c.uri)}
 								{@const isOwn = !!auth.user && auth.user.did === c.author?.did}
 								{@const preview = collectionPreview(c)}
-								<Item.Root variant="outline" size="sm" class="relative flex-nowrap">
-									<!-- Stretched link: a click anywhere on the row that isn't the username
+								<CollectionHoverCard
+									collection={c}
+									href={collectionHref(c)}
+									side="right"
+									disabled={!desktop || isMobile.current}
+									open={desktop && collectionPreviewUri === c.uri}
+									onOpenChange={(open) => setCollectionPreview(c.uri, open)}
+								>
+									{#snippet child({ props })}
+										<Item.Root
+											{...props}
+											role="listitem"
+											variant="outline"
+											size="sm"
+											class="relative min-h-18 flex-nowrap gap-2 rounded-xl app-muted-wash"
+										>
+											<!-- Stretched link: a click anywhere on the row that isn't the username
 								     link or the favourite toggle (both lifted with z-10) opens the collection. -->
-									<a href={collectionHref(c)} class="absolute inset-0">
-										<span class="sr-only">{c.name}</span>
-									</a>
-									<Item.Media variant="image" class="bg-muted">
-										{#if preview}
-											<img
-												src={bunnyImageUrl(preview.url, {
-													aspectRatio: '1:1',
-													width: 96,
-													quality: 75
-												})}
-												alt=""
-												class={preview.blur ? 'blur-md' : ''}
-											/>
-										{/if}
-									</Item.Media>
-									<Item.Content class="min-w-0">
-										<Item.Title class="w-full truncate">{c.name}</Item.Title>
-										<Item.Description class="flex items-center gap-1">
-											<a
-												href={`/profile/${c.author?.handle}`}
-												class="relative z-10 min-w-0 truncate no-underline!"
-											>
-												{c.author?.displayName || c.author?.handle}
+											<a href={collectionHref(c)} class="absolute inset-0">
+												<span class="sr-only">{c.name}</span>
 											</a>
-											{#if c.author?.supporter}
-												<SupporterBadge class="size-3.5 shrink-0" />
-											{/if}
-											{#if (c.favouriteCount ?? 0) > 0}
-												<span aria-hidden="true">·</span>
-												<Star class="size-3 shrink-0 fill-current" />
-												<span>{c.favouriteCount}</span>
-											{/if}
-										</Item.Description>
-									</Item.Content>
-									<Item.Actions class="shrink-0">
-										{#if isOwn}
-											<Badge variant="secondary">Yours</Badge>
-										{:else if auth.user}
-											<div class="relative z-10">
-												<FavouriteToggle collection={c} labelFrom="never" />
+											<div
+												data-collection-thumbnail
+												class="relative size-11 shrink-0 overflow-hidden rounded-xl bg-muted mr-2"
+											>
+												{#if preview}
+													<img
+														src={bunnyImageUrl(preview.url, {
+															aspectRatio: '1:1',
+															width: 96,
+															quality: 75
+														})}
+														alt=""
+														class="absolute inset-0 size-full object-cover {preview.blur
+															? 'blur-md'
+															: ''}"
+													/>
+												{/if}
 											</div>
-										{/if}
-									</Item.Actions>
-								</Item.Root>
+											<Item.Content class="min-w-0">
+												<Item.Title class="w-full truncate">{c.name}</Item.Title>
+												<Item.Description class="flex items-center gap-1">
+													<a
+														href={`/profile/${c.author?.handle}`}
+														class="relative z-10 min-w-0 truncate no-underline!"
+													>
+														{c.author?.displayName || c.author?.handle}
+													</a>
+													{#if c.author?.supporter}
+														<SupporterBadge class="size-3.5 shrink-0" />
+													{/if}
+													{#if (c.favouriteCount ?? 0) > 0}
+														<span aria-hidden="true">·</span>
+														<Star class="size-3 shrink-0 fill-current" />
+														<span>{c.favouriteCount}</span>
+													{/if}
+												</Item.Description>
+											</Item.Content>
+											<Item.Actions class="shrink-0">
+												{#if isOwn}
+													<Badge variant="secondary">Yours</Badge>
+												{:else if auth.user}
+													<div class="relative z-10">
+														<FavouriteToggle collection={c} labelFrom="never" />
+													</div>
+												{/if}
+											</Item.Actions>
+										</Item.Root>
+									{/snippet}
+								</CollectionHoverCard>
 							{/each}
 						</Item.Group>
 					</div>
@@ -926,7 +955,7 @@
 		</Button>
 		{@render saveControl()}
 		{@render info()}
-		{@render imageCollectionsSection()}
+		{@render imageCollectionsSection(true)}
 		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
 			<p>Scroll down to view related images</p>
 			<ArrowDown class="size-4" />
@@ -1053,7 +1082,7 @@
 		</div>
 		<div class="flex flex-col gap-4">
 			{@render info()}
-			{@render imageCollectionsSection()}
+			{@render imageCollectionsSection(false)}
 		</div>
 		<!-- Pinned to the bottom of the stage — the bottom of the viewport until the
 		     image and its details run out, then it lands under them. The button's own
