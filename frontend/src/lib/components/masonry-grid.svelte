@@ -15,6 +15,8 @@
 	interface Props {
 		items: SaveView[];
 		loading: boolean;
+		// Related pages preload their thumbnails as soon as the page arrives.
+		imageLoading?: 'lazy' | 'eager';
 		// Forwarded to each ImageCard; false makes tiles non-clickable.
 		linkToDetail?: boolean;
 		// Forwarded to each ImageCard; shows an always-visible Save button on mobile.
@@ -37,6 +39,7 @@
 	let {
 		items,
 		loading,
+		imageLoading = 'lazy',
 		linkToDetail = true,
 		mobileSave = false,
 		longPressSave = false,
@@ -175,12 +178,13 @@
 					style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 					use:renderNearViewport={item.uri}
 				>
-					{#if initiallyRendered.has(item.uri) || i < skeletonCount || nearby.has(item.uri)}
+					{#if imageLoading === 'eager' || initiallyRendered.has(item.uri) || i < skeletonCount || nearby.has(item.uri)}
 						<!-- Hand the detail view the images either side of this one, so it can be
 						     swiped through on touch. Same list the user is looking at, minus what
 						     their moderation prefs hide. -->
 						<ImageCard
 							{item}
+							{imageLoading}
 							{linkToDetail}
 							{mobileSave}
 							{longPressSave}

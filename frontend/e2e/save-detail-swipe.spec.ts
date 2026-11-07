@@ -211,6 +211,69 @@ test('swiping moves to the next and previous image of the grid', async ({ page }
 	await expectSaveReady(page, 's2');
 });
 
+test('desktop arrow keys navigate the grid sequence and Back returns to Explore', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await mockApi(page, { paginate: true });
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	await page.keyboard.press('ArrowLeft');
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	for (const rkey of ['s2', 's3', 's4']) {
+		await page.keyboard.press('ArrowRight');
+		await expect(page).toHaveURL(new RegExp(`/save/${rkey}$`));
+	}
+	await page.keyboard.press('ArrowLeft');
+	await expect(page).toHaveURL(/\/save\/s3$/);
+	await expect(page.locator('[data-save-detail-overlay] img:visible').first()).toHaveAttribute(
+		'src',
+		/bafy3/
+	);
+	await page.goBack();
+	await expect(page).toHaveURL(/\/explore\/general$/);
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(0);
+});
+
+test('desktop arrow keys leave editing, dialogs, and modified shortcuts alone', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await openFirstSave(page);
+	await page.keyboard.press('Alt+ArrowRight');
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	for (const tag of ['input', 'textarea', 'select', 'div']) {
+		await page.locator('[data-save-detail-overlay]').evaluate((overlay, tag) => {
+			const editor = document.createElement(tag);
+			editor.id = 'keyboard-test-editor';
+			if (tag === 'div') editor.contentEditable = 'true';
+			overlay.append(editor);
+			editor.focus();
+		}, tag);
+		await page.keyboard.press('ArrowRight');
+		await expect(page).toHaveURL(/\/save\/s1$/);
+		await page.locator('#keyboard-test-editor').evaluate((editor) => editor.remove());
+	}
+	await page
+		.locator('[data-save-detail-overlay]')
+		.getByRole('button', { name: 'Image actions' })
+		.filter({ visible: true })
+		.click();
+	await expect(page.getByRole('menu')).toBeVisible();
+	await page.keyboard.press('ArrowRight');
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	await page.getByRole('menuitem', { name: 'Report', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Report this image' })).toBeVisible();
+	await page.getByRole('button', { name: 'Cancel', exact: true }).focus();
+	await page.keyboard.press('ArrowRight');
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await page.keyboard.press('ArrowRight');
+	await expect(page).toHaveURL(/\/save\/s2$/);
+});
+
 test('swiping past the end of the grid stays put', async ({ page }) => {
 	await openFirstSave(page);
 
@@ -360,6 +423,33 @@ test('hydrating the open save neither refetches its rail nor repaints the previo
 		'src',
 		/bafy2/
 	);
+});
+
+test('related thumbnails load before scrolling without fetching the next page', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await mockApi(page, { related: true });
+	const thumbnails = new Set<string>();
+	const limits: string[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		const cid = url.pathname.match(/\/bafy(\d+)$/)?.[1];
+		if (cid && Number(cid) >= 10) thumbnails.add(cid);
+		if (url.pathname.includes('getRelatedSaves')) limits.push(url.searchParams.get('limit') ?? '');
+	});
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	const overlay = page.locator('[data-save-detail-overlay]');
+	const lastThumbnail = overlay.locator('section img[src*="bafy29"]');
+	await expect(lastThumbnail).toHaveAttribute('loading', 'eager');
+	await expect.poll(() => thumbnails.size).toBe(20);
+	expect(
+		await lastThumbnail.evaluate((image) => image.getBoundingClientRect().top)
+	).toBeGreaterThan(1000);
+	expect(await overlay.evaluate((element) => element.scrollTop)).toBe(0);
+	expect(limits).toEqual(['20']);
 });
 
 test('the related rail opens with a small page and keeps full pages after', async ({ page }) => {

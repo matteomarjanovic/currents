@@ -265,6 +265,23 @@
 	// already sliding in). Only at mobile widths: on desktop the whole stage is
 	// display:none, and an eager <img> in a hidden subtree still downloads.
 	const isMobile = new IsMobile();
+	let desktopPreview = $state<{ uri: string; src: string } | null>(null);
+	let desktopLoadedUri = $state('');
+	let previewSrc = $derived(
+		desktopPreview?.uri === currentUri && desktopLoadedUri !== currentUri
+			? desktopPreview.src
+			: null
+	);
+	$effect(() => {
+		const uri = currentUri;
+		if (isMobile.current) return;
+		// Reuse the exact responsive candidate already decoded by the mounted grid.
+		const thumbnail = document.querySelector<HTMLImageElement>(
+			`[data-save-uri="${CSS.escape(uri)}"] img`
+		);
+		desktopPreview =
+			thumbnail?.complete && thumbnail.naturalWidth ? { uri, src: thumbnail.currentSrc } : null;
+	});
 	let neighbours = $derived(
 		isMobile.current
 			? ([
@@ -328,6 +345,34 @@
 			save: next,
 			saveStack: stack.length ? [...stack.slice(0, -1), next] : [next]
 		});
+	}
+
+	function onKeydown(event: KeyboardEvent) {
+		if (
+			!active ||
+			isMobile.current ||
+			event.defaultPrevented ||
+			event.altKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			event.shiftKey ||
+			(event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+		)
+			return;
+		const target = event.target;
+		if (
+			(target instanceof HTMLElement &&
+				(target.isContentEditable ||
+					target.closest('input, textarea, select, [role="slider"], [role="spinbutton"]'))) ||
+			document.querySelector(
+				'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'
+			)
+		)
+			return;
+		const neighbour = event.key === 'ArrowRight' ? nextSave : prevSave;
+		if (!neighbour) return;
+		event.preventDefault();
+		openSave(neighbour);
 	}
 
 	// ── Floating controls ────────────────────────────────────────────────────
@@ -560,6 +605,8 @@
 	let canEditLabels = $derived(isOwnSave && !isResave && !!image);
 	let labelDialogOpen = $state(false);
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 {#snippet attributionFields(attr: SaveAttribution)}
 	{#if attr.credit}
@@ -906,13 +953,24 @@
 					labels={currentSave.labels}
 					class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
 				>
-					<SaveImage
-						{image}
-						alt={image.alt ?? currentSave.text ?? ''}
-						class={long ? 'w-full' : 'max-h-full max-w-full object-contain'}
-						wrapperClass={long ? 'block w-full' : 'flex h-full w-full items-center justify-center'}
-						style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
-					/>
+					<div
+						data-detail-preview={previewSrc ? '' : undefined}
+						class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
+						style={previewSrc
+							? `background-image: url(${JSON.stringify(previewSrc)}); background-repeat: no-repeat; background-size: ${long ? '100% auto' : 'contain'}; background-position: ${long ? 'top' : 'center'};${image.width && image.height ? (long ? ` aspect-ratio: ${image.width} / ${image.height};` : ` max-width: ${image.width}px; max-height: ${image.height}px;`) : ''}`
+							: undefined}
+					>
+						<SaveImage
+							{image}
+							alt={image.alt ?? currentSave.text ?? ''}
+							class={long ? 'w-full' : 'max-h-full max-w-full object-contain'}
+							wrapperClass={long
+								? 'block w-full'
+								: 'flex h-full w-full items-center justify-center'}
+							style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+							onLoad={() => (desktopLoadedUri = currentUri)}
+						/>
+					</div>
 				</LabeledMedia>
 			{:else}
 				<div
@@ -1131,7 +1189,12 @@
 {#if related.items.length > 0 || related.loading}
 	<section class="flex flex-col gap-4 p-2 md:p-4">
 		<h2 class="text-lg font-medium">Related</h2>
-		<MasonryGrid items={related.items} loading={related.loading} longPressSave />
+		<MasonryGrid
+			items={related.items}
+			loading={related.loading}
+			imageLoading="eager"
+			longPressSave
+		/>
 		{#if related.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>
 		{/if}

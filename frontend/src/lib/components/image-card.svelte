@@ -18,6 +18,7 @@
 
 	interface Props {
 		item: SaveView;
+		imageLoading?: 'lazy' | 'eager';
 		// When false, the image isn't a link to the detail view (clicking does nothing);
 		// the hover overlay / collection selector still work. Defaults to true.
 		linkToDetail?: boolean;
@@ -38,6 +39,7 @@
 
 	let {
 		item,
+		imageLoading = 'lazy',
 		linkToDetail = true,
 		mobileSave = false,
 		longPressSave = false,
@@ -151,6 +153,7 @@
 	{#if image}
 		<SaveImage
 			{image}
+			loading={imageLoading}
 			variant="grid"
 			alt={image.alt ?? item.text ?? ''}
 			class="w-full {cropped ? 'object-cover object-top' : ''}"

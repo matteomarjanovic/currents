@@ -47,6 +47,67 @@ async function mockApi(page: Page, signedIn: boolean) {
 	});
 }
 
+for (const tall of [false, true]) {
+	test(`desktop detail uses the loaded ${tall ? 'cropped' : 'portrait'} thumbnail until the larger image loads`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await mockApi(page, false);
+		const imageSave = {
+			...save,
+			content: { ...save.content, height: tall ? 3200 : 500 }
+		};
+		await page.route(`${APPVIEW}/xrpc/is.currents.feed.getFeed*`, (route) =>
+			route.fulfill({ json: { feed: [imageSave], cursor: null } })
+		);
+		let releaseDetail!: () => void;
+		const detailReady = new Promise<void>((resolve) => {
+			releaseDetail = resolve;
+		});
+		await page.route('https://cdn.currents.is/**', async (route) => {
+			const detail = new URL(route.request().url()).searchParams.get('quality') === '85';
+			if (detail) await detailReady;
+			await route.fulfill({
+				contentType: 'image/svg+xml',
+				body: `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="${detail ? imageSave.content.height : tall ? 800 : 500}"><rect width="100%" height="100%" fill="${detail ? 'red' : 'blue'}"/></svg>`
+			});
+		});
+		try {
+			await page.goto('/explore/general');
+			const tile = page.locator('a.block:has(img)').first();
+			const thumbnail = tile.locator('img').first();
+			await expect
+				.poll(() =>
+					thumbnail.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)
+				)
+				.toBe(true);
+			const thumbnailSrc = await thumbnail.evaluate((image: HTMLImageElement) => image.currentSrc);
+			await tile.click();
+			const preview = page.locator('[data-detail-preview]');
+			await expect(preview).toBeVisible();
+			await expect(preview).toHaveCSS('background-image', `url("${thumbnailSrc}")`);
+			await expect(preview).toHaveCSS('background-size', tall ? '100% auto' : 'contain');
+			const previewBox = (await preview.boundingBox())!;
+			expect(previewBox.width).toBeGreaterThan(100);
+			expect(previewBox.height).toBeGreaterThan(100);
+			await page.screenshot({ path: testInfo.outputPath('thumbnail-placeholder.png') });
+			const detailImage = page.locator('[data-save-detail-overlay] img[src*="quality=85"]').first();
+			expect(await detailImage.evaluate((image: HTMLImageElement) => image.complete)).toBe(false);
+			releaseDetail();
+			await expect(page.locator('[data-detail-preview]')).toHaveCount(0);
+			await expect
+				.poll(() =>
+					detailImage.evaluate(
+						(image: HTMLImageElement) => image.complete && image.naturalWidth > 0
+					)
+				)
+				.toBe(true);
+		} finally {
+			releaseDetail();
+		}
+	});
+}
+
 for (const path of ['/explore/general', '/organize']) {
 	test(`a desktop ${path} image drags its original image URL`, async ({ browser, baseURL }) => {
 		let context: BrowserContext | undefined;
