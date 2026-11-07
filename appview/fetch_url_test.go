@@ -1,13 +1,84 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"errors"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"golang.org/x/net/html"
 )
+
+func stubURLFetchTransport(t *testing.T, transport http.RoundTripper) {
+	t.Helper()
+	original := urlFetchClient
+	client := *original
+	client.Transport = transport
+	urlFetchClient = &client
+	t.Cleanup(func() { urlFetchClient = original })
+}
+
+func TestFetchRemoteImageDetectsTypeFromBytes(t *testing.T) {
+	webp, err := base64.StdEncoding.DecodeString("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, header, want string
+		data               []byte
+	}{
+		{"PNG as binary", "application/octet-stream", "image/png", testBlobPNG},
+		{"WebP as binary", "application/octet-stream", "image/webp", webp},
+		{"PNG without header", "", "image/png", testBlobPNG},
+		{"PNG with wrong image header", "image/jpeg", "image/png", testBlobPNG},
+		{"HTML pretending to be an image", "image/png", "", []byte("<!doctype html><html>not an image</html>")},
+		{"SVG", "image/svg+xml", "", []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stubURLFetchTransport(t, blobRoundTripper(func(r *http.Request) (*http.Response, error) {
+				return blobResponse(r, io.NopCloser(bytes.NewReader(test.data)), int64(len(test.data)), test.header), nil
+			}))
+			data, mime, err := fetchRemoteImage(context.Background(), "https://example.com/image")
+			if test.want == "" {
+				if !errors.Is(err, errInvalidImage) {
+					t.Fatalf("got %v, want invalid image", err)
+				}
+				return
+			}
+			if err != nil || mime != test.want || !bytes.Equal(data, test.data) {
+				t.Fatalf("got mime %q, unchanged bytes %v, err %v; want %q", mime, bytes.Equal(data, test.data), err, test.want)
+			}
+		})
+	}
+}
+
+func TestExtractPageImagesDetectsImageWithGenericHeader(t *testing.T) {
+	stubURLFetchTransport(t, blobRoundTripper(func(r *http.Request) (*http.Response, error) {
+		return blobResponse(r, io.NopCloser(bytes.NewReader(testBlobPNG)), int64(len(testBlobPNG)), "application/octet-stream"), nil
+	}))
+	const raw = "https://example.com/logo"
+	images, err := extractPageImages(context.Background(), raw)
+	if err != nil || len(images) != 1 || images[0] != raw {
+		t.Fatalf("got %v, %v; want direct image URL", images, err)
+	}
+}
+
+func TestExtractPageImagesKeepsBufferedHTML(t *testing.T) {
+	page := `<html><body><img src="/image.png"></body></html>`
+	stubURLFetchTransport(t, blobRoundTripper(func(r *http.Request) (*http.Response, error) {
+		return blobResponse(r, io.NopCloser(strings.NewReader(page)), int64(len(page)), "text/html"), nil
+	}))
+	images, err := extractPageImages(context.Background(), "https://example.com/page")
+	if err != nil || len(images) != 1 || images[0] != "https://example.com/image.png" {
+		t.Fatalf("got %v, %v; want page image URL", images, err)
+	}
+}
 
 func TestIsDisallowedIP(t *testing.T) {
 	cases := map[string]bool{

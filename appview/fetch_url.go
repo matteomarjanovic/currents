@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -128,16 +129,18 @@ func fetchRemoteImage(ctx context.Context, raw string) ([]byte, string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("fetch status %d", resp.StatusCode)
 	}
-	ct := strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0])
-	if !strings.HasPrefix(ct, "image/") {
-		return nil, "", fmt.Errorf("not an image: %q", ct)
-	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchImageSize+1))
 	if err != nil {
 		return nil, "", err
 	}
 	if len(data) > maxFetchImageSize {
 		return nil, "", fmt.Errorf("image too large")
+	}
+	// Some sites serve PNG/WebP as application/octet-stream. Identify the actual
+	// raster format, using the same byte validation as PDS blob fetches.
+	ct, err := blobImageType(data)
+	if err != nil {
+		return nil, "", err
 	}
 	return data, ct, nil
 }
@@ -163,7 +166,15 @@ func extractPageImages(ctx context.Context, raw string) ([]string, error) {
 		return []string{base.String()}, nil
 	}
 
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxFetchHTMLSize))
+	// Direct image URLs can have a generic or missing Content-Type too. Peek so
+	// the HTML parser still receives the entire body when this is a page.
+	body := bufio.NewReader(resp.Body)
+	header, _ := body.Peek(512)
+	if _, err := blobImageType(header); err == nil {
+		return []string{base.String()}, nil
+	}
+
+	doc, err := html.Parse(io.LimitReader(body, maxFetchHTMLSize))
 	if err != nil {
 		return nil, err
 	}
