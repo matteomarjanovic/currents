@@ -9,7 +9,7 @@
 //
 //  Auth: the main app mirrors its session token + appview base URL into the App Group container
 //  (SharedAuthPlugin in App/AppDelegate.swift → auth.json); the extension calls the appview
-//  directly with it. Images are uploaded via POST /save (the same endpoint the web uploader
+//  directly with it. Images are uploaded via POST /api/save (the same endpoint the web uploader
 //  uses); shared links are scraped via POST /api/extract-images and the picked images saved by
 //  URL. No hand-off to the webview ever happens on iOS — Android keeps its send-intent flow.
 //
@@ -75,7 +75,7 @@ private final class CurrentsAPI {
 		var req = URLRequest(url: comps.url!)
 		req.httpMethod = method
 		req.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
-		// Without this, a successful POST /save answers with a web-form 302 → /save, which
+		// Without this, a successful POST /api/save answers with a web-form 302 → /save, which
 		// URLSession follows as GET → 405 — an error response for a save that worked.
 		req.setValue("application/json", forHTTPHeaderField: "Accept")
 		return req
@@ -123,7 +123,7 @@ private final class CurrentsAPI {
 	}
 
 	func createCollection(name: String) async throws -> String {
-		var req = request("POST", "/collection")
+		var req = request("POST", "/api/collection")
 		req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 		var comps = URLComponents()
 		comps.queryItems = [URLQueryItem(name: "name", value: name)]
@@ -164,7 +164,7 @@ private final class CurrentsAPI {
 	}
 
 	private func send(_ form: MultipartForm) async throws {
-		var req = request("POST", "/save")
+		var req = request("POST", "/api/save")
 		var form = form
 		req.setValue(
 			"multipart/form-data; boundary=\(form.boundary)", forHTTPHeaderField: "Content-Type")
