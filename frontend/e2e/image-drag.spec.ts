@@ -83,6 +83,12 @@ for (const tall of [false, true]) {
 				.toBe(true);
 			const thumbnailSrc = await thumbnail.evaluate((image: HTMLImageElement) => image.currentSrc);
 			await tile.click();
+			const detailsColumn = page
+				.locator('[data-save-detail-overlay]')
+				.getByRole('button', { name: 'Go back', exact: true })
+				.first()
+				.locator('..');
+			await expect(detailsColumn).toHaveCSS('width', '400px');
 			const preview = page.locator('[data-detail-preview]');
 			await expect(preview).toBeVisible();
 			await expect(preview).toHaveCSS('background-image', `url("${thumbnailSrc}")`);
