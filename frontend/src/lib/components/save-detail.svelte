@@ -390,7 +390,7 @@
 	let desktopHeroVisible = $state(true);
 	let scrolledPastTop = $derived(!mobileTopVisible && !desktopHeroVisible);
 
-	// The scroll-to-top button is fixed (viewport-anchored) but should align with
+	// The mobile scroll-to-top button is fixed (viewport-anchored) but should align with
 	// the content's right edge, which sits a classic-scrollbar width further in on
 	// platforms that render one (Windows). Measure the scroll container's scrollbar
 	// and add it to the offset; with overlay scrollbars this is 0.
@@ -1159,7 +1159,7 @@
 <!-- Floating actions: revealed once the primary view scrolls out of sight. -->
 {#if scrolledPastTop}
 	<div
-		class="fixed left-2 z-50 md:left-4"
+		class="fixed left-2 z-50 md:hidden"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
 		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 	>
@@ -1173,23 +1173,14 @@
 			<ArrowLeft />
 			Back
 		</Button>
-		<Button
-			variant="glass"
-			size="lg"
-			class="hidden rounded-full border-border shadow-none md:inline-flex"
-			onclick={goBack}
-			aria-label="Go back"
-		>
-			<ArrowLeft class="size-4" />
-			Back
-		</Button>
 	</div>
-	<!-- Aligned with the grid's right border: content padding (p-2 / md:p-4) plus
+	<!-- Mobile aligns with the grid's right border: content padding plus
 	     the scroll container's measured scrollbar width. The `100% - 100vw` term
-	     cancels root-viewport changes when a scroll lock hides the scrollbar. -->
+	     cancels root-viewport changes when a scroll lock hides the scrollbar.
+	     Desktop centers the larger button in the viewport. -->
 	<div
 		bind:this={toTopEl}
-		class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:right-[calc(1rem+var(--sb)+100%-100vw)]"
+		class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:left-1/2 md:right-auto md:-translate-x-1/2"
 		style="bottom: calc(env(safe-area-inset-bottom) + 1rem); --sb: {scrollbarInset}px"
 		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 	>
@@ -1205,7 +1196,7 @@
 		<Button
 			variant="glass"
 			size="lg"
-			class="hidden rounded-full border-border shadow-none md:inline-flex"
+			class="hidden h-11 rounded-full border-border px-5 shadow-none md:inline-flex"
 			onclick={scrollToTop}
 			aria-label="Go to top"
 		>

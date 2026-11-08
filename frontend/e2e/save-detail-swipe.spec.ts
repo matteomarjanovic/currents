@@ -198,6 +198,36 @@ async function openFirstSave(page: Page) {
 	await expect(page).toHaveURL(/\/save\/s1$/);
 }
 
+test('desktop related scrolling shows a larger centered Go to top without a floating Back button', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await mockApi(page, { related: true });
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	const overlay = page.locator('[data-save-detail-overlay]');
+	await overlay.evaluate((element) => element.scrollTo(0, 1100));
+	const button = overlay.getByRole('button', { name: 'Go to top', exact: true });
+	await expect(button).toBeVisible();
+	await expect(button).toHaveCSS('height', '44px');
+	await expect
+		.poll(async () => {
+			const box = (await button.boundingBox())!;
+			return Math.abs(box.x + box.width / 2 - 720);
+		})
+		.toBeLessThan(1);
+	expect(
+		await overlay.getByRole('button', { name: 'Go back', exact: true }).evaluateAll((buttons) =>
+			buttons.some((button) => {
+				const box = button.getBoundingClientRect();
+				return box.width > 0 && box.height > 0 && box.top >= 0 && box.bottom <= innerHeight;
+			})
+		)
+	).toBe(false);
+	await button.click();
+	await expect.poll(() => overlay.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
 test('swiping moves to the next and previous image of the grid', async ({ page }) => {
 	await openFirstSave(page);
 
