@@ -942,7 +942,7 @@
 {/snippet}
 
 <div bind:this={desktopHero} class="hidden h-screen md:flex">
-	<div class="flex w-1/3 flex-col gap-5 overflow-y-auto border-r border-border p-4 pt-20">
+	<div class="flex w-1/3 max-w-[400px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-border p-4 pt-20">
 		<Button
 			variant="outline"
 			size="sm"
@@ -964,7 +964,7 @@
 	<!-- Long images fill the pane's width and scroll it; everything else is
 	     contained and centred as before. The wrapper is the positioning context for
 	     the "more below" fade, which has to sit outside the scrolling element. -->
-	<div class="relative w-2/3">
+	<div class="relative min-w-0 flex-1">
 		<!-- The fade is a mask on the pane, not a colored gradient on top of it: this
 		     view renders both as a route (page background) and as the pushState overlay
 		     (app-muted-wash), and a mask doesn't need to know which. -->
@@ -992,6 +992,7 @@
 						<SaveImage
 							{image}
 							alt={image.alt ?? currentSave.text ?? ''}
+							sizes="(min-width: 1200px) calc(100vw - 400px - 2rem), 67vw"
 							class={long ? 'w-full' : 'max-h-full max-w-full object-contain'}
 							wrapperClass={long
 								? 'block w-full'
