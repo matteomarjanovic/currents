@@ -1,78 +1,80 @@
 # Currents
 
-A calm, ad-free visual inspiration platform built on the [AT Protocol](https://atproto.com). Users save images into Collections.
+Currents is a calm, ad-free place to collect visual inspiration. It is open source and built on the [AT Protocol](https://atproto.com), so your saves and collections are stored in your AT Protocol repository.
 
-## Services
+Visit [currents.is](https://currents.is) to try it.
 
-| Directory | Language | Description |
-|---|---|---|
-| `appview/` | Go | AT Protocol AppView — HTTP server with OAuth, TAP listener, backed by PostgreSQL + pgvector |
-| `inference/` | Python | FastAPI inference server — embeds images and text into a shared vector space (SigLIP2) |
+## What you can do
 
-The appview subscribes to a [TAP](https://github.com/bluesky-social/indigo/tree/main/cmd/tap) WebSocket at startup to index `is.currents.*` records from the AT Protocol firehose into local `collection` and `save` tables. Saves are always written to the user's PDS first (via the browser extension or the appview's `POST /resave` endpoint for resaves), then indexed asynchronously by the TAP listener — the appview DB is never written to directly by HTTP handlers for user content.
+- Save images into collections and sections, or keep them unsorted on your profile.
+- Explore images, search by text or color, and find similar images.
+- Save images from other websites with the [browser extension](extension/README.md).
+- Import boards from Pinterest.
 
-## Quick start
+Some search features are available with a supporter subscription. See the [supporter guide](docs/POLAR.md) for details.
+
+## How it works
+
+The Svelte frontend and browser extension talk to a Go AppView. Saves are written to the user's personal data server (PDS), then indexed asynchronously by TAP. The AppView uses PostgreSQL with pgvector for search and discovery. A Python inference service creates image and text embeddings in the same space.
+
+| Directory | What's inside |
+| --- | --- |
+| [frontend/](frontend/) | Web and mobile app |
+| [extension/](extension/) | Browser extension |
+| [appview/](appview/) | API, OAuth, indexing and database |
+| [inference/](inference/) | Image and text embeddings |
+| [clustering/](clustering/) | Background embedding and clustering jobs |
+| [lexicons/](lexicons/) | AT Protocol record and API schemas |
+
+## Local development
+
+You need Docker with Compose, Python 3.10+, and Node.js 22.17 or later. The inference server uses Apple Silicon when available and falls back to CPU. The frontend depends on a private Capawesome package: configure registry credentials as described in the [frontend guide](frontend/README.md#native-security-updates) before installing dependencies.
+
+Install the frontend and inference dependencies:
 
 ```bash
-SESSION_SECRET=<random-string> docker compose up --build
+cd frontend
+npm install
+cd ../inference
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cd ..
 ```
 
-- AppView: http://localhost:8080
-- Inference: run separately (see `inference/`)
+Copy the root [.env.example](.env.example) to `.env` and adjust it for your development environment. Set `SESSION_SECRET` to a random value and configure the OAuth hostname and frontend URL. In `frontend/.env.development.local`, set `PUBLIC_APPVIEW_URL` and `PUBLIC_WEB_APPVIEW_URL` to your development AppView; the checked-in development settings point to the live service. Login requires OAuth settings that match the address you use. See the [AppView configuration and OAuth guide](appview/README.md#oauth-modes) for details.
 
-## Full local dev stack
-
-`./dev.sh` starts everything — the dev compose stack (db/tap/appview/clustering),
-the inference server, the frontend, and a cloudflared tunnel — each in its own
-tmux window (`docker`, `inference`, `frontend`, `tunnel`).
+Start the database, TAP, AppView and clustering service:
 
 ```bash
-./dev.sh          # build + start everything, attach to tmux
-./dev.sh stop     # stop inference/frontend/tunnel (docker stack keeps running)
-./dev.sh stop --down  # also tear down the docker stack
-./dev.sh attach   # reattach after detaching (Ctrl-b d)
-./dev.sh restart frontend   # bounce a single window
-```
-
-## Dev TAP stack
-
-For local TAP debugging, use the dev compose file directly. It tracks only the
-handles in `TAP_DEV_HANDLES`, seeds TAP via `/repos/add`, and starts the full
-local stack, including `clustering`.
-
-```bash
-TAP_DEV_HANDLES="matteomarjanovic.com,zeroassembly.site" \
 docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-Add more tracked repos by appending more comma-separated handles to
-`TAP_DEV_HANDLES`.
+The dev TAP stack follows the accounts in `TAP_DEV_HANDLES`; set that variable to a comma-separated list of handles to change them. The AppView listens on port 8080.
 
-To wipe the dev stack completely:
-
-```bash
-docker compose -f docker-compose.dev.yml down -v
-```
-
-## Inference server
+In separate terminals, start inference and the frontend:
 
 ```bash
 cd inference
-pip install -r requirements.txt
+source venv/bin/activate
 uvicorn main:app --reload
 ```
 
-Endpoints: `POST /embed/image`, `POST /embed/text`, `POST /analyze/image`, `GET /health`
+```bash
+cd frontend
+npm run dev
+```
 
-`/analyze/image` returns an embedding, dominant-color palette, and image dimensions in one call — used by the appview when indexing new saves.
+Inference listens on port 8000; Vite prints the frontend URL. The root `dev.sh` can start these services in tmux along with a Cloudflare tunnel. It expects tmux, cloudflared, a configured `currents-dev` tunnel, and the dependencies above.
 
-## Moderation
+## Documentation
 
-Currents ships with a first-class atproto labeler. New saves are auto-classified for NSFW / violence / AI-generated content inside the same SigLIP2 pass that produces the embedding, suspect content lands in the moderation review queue at `/moderation/queue`, and reviewer decisions produce signed labels exposed via `com.atproto.label.subscribeLabels` / `queryLabels` so Bluesky clients honor them too.
+See the [documentation index](docs/README.md) for architecture, features, operations and deployment guides. Component setup and commands are in the [AppView](appview/README.md), [inference](inference/README.md), [frontend](frontend/README.md) and [extension](extension/README.md) guides. Planned work is in [BACKLOG.md](BACKLOG.md).
 
-- Architecture deep-dive: **[`MODERATION.md`](MODERATION.md)**
-- Deployment walkthrough (keypair, DNS, publishing the service record): **[`MODERATION_DEPLOYMENT.md`](MODERATION_DEPLOYMENT.md)**
+## Contributing
 
-## More
+Issues and pull requests are welcome. For a change to an existing subsystem, read its guide in the [documentation index](docs/README.md) first. Run the checks relevant to your change and describe how you tested it in your pull request.
 
-See `appview/README.md` for full AppView configuration and OAuth docs.
+## License
+
+Currents is licensed under the [GNU Affero General Public License v3.0](LICENSE).

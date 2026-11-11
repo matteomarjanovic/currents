@@ -160,7 +160,7 @@ limits. Both verify the PDS and coordinate with imports.
 
 Use `appview repair-orphans --did <did> --dry-run` to inspect an account.
 The full rules, grace period, OAuth requirements, operator commands and
-verification steps are in [REPOSITORY_MAINTENANCE.md](../REPOSITORY_MAINTENANCE.md).
+verification steps are in [repository maintenance guide](../docs/REPOSITORY_MAINTENANCE.md).
 The existing `APPVIEW_MODE=repair` remains the embedding/enrichment backfill.
 
 ## Moderation backfill
@@ -183,7 +183,7 @@ appview backfill-moderation --batch-size 256 --interval 5s
 
 The job iterates blobs lacking a `blob_moderation_state` row, posts batches of embeddings to the inference server's `/classify/safety/embeddings`, and runs the same threshold ladder as live TAP. It naturally resumes after interruption — already-classified blobs are excluded by the next query.
 
-See **`MODERATION.md`** for the full pipeline.
+See **`../docs/MODERATION.md`** for the full pipeline.
 
 ## Endpoints
 
@@ -256,7 +256,7 @@ See **`MODERATION.md`** for the full pipeline.
 | `GET` | `/api/admin/overview` | Admin | Current service, pipeline, capacity, and scheduled-job state |
 | `GET` | `/api/admin/stats` | Admin | Registration analytics |
 
-See **`MODERATION.md`** for the architecture, label vocabulary, and code locations; **`MODERATION_DEPLOYMENT.md`** for keypair generation, DNS setup, and publishing the `app.bsky.labeler.service` record.
+See **`../docs/MODERATION.md`** for the architecture, label vocabulary, and code locations; **`../docs/MODERATION_DEPLOYMENT.md`** for keypair generation, DNS setup, and publishing the `app.bsky.labeler.service` record.
 
 ## PDS image-fetch security
 

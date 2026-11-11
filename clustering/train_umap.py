@@ -4,7 +4,7 @@ train_umap.py — Monthly UMAP model training.
 Samples up to 100k embeddings from visual_identity, fits a UMAP model,
 saves it atomically to MODELS_DIR, and publishes it to the model store
 (Scaleway Object Storage) for the inference server, which runs on other
-hardware and syncs the bucket on a cron (see SCALEWAY_MIGRATION.md). Then
+hardware and syncs the bucket on a cron (see ../docs/SCALEWAY_MIGRATION.md). Then
 re-projects all existing embeddings in the DB so the entire table is on the
 new model's coordinate space. Finally notifies the inference server to
 hot-reload the model — a no-op unless INFERENCE_URL is set (dev, where

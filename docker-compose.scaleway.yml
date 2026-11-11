@@ -1,4 +1,4 @@
-# Production stack on a Scaleway Virtual Instance (see SCALEWAY_MIGRATION.md).
+# Production stack on a Scaleway Virtual Instance (see docs/SCALEWAY_MIGRATION.md).
 # Differences from docker-compose.mac-mini.yml:
 #   - pgdata lives on a mounted Block Storage volume (/mnt/pgdata), not a named
 #     volume, so the instance is disposable and the volume can be re-attached
@@ -10,7 +10,7 @@
 #     Private Network (no host.docker.internal on Linux).
 #   - Clustering runs here, next to the DB, and publishes the monthly UMAP
 #     model to the Object Storage model store; the inference VM syncs the
-#     bucket on a timer (see SCALEWAY_MIGRATION.md). Its mem_limit
+#     bucket on a timer (see docs/SCALEWAY_MIGRATION.md). Its mem_limit
 #     keeps the monthly UMAP fit from squeezing Postgres.
 
 services:

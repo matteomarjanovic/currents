@@ -51,7 +51,7 @@ proposing new work; delete an entry when it ships.
   Size and test against unique images, embeddings, and index size rather than
   user count. Do not remove the current nightly/per-appview-deployment backups
   until the replacement and recovery procedure have been verified. See
-  `SCALING.md` for the measured baseline and recovery tradeoffs.
+  `docs/SCALING.md` for the measured baseline and recovery tradeoffs.
 
 - **Scaleway migration (completed 2026-09-13).** Motivation: the
   2026-08-04 incident — the mac mini's ISP had a degraded route to
@@ -59,8 +59,8 @@ proposing new work; delete an entry when it ships.
   `relay1.us-east`); a datacenter VM is immune to residential peering
   roulette and moves the full-firehose bandwidth off the home line. The
   plan, compose file, and cost/growth analysis are written up:
-  `SCALEWAY_MIGRATION.md` (step-by-step, `docker-compose.scaleway.yml`) and
-  `SCALING.md` (phased plan for when the vector data grows). The settled
+  `docs/SCALEWAY_MIGRATION.md` (step-by-step, `docker-compose.scaleway.yml`) and
+  `docs/SCALING.md` (phased plan for when the vector data grows). The settled
   topology is an 8 GB main VM (`db + tap + appview + clustering + SvelteKit
   SSR + Caddy`) plus a private 4 GB CPU inference VM, with models exchanged
   through Object Storage. Production DNS-only records point directly from

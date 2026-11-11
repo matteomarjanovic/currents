@@ -77,7 +77,7 @@ Database dumps use PostgreSQL 18's native zstd compression at level 1. Restore
 with a PostgreSQL 18 `pg_restore` built with zstd support, as in the production
 Postgres image. Compression does not change backup contents or the nightly and
 per-appview-deployment backup requirements. Long-term physical backups and
-point-in-time recovery are tracked in `BACKLOG.md` and `SCALING.md`.
+point-in-time recovery are tracked in `BACKLOG.md` and `../../docs/SCALING.md`.
 
 The main-host script must use `/opt/currents/.env.production`, with
 `OAUTH_HOSTNAME=currents.is`. `.env.production.phase-a` is historical rollback

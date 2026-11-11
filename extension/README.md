@@ -27,7 +27,7 @@ On Bluesky, Mu, Witchsky, Northsky, Blacksky, Anisota, and Tokimeki, post images
 retain the source AT Protocol record's URI and record CID when their ownership can be
 verified, including quoted images and images picked from feeds. The source link
 stays on the client you used. Unknown sources are saved without a reference.
-See [AT Protocol save provenance](../ORIGIN_ATPROTO_REF.md).
+See [AT Protocol save provenance](../docs/ORIGIN_ATPROTO_REF.md).
 
 Grain gallery photos also retain their individual `social.grain.photo` record
 reference when verified. Their source link points to the containing gallery.

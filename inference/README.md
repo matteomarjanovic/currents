@@ -62,7 +62,7 @@ When any of `NSFW_HEAD_ONNX` / `VIOLENCE_HEAD_ONNX` / `AIGEN_HEAD_ONNX` is set, 
 
 `/classify/safety/embeddings` is the CPU-only backfill counterpart: pass a `{"embeddings": [[float, ...], ...]}` body and get back `{"results": [{"nsfw": ..., "violence": ..., "ai_generated": ...}, ...]}`. Used by `appview backfill-moderation` to score historical saves without re-running the backbone.
 
-The Currents appview consumes `safety_scores` in `appview/tap.go` to drive auto-flagging and label issuance. See the repo-root **`MODERATION.md`** for the full pipeline.
+The Currents appview consumes `safety_scores` in `appview/tap.go` to drive auto-flagging and label issuance. See the [moderation guide](../docs/MODERATION.md) for the full pipeline.
 
 ## UMAP
 

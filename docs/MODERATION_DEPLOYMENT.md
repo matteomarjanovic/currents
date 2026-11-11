@@ -224,7 +224,7 @@ goat record create --collection app.bsky.labeler.service --rkey self --record la
 
 ## 7. Train + deploy the safety heads
 
-The training notebooks are in [`moderation/`](moderation/). Each exports an ONNX file with input `embedding (float32[1,768])` and output `logits (float32[1,1])`.
+The training notebooks are in [`moderation/`](../moderation/). Each exports an ONNX file with input `embedding (float32[1,768])` and output `logits (float32[1,1])`.
 
 Once you have `*.onnx` files, set on the inference server before restart:
 
