@@ -295,7 +295,9 @@
 					item.error =
 						e instanceof DirectUploadError && e.status === 403
 							? 'Reconnect your account to upload'
-							: String(e);
+							: e instanceof Error
+								? e.message
+								: String(e);
 					return 'ok';
 				}
 			} else if (item.imageUrl) {
@@ -566,10 +568,11 @@
 						</div>
 					{:else if item.status === 'error'}
 						<div
+							role="alert"
 							class="absolute inset-0 flex items-center justify-center bg-destructive/70 px-2 text-center text-xs text-white"
 							title={item.error}
 						>
-							Upload failed
+							{item.error || 'Upload failed'}
 						</div>
 					{/if}
 					{#if !uploading && item.status !== 'done'}

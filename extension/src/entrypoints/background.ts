@@ -7,6 +7,8 @@ import { concreteImageMime } from '../lib/image-mime';
 const CURRENTS_URL = import.meta.env.VITE_CURRENTS_URL ?? 'https://api.currents.is';
 const FRONTEND_URL = import.meta.env.VITE_CURRENTS_FRONTEND_URL ?? 'https://currents.is';
 const AUTH_TTL_MS = 60_000;
+// Match is.currents.content.image and the appview's upload/proxy limit.
+const MAX_IMAGE_BYTES = 20_000_000;
 let pixivReferrerReady: Promise<void> | undefined;
 
 function ensurePixivReferrer() {
@@ -264,6 +266,8 @@ async function handleSave(message: {
 	} catch (e) {
 		return { ok: false, error: `Could not fetch image: ${e}` };
 	}
+	if (imageBlob.size > MAX_IMAGE_BYTES)
+		return { ok: false, error: 'Images must be 20 MB or smaller.' };
 
 	// Upload straight to the user's PDS with a short-lived service-auth token so
 	// com.atproto.repo.uploadBlob runs from the user's own IP (their own per-IP

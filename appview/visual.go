@@ -459,7 +459,7 @@ func getBlobFromEndpoint(ctx context.Context, pdsEndpoint, authorDID, blobCID st
 }
 
 // Match the image lexicon's blob limit. Bound bytes before decoding or proxying.
-const maxFetchedBlobSize = 20_000_000
+const maxFetchedBlobSize = maxBlobSize
 
 // Only serve passive raster formats, identified from bytes rather than an
 // attacker-controlled Content-Type. In particular, HTML and SVG must never be

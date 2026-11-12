@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resaveWithFallback } from './resave';
 import { apiFetch } from '$lib/api';
 import { promptUploadReauth } from '$lib/upload-reauth';
+import { IMAGE_SIZE_ERROR, MAX_IMAGE_BYTES } from './image-size';
 
 vi.mock('$lib/api', () => ({ apiFetch: vi.fn() }));
 vi.mock('$lib/image-mime', () => ({
@@ -26,6 +27,24 @@ afterEach(() => {
 });
 
 describe('resaveWithFallback', () => {
+	it('rejects an oversized fallback before uploading or creating a second save', async () => {
+		mockApiFetch.mockResolvedValueOnce(
+			json(
+				{
+					rateLimited: true,
+					token: 't',
+					pdsUrl: 'https://pds.example',
+					image: btoa('x'.repeat(MAX_IMAGE_BYTES + 1))
+				},
+				429
+			)
+		);
+		const res = await resaveWithFallback('at://save', 'at://coll');
+		expect(res.status).toBe(413);
+		expect(await res.text()).toBe(IMAGE_SIZE_ERROR);
+		expect(mockFetch).not.toHaveBeenCalled();
+		expect(mockApiFetch).toHaveBeenCalledTimes(1);
+	});
 	it('returns the server response directly when not rate-limited', async () => {
 		mockApiFetch.mockResolvedValueOnce(json({ uri: 'at://x' }));
 		const res = await resaveWithFallback('at://save', 'at://coll');

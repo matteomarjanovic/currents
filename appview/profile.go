@@ -294,7 +294,7 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session error", http.StatusUnauthorized)
 		return
 	}
-	c := oauthSess.APIClient()
+	c := withUploadBudget(oauthSess.APIClient(), s.Store, did.String(), false)
 
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		http.Error(w, "invalid form data", http.StatusBadRequest)

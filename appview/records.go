@@ -36,8 +36,39 @@ const (
 	saveNSID       = "is.currents.feed.save"
 	followNSID     = "is.currents.graph.follow"
 	favouriteNSID  = "is.currents.graph.favourite"
-	maxBlobSize    = 19 * 1024 * 1024
+	maxBlobSize    = 20_000_000 // is.currents.content.image maxSize, in decimal bytes
 )
+
+var errImageTooLarge = errors.New("Images must be 20 MB or smaller.")
+
+// PDSes do not necessarily validate Currents lexicons. Check supplied blob
+// metadata before writing a record, including direct uploads and resave refs.
+func validateSaveBlobSize(blob any) error {
+	raw, err := json.Marshal(blob)
+	if err != nil {
+		return fmt.Errorf("invalid image blob: %w", err)
+	}
+	var ref saveBlobRef
+	if err := json.Unmarshal(raw, &ref); err != nil || ref.Size <= 0 {
+		return fmt.Errorf("invalid image blob size")
+	}
+	if ref.Size > maxBlobSize {
+		return errImageTooLarge
+	}
+	return nil
+}
+
+func checkSaveBlobSize(w http.ResponseWriter, blob any) bool {
+	if err := validateSaveBlobSize(blob); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errImageTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		http.Error(w, err.Error(), status)
+		return false
+	}
+	return true
+}
 
 // resizeToLimit shrinks an image iteratively until it fits under maxBlobSize,
 // re-encoding as JPEG. Returns the original data unchanged if already within limit.
@@ -71,6 +102,9 @@ func resizeToLimit(data []byte) ([]byte, string, error) {
 func prepareImageForUpload(ctx context.Context, inference *InferenceClient, data []byte, contentType string) ([]byte, string, error) {
 	if len(data) <= maxBlobSize {
 		return data, contentType, nil
+	}
+	if http.DetectContentType(data) == "image/gif" {
+		return nil, "", errImageTooLarge
 	}
 	resized, newCT, err := resizeToLimit(data)
 	if err == nil {
@@ -118,7 +152,7 @@ func (s *Server) apiClientFromSession(r *http.Request) (*atclient.APIClient, *sy
 	if err != nil {
 		return nil, nil, fmt.Errorf("session error: %w", err)
 	}
-	return oauthSess.APIClient(), did, nil
+	return withUploadBudget(oauthSess.APIClient(), s.Store, did.String(), false), did, nil
 }
 
 func rkeyFromURI(uri string) string {
@@ -593,8 +627,8 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		// token (POST /api/blob/upload-token) and passed back the returned blob ref,
 		// so uploadBlob counted against the user's own per-IP rate-limit bucket
 		// rather than the appview's shared one. createRecord below references this
-		// ref, and the PDS rejects a ref the uploading DID never actually holds, so
-		// there is nothing here to re-validate.
+		// ref, and the PDS rejects a ref the uploading DID never actually holds.
+		// Currents still enforces its own size limit before creating the record.
 		if err := json.Unmarshal([]byte(preUploaded), &blobAny); err != nil {
 			http.Error(w, "invalid blob ref", http.StatusBadRequest)
 			return
@@ -638,6 +672,10 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		if len(imageBytes) > maxBlobSize {
 			prepared, preparedCT, err := prepareImageForUpload(r.Context(), s.Inference, imageBytes, contentType)
 			if err != nil {
+				if errors.Is(err, errImageTooLarge) {
+					http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+					return
+				}
 				http.Error(w, "image too large and could not be prepared for upload", http.StatusBadRequest)
 				return
 			}
@@ -662,6 +700,9 @@ func (s *Server) CreateSave(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(blobJSON, &blobAny)
 	}
 
+	if !checkSaveBlobSize(w, blobAny) {
+		return
+	}
 	record := map[string]any{
 		"$type":     saveNSID,
 		"content":   buildImageContentRecordWithAttribution(blobAny, saveAttributionFromFields(attrURL, attrLicense, attrCredit), altText),
@@ -1559,6 +1600,9 @@ func (s *Server) CreateResave(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(blobJSON, &blobAny)
 	}
 
+	if !checkSaveBlobSize(w, blobAny) {
+		return
+	}
 	// Resolve strong refs
 	resaveRef, err := resolveStrongRefPublic(r.Context(), s.Store, s.Dir, body.SaveURI)
 	if err != nil {

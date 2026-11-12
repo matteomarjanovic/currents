@@ -76,6 +76,63 @@ removed/deleting collections, and reopens terminal jobs in those exact
 destinations. It resets failed item attempts and re-enumerates from page one.
 Existing PDS pacing, write budgets and OAuth reconnection behavior still apply.
 
+## Import upload capacity
+
+Blob uploads and record writes have separate budgets. The existing rolling
+record budgets (1,200 completed imports/hour and 9,000/day) still apply.
+Migration 064 adds `import_upload_budget`, keyed by DID and PDS URL, to retain
+upload observations and scheduling state across restarts. Account deletion
+removes these rows; moving to a different PDS starts with that host's own state.
+
+Adaptive pacing activates only for HTTPS hosts under `.host.bsky.network`
+after a real `uploadBlob` response advertises `RateLimit-Limit: 1000` and
+`RateLimit-Policy: 1000;w=86400`, with valid remaining/reset headers. This is
+the verified Bluesky fixed daily, DID-scoped policy (upstream PR 4748).
+Other PDSs, including Eurosky, retain the existing three-second pacing and
+five-minute rate-limit backoff. Their latest upload response's rate headers
+and status are recorded for investigation, without interpreting their scope
+or assuming the absence of headers means unlimited uploads.
+
+The manual-upload reserve declines linearly from 1,000 at 24 hours before
+reset to 200 at one hour, then to 50 at five minutes. The final 50 stay reserved
+until reset. Each import must leave the reserve intact and start at least six
+seconds after the previous attempt. Ten per minute is a ceiling, not a target:
+with no manual usage, the first segment releases roughly one image every
+104 seconds and the second one every 22 seconds. Idle time never accumulates
+permission to burst past this spacing.
+
+Capacity is checked before image fetching/preparation and reserved atomically
+again at the HTTP boundary, so concurrent workers cannot spend the same slot.
+Uploads are charged before sending, even when the response is lost or a later
+record write fails. Successful and rejected upload responses refresh the
+estimate; late responses cannot refund capacity in the same window.
+OAuth 401 challenges run before the PDS upload limiter: their own local
+reservation and pacing timestamp are restored so the SDK can immediately
+retry with its refreshed token/nonce. Concurrent manual reservations stay spent.
+Other failures remain charged conservatively. A global request-limit header
+never replaces the daily blob budget. Known budgets are
+charged conservatively if headers disappear. After reset, one real import can
+discover the new window; without daily headers, further discovery attempts
+wait five minutes. No synthetic blobs or quota-probing uploads are created.
+
+Manual server-side saves, resaves, and profile uploads bypass the import guard.
+They update observations and pause adaptive imports for two minutes. Minting
+a two-minute direct-upload token also reserves one estimated upload on
+successful issuance and pauses imports for its lifetime, covering web, mobile,
+and extension uploads without trusting client-reported quota. An unused token
+can conservatively spend one
+estimated slot; authentication retries and failed token requests do not spend
+additional slots. The next import response incorporates usage by other apps;
+that activity is not visible immediately, so the reserve is headroom rather
+than a guarantee against arbitrary manual bursts.
+
+For adaptive imports, 429 responses retain `Retry-After` (or a valid reset
+timestamp) and stop further PDS uploads until that time. Local waits recheck
+at least once a minute, preserve queued items and retry counts, and use the
+existing Waiting UI. A first real upload is needed to learn a provider's
+budget; the host name alone never activates the new policy. The stored raw
+headers contain no authentication data.
+
 Queue insertion matches exact original image URLs within the same owner's
 destination across jobs. Different Pinterest pin IDs can reference the same
 image. Completed import history remains authoritative for whether an image

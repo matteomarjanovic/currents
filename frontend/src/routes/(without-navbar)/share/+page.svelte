@@ -212,6 +212,7 @@
 						errorText = 'Reconnect your account to upload.';
 						return 'stop';
 					}
+					errorText = e instanceof Error ? e.message : String(e);
 					return 'ok';
 				}
 			} else if (item.imageUrl) {

@@ -1,6 +1,7 @@
 import { apiFetch } from '$lib/api';
 import { concreteImageMime } from '$lib/image-mime';
 import { promptUploadReauth } from '$lib/upload-reauth';
+import { IMAGE_SIZE_ERROR, MAX_IMAGE_BYTES } from './image-size';
 
 // A failure in the direct-to-PDS upload flow. `status` is the HTTP status of
 // whichever step failed; `phase` says which one, so callers can preserve the
@@ -21,6 +22,7 @@ export class DirectUploadError extends Error {
 // shared appview IP. Returns the PDS's blob ref, to be sent to POST /save as the
 // `blob` field in place of the raw `image` file.
 export async function uploadBlobDirect(file: Blob): Promise<unknown> {
+	if (file.size > MAX_IMAGE_BYTES) throw new Error(IMAGE_SIZE_ERROR);
 	const tokenRes = await apiFetch('/api/blob/upload-token', { method: 'POST' });
 	if (!tokenRes.ok) {
 		// 403 = the session lacks the uploadBlob rpc: scope (predates it). The caller

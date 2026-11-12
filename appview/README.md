@@ -104,6 +104,19 @@ DATABASE_URL=<dsn> \
 go run .
 ```
 
+## Image upload size
+
+Save images are limited to 20,000,000 bytes, matching the image lexicon and
+the image proxy. Direct web/native uploads and the extension reject larger
+files before requesting an upload token. The save and resave handlers also
+validate blob-reference sizes before creating a PDS record; a custom lexicon
+declaration alone does not enforce the limit on every PDS. Oversized blobs
+return HTTP 413 with a readable error, and missing/invalid sizes return 400.
+
+Server-side still-image preparation can resize large inputs to fit. Oversized
+GIFs are rejected instead of silently converting the first frame to JPEG.
+Existing oversized PDS records are not rewritten by this validation change.
+
 ## Visual identity
 
 When a new save event arrives via TAP, the appview persists the save immediately and then resolves `visual_identity_id` in two phases:

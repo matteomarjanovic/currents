@@ -392,12 +392,12 @@ func (w *ImportWorker) runForUser(did string, wake <-chan struct{}) {
 		}
 
 		_ = w.Store.setImportPhase(ctx, did, item.JobID, "saving")
-		if w.processItem(ctx, item, did, oauthSess) {
+		if wait := w.processItem(ctx, item, did, oauthSess); wait > 0 {
 			_ = w.Store.setImportPhase(ctx, did, item.JobID, "waiting")
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(importRateLimitWait):
+			case <-time.After(wait):
 			}
 			continue
 		}
@@ -498,35 +498,43 @@ func isRateLimited(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusTooManyRequests
 }
 
-// processItem imports one item. It returns true when a 429 was hit (the item
-// is returned to the queue without consuming an attempt) so the caller can
-// back off before processing more work for this user.
-func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did string, oauthSess *oauth.ClientSession) (rateLimited bool) {
+// processItem returns a delay when capacity is reserved for manual uploads or
+// a service rejects an attempt. Waiting returns the item without spending a retry.
+func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did string, oauthSess *oauth.ClientSession) time.Duration {
 	// Coordinate the final PDS write with deletion/recovery, including workers
 	// in another process. Recheck a claimed item after obtaining the lock.
 	unlock, err := w.Store.lockRepository(ctx, did)
 	if err != nil {
 		_ = w.Store.PauseImportItem(ctx, item.ID)
-		return true
+		return importRateLimitWait
 	}
 	defer unlock()
 	var pending bool
 	if err := w.Store.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM import_item WHERE id = $1 AND status = 'running')`, item.ID).Scan(&pending); err != nil {
 		_ = w.Store.PauseImportItem(ctx, item.ID)
-		return true
+		return importRateLimitWait
 	}
 	if !pending {
-		return false
+		return 0
 	}
 
-	c := oauthSess.APIClient()
+	c := withUploadBudget(oauthSess.APIClient(), w.Store, did, true)
+	pds := strings.TrimRight(c.Host, "/")
+	if wait, err := w.Store.importUploadWait(ctx, did, pds); err != nil || wait > 0 {
+		if err != nil {
+			slog.Warn("reading import upload capacity", "did", did, "err", err)
+			wait = importBudgetRecheck
+		}
+		_ = w.Store.PauseImportItem(ctx, item.ID)
+		return min(wait, importBudgetRecheck)
+	}
 
 	collRef, err := resolveCollectionRef(ctx, c, w.Store, did, item.TargetCollectionURI, false)
 	if err != nil {
 		if isRateLimited(err) {
 			slog.Warn("import rate limited by PDS on getRecord, backing off", "did", did, "wait", importRateLimitWait)
 			_ = w.Store.PauseImportItem(ctx, item.ID)
-			return true
+			return importRateLimitWait
 		}
 		// A missing target collection dooms every item in the job (they all
 		// point at the same record), so fail the whole job at once instead of
@@ -535,37 +543,37 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 		if isRecordNotFound(err) || errors.Is(err, errCollectionDeleting) {
 			_ = w.Store.FailImportJob(ctx, item.JobID, "target collection unavailable: "+err.Error())
 			slog.Warn("import job failed: target collection unavailable", "job_id", item.JobID, "collection", item.TargetCollectionURI)
-			return false
+			return 0
 		}
 		w.failOrRequeue(ctx, item, "collection: "+err.Error())
-		return false
+		return 0
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, item.ImageURL, nil)
 	if err != nil {
 		w.failOrRequeue(ctx, item, "fetch req: "+err.Error())
-		return false
+		return 0
 	}
 	req.Header.Set("User-Agent", pinterestUA)
 	resp, err := pinterestHTTP.Do(req)
 	if err != nil {
 		w.failOrRequeue(ctx, item, "fetch: "+err.Error())
-		return false
+		return 0
 	}
 	imageBytes, readErr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests {
 		slog.Warn("import rate limited by image host, backing off", "did", did, "wait", importRateLimitWait)
 		_ = w.Store.PauseImportItem(ctx, item.ID)
-		return true
+		return importRateLimitWait
 	}
 	if resp.StatusCode != http.StatusOK {
 		w.failOrRequeue(ctx, item, fmt.Sprintf("fetch status %d", resp.StatusCode))
-		return false
+		return 0
 	}
 	if readErr != nil {
 		w.failOrRequeue(ctx, item, "fetch body: "+readErr.Error())
-		return false
+		return 0
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -575,7 +583,7 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	imageBytes, contentType, err = prepareImageForUpload(ctx, w.Inference, imageBytes, contentType)
 	if err != nil {
 		w.failOrRequeue(ctx, item, "prepare: "+err.Error())
-		return false
+		return 0
 	}
 
 	var uploadOut struct {
@@ -583,13 +591,21 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 	}
 	if err := c.LexDo(ctx, "POST", contentType, "com.atproto.repo.uploadBlob", nil,
 		bytes.NewReader(imageBytes), &uploadOut); err != nil {
+		var waiting *importUploadWaitError
+		if errors.As(err, &waiting) {
+			_ = w.Store.PauseImportItem(ctx, item.ID)
+			return min(waiting.delay, importBudgetRecheck)
+		}
 		if isRateLimited(err) {
 			slog.Warn("import rate limited by PDS on uploadBlob, backing off", "did", did, "wait", importRateLimitWait)
 			_ = w.Store.PauseImportItem(ctx, item.ID)
-			return true
+			if wait, err := w.Store.importUploadWait(ctx, did, pds); err == nil && wait > 0 {
+				return min(wait, importBudgetRecheck)
+			}
+			return importRateLimitWait
 		}
 		w.failOrRequeue(ctx, item, "uploadBlob: "+err.Error())
-		return false
+		return 0
 	}
 	blobJSON, _ := json.Marshal(uploadOut.Blob)
 	var blobAny any
@@ -617,11 +633,11 @@ func (w *ImportWorker) processItem(ctx context.Context, item *ImportItemRow, did
 		if isRateLimited(err) {
 			slog.Warn("import rate limited by PDS on putRecord, backing off", "did", did, "wait", importRateLimitWait)
 			_ = w.Store.PauseImportItem(ctx, item.ID)
-			return true
+			return importRateLimitWait
 		}
 		w.failOrRequeue(ctx, item, "putRecord: "+err.Error())
-		return false
+		return 0
 	}
 	_ = w.Store.MarkImportItemDone(ctx, item.ID, out.Uri)
-	return false
+	return 0
 }

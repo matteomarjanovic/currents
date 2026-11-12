@@ -102,4 +102,17 @@ Always use the Svelte MCP server when doing frontend work: fetch relevant docs b
 
 ## Repository maintenance
 
+Save images use a 20,000,000-byte limit matching the image lexicon. Direct
+browser/native and extension uploads check it before requesting a token; save
+and resave handlers validate blob sizes before writing records. The image proxy
+uses the same Go constant. Oversized GIFs fail explicitly rather than losing
+animation through JPEG preparation. See `appview/README.md`.
+
+Pinterest import upload pacing is documented in `docs/PINTEREST_IMPORT.md`.
+`import_upload_budget` persists per-DID/PDS observations. Adaptive reserve and
+six-second upload spacing require a Bluesky-operated host plus the verified
+`1000;w=86400` upload policy; other providers retain their existing behavior.
+Do not infer DID scope from rate headers alone or count completed saves as
+blob uploads. Interactive upload tokens and server-side uploads take priority.
+
 The appview runs daily orphan recovery and retries durable collection deletions every minute. Recovery promotes sections with a confirmed missing PDS parent and moves saves with a confirmed missing collection to Unsorted, preserving record URIs and all other fields. It waits 24 hours after first detection, skips accounts with active imports/deletions, requires a usable OAuth session for writes, and uses repository commit preconditions. `appview repair-orphans --did <did> --dry-run` inspects; `--now` bypasses only the grace period and requires a DID. Read `docs/REPOSITORY_MAINTENANCE.md` before changing these behaviors.

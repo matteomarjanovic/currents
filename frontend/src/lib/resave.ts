@@ -1,6 +1,7 @@
 import { apiFetch } from '$lib/api';
 import { concreteImageMime } from '$lib/image-mime';
 import { promptUploadReauth } from '$lib/upload-reauth';
+import { IMAGE_SIZE_ERROR, MAX_IMAGE_BYTES } from './image-size';
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 	const bin = atob(b64);
@@ -50,6 +51,7 @@ export async function resaveWithFallback(
 
 	try {
 		const bytes = base64ToBytes(payload.image);
+		if (bytes.byteLength > MAX_IMAGE_BYTES) return new Response(IMAGE_SIZE_ERROR, { status: 413 });
 		const up = await fetch(
 			`${payload.pdsUrl.replace(/\/$/, '')}/xrpc/com.atproto.repo.uploadBlob`,
 			{
