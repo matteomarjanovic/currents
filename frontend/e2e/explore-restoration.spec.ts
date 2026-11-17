@@ -489,6 +489,7 @@ test.describe('desktop Explore restoration', () => {
 		await page.goto('/explore/general');
 		const saved = await position(page);
 		await page.getByRole('tab', { name: 'Organize', exact: true }).click();
+		await expect(page).toHaveURL('/organize');
 		await page.getByRole('tab', { name: 'Explore', exact: true }).click();
 		await expect(page).toHaveURL('/explore/general');
 		await expect(page.locator('[data-save-uri]')).toHaveCount(50);

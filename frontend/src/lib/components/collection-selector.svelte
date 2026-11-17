@@ -54,6 +54,7 @@
 		// popover/drawer trigger props to spread onto a focusable element.
 		trigger?: Snippet<[{ props: Record<string, unknown> }]>;
 		onOpenChange?: (open: boolean) => void;
+		onBusyChange?: (busy: boolean) => void;
 		// Bindable so a host can present the picker without a trigger tap — the share
 		// flow opens the drawer on arrival, since choosing a collection is the whole task.
 		open?: boolean;
@@ -75,6 +76,7 @@
 		triggerVariant = 'glass',
 		trigger,
 		onOpenChange,
+		onBusyChange,
 		open = $bindable(false),
 		selectedUri,
 		onSelect,
@@ -152,6 +154,7 @@
 	let drillParent = $state<CollectionView | null>(null);
 	$effect(() => {
 		onOpenChange?.(open);
+		onBusyChange?.(open || createOpen || localSaves.some((s) => s.saveUri === OPTIMISTIC_URI));
 	});
 	// Always start back at the top level when the picker reopens.
 	$effect(() => {

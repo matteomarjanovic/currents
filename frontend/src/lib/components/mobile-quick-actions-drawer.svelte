@@ -11,15 +11,19 @@
 	let {
 		item,
 		open = $bindable(false),
-		onSavesChange
+		onSavesChange,
+		onBusyChange
 	}: {
 		item: SaveView;
 		open?: boolean;
+		onBusyChange?: (busy: boolean) => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
 	} = $props();
 
 	let view = $state<'actions' | 'collections'>('actions');
 	let reportOpen = $state(false);
+	let selectorBusy = $state(false);
+	$effect(() => onBusyChange?.(open || reportOpen || selectorBusy));
 
 	$effect(() => {
 		if (!open) view = 'actions';
@@ -49,7 +53,12 @@
 				class="mt-4 flex flex-col gap-2 border-t border-border px-4 pt-4"
 				style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
 			>
-				<CollectionSelector {item} variant="quick" onSavesChange={handleSavesChange} />
+				<CollectionSelector
+					onBusyChange={(busy) => (selectorBusy = busy)}
+					{item}
+					variant="quick"
+					onSavesChange={handleSavesChange}
+				/>
 				<Button class="h-11 w-full" onclick={() => (view = 'collections')}
 					>Save somewhere else</Button
 				>
@@ -73,7 +82,12 @@
 				style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
 				use:drawerScrollSwipe={() => (open = false)}
 			>
-				<CollectionSelector {item} variant="inline" onSavesChange={handleSavesChange} />
+				<CollectionSelector
+					onBusyChange={(busy) => (selectorBusy = busy)}
+					{item}
+					variant="inline"
+					onSavesChange={handleSavesChange}
+				/>
 			</div>
 		{/if}
 	</Drawer.Content>

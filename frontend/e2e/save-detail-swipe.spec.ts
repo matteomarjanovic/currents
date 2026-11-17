@@ -594,6 +594,21 @@ for (const [platform, emulate] of [
 		await expect(overlays.last()).toHaveAttribute('data-active', 'true');
 		expect(await overlays.first().evaluate((element) => element.scrollTop)).toBe(detailScroll);
 
+		// A third level suspends the first detail's heavy DOM, but retains its pages/state.
+		await overlays.last().locator('section a.block').first().tap();
+		await expect(overlays).toHaveCount(3);
+		await expect(overlays.first()).toHaveAttribute('data-rendered', 'false');
+		await expect(overlays.first().locator('section')).toHaveCount(0);
+		await page.goBack();
+		await expect(overlays).toHaveCount(2);
+		await expect(overlays.first()).toHaveAttribute('data-rendered', 'true');
+		await expect
+			.poll(() => overlays.first().evaluate((element) => element.scrollTop))
+			.toBe(detailScroll);
+		await expect
+			.poll(() => relatedGrid.evaluate((element) => element.children.length))
+			.toBeGreaterThanOrEqual(171);
+
 		await page.goBack();
 		await expect(page).toHaveURL(/\/save\/s3$/);
 		await expect(overlays).toHaveCount(1);
@@ -611,3 +626,342 @@ for (const [platform, emulate] of [
 		expect(feedRequests).toBe(1);
 	});
 }
+
+test('desktop image trail follows nested details and restores an earlier scroll position', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await mockApi(page, { related: true });
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	const active = page.locator('[data-save-detail-overlay][data-active="true"]');
+	const navigation = page.locator('[data-save-detail-navigation]');
+	const trail = navigation.getByRole('navigation', { name: 'Image trail' });
+	await expect(trail).toHaveCount(0);
+	const logo = navigation.getByRole('link', { name: 'Currents', exact: true });
+	const mode = navigation.getByRole('tablist', { name: 'Currents mode' });
+	const logoTop = (await logo.boundingBox())!.y;
+	const modeTop = (await mode.boundingBox())!.y;
+	await active.evaluate((el) => el.scrollTo(0, 1100));
+	await expect(trail).toBeVisible();
+	await expect.poll(async () => (await logo.boundingBox())!.y).toBe(logoTop);
+	await expect.poll(async () => (await mode.boundingBox())!.y).toBe(modeTop);
+	await expect(trail.getByRole('button')).toHaveCount(1);
+	await trail.evaluate((node) => (node.dataset.persistentTrail = 'original'));
+	await active.locator('section a.block').first().click();
+	await expect(trail).toHaveAttribute('data-persistent-trail', 'original');
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(2);
+	const originalScroll = await page
+		.locator('[data-save-detail-overlay]')
+		.first()
+		.evaluate((el) => el.scrollTop);
+	await expect(trail.getByRole('button')).toHaveCount(1);
+	await active.evaluate((el) => el.scrollTo(0, 1100));
+	await expect(trail.getByRole('button')).toHaveCount(2);
+	// Two photos get a little extra breathing room, plus 12px padding per side.
+	await expect
+		.poll(() =>
+			trail.evaluate((node) => {
+				const widths = [...node.querySelectorAll('button')].reduce(
+					(sum, button) => sum + button.offsetWidth,
+					0
+				);
+				return Math.abs(node.getBoundingClientRect().width - widths - 20 - 24);
+			})
+		)
+		.toBeLessThan(1);
+	await active.locator('section a.block').nth(1).click();
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(3);
+	await active.evaluate((el) => el.scrollTo(0, 1100));
+	await expect(trail.getByRole('button')).toHaveCount(3);
+	await page.screenshot({ path: '/tmp/currents-trail-stacked.png' });
+	const trailWidth = (await trail.boundingBox())!.width;
+	await trail.getByRole('button').last().hover();
+	await expect(trail).toHaveClass(/open/);
+	// The clip boundary stays ready throughout expansion, rather than revealing
+	// thumbnails behind a slower width transition.
+	expect((await trail.boundingBox())!.width).toBe(trailWidth);
+	await expect(trail).toHaveCSS('transition-duration', '0s');
+	await expect.poll(async () => (await trail.boundingBox())!.width).toBeGreaterThan(88);
+	await page.screenshot({ path: '/tmp/currents-trail-expanded.png' });
+	await trail.getByRole('button', { name: 'Return to image 1', exact: true }).click();
+	await expect(page).toHaveURL(/\/save\/s1$/);
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(1);
+	await expect.poll(() => active.evaluate((el) => el.scrollTop)).toBe(originalScroll);
+	await trail.getByRole('button').click();
+	await expect.poll(() => active.evaluate((el) => el.scrollTop)).toBe(0);
+	await expect(trail).toHaveCount(0);
+	await page.goForward();
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(2);
+	await expect(trail.getByRole('button')).toHaveCount(1);
+});
+
+test('crowded image trail stays between the controls and opens around the pointer', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 800, height: 1000 });
+	await mockApi(page, { related: true });
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	const active = page.locator('[data-save-detail-overlay][data-active="true"]');
+	for (let i = 0; i < 9; i++) {
+		await active.evaluate((el) => el.scrollTo(0, 1100));
+		await active
+			.locator('section a.block')
+			.nth(i % 3)
+			.click();
+	}
+	await active.evaluate((el) => el.scrollTo(0, 1100));
+	const navigation = page.locator('[data-save-detail-navigation]');
+	const trail = navigation.getByRole('navigation', { name: 'Image trail' });
+	await expect(trail.getByRole('button')).toHaveCount(10);
+	await trail.getByRole('button').last().hover();
+	const actions = active.locator('[data-desktop-actions]');
+	await expect
+		.poll(async () => {
+			const box = (await trail.boundingBox())!;
+			return box.x + box.width <= (await actions.boundingBox())!.x - 11;
+		})
+		.toBe(true);
+	await expect(trail).toHaveCSS('overflow-x', 'clip');
+	await expect(trail).toHaveCSS('overflow-y', 'clip');
+	await expect
+		.poll(async () => {
+			const box = (await trail.boundingBox())!;
+			return Math.abs(box.width - ((await actions.boundingBox())!.x - box.x - 12));
+		})
+		.toBeLessThan(1);
+	const box = (await trail.boundingBox())!;
+	for (const fraction of [0.15, 0.5, 0.85]) {
+		await page.mouse.move(box.x + box.width * fraction, box.y + box.height / 2);
+		await expect
+			.poll(() =>
+				trail
+					.locator('button:hover')
+					.evaluateAll((buttons) =>
+						buttons.some((button) => new DOMMatrix(getComputedStyle(button).transform).a > 1.15)
+					)
+			)
+			.toBe(true);
+		await expect
+			.poll(() =>
+				trail.getByRole('button').evaluateAll((buttons) => {
+					const scales = buttons.map(
+						(button) => new DOMMatrix(getComputedStyle(button).transform).a
+					);
+					return Math.max(...scales);
+				})
+			)
+			.toBeGreaterThan(1.15);
+		await expect
+			.poll(() =>
+				trail.getByRole('button').evaluateAll((buttons) => {
+					const parent = buttons[0].closest('nav')!.getBoundingClientRect();
+					return buttons.every((button) => {
+						const rect = button.getBoundingClientRect();
+						return rect.left >= parent.left && rect.right <= parent.right;
+					});
+				})
+			)
+			.toBe(true);
+	}
+	// Small cursor movements within one image must produce distinct zoom levels.
+	const middleX = box.x + box.width * 0.5;
+	await page.mouse.move(middleX, box.y + box.height / 2);
+	await expect
+		.poll(() =>
+			trail.getByRole('button').evaluateAll((buttons) =>
+				buttons.every((button) => {
+					const transform = new DOMMatrix(getComputedStyle(button).transform);
+					return (
+						Math.abs(transform.e - parseFloat(button.style.getPropertyValue('--x'))) < 0.1 &&
+						Math.abs(transform.a - Number(button.style.getPropertyValue('--scale'))) < 0.005
+					);
+				})
+			)
+		)
+		.toBe(true);
+	const hovered = trail.locator('button:hover');
+	await expect(hovered).toHaveCount(1);
+	const label = await hovered.getAttribute('aria-label');
+	const target = trail.getByRole('button', { name: label!, exact: true });
+	await expect(target).toHaveCSS('cursor', 'pointer');
+	await expect(target).toHaveCSS('border-top-width', '0px');
+	await expect
+		.poll(() => target.evaluate((node) => getComputedStyle(node, '::after').borderTopWidth))
+		.toBe('1px');
+	await expect
+		.poll(() => target.evaluate((node) => getComputedStyle(node, '::after').borderTopColor))
+		.toBe('rgba(255, 255, 255, 0.85)');
+	const scale = await target.evaluate((node) =>
+		Number((node as HTMLElement).style.getPropertyValue('--scale'))
+	);
+	await page.mouse.move(middleX + 3, box.y + box.height / 2);
+	await expect
+		.poll(() =>
+			target.evaluate((node) => Number((node as HTMLElement).style.getPropertyValue('--scale')))
+		)
+		.not.toBe(scale);
+	await expect(trail.getByRole('button').first()).toHaveCSS('border-top-width', '0px');
+	await expect
+		.poll(() =>
+			trail
+				.getByRole('button')
+				.first()
+				.evaluate((node) => getComputedStyle(node, '::after').borderTopWidth)
+		)
+		.toBe('1px');
+	const sweep = await trail.evaluate(async (nav) => {
+		const rect = nav.getBoundingClientRect();
+		const buttons = [...nav.querySelectorAll('button')];
+		const samples: { x: number; targets: number[]; scales: number[]; top: number[] }[] = [];
+		for (const start of [0, Math.max(0, rect.width - 64)]) {
+			for (let offset = 0; offset <= 64; offset++) {
+				const x = start + offset;
+				nav.dispatchEvent(
+					new PointerEvent('pointermove', {
+						pointerType: 'mouse',
+						clientX: rect.left + x,
+						bubbles: true
+					})
+				);
+				await new Promise(requestAnimationFrame);
+				samples.push({
+					x,
+					targets: buttons.map((b) => parseFloat(b.style.getPropertyValue('--x'))),
+					scales: buttons.map((b) => Number(b.style.getPropertyValue('--scale'))),
+					top: buttons.map((b) => b.getBoundingClientRect().top)
+				});
+			}
+		}
+		return samples;
+	});
+	for (const [i, sample] of sweep.entries()) {
+		expect(sample.targets.every(Number.isFinite)).toBe(true);
+		expect(Math.max(...sample.top) - Math.min(...sample.top)).toBeLessThan(0.5);
+		if (i && sample.x - sweep[i - 1].x === 1) {
+			for (let j = 0; j < sample.targets.length; j++) {
+				expect(Math.abs(sample.targets[j] - sweep[i - 1].targets[j])).toBeLessThan(4);
+				expect(Math.abs(sample.scales[j] - sweep[i - 1].scales[j])).toBeLessThan(0.05);
+			}
+		}
+	}
+	expect(Math.max(...sweep.flatMap((s) => s.scales))).toBeCloseTo(1.22, 2);
+
+	await trail.getByRole('button').nth(4).focus();
+	await page.mouse.move(400, 500);
+	await page.keyboard.press('Enter');
+	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(5);
+});
+
+test('deep related navigation bounds rendered details', async ({ page }) => {
+	test.setTimeout(180_000);
+	await page.setViewportSize({ width: 1200, height: 900 });
+	await mockApi(page, { related: true });
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Performance.enable');
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	const active = page.locator('[data-save-detail-overlay][data-active="true"]');
+	const samples = [];
+	for (let depth = 1; depth <= 40; depth++) {
+		await active.evaluate((el) => el.scrollTo(0, 1100));
+		await expect(page.locator('[data-save-detail-overlay][data-rendered="true"]')).toHaveCount(
+			Math.min(depth, 2)
+		);
+		if ([1, 10, 20, 40].includes(depth)) {
+			await cdp.send('HeapProfiler.collectGarbage');
+			const { metrics } = await cdp.send('Performance.getMetrics');
+			const dom = await cdp.send('Memory.getDOMCounters');
+			samples.push({
+				depth,
+				...dom,
+				...Object.fromEntries(
+					metrics
+						.filter((m) =>
+							['JSHeapUsedSize', 'LayoutDuration', 'RecalcStyleDuration', 'TaskDuration'].includes(
+								m.name
+							)
+						)
+						.map((m) => [m.name, m.value])
+				)
+			});
+			console.log('DEEP_PROFILE', JSON.stringify(samples.at(-1)));
+		}
+		if (depth < 40)
+			await active
+				.locator('section a.block')
+				.nth(depth % 10)
+				.click();
+	}
+	await test.info().attach('deep-profile', {
+		body: JSON.stringify(samples, null, 2),
+		contentType: 'application/json'
+	});
+});
+
+test('trail expands only near thumbnails and shows a delayed optimized preview', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await mockApi(page, { related: true });
+	const cdnFeed = feed.map((save) => ({
+		...save,
+		content: {
+			...save.content,
+			imageUrl: `https://cdn.currents.is/img/${me.did}/${save.content.blobCid}`
+		}
+	}));
+	await page.route('**/xrpc/is.currents.feed.getFeed*', (route) =>
+		route.fulfill({ json: { feed: cdnFeed, cursor: null } })
+	);
+	await page.route('https://cdn.currents.is/img/**', (route) =>
+		route.fulfill({
+			contentType: 'image/svg+xml',
+			body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500"><rect width="400" height="500" fill="steelblue"/></svg>'
+		})
+	);
+	await page.goto('/explore/general');
+	await page.locator('a.block:has(img[src*="bafy1"])').click();
+	await page
+		.locator('[data-save-detail-overlay][data-active="true"]')
+		.evaluate((el) => el.scrollTo(0, 1100));
+	const trail = page.getByRole('navigation', { name: 'Image trail' });
+	await expect(trail).toBeVisible();
+	const bounds = (await trail.boundingBox())!;
+	await page.mouse.move(bounds.x + 38, bounds.y + 145);
+	await expect(trail).not.toHaveClass(/open/);
+	const thumbnail = trail.getByRole('button').first();
+	await expect(thumbnail.locator('img')).toHaveAttribute('sizes', '48px');
+	await expect(thumbnail.locator('img')).toHaveAttribute('src', /optimizer=image/);
+	await expect(thumbnail.locator('img')).toHaveAttribute('srcset', /width=320/);
+	await thumbnail.hover();
+	await expect(trail).toHaveClass(/open/);
+	const preview = page.locator('[data-trail-preview]');
+	await page.waitForTimeout(200);
+	await expect(preview).toHaveCount(0);
+	await expect(preview).toBeVisible();
+	await expect(preview.locator('img')).toHaveAttribute('src', /optimizer=image/);
+	await expect(preview.locator('img')).toHaveAttribute('sizes', '280px');
+	const imageBox = (await preview.locator('img').boundingBox())!;
+	expect(imageBox.width).toBeGreaterThan(150);
+	expect(imageBox.y).toBeGreaterThan(
+		(await thumbnail.boundingBox())!.y + (await thumbnail.boundingBox())!.height
+	);
+	const thumbnailBox = (await thumbnail.boundingBox())!;
+	// A small buffer around the thumbnail strip keeps it open.
+	await page.mouse.move(thumbnailBox.x + thumbnailBox.width / 2, bounds.y + 120);
+	await expect(trail).toHaveClass(/open/);
+	// Entering the preview is outside that strip and must close both layers.
+	await page.mouse.move(imageBox.x + imageBox.width / 2, imageBox.y + imageBox.height / 2);
+	await expect(preview).toHaveCount(0);
+	await expect(trail).not.toHaveClass(/open/);
+	await page.waitForTimeout(600);
+	await expect(preview).toHaveCount(0);
+	await expect(page.locator('[data-slot="hover-card-content"]')).toHaveCount(0);
+	await thumbnail.hover();
+	await expect(preview).toBeVisible();
+	await expect(preview.locator('img')).toBeVisible();
+	await page.mouse.move(1200, 800);
+	await expect(page.locator('[data-slot="hover-card-content"]')).toHaveCount(0);
+});

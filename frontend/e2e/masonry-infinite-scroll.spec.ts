@@ -316,3 +316,99 @@ test.describe('full HD masonry grid', () => {
 			.toBe(7);
 	});
 });
+
+test('long grids release offscreen cards without changing scroll geometry', async ({ page }) => {
+	test.setTimeout(120_000);
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await mockAuthedApi(page, Promise.resolve());
+	const feed = Array.from({ length: 1000 }, (_, i) => makeSave(i));
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getFeed*`, (route) =>
+		route.fulfill({ json: { feed, cursor: null } })
+	);
+	await page.goto('/explore/general');
+	const frames = page.locator('[data-save-uri]');
+	await expect(frames).toHaveCount(1000);
+	await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Performance.enable');
+	const samples: unknown[] = [];
+	const sample = async (stage: string) => {
+		await cdp.send('HeapProfiler.collectGarbage');
+		const { metrics } = await cdp.send('Performance.getMetrics');
+		const dom = await cdp.send('Memory.getDOMCounters');
+		const live = await page.evaluate(() => ({
+			elements: document.querySelectorAll('*').length,
+			cards: document.querySelectorAll('[data-save-uri] a.block').length,
+			scrollHeight: document.documentElement.scrollHeight
+		}));
+		const result = {
+			stage,
+			...dom,
+			...live,
+			...Object.fromEntries(
+				metrics
+					.filter((m) => ['JSHeapUsedSize', 'TaskDuration', 'RecalcStyleDuration'].includes(m.name))
+					.map((m) => [m.name, m.value])
+			)
+		};
+		samples.push(result);
+		console.log('GRID_PROFILE', JSON.stringify(result));
+	};
+	await page.waitForTimeout(300);
+	await sample('top');
+	const height = await page.evaluate(() => document.documentElement.scrollHeight);
+	for (let i = 100; i < 1000; i += 100) {
+		await frames.nth(i).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+		await page.waitForTimeout(80);
+	}
+	await expect(page.locator('img[alt="tile-0"]')).toHaveCount(0);
+	await expect.poll(() => page.locator('[data-save-uri] a.block').count()).toBeLessThan(100);
+	await sample('traversed');
+	await page.evaluate(() => window.scrollTo(0, 0));
+	await expect(page.locator('img[alt="tile-0"]')).toBeVisible();
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight)).toBe(height);
+	await expect(page.locator('div[style*="grid-template-columns"]').first()).toHaveJSProperty(
+		'scrollTop',
+		0
+	);
+	await sample('returned');
+	await test.info().attach('grid-profile', {
+		body: JSON.stringify(samples, null, 2),
+		contentType: 'application/json'
+	});
+});
+
+test.describe('desktop virtual cards', () => {
+	test.use({ isMobile: false, hasTouch: false });
+	test('virtual cards mount controls on hover or focus and retain an open picker', async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await mockAuthedApi(page, Promise.resolve());
+		const feed = Array.from({ length: 200 }, (_, i) => makeSave(i));
+		await page.route(`${APPVIEW}/xrpc/is.currents.feed.getFeed*`, (route) =>
+			route.fulfill({ json: { feed, cursor: null } })
+		);
+		await page.goto('/explore/general');
+		const first = page.locator('[data-save-uri]').first();
+		await expect(first.locator('img')).toBeVisible();
+		await expect(first.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+		await first.hover();
+		await expect(first.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+		await first.getByRole('button', { name: 'Collection 0', exact: true }).click();
+		await expect(page.locator('[data-slot="popover-content"]')).toBeVisible();
+		await page.evaluate(() => window.scrollTo(0, 6000));
+		await expect(first.locator('a.block')).toHaveCount(1);
+		await page.keyboard.press('Escape');
+		// Menus normally restore focus to their trigger; release it before eviction.
+		await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+		await expect(first.locator('a.block')).toHaveCount(0);
+		await page.evaluate(() => window.scrollTo(0, 0));
+		await expect(first.locator('img')).toBeVisible();
+		await first.locator('a.block').focus();
+		await expect(first.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+		await page.keyboard.press('ContextMenu');
+		await expect(page.getByRole('menuitem', { name: 'Copy link', exact: true })).toBeVisible();
+		await page.keyboard.press('Escape');
+	});
+});

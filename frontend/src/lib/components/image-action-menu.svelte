@@ -26,6 +26,7 @@
 		onReport,
 		onViewFullScreen,
 		onOpenChange,
+		onBusyChange,
 		buttonVariant = 'outline'
 	}: {
 		item: SaveView;
@@ -35,13 +36,17 @@
 		onReport?: () => void;
 		onViewFullScreen?: (save: SaveView) => void;
 		onOpenChange?: (open: boolean) => void;
+		onBusyChange?: (busy: boolean) => void;
 		buttonVariant?: ButtonVariant;
 	} = $props();
 
 	const dropdownMenu = DropdownMenu as unknown as typeof ContextMenu;
 	let menuOpen = $state(false);
 	let reportOpen = $state(false);
-	$effect(() => onOpenChange?.(menuOpen));
+	$effect(() => {
+		onOpenChange?.(menuOpen);
+		onBusyChange?.(menuOpen || reportOpen);
+	});
 
 	function run(action: (save: SaveView) => Promise<void>) {
 		void action(item);

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { fade } from 'svelte/transition';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import { pushState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getImageContent, type SaveView } from '$lib/types';
@@ -28,9 +30,8 @@
 		// Opt into touch actions: holding the tile opens Quick actions, whose save
 		// controls include Quick Save and the full collection picker.
 		longPressSave?: boolean;
-		// Pre-mount desktop controls before the user hovers so their first reveal can animate.
-		preloadControls?: boolean;
 		mobile?: boolean;
+		onBusyChange?: (busy: boolean) => void;
 		// Called just before the detail view opens, so the grid can record the run of
 		// images this tile came from (see $lib/save-sequence).
 		onOpen?: (depth: number) => void;
@@ -43,9 +44,9 @@
 		linkToDetail = true,
 		mobileSave = false,
 		longPressSave = false,
-		preloadControls = false,
 		mobile = false,
 		onOpen,
+		onBusyChange,
 		onViewFullScreen
 	}: Props = $props();
 
@@ -53,6 +54,11 @@
 	let actionMenuOpen = $state(false);
 	let controlsOpen = $derived(dropdownOpen || actionMenuOpen);
 	let desktopControlsMounted = $state(false);
+	let contextBusy = $state(false);
+	let selectorBusy = $state(false);
+	let actionBusy = $state(false);
+	let quickActionsBusy = $state(false);
+	$effect(() => onBusyChange?.(contextBusy || selectorBusy || actionBusy || quickActionsBusy));
 	let quickActionsOpen = $state(false);
 	let quickActionsMounted = $state(false);
 	let suppressNextClick = false;
@@ -121,10 +127,10 @@
 
 	function prepareDesktopControls(node: HTMLElement) {
 		function onPointerEnter(event: PointerEvent) {
-			if (event.pointerType === 'mouse') desktopControlsMounted = true;
+			if (event.pointerType === 'mouse' && !mobileActions) desktopControlsMounted = true;
 		}
 		function onFocusIn() {
-			desktopControlsMounted = true;
+			if (!mobileActions) desktopControlsMounted = true;
 		}
 		node.addEventListener('pointerenter', onPointerEnter);
 		node.addEventListener('focusin', onFocusIn);
@@ -143,10 +149,6 @@
 	}
 
 	let anySaved = $derived((item.viewer?.saves ?? []).length > 0);
-
-	$effect(() => {
-		if (preloadControls) desktopControlsMounted = true;
-	});
 </script>
 
 {#snippet media()}
@@ -180,7 +182,13 @@
 	use:prepareDesktopControls
 >
 	<!-- Mobile web and Capacitor use the drawer; desktop uses the context menu. -->
-	<ImageActionMenu {item} variant="context" contextDisabled={mobileActions} {onViewFullScreen}>
+	<ImageActionMenu
+		onBusyChange={(busy) => (contextBusy = busy)}
+		{item}
+		variant="context"
+		contextDisabled={mobileActions}
+		{onViewFullScreen}
+	>
 		<LabeledMedia labels={item.labels}>
 			{#if linkToDetail}
 				<a {href} class="block" draggable={false} onclick={handleClick}>
@@ -201,17 +209,19 @@
 			{#snippet overlay()}
 				{#if onViewFullScreen && desktopControlsMounted}
 					<div
+						in:fade={{ duration: prefersReducedMotion.current ? 0 : 150 }}
 						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {controlsOpen
 							? 'opacity-100'
-							: 'opacity-0 group-hover:opacity-100'}"
+							: 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'}"
 					>
 						<div
 							class="flex items-center justify-between gap-2 transition-transform duration-300 {controlsOpen
 								? 'pointer-events-auto translate-y-0'
-								: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
+								: 'pointer-events-none translate-y-2 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-hover:pointer-events-auto group-hover:translate-y-0'}"
 						>
 							{#if auth.user && collections.loaded}
 								<CollectionSelector
+									onBusyChange={(busy) => (selectorBusy = busy)}
 									{item}
 									variant="popover"
 									onOpenChange={(open) => (dropdownOpen = open)}
@@ -225,6 +235,7 @@
 							<ImageActionMenu
 								{item}
 								variant="dropdown"
+								onBusyChange={(busy) => (actionBusy = busy)}
 								buttonVariant="secondary"
 								{onViewFullScreen}
 								onOpenChange={(open) => (actionMenuOpen = open)}
@@ -233,16 +244,18 @@
 					</div>
 				{:else if auth.user && collections.loaded && desktopControlsMounted}
 					<div
+						in:fade={{ duration: prefersReducedMotion.current ? 0 : 150 }}
 						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
 							? 'opacity-100'
-							: 'opacity-0 group-hover:opacity-100'}"
+							: 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'}"
 					>
 						<div
 							class="transition-transform duration-300 {dropdownOpen
 								? 'pointer-events-auto translate-y-0'
-								: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0'}"
+								: 'pointer-events-none translate-y-2 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-hover:pointer-events-auto group-hover:translate-y-0'}"
 						>
 							<CollectionSelector
+								onBusyChange={(busy) => (selectorBusy = busy)}
 								{item}
 								variant="popover"
 								onOpenChange={(o) => (dropdownOpen = o)}
@@ -250,12 +263,12 @@
 							/>
 						</div>
 					</div>
-				{:else if auth.checked}
+				{:else if auth.checked && !auth.user && desktopControlsMounted}
 					<div
-						class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+						class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-focus-within:opacity-100 group-hover:opacity-100"
 					>
 						<div
-							class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-hover:pointer-events-auto group-hover:translate-y-0"
+							class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-hover:pointer-events-auto group-hover:translate-y-0"
 						>
 							<Button size="sm" variant="default" onclick={promptLogin}>Save</Button>
 						</div>
@@ -266,6 +279,7 @@
 	</ImageActionMenu>
 	{#if longPressSave && mobileActions && auth.user && collections.loaded && quickActionsMounted}
 		<MobileQuickActionsDrawer
+			onBusyChange={(busy) => (quickActionsBusy = busy)}
 			{item}
 			bind:open={quickActionsOpen}
 			onSavesChange={handleSavesChange}
@@ -273,7 +287,12 @@
 	{/if}
 	{#if mobileSave && auth.user && collections.loaded}
 		<div class="absolute right-1.5 bottom-1.5 md:hidden">
-			<CollectionSelector {item} variant="drawer" onSavesChange={handleSavesChange}>
+			<CollectionSelector
+				onBusyChange={(busy) => (selectorBusy = busy)}
+				{item}
+				variant="drawer"
+				onSavesChange={handleSavesChange}
+			>
 				{#snippet trigger({ props })}
 					<Button
 						{...props}

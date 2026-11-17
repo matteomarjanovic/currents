@@ -606,8 +606,9 @@
 
 {#snippet desktopActions()}
 	<div
+		data-desktop-actions
 		in:fade={{ duration: 250, easing: cubicOut }}
-		class="{glassGroup} hidden border-border md:flex"
+		class="{glassGroup} hidden border-border shadow-md shadow-black/15 md:flex"
 	>
 		{@render searchButton('ghost', '', true)}
 		{@render plusMenu('plus-desktop', 'bottom', 'end')}
@@ -805,7 +806,7 @@
 	>
 		<div
 			bind:this={bottomBarEl}
-			class="{glassGroup} flex border-border p-1.5 {user
+			class="{glassGroup} flex border-border p-1.5 shadow-md shadow-black/15 {user
 				? '[&_[data-slot=avatar]]:size-10 [&_button]:size-11 [&_svg]:size-[1.375rem]'
 				: ''}"
 		>

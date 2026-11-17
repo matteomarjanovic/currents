@@ -138,7 +138,7 @@ test('Quick Save recommends, follows successful choices, and resets after leavin
 
 	const first = card(page, 1);
 	await expect(first).toBeVisible();
-	await expect(first.getByRole('button', { name: 'Flowers', exact: true })).toBeAttached();
+	await expect(first.getByRole('button', { name: 'Flowers', exact: true })).toHaveCount(0);
 	await first.hover();
 	await expect(first.getByRole('button', { name: 'Flowers', exact: true })).toBeVisible();
 
@@ -148,6 +148,7 @@ test('Quick Save recommends, follows successful choices, and resets after leavin
 	const menuButtons = page.locator('[data-slot="popover-content"]:visible button');
 	await expect(menuButtons.nth(2)).toContainText('Sports Cars');
 	await page.keyboard.press('Escape');
+	await expect(page.locator('[data-slot="popover-content"]:visible')).toHaveCount(0);
 
 	await first.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect.poll(() => resaves.at(-1)?.collectionUri).toBe(FLOWERS);

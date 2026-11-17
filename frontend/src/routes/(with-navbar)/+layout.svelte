@@ -8,6 +8,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import LoginDialog from '$lib/components/login-dialog.svelte';
+	import SaveDetailNavigation from '$lib/components/save-detail-navigation.svelte';
 	import SaveDetailOverlay from '$lib/components/save-detail-overlay.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -127,11 +128,13 @@
 
 {#each displayedSaveStack as save, i (i)}
 	<SaveDetailOverlay
+		rendered={i >= displayedSaveStack.length - 2}
 		{save}
 		active={saveOverlayOpen && i === activeSaveDepth}
 		closing={!saveOverlayOpen}
 	/>
 {/each}
+<SaveDetailNavigation />
 
 <LoginDialog />
 

@@ -5,9 +5,11 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { fade, fly } from 'svelte/transition';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import { cubicOut } from 'svelte/easing';
 	import { apiFetch } from '$lib/api';
 	import Logo from '$lib/assets/logo.svelte';
+	import { detailNavigation } from '$lib/save-detail-navigation.svelte';
 	import ModeTabs from '$lib/components/mode-tabs.svelte';
 	import TopBar from '$lib/components/top-bar.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -61,9 +63,10 @@
 		onClose?: () => void;
 		scrollRoot?: HTMLElement;
 		active?: boolean;
+		rendered?: boolean;
 	}
 
-	let { save, onClose, scrollRoot, active = true }: Props = $props();
+	let { save, onClose, scrollRoot, active = true, rendered = true }: Props = $props();
 	let hydratedSave = $state<SaveView | null>(null);
 	// Guarded on the uri rather than cleared when `save` changes: an effect runs *after*
 	// the DOM has been updated, so clearing it there left one frame in which `save` was
@@ -144,7 +147,7 @@
 
 	$effect(() => {
 		const uri = save.uri;
-		if (!auth.checked || !auth.user || save.viewer?.saves !== undefined) return;
+		if (!active || !auth.checked || !auth.user || currentSave.viewer?.saves !== undefined) return;
 
 		let cancelled = false;
 		void (async () => {
@@ -173,7 +176,7 @@
 	$effect(() => {
 		const uri = save.uri;
 		const pending = currentSave.viewer?.saves?.some((s) => s.saveUri === 'optimistic') ?? false;
-		if (!auth.user || !pending) return;
+		if (!active || !auth.user || !pending) return;
 
 		let cancelled = false;
 		void (async () => {
@@ -212,16 +215,19 @@
 	// state — no measuring needed before the first scroll.
 	let imagePane: HTMLDivElement | undefined = $state();
 	let imagePaneAtEnd = $state(false);
+	let imagePaneScrollTop = 0;
 
 	function onImagePaneScroll(e: Event) {
 		const el = e.currentTarget as HTMLDivElement;
+		imagePaneScrollTop = el.scrollTop;
 		imagePaneAtEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
 	}
 
 	// A new save reuses the pane, so send it back to the top of the image.
 	$effect(() => {
 		void currentUri;
-		imagePane?.scrollTo({ top: 0 });
+		imagePaneScrollTop = 0;
+		untrack(() => imagePane?.scrollTo({ top: 0 }));
 		imagePaneAtEnd = false;
 		imageFocusOpen = false;
 		actionDrawerOpen = false;
@@ -246,8 +252,8 @@
 	// and a swipe only re-points the view at one of them. Null either side of the run
 	// — and everywhere the view wasn't reached from a grid at all, where the gesture
 	// is simply inert.
-	let prevSave = $derived(neighbourSave(currentUri, -1));
-	let nextSave = $derived(neighbourSave(currentUri, 1));
+	let prevSave = $derived(active ? neighbourSave(currentUri, -1) : null);
+	let nextSave = $derived(active ? neighbourSave(currentUri, 1) : null);
 
 	// Keep the run stocked ahead of the viewer, so swiping doesn't dead-end at whatever
 	// the grid happened to have loaded when the tile was tapped. The grid's own sentinel
@@ -256,6 +262,7 @@
 	// rail below) simply run out, which is the intended end of those runs.
 	const SEQUENCE_LOOKAHEAD = 5;
 	$effect(() => {
+		if (!active) return;
 		const left = savesAfter(currentUri);
 		if (left >= 0 && left <= SEQUENCE_LOOKAHEAD) void extendSaveSequence();
 	});
@@ -388,6 +395,26 @@
 	let desktopHero: HTMLDivElement | undefined = $state();
 	let mobileTopVisible = $state(true);
 	let desktopHeroVisible = $state(true);
+	let imageAboveViewport = $state(false);
+	$effect(() => {
+		if (!active || !scrollRoot) return;
+		detailNavigation.uri = currentUri;
+		detailNavigation.imageAboveViewport = imageAboveViewport;
+		detailNavigation.scrollRoot = scrollRoot;
+	});
+	function observeTrailImage(node: HTMLElement) {
+		if (!active) return;
+		const target = node.querySelector('img') ?? node;
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				imageAboveViewport =
+					!entry.isIntersecting && entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0);
+			},
+			{ root: scrollRoot ?? null }
+		);
+		observer.observe(target);
+		return () => observer.disconnect();
+	}
 	let scrolledPastTop = $derived(!mobileTopVisible && !desktopHeroVisible);
 
 	// The mobile scroll-to-top button is fixed (viewport-anchored) but should align with
@@ -413,7 +440,7 @@
 		if (w > 0) scrollbarInset = w;
 	}
 	$effect(() => {
-		if (!scrollRoot && !toTopEl) return;
+		if (!active || (!scrollRoot && !toTopEl)) return;
 		measureScrollbarInset();
 		const observer = new ResizeObserver(measureScrollbarInset);
 		if (scrollRoot) observer.observe(scrollRoot);
@@ -425,7 +452,7 @@
 	});
 
 	$effect(() => {
-		if (!topControls) return;
+		if (!active || !topControls) return;
 		const observer = new IntersectionObserver(([entry]) => {
 			mobileTopVisible = entry.isIntersecting;
 		});
@@ -434,7 +461,7 @@
 	});
 
 	$effect(() => {
-		if (!desktopHero) return;
+		if (!active || !desktopHero) return;
 		const observer = new IntersectionObserver(([entry]) => {
 			desktopHeroVisible = entry.isIntersecting;
 		});
@@ -450,12 +477,12 @@
 		while (el) {
 			const oy = getComputedStyle(el).overflowY;
 			if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) {
-				el.scrollTo({ top: 0, behavior: 'smooth' });
+				el.scrollTo({ top: 0, behavior: prefersReducedMotion.current ? 'instant' : 'smooth' });
 				return;
 			}
 			el = el.parentElement;
 		}
-		window.scrollTo({ top: 0, behavior: 'smooth' });
+		window.scrollTo({ top: 0, behavior: prefersReducedMotion.current ? 'instant' : 'smooth' });
 	}
 
 	// A small first page, full pages thereafter. Every swipe resets this list, so the
@@ -495,6 +522,7 @@
 	// related rail that the viewer has started moving. The first real scroll asks
 	// for the next page immediately; later pages use the sentinel's larger lead.
 	$effect(() => {
+		if (!active) return;
 		const target = scrollRoot ?? window;
 		const onScroll = () => {
 			relatedScrollStarted = true;
@@ -508,7 +536,8 @@
 	});
 
 	$effect(() => {
-		if (!relatedScrollStarted || relatedPrefetchRequested || related.items.length === 0) return;
+		if (!active || !relatedScrollStarted || relatedPrefetchRequested || related.items.length === 0)
+			return;
 		relatedPrefetchRequested = true;
 		void related.loadMore();
 	});
@@ -516,7 +545,7 @@
 	let sentinel: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
-		if (!sentinel) return;
+		if (!active || !sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (relatedPrefetchRequested && entries[0].isIntersecting) related.loadMore();
@@ -531,7 +560,7 @@
 	// update. Re-check after each page lands so deep scrolling keeps paginating.
 	$effect(() => {
 		void related.items.length;
-		if (!relatedPrefetchRequested || !sentinel) return;
+		if (!active || !relatedPrefetchRequested || !sentinel) return;
 		const target = sentinel;
 		const frame = requestAnimationFrame(() => {
 			const rootBottom = scrollRoot?.getBoundingClientRect().bottom ?? window.innerHeight;
@@ -572,6 +601,7 @@
 
 	$effect(() => {
 		if (
+			active &&
 			collectionsAccordionValue === 'collections' &&
 			imageCollections.items.length === 0 &&
 			imageCollections.hasMore
@@ -613,642 +643,657 @@
 	let labelDialogOpen = $state(false);
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={active ? onKeydown : undefined} />
 
-{#snippet attributionFields(attr: SaveAttribution)}
-	{#if attr.credit}
-		<span>Credit: {attr.credit}</span>
-	{/if}
-	{#if attr.license}
-		<span>License: {attr.license}</span>
-	{/if}
-	{#if attr.url}
-		<a
-			href={attr.url}
-			target="_blank"
-			rel="noopener noreferrer"
-			class="inline-flex items-center gap-1 hover:text-foreground"
-		>
-			<ExternalLink class="size-3" />
-			<span class="truncate">Attribution link</span>
-		</a>
-	{/if}
-{/snippet}
-
-{#snippet info()}
-	{#if currentSave.text}
-		<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
-	{/if}
-
-	<div class="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground">
-		{#if sourceLink}
-			<div class="inline-flex min-w-0 items-center gap-1">
-				<span>Source:</span>
-				<a
-					href={sourceLink.href}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="inline-flex min-w-0 items-center gap-1 hover:text-foreground"
-				>
-					<span class="truncate">{sourceLink.hostname}</span>
-					<ExternalLink class="size-3.5 shrink-0" />
-				</a>
-			</div>
+{#if rendered}
+	{#snippet attributionFields(attr: SaveAttribution)}
+		{#if attr.credit}
+			<span>Credit: {attr.credit}</span>
 		{/if}
-		{#if isMobile.current}
-			<Button
-				variant="outline"
-				size="icon-sm"
-				class="ml-auto shrink-0"
-				onclick={() => (actionDrawerOpen = true)}
-				aria-label="Image actions"
-			>
-				<Ellipsis class="size-4" />
-			</Button>
-		{:else}
-			<div class="ml-auto">
-				<ImageActionMenu
-					item={currentSave}
-					variant="dropdown"
-					onReport={() => (reportDialogOpen = true)}
-				/>
-			</div>
+		{#if attr.license}
+			<span>License: {attr.license}</span>
 		{/if}
-	</div>
-
-	{#if showDual}
-		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			<span class="font-medium text-foreground/80">Original attribution</span>
-			{@render attributionFields(originalAttr!)}
-		</div>
-		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			<span class="font-medium text-foreground/80">Your attribution</span>
-			{@render attributionFields(viewerAttr!)}
-		</div>
-	{:else if hasViewerAttr}
-		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			{@render attributionFields(viewerAttr!)}
-		</div>
-	{:else if hasOriginalAttr}
-		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
-			{@render attributionFields(originalAttr!)}
-		</div>
-	{/if}
-
-	{#if canAttribute}
-		<Button
-			variant="link"
-			size="sm"
-			class="self-start px-0 text-xs text-muted-foreground hover:text-foreground"
-			onclick={() => (attributionDialogOpen = true)}
-		>
-			{hasViewerAttr ? 'Edit attribution' : '+ Add attribution'}
-		</Button>
-	{/if}
-
-	{#if canEditLabels}
-		<Button
-			variant="link"
-			size="sm"
-			class="gap-1 self-start px-0 text-xs text-muted-foreground hover:text-foreground"
-			onclick={() => (labelDialogOpen = true)}
-		>
-			<Tag class="size-3" />
-			Add content labels
-		</Button>
-	{/if}
-{/snippet}
-
-{#snippet imageCollectionsSection(desktop: boolean)}
-	<Accordion.Root type="single" bind:value={collectionsAccordionValue}>
-		<Accordion.Item value="collections" class="[&_[data-slot=accordion-content]]:px-3">
-			<Accordion.Trigger>In other collections</Accordion.Trigger>
-			<Accordion.Content class="pb-3">
-				{#if imageCollections.loading && imageCollections.items.length === 0}
-					<div class="flex justify-center py-3"><Spinner /></div>
-				{:else if imageCollections.items.length === 0}
-					<p class="px-1 py-1 text-sm text-muted-foreground">Not in any collections yet.</p>
-				{:else}
-					<div class="max-h-72 overflow-y-auto">
-						<Item.Group class="gap-1">
-							{#each imageCollections.items as c (c.uri)}
-								{@const isOwn = !!auth.user && auth.user.did === c.author?.did}
-								{@const preview = collectionPreview(c)}
-								<CollectionHoverCard
-									collection={c}
-									href={collectionHref(c)}
-									side="right"
-									disabled={!desktop || isMobile.current}
-									open={desktop && collectionPreviewUri === c.uri}
-									onOpenChange={(open) => setCollectionPreview(c.uri, open)}
-								>
-									{#snippet child({ props })}
-										<Item.Root
-											{...props}
-											role="listitem"
-											variant="outline"
-											size="sm"
-											class="relative min-h-18 flex-nowrap gap-2 rounded-xl app-muted-wash"
-										>
-											<!-- Stretched link: a click anywhere on the row that isn't the username
-								     link or the favourite toggle (both lifted with z-10) opens the collection. -->
-											<a href={collectionHref(c)} class="absolute inset-0">
-												<span class="sr-only">{c.name}</span>
-											</a>
-											<div
-												data-collection-thumbnail
-												class="relative size-11 shrink-0 overflow-hidden rounded-xl bg-muted mr-2"
-											>
-												{#if preview}
-													<img
-														src={bunnyImageUrl(preview.url, {
-															aspectRatio: '1:1',
-															width: 96,
-															quality: 75
-														})}
-														alt=""
-														class="absolute inset-0 size-full object-cover {preview.blur
-															? 'blur-md'
-															: ''}"
-													/>
-												{/if}
-											</div>
-											<Item.Content class="min-w-0">
-												<Item.Title class="w-full truncate">{c.name}</Item.Title>
-												<Item.Description class="flex items-center gap-1">
-													<a
-														href={`/profile/${c.author?.handle}`}
-														class="relative z-10 min-w-0 truncate no-underline!"
-													>
-														{c.author?.displayName || c.author?.handle}
-													</a>
-													{#if c.author?.supporter}
-														<SupporterBadge class="size-3.5 shrink-0" />
-													{/if}
-													{#if (c.favouriteCount ?? 0) > 0}
-														<span aria-hidden="true">·</span>
-														<Star class="size-3 shrink-0 fill-current" />
-														<span>{c.favouriteCount}</span>
-													{/if}
-												</Item.Description>
-											</Item.Content>
-											<Item.Actions class="shrink-0">
-												{#if isOwn}
-													<Badge variant="secondary">Yours</Badge>
-												{:else if auth.user}
-													<div class="relative z-10">
-														<FavouriteToggle collection={c} labelFrom="never" />
-													</div>
-												{/if}
-											</Item.Actions>
-										</Item.Root>
-									{/snippet}
-								</CollectionHoverCard>
-							{/each}
-						</Item.Group>
-					</div>
-					{#if imageCollections.hasMore}
-						<div class="mt-2 flex justify-center">
-							<Button
-								variant="ghost"
-								size="sm"
-								onclick={() => imageCollections.loadMore()}
-								disabled={imageCollections.loading}
-							>
-								{#if imageCollections.loading}<Spinner />{:else}Show more{/if}
-							</Button>
-						</div>
-					{/if}
-				{/if}
-			</Accordion.Content>
-		</Accordion.Item>
-	</Accordion.Root>
-{/snippet}
-
-{#snippet saveControl()}
-	{#if auth.user && collections.loaded}
-		<CollectionSelector
-			item={currentSave}
-			variant="popover"
-			triggerVariant="secondary"
-			onSavesChange={handleSavesChange}
-		/>
-	{:else if auth.checked}
-		<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
-	{/if}
-{/snippet}
-
-<!-- Mobile Save: a content-width pill rather than the drawer trigger's default
-     full-width bar, so the floating back / scroll-to-top buttons sit beside it in
-     the same row instead of on top of it. Solid by design — it floats over the
-     image, so nothing glassy. -->
-{#snippet mobileSaveControl()}
-	{#if auth.user && collections.loaded}
-		<CollectionSelector item={currentSave} variant="drawer" onSavesChange={handleSavesChange}>
-			{#snippet trigger({ props })}
-				<Button
-					{...props}
-					variant={anySaved ? 'secondary' : 'default'}
-					size="lg"
-					class="rounded-full px-6 shadow-md"
-				>
-					{anySaved ? 'Saved' : 'Save'}
-				</Button>
-			{/snippet}
-		</CollectionSelector>
-	{:else if auth.checked}
-		<Button variant="default" size="lg" class="rounded-full px-6 shadow-md" onclick={promptLogin}>
-			Save
-		</Button>
-	{/if}
-{/snippet}
-
-{#snippet hiddenState()}
-	<div
-		class="flex flex-col items-center justify-center gap-3 rounded-lg bg-muted p-8 text-center text-sm text-muted-foreground"
-	>
-		<EyeOff class="size-6" />
-		{#if auth.user}
-			<p class="font-medium text-foreground">Hidden by your settings</p>
-			<p class="max-w-sm text-xs">
-				This image carries a label you've chosen not to see. Adjust your moderation preferences to
-				change what's shown.
-			</p>
-			<button
-				type="button"
-				onclick={() => openSettings('moderation')}
-				class="text-xs font-medium text-foreground underline-offset-2 hover:underline"
+		{#if attr.url}
+			<a
+				href={attr.url}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="inline-flex items-center gap-1 hover:text-foreground"
 			>
-				Open settings
-			</button>
-		{:else}
-			<p class="font-medium text-foreground">Hidden content</p>
-			<p class="max-w-sm text-xs">
-				This image is hidden for logged-out visitors. Log in to manage what you see.
-			</p>
-			<Button
-				variant="link"
-				size="sm"
-				class="h-auto p-0 text-xs font-medium text-foreground"
-				onclick={promptLogin}
-			>
-				Log in
-			</Button>
+				<ExternalLink class="size-3" />
+				<span class="truncate">Attribution link</span>
+			</a>
 		{/if}
-	</div>
-{/snippet}
+	{/snippet}
 
-<!-- One pane of the mobile swipe track. Takes the save rather than reading the
-     current one, because the neighbours either side render through here too — which
-     is also why it recomputes its own image state instead of using the deriveds. -->
-{#snippet stagePane(s: SaveView, loading: 'lazy' | 'eager', focusable = false)}
-	{@const paneImage = getImageContent(s)}
-	{@const paneLong = isLongImage(paneImage?.width, paneImage?.height)}
-	{#if shouldHide(s.labels)}
-		{@render hiddenState()}
-	{:else if paneImage}
-		<LabeledMedia labels={s.labels} class="flex justify-center">
-			<button
-				type="button"
-				class="flex max-w-full justify-center {paneLong ? 'w-full' : ''} {focusable
-					? 'cursor-zoom-in'
-					: 'pointer-events-none'} {focusable && native ? 'touch-pan-y' : ''}"
-				disabled={!focusable}
-				onclick={() => (imageFocusOpen = true)}
-				onpointerdown={focusable ? onImagePointerDown : undefined}
-				onpointermove={focusable ? onImagePointerMove : undefined}
-				onpointerup={focusable ? onImagePointerEnd : undefined}
-				onpointercancel={focusable ? onImagePointerEnd : undefined}
-				aria-label={focusable ? 'View image full screen' : undefined}
-				tabindex={focusable ? 0 : -1}
-			>
-				<SaveImage
-					image={paneImage}
-					alt={paneImage.alt ?? s.text ?? ''}
-					{loading}
-					class={paneLong ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
-					style={`${paneImage.width && paneImage.height ? `aspect-ratio: ${paneImage.width} / ${paneImage.height};` : ''}${paneImage.dominantColor ? ` background-color: ${paneImage.dominantColor};` : ''}`}
-				/>
-			</button>
-		</LabeledMedia>
-	{:else}
-		<div
-			class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
-			style="aspect-ratio: 3 / 4;"
-		>
-			Unsupported content
-		</div>
-	{/if}
-{/snippet}
+	{#snippet info()}
+		{#if currentSave.text}
+			<p class="text-sm whitespace-pre-wrap">{currentSave.text}</p>
+		{/if}
 
-<div bind:this={desktopHero} class="hidden h-screen md:flex">
-	<div class="flex w-1/3 max-w-[400px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-border p-4 pt-20">
-		<Button
-			variant="outline"
-			size="sm"
-			class="w-fit rounded-full"
-			onclick={goBack}
-			aria-label="Go back"
-		>
-			<ArrowLeft class="size-4" />
-			Back
-		</Button>
-		{@render saveControl()}
-		{@render info()}
-		{@render imageCollectionsSection(true)}
-		<div class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground">
-			<p>Scroll down to view related images</p>
-			<ArrowDown class="size-4" />
-		</div>
-	</div>
-	<!-- Long images fill the pane's width and scroll it; everything else is
-	     contained and centred as before. The wrapper is the positioning context for
-	     the "more below" fade, which has to sit outside the scrolling element. -->
-	<div class="relative min-w-0 flex-1">
-		<!-- The fade is a mask on the pane, not a colored gradient on top of it: this
-		     view renders both as a route (page background) and as the pushState overlay
-		     (app-muted-wash), and a mask doesn't need to know which. -->
-		<div
-			bind:this={imagePane}
-			onscroll={onImagePaneScroll}
-			class="flex h-full justify-center p-4 {long
-				? 'items-start overflow-y-auto'
-				: 'items-center'} {long && !imagePaneAtEnd ? 'mask-b-from-88% mask-b-to-100%' : ''}"
-		>
-			{#if hiddenByPrefs}
-				{@render hiddenState()}
-			{:else if image}
-				<LabeledMedia
-					labels={currentSave.labels}
-					class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
-				>
-					<div
-						data-detail-preview={previewSrc ? '' : undefined}
-						class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
-						style={previewSrc
-							? `background-image: url(${JSON.stringify(previewSrc)}); background-repeat: no-repeat; background-size: ${long ? '100% auto' : 'contain'}; background-position: ${long ? 'top' : 'center'};${image.width && image.height ? (long ? ` aspect-ratio: ${image.width} / ${image.height};` : ` max-width: ${image.width}px; max-height: ${image.height}px;`) : ''}`
-							: undefined}
+		<div class="flex min-w-0 items-center justify-between gap-3 text-sm text-muted-foreground">
+			{#if sourceLink}
+				<div class="inline-flex min-w-0 items-center gap-1">
+					<span>Source:</span>
+					<a
+						href={sourceLink.href}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="inline-flex min-w-0 items-center gap-1 hover:text-foreground"
 					>
-						<SaveImage
-							{image}
-							alt={image.alt ?? currentSave.text ?? ''}
-							sizes="(min-width: 1200px) calc(100vw - 400px - 2rem), 67vw"
-							class={long ? 'w-full' : 'max-h-full max-w-full object-contain'}
-							wrapperClass={long
-								? 'block w-full'
-								: 'flex h-full w-full items-center justify-center'}
-							style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
-							onLoad={() => (desktopLoadedUri = currentUri)}
-						/>
-					</div>
-				</LabeledMedia>
-			{:else}
-				<div
-					class="flex h-full w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+						<span class="truncate">{sourceLink.hostname}</span>
+						<ExternalLink class="size-3.5 shrink-0" />
+					</a>
+				</div>
+			{/if}
+			{#if isMobile.current}
+				<Button
+					variant="outline"
+					size="icon-sm"
+					class="ml-auto shrink-0"
+					onclick={() => (actionDrawerOpen = true)}
+					aria-label="Image actions"
 				>
-					Unsupported content
+					<Ellipsis class="size-4" />
+				</Button>
+			{:else}
+				<div class="ml-auto">
+					<ImageActionMenu
+						item={currentSave}
+						variant="dropdown"
+						onReport={() => (reportDialogOpen = true)}
+					/>
 				</div>
 			{/if}
 		</div>
-		{#if long && !hiddenByPrefs && image}
-			<!-- Says out loud what the fade implies. Both clear together once there's
-			     nothing left to scroll to. -->
-			<div
-				class="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center transition-opacity duration-200 {imagePaneAtEnd
-					? 'opacity-0'
-					: 'opacity-100'}"
-			>
-				<span
-					class="flex items-center gap-1.5 rounded-full bg-primary-foreground/80 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur-sm"
-				>
-					<ArrowDown class="size-3" />
-					Scroll to see the whole image
-				</span>
+
+		{#if showDual}
+			<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+				<span class="font-medium text-foreground/80">Original attribution</span>
+				{@render attributionFields(originalAttr!)}
+			</div>
+			<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+				<span class="font-medium text-foreground/80">Your attribution</span>
+				{@render attributionFields(viewerAttr!)}
+			</div>
+		{:else if hasViewerAttr}
+			<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+				{@render attributionFields(viewerAttr!)}
+			</div>
+		{:else if hasOriginalAttr}
+			<div class="flex flex-col gap-1 text-xs text-muted-foreground">
+				{@render attributionFields(originalAttr!)}
 			</div>
 		{/if}
-	</div>
-</div>
 
-<div class="md:hidden">
-	<!-- One viewport-tall stage: the image takes whatever height is left over and is
+		{#if canAttribute}
+			<Button
+				variant="link"
+				size="sm"
+				class="self-start px-0 text-xs text-muted-foreground hover:text-foreground"
+				onclick={() => (attributionDialogOpen = true)}
+			>
+				{hasViewerAttr ? 'Edit attribution' : '+ Add attribution'}
+			</Button>
+		{/if}
+
+		{#if canEditLabels}
+			<Button
+				variant="link"
+				size="sm"
+				class="gap-1 self-start px-0 text-xs text-muted-foreground hover:text-foreground"
+				onclick={() => (labelDialogOpen = true)}
+			>
+				<Tag class="size-3" />
+				Add content labels
+			</Button>
+		{/if}
+	{/snippet}
+
+	{#snippet imageCollectionsSection(desktop: boolean)}
+		<Accordion.Root type="single" bind:value={collectionsAccordionValue}>
+			<Accordion.Item value="collections" class="[&_[data-slot=accordion-content]]:px-3">
+				<Accordion.Trigger>In other collections</Accordion.Trigger>
+				<Accordion.Content class="pb-3">
+					{#if imageCollections.loading && imageCollections.items.length === 0}
+						<div class="flex justify-center py-3"><Spinner /></div>
+					{:else if imageCollections.items.length === 0}
+						<p class="px-1 py-1 text-sm text-muted-foreground">Not in any collections yet.</p>
+					{:else}
+						<div class="max-h-72 overflow-y-auto">
+							<Item.Group class="gap-1">
+								{#each imageCollections.items as c (c.uri)}
+									{@const isOwn = !!auth.user && auth.user.did === c.author?.did}
+									{@const preview = collectionPreview(c)}
+									<CollectionHoverCard
+										collection={c}
+										href={collectionHref(c)}
+										side="right"
+										disabled={!desktop || isMobile.current}
+										open={desktop && collectionPreviewUri === c.uri}
+										onOpenChange={(open) => setCollectionPreview(c.uri, open)}
+									>
+										{#snippet child({ props })}
+											<Item.Root
+												{...props}
+												role="listitem"
+												variant="outline"
+												size="sm"
+												class="relative min-h-18 flex-nowrap gap-2 rounded-xl app-muted-wash"
+											>
+												<!-- Stretched link: a click anywhere on the row that isn't the username
+								     link or the favourite toggle (both lifted with z-10) opens the collection. -->
+												<a href={collectionHref(c)} class="absolute inset-0">
+													<span class="sr-only">{c.name}</span>
+												</a>
+												<div
+													data-collection-thumbnail
+													class="relative mr-2 size-11 shrink-0 overflow-hidden rounded-xl bg-muted"
+												>
+													{#if preview}
+														<img
+															src={bunnyImageUrl(preview.url, {
+																aspectRatio: '1:1',
+																width: 96,
+																quality: 75
+															})}
+															alt=""
+															class="absolute inset-0 size-full object-cover {preview.blur
+																? 'blur-md'
+																: ''}"
+														/>
+													{/if}
+												</div>
+												<Item.Content class="min-w-0">
+													<Item.Title class="w-full truncate">{c.name}</Item.Title>
+													<Item.Description class="flex items-center gap-1">
+														<a
+															href={`/profile/${c.author?.handle}`}
+															class="relative z-10 min-w-0 truncate no-underline!"
+														>
+															{c.author?.displayName || c.author?.handle}
+														</a>
+														{#if c.author?.supporter}
+															<SupporterBadge class="size-3.5 shrink-0" />
+														{/if}
+														{#if (c.favouriteCount ?? 0) > 0}
+															<span aria-hidden="true">·</span>
+															<Star class="size-3 shrink-0 fill-current" />
+															<span>{c.favouriteCount}</span>
+														{/if}
+													</Item.Description>
+												</Item.Content>
+												<Item.Actions class="shrink-0">
+													{#if isOwn}
+														<Badge variant="secondary">Yours</Badge>
+													{:else if auth.user}
+														<div class="relative z-10">
+															<FavouriteToggle collection={c} labelFrom="never" />
+														</div>
+													{/if}
+												</Item.Actions>
+											</Item.Root>
+										{/snippet}
+									</CollectionHoverCard>
+								{/each}
+							</Item.Group>
+						</div>
+						{#if imageCollections.hasMore}
+							<div class="mt-2 flex justify-center">
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => imageCollections.loadMore()}
+									disabled={imageCollections.loading}
+								>
+									{#if imageCollections.loading}<Spinner />{:else}Show more{/if}
+								</Button>
+							</div>
+						{/if}
+					{/if}
+				</Accordion.Content>
+			</Accordion.Item>
+		</Accordion.Root>
+	{/snippet}
+
+	{#snippet saveControl()}
+		{#if auth.user && collections.loaded}
+			<CollectionSelector
+				item={currentSave}
+				variant="popover"
+				triggerVariant="secondary"
+				onSavesChange={handleSavesChange}
+			/>
+		{:else if auth.checked}
+			<Button variant="default" onclick={promptLogin} class="w-full">Save</Button>
+		{/if}
+	{/snippet}
+
+	<!-- Mobile Save: a content-width pill rather than the drawer trigger's default
+     full-width bar, so the floating back / scroll-to-top buttons sit beside it in
+     the same row instead of on top of it. Solid by design — it floats over the
+     image, so nothing glassy. -->
+	{#snippet mobileSaveControl()}
+		{#if auth.user && collections.loaded}
+			<CollectionSelector item={currentSave} variant="drawer" onSavesChange={handleSavesChange}>
+				{#snippet trigger({ props })}
+					<Button
+						{...props}
+						variant={anySaved ? 'secondary' : 'default'}
+						size="lg"
+						class="rounded-full px-6 shadow-md"
+					>
+						{anySaved ? 'Saved' : 'Save'}
+					</Button>
+				{/snippet}
+			</CollectionSelector>
+		{:else if auth.checked}
+			<Button variant="default" size="lg" class="rounded-full px-6 shadow-md" onclick={promptLogin}>
+				Save
+			</Button>
+		{/if}
+	{/snippet}
+
+	{#snippet hiddenState()}
+		<div
+			class="flex flex-col items-center justify-center gap-3 rounded-lg bg-muted p-8 text-center text-sm text-muted-foreground"
+		>
+			<EyeOff class="size-6" />
+			{#if auth.user}
+				<p class="font-medium text-foreground">Hidden by your settings</p>
+				<p class="max-w-sm text-xs">
+					This image carries a label you've chosen not to see. Adjust your moderation preferences to
+					change what's shown.
+				</p>
+				<button
+					type="button"
+					onclick={() => openSettings('moderation')}
+					class="text-xs font-medium text-foreground underline-offset-2 hover:underline"
+				>
+					Open settings
+				</button>
+			{:else}
+				<p class="font-medium text-foreground">Hidden content</p>
+				<p class="max-w-sm text-xs">
+					This image is hidden for logged-out visitors. Log in to manage what you see.
+				</p>
+				<Button
+					variant="link"
+					size="sm"
+					class="h-auto p-0 text-xs font-medium text-foreground"
+					onclick={promptLogin}
+				>
+					Log in
+				</Button>
+			{/if}
+		</div>
+	{/snippet}
+
+	<!-- One pane of the mobile swipe track. Takes the save rather than reading the
+     current one, because the neighbours either side render through here too — which
+     is also why it recomputes its own image state instead of using the deriveds. -->
+	{#snippet stagePane(s: SaveView, loading: 'lazy' | 'eager', focusable = false)}
+		{@const paneImage = getImageContent(s)}
+		{@const paneLong = isLongImage(paneImage?.width, paneImage?.height)}
+		{#if shouldHide(s.labels)}
+			{@render hiddenState()}
+		{:else if paneImage}
+			<LabeledMedia labels={s.labels} class="flex justify-center">
+				<button
+					type="button"
+					class="flex max-w-full justify-center {paneLong ? 'w-full' : ''} {focusable
+						? 'cursor-zoom-in'
+						: 'pointer-events-none'} {focusable && native ? 'touch-pan-y' : ''}"
+					disabled={!focusable}
+					onclick={() => (imageFocusOpen = true)}
+					onpointerdown={focusable ? onImagePointerDown : undefined}
+					onpointermove={focusable ? onImagePointerMove : undefined}
+					onpointerup={focusable ? onImagePointerEnd : undefined}
+					onpointercancel={focusable ? onImagePointerEnd : undefined}
+					aria-label={focusable ? 'View image full screen' : undefined}
+					tabindex={focusable ? 0 : -1}
+				>
+					<SaveImage
+						image={paneImage}
+						alt={paneImage.alt ?? s.text ?? ''}
+						{loading}
+						class={paneLong ? 'w-full' : 'max-h-[65dvh] w-auto max-w-full object-contain'}
+						style={`${paneImage.width && paneImage.height ? `aspect-ratio: ${paneImage.width} / ${paneImage.height};` : ''}${paneImage.dominantColor ? ` background-color: ${paneImage.dominantColor};` : ''}`}
+					/>
+				</button>
+			</LabeledMedia>
+		{:else}
+			<div
+				class="mx-auto flex max-h-[65dvh] w-full items-center justify-center bg-muted text-sm text-muted-foreground"
+				style="aspect-ratio: 3 / 4;"
+			>
+				Unsupported content
+			</div>
+		{/if}
+	{/snippet}
+
+	<div bind:this={desktopHero} class="hidden h-screen md:flex">
+		<div
+			class="flex w-1/3 max-w-[400px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-border p-4 pt-20"
+		>
+			<Button
+				variant="outline"
+				size="sm"
+				class="w-fit rounded-full"
+				onclick={goBack}
+				aria-label="Go back"
+			>
+				<ArrowLeft class="size-4" />
+				Back
+			</Button>
+			{@render saveControl()}
+			{@render info()}
+			{@render imageCollectionsSection(true)}
+			<div
+				class="text-md mt-auto flex flex-col items-center gap-2 text-center text-muted-foreground"
+			>
+				<p>Scroll down to view related images</p>
+				<ArrowDown class="size-4" />
+			</div>
+		</div>
+		<!-- Long images fill the pane's width and scroll it; everything else is
+	     contained and centred as before. The wrapper is the positioning context for
+	     the "more below" fade, which has to sit outside the scrolling element. -->
+		<div class="relative min-w-0 flex-1">
+			<!-- The fade is a mask on the pane, not a colored gradient on top of it: this
+		     view renders both as a route (page background) and as the pushState overlay
+		     (app-muted-wash), and a mask doesn't need to know which. -->
+			<div
+				bind:this={imagePane}
+				{@attach (node) => {
+					node.scrollTop = imagePaneScrollTop;
+				}}
+				onscroll={onImagePaneScroll}
+				class="flex h-full justify-center p-4 {long
+					? 'items-start overflow-y-auto'
+					: 'items-center'} {long && !imagePaneAtEnd ? 'mask-b-from-88% mask-b-to-100%' : ''}"
+			>
+				{#if hiddenByPrefs}
+					{@render hiddenState()}
+				{:else if image}
+					<LabeledMedia
+						labels={currentSave.labels}
+						class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
+					>
+						<div
+							{@attach (node) => {
+								void currentUri;
+								return observeTrailImage(node);
+							}}
+							data-detail-preview={previewSrc ? '' : undefined}
+							class={long ? 'w-full' : 'flex h-full w-full items-center justify-center'}
+							style={previewSrc
+								? `background-image: url(${JSON.stringify(previewSrc)}); background-repeat: no-repeat; background-size: ${long ? '100% auto' : 'contain'}; background-position: ${long ? 'top' : 'center'};${image.width && image.height ? (long ? ` aspect-ratio: ${image.width} / ${image.height};` : ` max-width: ${image.width}px; max-height: ${image.height}px;`) : ''}`
+								: undefined}
+						>
+							<SaveImage
+								{image}
+								alt={image.alt ?? currentSave.text ?? ''}
+								sizes="(min-width: 1200px) calc(100vw - 400px - 2rem), 67vw"
+								class={long ? 'w-full' : 'max-h-full max-w-full object-contain'}
+								wrapperClass={long
+									? 'block w-full'
+									: 'flex h-full w-full items-center justify-center'}
+								style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
+								onLoad={() => (desktopLoadedUri = currentUri)}
+							/>
+						</div>
+					</LabeledMedia>
+				{:else}
+					<div
+						class="flex h-full w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground"
+					>
+						Unsupported content
+					</div>
+				{/if}
+			</div>
+			{#if long && !hiddenByPrefs && image}
+				<!-- Says out loud what the fade implies. Both clear together once there's
+			     nothing left to scroll to. -->
+				<div
+					class="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center transition-opacity duration-200 {imagePaneAtEnd
+						? 'opacity-0'
+						: 'opacity-100'}"
+				>
+					<span
+						class="flex items-center gap-1.5 rounded-full bg-primary-foreground/80 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur-sm"
+					>
+						<ArrowDown class="size-3" />
+						Scroll to see the whole image
+					</span>
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<div class="md:hidden">
+		<!-- One viewport-tall stage: the image takes whatever height is left over and is
 	     centred in it, so a short image sits mid-screen and a long one simply makes
 	     the stage taller. `flex-1` grows into free space but never squashes the image
 	     (flex items keep min-height:auto), which is what makes both cases work. -->
-	<div
-		class="flex min-h-dvh flex-col gap-4 p-2"
-		style="padding-top: calc(env(safe-area-inset-top) + 1rem)"
-	>
-		<div bind:this={topControls} class="flex items-center gap-2">
-			<Button variant="ghost" size="icon-sm" onclick={goBack} aria-label="Go back">
-				<ArrowLeft class="size-4" />
-			</Button>
-		</div>
-		<!-- The image stage is also the swipe surface: dragging it sideways moves to the
+		<div
+			class="flex min-h-dvh flex-col gap-4 p-2"
+			style="padding-top: calc(env(safe-area-inset-top) + 1rem)"
+		>
+			<div bind:this={topControls} class="flex items-center gap-2">
+				<Button variant="ghost" size="icon-sm" onclick={goBack} aria-label="Go back">
+					<ArrowLeft class="size-4" />
+				</Button>
+			</div>
+			<!-- The image stage is also the swipe surface: dragging it sideways moves to the
 		     next/previous image of the grid this view was opened from. Scoped to here
 		     rather than the whole view so the vertical scroll down to the related images
 		     is untouched. The current image is in flow and gives the stage its height;
 		     the neighbours are absolutely positioned a step out on either side, so they
 		     ride along with the drag without ever affecting that height. -->
-		<div
-			data-swipe-stage
-			data-swiping={swiping}
-			class="relative flex flex-1 items-center justify-center overflow-hidden"
-			bind:clientWidth={stageWidth}
-			use:swipe={{
-				enabled: !!(prevSave || nextSave),
-				onMove: onSwipeMove,
-				onSwipe,
-				onCancel: cancelSwipe
-			}}
-		>
 			<div
-				class="flex w-full items-center justify-center {swipeEased
-					? 'transition-transform duration-200 ease-out'
-					: ''}"
-				style="transform: translate3d({swipeX}px, 0, 0)"
+				data-swipe-stage
+				data-swiping={swiping}
+				class="relative flex flex-1 items-center justify-center overflow-hidden"
+				bind:clientWidth={stageWidth}
+				use:swipe={{
+					enabled: !!(prevSave || nextSave),
+					onMove: onSwipeMove,
+					onSwipe,
+					onCancel: cancelSwipe
+				}}
 			>
-				{@render stagePane(currentSave, 'lazy', true)}
-			</div>
-			{#each neighbours as n (n.dir)}
 				<div
-					aria-hidden="true"
-					class="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-center {swipeEased
+					class="flex w-full items-center justify-center {swipeEased
 						? 'transition-transform duration-200 ease-out'
 						: ''}"
-					style="transform: translate3d({swipeX + n.dir * swipeStep}px, 0, 0)"
+					style="transform: translate3d({swipeX}px, 0, 0)"
 				>
-					{@render stagePane(n.save, 'eager')}
+					{@render stagePane(currentSave, 'lazy', true)}
 				</div>
-			{/each}
-		</div>
-		<div class="flex flex-col gap-4">
-			{@render info()}
-			{@render imageCollectionsSection(false)}
-		</div>
-		<!-- Pinned to the bottom of the stage — the bottom of the viewport until the
+				{#each neighbours as n (n.dir)}
+					<div
+						aria-hidden="true"
+						class="pointer-events-none absolute inset-y-0 left-0 flex w-full items-center justify-center {swipeEased
+							? 'transition-transform duration-200 ease-out'
+							: ''}"
+						style="transform: translate3d({swipeX + n.dir * swipeStep}px, 0, 0)"
+					>
+						{@render stagePane(n.save, 'eager')}
+					</div>
+				{/each}
+			</div>
+			<div class="flex flex-col gap-4">
+				{@render info()}
+				{@render imageCollectionsSection(false)}
+			</div>
+			<!-- Pinned to the bottom of the stage — the bottom of the viewport until the
 		     image and its details run out, then it lands under them. The button's own
 		     bottom edge keeps the floating back / scroll-to-top offset so the three
 		     read as one row. Plain sticky semantics: no scroll listener.
 		     `-mt-4` cancels the stage's gap so the landed pill sits closer to the
 		     accordion; the padding above it is the scrim's fade, not spacing. -->
-		<div
-			class="pointer-events-none sticky bottom-0 z-10 -mx-2 -mt-4 flex justify-center pt-8"
-			style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
-		>
-			<!-- Scrim, so the pill stays legible over whatever it floats above. Painted
+			<div
+				class="pointer-events-none sticky bottom-0 z-10 -mx-2 -mt-4 flex justify-center pt-8"
+				style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+			>
+				<!-- Scrim, so the pill stays legible over whatever it floats above. Painted
 			     in the page's own wash and masked out towards the top, which keeps it
 			     exact in both themes and in both contexts this view renders in (route
 			     background and pushState overlay are the same mix). -->
-			<div class="absolute inset-0 app-muted-wash mask-t-from-0% mask-t-to-100%"></div>
-			<div class="pointer-events-auto relative">
-				{@render mobileSaveControl()}
+				<div class="absolute inset-0 app-muted-wash mask-t-from-0% mask-t-to-100%"></div>
+				<div class="pointer-events-auto relative">
+					{@render mobileSaveControl()}
+				</div>
 			</div>
 		</div>
 	</div>
-</div>
 
-{#if isMobile.current}
-	<Drawer.Root bind:open={actionDrawerOpen}>
-		<Drawer.Content>
-			<Drawer.Header>
-				<Drawer.Title>Image actions</Drawer.Title>
-				<Drawer.Description>Save, share, hide, or report this image.</Drawer.Description>
-			</Drawer.Header>
-			<div class="px-4" style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)">
-				<ImageActionGrid
-					item={currentSave}
-					onAction={() => (actionDrawerOpen = false)}
-					onReport={() => (reportDialogOpen = true)}
-				/>
-			</div>
-		</Drawer.Content>
-	</Drawer.Root>
-{/if}
-
-{#if image && !hiddenByPrefs}
-	<ImageFocusDialog
-		bind:this={imageFocusDialog}
-		bind:open={imageFocusOpen}
-		{image}
-		alt={image.alt ?? currentSave.text ?? ''}
-	/>
-{/if}
-
-<!-- Mobile floating home button: full wordmark, pinned at top center. -->
-<a
-	href={resolve('')}
-	aria-label="Go to home"
-	class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
-	style="top: calc(env(safe-area-inset-top) + 2rem)"
->
-	<span class="block h-5">
-		<Logo />
-	</span>
-</a>
-
-<ModeTabs detail={active} />
-
-<!-- Keep the scroll fade local: deactivating an overlay removes its bar immediately. -->
-{#if active && !isMobile.current}
-	{#if showScrolledActions}
-		<div class="pointer-events-none" transition:fade={{ duration: 200, easing: cubicOut }}>
-			<TopBar user={auth.user} actionsOnly scrollbarInset={scrollRoot ? scrollbarInset : 0} />
-		</div>
+	{#if isMobile.current}
+		<Drawer.Root bind:open={actionDrawerOpen}>
+			<Drawer.Content>
+				<Drawer.Header>
+					<Drawer.Title>Image actions</Drawer.Title>
+					<Drawer.Description>Save, share, hide, or report this image.</Drawer.Description>
+				</Drawer.Header>
+				<div class="px-4" style="padding-bottom: calc(env(safe-area-inset-bottom) + 1rem)">
+					<ImageActionGrid
+						item={currentSave}
+						onAction={() => (actionDrawerOpen = false)}
+						onReport={() => (reportDialogOpen = true)}
+					/>
+				</div>
+			</Drawer.Content>
+		</Drawer.Root>
 	{/if}
-{/if}
 
-<!-- Floating actions: revealed once the primary view scrolls out of sight. -->
-{#if scrolledPastTop}
-	<div
-		class="fixed left-2 z-50 md:hidden"
-		style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
-		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
+	{#if image && !hiddenByPrefs}
+		<ImageFocusDialog
+			bind:this={imageFocusDialog}
+			bind:open={imageFocusOpen}
+			{image}
+			alt={image.alt ?? currentSave.text ?? ''}
+		/>
+	{/if}
+
+	<!-- Mobile floating home button: full wordmark, pinned at top center. -->
+	<a
+		href={resolve('')}
+		aria-label="Go to home"
+		class="fixed left-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
+		style="top: calc(env(safe-area-inset-top) + 2rem)"
 	>
-		<Button
-			variant="glass"
-			size="lg"
-			class="rounded-full md:hidden"
-			onclick={goBack}
-			aria-label="Go back"
+		<span class="block h-5">
+			<Logo />
+		</span>
+	</a>
+
+	{#if !scrollRoot}
+		<ModeTabs detail={active} />
+	{/if}
+
+	<!-- Keep the scroll fade local: deactivating an overlay removes its bar immediately. -->
+	{#if active && !isMobile.current}
+		{#if showScrolledActions}
+			<div class="pointer-events-none" transition:fade={{ duration: 200, easing: cubicOut }}>
+				<TopBar user={auth.user} actionsOnly scrollbarInset={scrollRoot ? scrollbarInset : 0} />
+			</div>
+		{/if}
+	{/if}
+
+	<!-- Floating actions: revealed once the primary view scrolls out of sight. -->
+	{#if scrolledPastTop}
+		<div
+			class="fixed left-2 z-50 md:hidden"
+			style="bottom: calc(env(safe-area-inset-bottom) + 1rem)"
+			transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 		>
-			<ArrowLeft />
-			Back
-		</Button>
-	</div>
-	<!-- Mobile aligns with the grid's right border: content padding plus
+			<Button
+				variant="glass"
+				size="lg"
+				class="rounded-full md:hidden"
+				onclick={goBack}
+				aria-label="Go back"
+			>
+				<ArrowLeft />
+				Back
+			</Button>
+		</div>
+		<!-- Mobile aligns with the grid's right border: content padding plus
 	     the scroll container's measured scrollbar width. The `100% - 100vw` term
 	     cancels root-viewport changes when a scroll lock hides the scrollbar.
 	     Desktop centers the larger button in the viewport. -->
-	<div
-		bind:this={toTopEl}
-		class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:left-1/2 md:right-auto md:-translate-x-1/2"
-		style="bottom: calc(env(safe-area-inset-bottom) + 1rem); --sb: {scrollbarInset}px"
-		transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
-	>
-		<Button
-			variant="glass"
-			size="icon-lg"
-			class="rounded-full md:hidden"
-			onclick={scrollToTop}
-			aria-label="Scroll to top"
+		<div
+			bind:this={toTopEl}
+			class="fixed right-[calc(0.5rem+var(--sb)+100%-100vw)] z-50 md:right-auto md:left-1/2 md:-translate-x-1/2"
+			style="bottom: calc(env(safe-area-inset-bottom) + 1rem); --sb: {scrollbarInset}px"
+			transition:fly={{ y: 24, duration: 200, easing: cubicOut }}
 		>
-			<ChevronUp class="size-4" />
-		</Button>
-		<Button
-			variant="glass"
-			size="lg"
-			class="hidden h-11 rounded-full border-border px-5 shadow-none md:inline-flex"
-			onclick={scrollToTop}
-			aria-label="Go to top"
-		>
-			<ChevronUp class="size-4" />
-			Go to top
-		</Button>
-	</div>
-{/if}
+			<Button
+				variant="glass"
+				size="icon-lg"
+				class="rounded-full md:hidden"
+				onclick={scrollToTop}
+				aria-label="Scroll to top"
+			>
+				<ChevronUp class="size-4" />
+			</Button>
+			<Button
+				variant="glass"
+				size="lg"
+				class="hidden h-11 rounded-full border-border px-5 shadow-none md:inline-flex"
+				onclick={scrollToTop}
+				aria-label="Go to top"
+			>
+				<ChevronUp class="size-4" />
+				Go to top
+			</Button>
+		</div>
+	{/if}
 
-{#if related.items.length > 0 || related.loading}
-	<section class="flex flex-col gap-4 p-2 md:p-4">
-		<h2 class="text-lg font-medium">Related</h2>
-		<MasonryGrid
-			items={related.items}
-			loading={related.loading}
-			imageLoading="eager"
-			longPressSave
+	{#if related.items.length > 0 || related.loading}
+		<section class="flex flex-col gap-4 p-2 md:p-4">
+			<h2 class="text-lg font-medium">Related</h2>
+			<MasonryGrid
+				items={related.items}
+				loading={related.loading}
+				imageLoading="eager"
+				longPressSave
+			/>
+			{#if related.hasMore}
+				<div bind:this={sentinel} class="h-1"></div>
+			{/if}
+		</section>
+	{/if}
+
+	{#if canAttribute}
+		<SaveAttributionDialog
+			bind:open={attributionDialogOpen}
+			save={currentSave}
+			onSaved={(attr) => {
+				const base = currentSave;
+				hydratedSave = {
+					...base,
+					viewer: { ...(base.viewer ?? {}), attribution: attr }
+				};
+			}}
 		/>
-		{#if related.hasMore}
-			<div bind:this={sentinel} class="h-1"></div>
-		{/if}
-	</section>
-{/if}
+	{/if}
 
-{#if canAttribute}
-	<SaveAttributionDialog
-		bind:open={attributionDialogOpen}
-		save={currentSave}
-		onSaved={(attr) => {
-			const base = currentSave;
-			hydratedSave = {
-				...base,
-				viewer: { ...(base.viewer ?? {}), attribution: attr }
-			};
-		}}
-	/>
-{/if}
+	{#if canEditLabels}
+		<ContentLabelDialog
+			bind:open={labelDialogOpen}
+			save={currentSave}
+			onSaved={(added) => {
+				const base = currentSave;
+				const now = new Date().toISOString();
+				hydratedSave = {
+					...base,
+					labels: [...(base.labels ?? []), ...added.map((v) => ({ src: '', val: v, cts: now }))]
+				};
+			}}
+		/>
+	{/if}
 
-{#if canEditLabels}
-	<ContentLabelDialog
-		bind:open={labelDialogOpen}
-		save={currentSave}
-		onSaved={(added) => {
-			const base = currentSave;
-			const now = new Date().toISOString();
-			hydratedSave = {
-				...base,
-				labels: [...(base.labels ?? []), ...added.map((v) => ({ src: '', val: v, cts: now }))]
-			};
-		}}
-	/>
+	<ReportDialog bind:open={reportDialogOpen} save={currentSave} />
 {/if}
-
-<ReportDialog bind:open={reportDialogOpen} save={currentSave} />

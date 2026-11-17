@@ -59,37 +59,46 @@
 	// Identity for this grid instance, so the store can tell whether the run it holds is
 	// still ours to extend.
 	const gridId = {};
-	// Preserve server-rendered/initial cards. Pages appended after mount get the
-	// viewport-driven treatment below; initial SSR markup must hydrate unchanged.
+	// Frames preserve the complete masonry geometry. Only nearby interactive cards
+	// stay mounted; server-rendered cards survive hydration until first observed.
 	const initiallyRendered = new Set(untrack(() => items.map((item) => item.uri)));
-	// Frames are cheap and give the masonry its complete geometry immediately. The
-	// interactive card subtree is not: defer it until the frame is near enough to
-	// be seen, then keep it mounted so card state survives scrolling away and back.
+	const observed = new SvelteSet<string>();
 	const nearby = new SvelteSet<string>();
+	let pastStart = $state(false);
+	const busy = new SvelteSet<string>();
+	const focused = new SvelteSet<string>();
 	const observedUris = new WeakMap<Element, string>();
 	let cardObserver: IntersectionObserver | undefined;
 
 	function renderNearViewport(node: HTMLElement, uri: string) {
-		if (!('IntersectionObserver' in window)) {
-			nearby.add(uri);
-			return;
-		}
 		observedUris.set(node, uri);
+		let root: HTMLElement | null = null;
+		if (!cardObserver) {
+			root = node.parentElement;
+			while (root && !['auto', 'scroll'].includes(getComputedStyle(root).overflowY))
+				root = root.parentElement;
+		}
 		cardObserver ??= new IntersectionObserver(
 			(entries) => {
 				for (const entry of entries) {
-					if (!entry.isIntersecting) continue;
-					const itemUri = observedUris.get(entry.target);
-					if (itemUri) nearby.add(itemUri);
-					cardObserver?.unobserve(entry.target);
+					const itemUri = observedUris.get(entry.target)!;
+					observed.add(itemUri);
+					if (itemUri === visibleItems[0]?.uri)
+						pastStart = entry.boundingClientRect.bottom < (entry.rootBounds?.top ?? 0);
+					if (entry.isIntersecting) nearby.add(itemUri);
+					else nearby.delete(itemUri);
 				}
 			},
-			{ rootMargin: '800px 0px' }
+			{ root, rootMargin: '800px 0px' }
 		);
 		cardObserver.observe(node);
 		return {
 			destroy() {
 				cardObserver?.unobserve(node);
+				observed.delete(uri);
+				nearby.delete(uri);
+				busy.delete(uri);
+				focused.delete(uri);
 			}
 		};
 	}
@@ -157,11 +166,20 @@
 <div
 	bind:clientWidth={containerWidth}
 	data-masonry-grid={reservePageScrollbarGutter ? '' : undefined}
+	onfocusin={(event) => {
+		const frame = (event.target as HTMLElement).closest<HTMLElement>('[data-save-uri]');
+		if (frame?.dataset.saveUri) focused.add(frame.dataset.saveUri);
+	}}
+	onfocusout={(event) => {
+		const frame = (event.target as HTMLElement).closest<HTMLElement>('[data-save-uri]');
+		if (frame?.dataset.saveUri && !frame.contains(event.relatedTarget as Node))
+			focused.delete(frame.dataset.saveUri);
+	}}
 >
 	<!-- Appended frames briefly have the default CSS order before the masonry
 	     observer positions them. Keep that transient reflow from becoming the
 	     browser's scroll anchor and moving the viewport as a page lands. -->
-	<BalancedMasonryGrid {frameWidth} {gap} style="overflow-anchor: none;">
+	<BalancedMasonryGrid {frameWidth} {gap} style="overflow: clip; overflow-anchor: none;">
 		{#each visibleItems as item, i (item.uri)}
 			{@const image = getImageContent(item)}
 			{@const ratio = tileRatio(image?.width, image?.height)}
@@ -178,11 +196,12 @@
 					style={image?.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
 					use:renderNearViewport={item.uri}
 				>
-					{#if imageLoading === 'eager' || initiallyRendered.has(item.uri) || i < skeletonCount || nearby.has(item.uri)}
+					{#if nearby.has(item.uri) || busy.has(item.uri) || focused.has(item.uri) || (imageLoading === 'eager' && i < 20 && !pastStart) || (!observed.has(item.uri) && (initiallyRendered.has(item.uri) || i < skeletonCount))}
 						<!-- Hand the detail view the images either side of this one, so it can be
 						     swiped through on touch. Same list the user is looking at, minus what
 						     their moderation prefs hide. -->
 						<ImageCard
+							onBusyChange={(value) => (value ? busy.add(item.uri) : busy.delete(item.uri))}
 							{item}
 							{imageLoading}
 							{linkToDetail}
@@ -190,7 +209,6 @@
 							{longPressSave}
 							{onViewFullScreen}
 							mobile={viewportWidth !== undefined && viewportWidth < 768}
-							preloadControls={nearby.has(item.uri)}
 							onOpen={(depth) => {
 								onOpen?.();
 								setSaveSequence(gridId, visibleItems, loadMore, depth);

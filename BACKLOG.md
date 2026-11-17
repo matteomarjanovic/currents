@@ -17,9 +17,9 @@ proposing new work; delete an entry when it ships.
 ## Organize mode
 
 - **Drag & drop saves onto collections** in the left sidebar.
-- **Grid virtualization** for very large libraries — the masonry currently
-  keeps every loaded tile mounted; fine at hundreds of images, worth
-  virtualizing in the thousands.
+- **Organize canvas virtualization** for very large libraries. The separate
+  organize canvas still keeps its loaded tiles mounted. Explore and the shared
+  image grids now release offscreen interactive cards while preserving frames.
 
 ## Engineering
 

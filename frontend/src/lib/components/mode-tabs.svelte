@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -17,8 +18,11 @@
 
 	type AppMode = 'explore' | 'organize';
 
-	let { detail = false, viewTransitionName }: { detail?: boolean; viewTransitionName?: string } =
-		$props();
+	let {
+		detail = false,
+		viewTransitionName,
+		trail
+	}: { detail?: boolean; viewTransitionName?: string; trail?: Snippet } = $props();
 
 	let value = $state<AppMode>('explore');
 
@@ -59,7 +63,7 @@
 <div
 	aria-hidden={!visible}
 	inert={!visible}
-	class="fixed left-4 z-30 hidden items-center gap-2 transition-opacity duration-150 md:flex {visible
+	class="fixed left-4 z-30 hidden h-[46px] items-center gap-2 transition-opacity duration-150 md:flex {visible
 		? 'opacity-100'
 		: 'pointer-events-none opacity-0'}"
 	style="top: calc(env(safe-area-inset-top) + 0.75rem)"
@@ -68,7 +72,7 @@
 >
 	<a
 		href={routeMode === 'organize' ? resolve('organize') : resolve('')}
-		class="flex size-[46px] shrink-0 items-center justify-center rounded-full border border-border bg-primary-foreground/80 bg-clip-padding text-foreground backdrop-blur-sm"
+		class="flex size-[46px] shrink-0 items-center justify-center rounded-full border border-border bg-primary-foreground/80 bg-clip-padding text-foreground shadow-md shadow-black/15 backdrop-blur-sm"
 		aria-label="Currents"
 	>
 		<span class="flex size-[34px] items-center justify-center"><LogoIcon /></span>
@@ -78,7 +82,7 @@
 		<Tabs.Root {value} onValueChange={switchMode} animated={false} class="gap-0">
 			<Tabs.List
 				aria-label="Currents mode"
-				class="relative h-[35px]! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding backdrop-blur-sm"
+				class="relative h-[35px]! w-[170px] rounded-full border border-border bg-primary-foreground/80 bg-clip-padding shadow-md shadow-black/15 backdrop-blur-sm"
 			>
 				<MotionDiv
 					data-mode-indicator
@@ -111,5 +115,8 @@
 				</Tabs.Trigger>
 			</Tabs.List>
 		</Tabs.Root>
+	{/if}
+	{#if detail && routeMode === 'explore'}
+		{@render trail?.()}
 	{/if}
 </div>
