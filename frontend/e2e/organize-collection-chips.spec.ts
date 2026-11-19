@@ -86,6 +86,8 @@ test('collection chips have equal heights and previews above, with favourite act
 	const others = page.locator('[data-other-collections]');
 	const ownChip = mine.getByRole('link', { name: 'Interiors', exact: true });
 	const add = mine.getByRole('button', { name: 'Save to new collection' });
+	// Let the opening panel bring its close control fully on screen before hovering.
+	await expect(page.getByRole('button', { name: 'Close details' })).toBeInViewport({ ratio: 1 });
 	await expect(ownChip).toBeVisible();
 	await expect(add).toHaveCSS('height', '28px');
 	await expect(ownChip.locator('..')).toHaveCSS('height', '28px');
@@ -140,11 +142,9 @@ for (const target of [own, foreign]) {
 		await page.locator('[data-uri]').first().click();
 		const section =
 			target === own
-				? page
-						.locator('section')
-						.filter({
-							has: page.getByRole('heading', { name: 'In your collections', exact: true })
-						})
+				? page.locator('section').filter({
+						has: page.getByRole('heading', { name: 'In your collections', exact: true })
+					})
 				: page.locator('[data-other-collections]');
 		const chip = section.getByRole('link', { name: target.name, exact: true });
 		const destination = await chip.getAttribute('href');

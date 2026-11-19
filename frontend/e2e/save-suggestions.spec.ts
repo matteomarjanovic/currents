@@ -212,3 +212,49 @@ test('Quick Save ignores an orphan section returned by a stale API response', as
 	await first.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect.poll(() => resaves.at(-1)?.collectionUri).toBe(SPORTS_CARS);
 });
+
+test('Explore hover controls hide after a pointer save and collection menu dismissal', async ({
+	page
+}) => {
+	const resaves: { saveUri: string; collectionUri: string }[] = [];
+	await mockApi(page, resaves);
+	await page.goto('/explore/general');
+	const first = card(page, 1);
+	await first.hover();
+	const save = first.getByRole('button', { name: 'Save', exact: true });
+	const overlay = first.locator('[class*="bg-black/20"]');
+	await save.click();
+	await expect.poll(() => resaves.length).toBe(1);
+	await page.mouse.move(1250, 750);
+	await expect(overlay).toHaveCSS('opacity', '0');
+	await expect(first.getByRole('button', { name: 'Saved', exact: true }).locator('..')).toHaveCSS(
+		'pointer-events',
+		'none'
+	);
+
+	await first.hover();
+	await first.getByRole('button', { name: 'Flowers', exact: true }).click();
+	await expect(page.locator('[data-slot="popover-content"]:visible')).toBeVisible();
+	await page.mouse.move(1250, 750);
+	await expect(overlay).toHaveCSS('opacity', '1');
+	await page.mouse.click(1250, 750);
+	await expect(page.locator('[data-slot="popover-content"]:visible')).toHaveCount(0);
+	await expect(overlay).toHaveCSS('opacity', '0');
+});
+
+test('Explore hover controls remain available to keyboard users', async ({ page }) => {
+	await mockApi(page, []);
+	await page.goto('/explore/general');
+	const first = card(page, 1);
+	await first.locator('a').focus();
+	await page.keyboard.press('Tab');
+	const collectionButton = first.getByRole('button', { name: 'Flowers', exact: true });
+	const overlay = first.locator('[class*="bg-black/20"]');
+	await expect(collectionButton).toBeFocused();
+	await expect(overlay).toHaveCSS('opacity', '1');
+	await page.keyboard.press('Enter');
+	await expect(page.locator('[data-slot="popover-content"]:visible')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(collectionButton).toBeFocused();
+	await expect(overlay).toHaveCSS('opacity', '1');
+});

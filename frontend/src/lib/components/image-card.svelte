@@ -51,14 +51,12 @@
 	}: Props = $props();
 
 	let dropdownOpen = $state(false);
-	let actionMenuOpen = $state(false);
-	let controlsOpen = $derived(dropdownOpen || actionMenuOpen);
+	// Pointer clicks leave focus behind; only keyboard focus should keep the overlay visible.
 	let desktopControlsMounted = $state(false);
 	let contextBusy = $state(false);
 	let selectorBusy = $state(false);
-	let actionBusy = $state(false);
 	let quickActionsBusy = $state(false);
-	$effect(() => onBusyChange?.(contextBusy || selectorBusy || actionBusy || quickActionsBusy));
+	$effect(() => onBusyChange?.(contextBusy || selectorBusy || quickActionsBusy));
 	let quickActionsOpen = $state(false);
 	let quickActionsMounted = $state(false);
 	let suppressNextClick = false;
@@ -207,52 +205,17 @@
 				<div class="block">{@render media()}</div>
 			{/if}
 			{#snippet overlay()}
-				{#if onViewFullScreen && desktopControlsMounted}
-					<div
-						in:fade={{ duration: prefersReducedMotion.current ? 0 : 150 }}
-						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {controlsOpen
-							? 'opacity-100'
-							: 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'}"
-					>
-						<div
-							class="flex items-center justify-between gap-2 transition-transform duration-300 {controlsOpen
-								? 'pointer-events-auto translate-y-0'
-								: 'pointer-events-none translate-y-2 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-hover:pointer-events-auto group-hover:translate-y-0'}"
-						>
-							{#if auth.user && collections.loaded}
-								<CollectionSelector
-									onBusyChange={(busy) => (selectorBusy = busy)}
-									{item}
-									variant="popover"
-									onOpenChange={(open) => (dropdownOpen = open)}
-									onSavesChange={handleSavesChange}
-								>
-									{#snippet trigger({ props })}
-										<Button {...props} variant="default" size="sm">Save</Button>
-									{/snippet}
-								</CollectionSelector>
-							{/if}
-							<ImageActionMenu
-								{item}
-								variant="dropdown"
-								onBusyChange={(busy) => (actionBusy = busy)}
-								buttonVariant="secondary"
-								{onViewFullScreen}
-								onOpenChange={(open) => (actionMenuOpen = open)}
-							/>
-						</div>
-					</div>
-				{:else if auth.user && collections.loaded && desktopControlsMounted}
+				{#if auth.user && collections.loaded && desktopControlsMounted}
 					<div
 						in:fade={{ duration: prefersReducedMotion.current ? 0 : 150 }}
 						class="pointer-events-none absolute inset-0 hidden flex-col justify-end bg-black/20 p-2 transition-opacity duration-300 md:flex {dropdownOpen
 							? 'opacity-100'
-							: 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'}"
+							: 'opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100'}"
 					>
 						<div
 							class="transition-transform duration-300 {dropdownOpen
 								? 'pointer-events-auto translate-y-0'
-								: 'pointer-events-none translate-y-2 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-hover:pointer-events-auto group-hover:translate-y-0'}"
+								: 'pointer-events-none translate-y-2 group-hover:pointer-events-auto group-hover:translate-y-0 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:translate-y-0'}"
 						>
 							<CollectionSelector
 								onBusyChange={(busy) => (selectorBusy = busy)}
@@ -265,10 +228,10 @@
 					</div>
 				{:else if auth.checked && !auth.user && desktopControlsMounted}
 					<div
-						class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-focus-within:opacity-100 group-hover:opacity-100"
+						class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-black/20 p-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
 					>
 						<div
-							class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-hover:pointer-events-auto group-hover:translate-y-0"
+							class="pointer-events-none flex translate-y-2 items-center justify-end gap-1.5 transition-transform duration-300 group-hover:pointer-events-auto group-hover:translate-y-0 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:translate-y-0"
 						>
 							<Button size="sm" variant="default" onclick={promptLogin}>Save</Button>
 						</div>

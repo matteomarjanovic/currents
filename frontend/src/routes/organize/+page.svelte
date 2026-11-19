@@ -207,6 +207,7 @@
 	// (selectedSave derives to null once the collection no longer matches).
 	let sourceKey = $derived(unsorted ? 'unsorted' : selectedUri);
 	let selection = $state<{ source: string; save: SaveView } | null>(null);
+	let rightSidebarWidth = $state(352);
 	let selectedSave = $derived(selection && selection.source === sourceKey ? selection.save : null);
 	type FocusPointer = { id: number; x: number; y: number };
 	let focusSave = $state<SaveView | null>(null);
@@ -348,7 +349,7 @@
 	     div below, leaving it free to act as the column that the panel and the bulk
 	     bar stack inside. -->
 	<Sidebar.Inset
-		class="overflow-hidden bg-transparent md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none"
+		class="overflow-hidden bg-transparent md:mr-1! md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none"
 	>
 		<!-- The rounded panel. flex-1, so when the bar slides in below it the panel
 		     shrinks to make room — the same reflow the sidebars cause horizontally.
@@ -712,6 +713,7 @@
 
 	{#if selectedSave}
 		<OrganizeSidebarRight
+			bind:width={rightSidebarWidth}
 			save={selectedSave}
 			onClose={() => (selection = null)}
 			onSavesChange={(saves) => {

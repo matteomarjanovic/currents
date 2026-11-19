@@ -172,52 +172,49 @@ test('right sidebar removes a membership and preserves the last image in Unsorte
 
 test.describe('desktop related images', () => {
 	test.use({ hasTouch: false, isMobile: false });
-	test('show Save and image actions without a page scrollbar gutter', async ({ page }) => {
+	test('use Explore collection and save controls without a page scrollbar gutter', async ({
+		page
+	}) => {
 		const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
+		await page.addInitScript(
+			(uri) => localStorage.setItem('lastUsedCollectionUri', uri),
+			INTERIORS
+		);
 		await mockApi(page, calls);
 		await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
-			route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					saves: [
-						imageSave(saveUri('related'), [
-							{ collectionUri: INTERIORS, saveUri: saveUri('related') }
-						])
-					]
-				})
-			})
+			route.fulfill({ json: { saves: [imageSave(saveUri('related'), [])] } })
 		);
 		await page.setViewportSize({ width: 1280, height: 800 });
 		await page.goto('/organize');
 		await page.locator('[data-uri]').first().click();
 		await page.getByRole('tab', { name: 'Related' }).click();
-
-		const relatedImage = page
-			.locator('[data-slot="tabs-content"][data-state="active"] img')
-			.first();
+		const panel = page.getByRole('tabpanel', { name: 'Related' });
+		const relatedImage = panel.locator('img').first();
 		await expect(relatedImage).toBeVisible();
 		await expect
 			.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollbarGutter))
 			.toBe('auto');
 		await relatedImage.hover();
-		const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-		const actionsButton = page.getByRole('button', { name: 'Image actions' });
-		await expect(saveButton).toBeVisible();
-		await expect(actionsButton).toBeVisible();
+		const selector = panel.getByRole('button', { name: 'Interiors', exact: true });
+		const saveButton = panel.getByRole('button', { name: 'Save', exact: true });
+		await expect(selector).toBeVisible();
 		await expect(saveButton).toHaveClass(/bg-primary/);
-		await expect(actionsButton).toHaveClass(/bg-secondary/);
-		expect((await saveButton.boundingBox())!.x).toBeLessThan(
-			(await actionsButton.boundingBox())!.x
-		);
+		expect((await selector.boundingBox())!.x).toBeLessThan((await saveButton.boundingBox())!.x);
 		await saveButton.click();
+		await expect.poll(() => calls.resave.length).toBe(1);
+		expect(JSON.parse(calls.resave[0])).toEqual({
+			saveUri: saveUri('related'),
+			collectionUri: INTERIORS
+		});
+		await expect(panel.getByRole('button', { name: 'Saved', exact: true })).toHaveClass(
+			/bg-secondary/
+		);
+		await page.mouse.move(700, 20);
+		await expect(panel.locator('[class*="bg-black/20"]')).toHaveCSS('opacity', '0');
+		await relatedImage.hover();
+		await selector.click();
 		await expect(page.getByText('Save without a collection')).toBeVisible();
-		await expect(saveButton).toHaveText('Save');
 		await page.keyboard.press('Escape');
-		await actionsButton.click();
-		await page.getByRole('menuitem', { name: 'View full screen' }).click();
-		await expect(page.getByRole('dialog', { name: 'Image viewer' })).toBeVisible();
-		await page.getByRole('button', { name: 'Close image viewer' }).click();
 		await relatedImage.click({ button: 'right' });
 		await page.getByRole('menuitem', { name: 'View full screen' }).click();
 		await expect(page.getByRole('dialog', { name: 'Image viewer' })).toBeVisible();
@@ -226,6 +223,33 @@ test.describe('desktop related images', () => {
 		await expect
 			.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollbarGutter))
 			.toBe('auto');
+	});
+
+	test('context menu opens a related image in a new tab and keeps Organize open', async ({
+		page,
+		context
+	}) => {
+		await mockApi(page, { resave: [], deleted: [], unsortedUrls: [] });
+		await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
+			route.fulfill({ json: { saves: [imageSave(saveUri('related'), [])] } })
+		);
+		await page.setViewportSize({ width: 1280, height: 800 });
+		await page.goto('/organize');
+		await page.locator('[data-uri]').first().click();
+		await page.getByRole('tab', { name: 'Related' }).click();
+		await page
+			.getByRole('tabpanel', { name: 'Related' })
+			.locator('img')
+			.first()
+			.click({ button: 'right' });
+		const newTab = context.waitForEvent('page');
+		await page.getByRole('menuitem', { name: 'Open in new tab', exact: true }).click();
+		const opened = await newTab;
+		await expect(opened).toHaveURL(`/profile/${me.handle}/save/related`);
+		expect(await opened.evaluate(() => window.opener === null)).toBe(true);
+		await expect(page).toHaveURL('/organize');
+		await expect(page.getByRole('tabpanel', { name: 'Related' })).toBeVisible();
+		await opened.close();
 	});
 
 	test('right-clicking a second related image keeps the desktop context menu', async ({ page }) => {
@@ -427,4 +451,309 @@ test('collection pin controls stay below sticky sidebar headers', async ({ page 
 	const pin = page.getByRole('button', { name: 'Pin Interiors' });
 	await expect(pin).toBeAttached();
 	await expect(pin).toHaveCSS('z-index', 'auto');
+});
+
+for (const width of [1280, 393]) {
+	test(`details keep the canvas thumbnail until the larger image loads at width ${width}`, async ({
+		page
+	}) => {
+		await mockApi(page, { resave: [], deleted: [], unsortedUrls: [] });
+		const saves = ['first', 'second'].map((name) => {
+			const save = imageSave(saveUri(name), [{ collectionUri: INTERIORS, saveUri: saveUri(name) }]);
+			return {
+				...save,
+				content: {
+					...save.content,
+					imageUrl: `https://cdn.currents.is/img/${me.did}/${name}`,
+					width: 1200,
+					height: 1500,
+					palette: ['#a7b7ad', '#e4d5c0', '#6a786d']
+				}
+			};
+		});
+		await page.route(`${APPVIEW}/xrpc/is.currents.feed.getLibrarySaves?**`, (route) =>
+			route.fulfill({ json: { saves } })
+		);
+		let releaseDetail!: () => void;
+		const detailReady = new Promise<void>((resolve) => {
+			releaseDetail = resolve;
+		});
+		await page.route('https://cdn.currents.is/img/**', async (route) => {
+			if (new URL(route.request().url()).searchParams.get('quality') === '85') await detailReady;
+			await route.fulfill({
+				contentType: 'image/svg+xml',
+				body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1500"><rect width="1200" height="1500" fill="#a7b7ad"/><circle cx="600" cy="600" r="300" fill="#e4d5c0"/></svg>'
+			});
+		});
+		await page.setViewportSize({ width, height: 850 });
+		await page.goto('/organize');
+		const tiles = page.locator('[data-uri]');
+		await expect
+			.poll(() =>
+				tiles
+					.first()
+					.locator('img')
+					.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)
+			)
+			.toBe(true);
+		const thumbnail = await tiles
+			.first()
+			.locator('img')
+			.evaluate((img: HTMLImageElement) => img.currentSrc);
+		await tiles.first().click();
+		const hero = page.getByRole('button', { name: 'View image full screen', exact: true });
+		const preview = hero.locator('[data-detail-preview]');
+		await expect(preview).toBeVisible();
+		await expect(preview).toHaveCSS('background-image', `url("${thumbnail}")`);
+		await expect(hero.locator('img')).toHaveCSS('opacity', '0');
+		await expect(hero.locator('[data-slot="skeleton"]')).toHaveCount(0);
+		const before = await hero.boundingBox();
+		if (width === 1280) {
+			// Switching selection while the first image is pending must show the second thumbnail.
+			await expect
+				.poll(() =>
+					tiles
+						.nth(1)
+						.locator('img')
+						.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)
+				)
+				.toBe(true);
+			const secondThumbnail = await tiles
+				.nth(1)
+				.locator('img')
+				.evaluate((img: HTMLImageElement) => img.currentSrc);
+			await tiles.nth(1).click();
+			await expect(preview).toHaveCSS('background-image', `url("${secondThumbnail}")`);
+		}
+		releaseDetail();
+		await expect(hero.locator('img')).toHaveCSS('opacity', '1');
+		await expect(preview).toHaveCount(0);
+		expect((await hero.boundingBox())!.height).toBeCloseTo(before!.height, 0);
+	});
+}
+
+for (const width of [1280, 393]) {
+	for (const kind of ['original', 'resave', 'other-author'] as const) {
+		test(`Moderation offers the appropriate action for ${kind} at width ${width}`, async ({
+			page
+		}) => {
+			await mockApi(page, { resave: [], deleted: [], unsortedUrls: [] });
+			const uri = saveUri('moderation');
+			const save = {
+				...imageSave(uri, [{ collectionUri: INTERIORS, saveUri: uri }]),
+				author: kind === 'other-author' ? { did: 'did:plc:other', handle: 'other.test' } : me,
+				...(kind === 'resave'
+					? {
+							resaveOf: {
+								uri: 'at://did:plc:other/is.currents.feed.save/source',
+								cid: 'record-cid'
+							},
+							labels: [
+								{
+									src: 'did:web:labeler.test',
+									val: 'currents-ai-generated',
+									cts: '2026-01-01T00:00:00Z'
+								}
+							]
+						}
+					: {})
+			};
+			await page.route(`${APPVIEW}/xrpc/is.currents.feed.getLibrarySaves?**`, (route) =>
+				route.fulfill({ json: { saves: [save] } })
+			);
+			await page.setViewportSize({ width, height: 850 });
+			await page.goto('/organize');
+			await page.locator('[data-uri]').first().click();
+			const moderation = page.locator('section').filter({
+				has: page.getByRole('heading', { name: 'Moderation', exact: true })
+			});
+			if (kind === 'original') {
+				await expect(moderation.getByRole('button', { name: 'Report image' })).toHaveCount(0);
+				await moderation.getByRole('button', { name: 'Add labels' }).click();
+				const dialog = page.getByRole('dialog', { name: 'Content labels' });
+				await dialog.getByRole('button', { name: 'AI-generated', exact: true }).click();
+				const request = page.waitForRequest(
+					(request) =>
+						request.url().endsWith('/api/save/moderation/labels') && request.method() === 'PUT'
+				);
+				await dialog.getByRole('button', { name: 'Apply labels' }).click();
+				expect((await request).postData()).toBe('labels=currents-ai-generated');
+				await expect(dialog).toBeHidden();
+				await expect(moderation.getByText('currents-ai-generated', { exact: true })).toBeVisible();
+			} else {
+				await expect(moderation.getByRole('button', { name: 'Add labels' })).toHaveCount(0);
+				if (kind === 'resave')
+					await expect(
+						moderation.getByText('currents-ai-generated', { exact: true })
+					).toBeVisible();
+				await moderation.getByRole('button', { name: 'Report image' }).click();
+				const dialog = page.getByRole('dialog', { name: 'Report this image' });
+				await dialog.getByRole('radio', { name: 'Violent or graphic content' }).check();
+				await dialog.getByLabel('Additional context (optional)').fill('Please review this image.');
+				const request = page.waitForRequest(
+					(request) =>
+						request.url().endsWith('/xrpc/com.atproto.moderation.createReport') &&
+						request.method() === 'POST'
+				);
+				await dialog.getByRole('button', { name: 'Submit report' }).click();
+				expect((await request).postDataJSON()).toEqual({
+					reasonType: 'violence',
+					reason: 'Please review this image.',
+					subject: { $type: 'com.atproto.repo.strongRef', uri, cid: '' }
+				});
+				await expect(dialog).toBeHidden();
+			}
+		});
+	}
+}
+
+test('right sidebar resizes without scaling its contents and remembers its width while organizing', async ({
+	page
+}) => {
+	await mockApi(page, { resave: [], deleted: [], unsortedUrls: [] });
+	await page.route('https://example.com/**', (route) =>
+		route.fulfill({
+			contentType: 'image/svg+xml',
+			body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#a7b7ad"/></svg>'
+		})
+	);
+	const save = imageSave(saveUri('wide'), [{ collectionUri: INTERIORS, saveUri: saveUri('wide') }]);
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getLibrarySaves?**`, (route) =>
+		route.fulfill({
+			json: { saves: [{ ...save, content: { ...save.content, width: 1200, height: 800 } }] }
+		})
+	);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/organize');
+	await page.locator('[data-uri]').first().click();
+	const handle = page.getByRole('separator', { name: 'Resize details sidebar' });
+	await expect(page.getByRole('button', { name: 'Close details' })).toBeInViewport({ ratio: 1 });
+	await expect(handle).toHaveAttribute('aria-valuenow', '352');
+	const panel = page.locator(`[id="${await handle.getAttribute('aria-controls')}"]`);
+	const canvas = page.locator('[data-slot="sidebar-inset"]');
+	const card = panel
+		.locator('section')
+		.filter({ has: page.getByRole('heading', { name: 'In your collections', exact: true }) });
+	const heading = card.getByRole('heading');
+	const heroImage = panel.getByRole('button', { name: 'View image full screen' }).locator('img');
+	await expect
+		.poll(() =>
+			heroImage.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)
+		)
+		.toBe(true);
+	const imageBefore = (await heroImage.boundingBox())!;
+	const action = panel.getByRole('button', { name: 'Find similar in library' });
+	const actionBefore = (await action.boundingBox())!;
+	const fontBefore = await heading.evaluate((element) => getComputedStyle(element).fontSize);
+	const canvasBefore = (await canvas.boundingBox())!;
+	const cardBefore = (await card.boundingBox())!;
+	const grip = (await handle.boundingBox())!;
+	const visibleGrip = (await handle.locator('span').boundingBox())!;
+	expect(visibleGrip.x - canvasBefore.x - canvasBefore.width).toBeCloseTo(
+		cardBefore.x - visibleGrip.x - visibleGrip.width,
+		1
+	);
+	await expect
+		.poll(() => handle.evaluate((element) => getComputedStyle(element, '::before').content))
+		.toBe('none');
+	expect(grip.x + grip.width).toBeLessThan(cardBefore.x);
+	await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(grip.x + grip.width / 2 - 400, grip.y + grip.height / 2, { steps: 10 });
+	await page.mouse.up();
+	await expect(handle).toHaveAttribute('aria-valuenow', '752');
+	await expect(panel).toHaveCSS('width', '752px');
+	expect((await canvas.boundingBox())!.width).toBeCloseTo(canvasBefore.width - 400, 0);
+	expect((await card.boundingBox())!.width).toBeCloseTo(cardBefore.width + 400, 0);
+	expect((await heroImage.boundingBox())!.width).toBeCloseTo(imageBefore.width, 0);
+	expect((await heroImage.boundingBox())!.height).toBeCloseTo(imageBefore.height, 0);
+	expect((await action.boundingBox())!.width).toBeCloseTo(actionBefore.width, 0);
+	await expect(heading).toHaveCSS('font-size', fontBefore);
+
+	await panel.getByRole('button', { name: 'Close details' }).click();
+	await expect(handle).toHaveCount(0);
+	await page.locator('[data-uri]').first().click();
+	await expect(handle).toHaveAttribute('aria-valuenow', '752');
+});
+
+test('right sidebar supports keyboard resizing and keeps room for the canvas as the window narrows', async ({
+	page
+}) => {
+	await mockApi(page, { resave: [], deleted: [], unsortedUrls: [] });
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/organize');
+	await page.locator('[data-uri]').first().click();
+	const handle = page.getByRole('separator', { name: 'Resize details sidebar' });
+	await expect(handle).toBeInViewport({ ratio: 1 });
+	await handle.focus();
+	await page.keyboard.press('ArrowLeft');
+	await expect(handle).toHaveAttribute('aria-valuenow', '368');
+	await page.keyboard.press('ArrowRight');
+	await expect(handle).toHaveAttribute('aria-valuenow', '352');
+	await page.keyboard.press('ArrowRight');
+	await expect(handle).toHaveAttribute('aria-valuenow', '352');
+	await expect
+		.poll(async () => Number(await handle.getAttribute('aria-valuemax')))
+		.toBeGreaterThan(640);
+	const maximum = (await handle.getAttribute('aria-valuemax'))!;
+	await page.keyboard.press('End');
+	await expect(handle).toHaveAttribute('aria-valuenow', maximum);
+	await page.setViewportSize({ width: 1100, height: 900 });
+	await expect
+		.poll(async () => Number(await handle.getAttribute('aria-valuenow')))
+		.toBeLessThan(Number(maximum));
+	expect(
+		(await page.locator('[data-slot="sidebar-inset"]').boundingBox())!.width
+	).toBeGreaterThanOrEqual(319);
+	await page.keyboard.press('Home');
+	await expect(handle).toHaveAttribute('aria-valuenow', '352');
+	await page.setViewportSize({ width: 393, height: 850 });
+	await expect(handle).toHaveCount(0);
+	const panel = page
+		.getByRole('button', { name: 'Close details' })
+		.locator('xpath=ancestor::div[contains(@class,"fixed")][1]');
+	await expect(panel).toHaveCSS('width', '393px');
+});
+
+test('Related uses one column in narrow desktop sidebars and two on mobile', async ({ page }) => {
+	await mockApi(page, { resave: [], deleted: [], unsortedUrls: [] });
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
+		route.fulfill({
+			json: { saves: [1, 2, 3, 4].map((n) => imageSave(saveUri(`related-${n}`), [])) }
+		})
+	);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/organize');
+	await page.locator('[data-uri]').first().click();
+	await expect(page.getByRole('button', { name: 'Close details' })).toBeInViewport({ ratio: 1 });
+	await page.getByRole('tab', { name: 'Related' }).click();
+	const frames = page.getByRole('tabpanel', { name: 'Related' }).locator('[data-save-uri]');
+	await expect(frames).toHaveCount(4);
+	const columnCount = () =>
+		frames.evaluateAll(
+			(elements) =>
+				new Set(elements.map((element) => Math.round(element.getBoundingClientRect().x))).size
+		);
+	await expect.poll(columnCount).toBe(1);
+	await expect.poll(async () => (await frames.first().boundingBox())!.width).toBeGreaterThan(300);
+
+	const handle = page.getByRole('separator', { name: 'Resize details sidebar' });
+	const grip = (await handle.locator('span').boundingBox())!;
+	const canvas = (await page.locator('[data-slot="sidebar-inset"]').boundingBox())!;
+	expect(grip.x - canvas.x - canvas.width).toBeCloseTo(
+		(await frames.first().boundingBox())!.x - grip.x - grip.width,
+		1
+	);
+	await handle.focus();
+	await page.keyboard.press('End');
+	await expect(handle).toHaveAttribute(
+		'aria-valuenow',
+		(await handle.getAttribute('aria-valuemax'))!
+	);
+	await expect.poll(columnCount).toBeGreaterThanOrEqual(2);
+	await page.keyboard.press('Home');
+	await expect.poll(columnCount).toBe(1);
+	await page.setViewportSize({ width: 393, height: 850 });
+	await expect(handle).toHaveCount(0);
+	await expect.poll(columnCount).toBe(2);
 });

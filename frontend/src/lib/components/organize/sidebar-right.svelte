@@ -20,9 +20,11 @@
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
 	import OriginAtprotoRefDialog from './origin-atproto-ref-dialog.svelte';
 	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
+	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import { collections } from '$lib/stores/collections.svelte';
 	import { favouriteCollections } from '$lib/stores/favourites.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { promptLogin } from '$lib/stores/login-prompt.svelte';
 	import { preferences, type LastSaveRemovalAction } from '$lib/stores/preferences.svelte';
 	import { askLastSaveRemoval } from '$lib/stores/save-removal-dialog.svelte';
 	import { removalAction, removeSaveRecord } from '$lib/save-removal';
@@ -45,9 +47,20 @@
 	import Share2 from '@lucide/svelte/icons/share-2';
 	import Download from '@lucide/svelte/icons/download';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Palette from '@lucide/svelte/icons/palette';
+	import Folder from '@lucide/svelte/icons/folder';
+	import Folders from '@lucide/svelte/icons/folders';
+	import StickyNote from '@lucide/svelte/icons/sticky-note';
+	import Network from '@lucide/svelte/icons/network';
+	import BadgeInfo from '@lucide/svelte/icons/badge-info';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import Info from '@lucide/svelte/icons/info';
+	import Text from '@lucide/svelte/icons/text';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 
 	let {
 		save,
+		width = $bindable(352),
 		onClose,
 		onSavesChange,
 		onOriginAtprotoRefChange,
@@ -57,6 +70,7 @@
 		onColorSearch
 	}: {
 		save: SaveView;
+		width?: number;
 		onClose: () => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
 		onOriginAtprotoRefChange: (ref: SaveView['originAtprotoRef'] | null) => void;
@@ -71,6 +85,57 @@
 
 	const sidebar = Sidebar.useSidebar();
 	const native = isNative();
+
+	const panelId = $props.id();
+	const minWidth = 352;
+	let maxWidth = $state(minWidth);
+	let panelWidth = $derived(Math.min(width, maxWidth));
+	let drag = $state<{ id: number; x: number; width: number } | null>(null);
+
+	function observeAvailableWidth(node: HTMLElement) {
+		const canvas = node.previousElementSibling as HTMLElement;
+		const observer = new ResizeObserver(() => {
+			if (sidebar.isMobile) return;
+			// Leave room for the canvas, including when the left sidebar opens or the window shrinks.
+			maxWidth = Math.max(
+				minWidth,
+				Math.floor(node.getBoundingClientRect().width + canvas.getBoundingClientRect().width - 320)
+			);
+		});
+		observer.observe(canvas);
+		return () => observer.disconnect();
+	}
+
+	function resizeTo(next: number) {
+		width = Math.max(minWidth, Math.min(maxWidth, next));
+	}
+
+	function startResize(event: PointerEvent) {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		drag = { id: event.pointerId, x: event.clientX, width: panelWidth };
+	}
+
+	function resize(event: PointerEvent) {
+		if (drag?.id === event.pointerId) resizeTo(drag.width + drag.x - event.clientX);
+	}
+
+	function endResize() {
+		drag = null;
+	}
+
+	function resizeWithKeyboard(event: KeyboardEvent) {
+		const next = {
+			ArrowLeft: panelWidth + 16,
+			ArrowRight: panelWidth - 16,
+			Home: minWidth,
+			End: maxWidth
+		}[event.key];
+		if (next === undefined) return;
+		event.preventDefault();
+		resizeTo(next);
+	}
 
 	let tab = $state('details');
 	type FocusPointer = { id: number; x: number; y: number };
@@ -98,6 +163,20 @@
 	let palette = $derived(image?.palette ?? (image?.dominantColor ? [image.dominantColor] : []));
 	let loadedImageUrl = $state('');
 	let imageLoading = $derived(!!image && loadedImageUrl !== image.imageUrl);
+
+	let thumbnailPreview = $state<{ uri: string; src: string } | null>(null);
+	let previewSrc = $derived(
+		imageLoading && thumbnailPreview?.uri === save.uri ? thumbnailPreview.src : null
+	);
+	$effect(() => {
+		const uri = save.uri;
+		// Use the exact responsive rendition already decoded by the Organize canvas.
+		const thumbnail = document.querySelector<HTMLImageElement>(
+			`[data-uri="${CSS.escape(uri)}"] img`
+		);
+		thumbnailPreview =
+			thumbnail?.complete && thumbnail.naturalWidth ? { uri, src: thumbnail.currentSrc } : null;
+	});
 
 	function markImageLoaded() {
 		loadedImageUrl = image?.imageUrl ?? '';
@@ -130,6 +209,15 @@
 	let altDialogOpen = $state(false);
 	let attributionDialogOpen = $state(false);
 	let labelDialogOpen = $state(false);
+	let reportDialogOpen = $state(false);
+
+	function reportImage() {
+		if (!auth.user) {
+			promptLogin();
+			return;
+		}
+		reportDialogOpen = true;
+	}
 	let originRefDialogOpen = $state(false);
 
 	let altOverride = $state<string | null>(null);
@@ -144,6 +232,7 @@
 		attributionOverride = null;
 		addedLabels = [];
 		originRefDialogOpen = false;
+		reportDialogOpen = false;
 		imagePointers.clear();
 	});
 
@@ -245,7 +334,7 @@
 		}
 	});
 
-	// Desktop: animate the outer width while a fixed-width inner panel is clipped, so
+	// Desktop: animate the outer width while the inner panel keeps its chosen width, so
 	// the central grid reflows smoothly and the panel slides in from the right edge.
 	// Mobile: the panel is a full-screen fixed overlay; match the left sidebar's
 	// mobile sheet (fade + short slide from the right, ease-in-out).
@@ -265,15 +354,49 @@
 <!-- On mobile the panel overlays the content full-screen (fixed, out of flow) so the
      grid keeps its width; on desktop it's an in-flow flex sibling that pushes the grid. -->
 <div
+	{@attach observeAvailableWidth}
 	class={sidebar.isMobile
 		? 'fixed inset-y-0 right-0 z-50 w-full overflow-hidden'
-		: 'h-full w-[22rem] shrink-0 overflow-hidden'}
+		: 'relative h-full shrink-0 overflow-hidden'}
+	style:width={sidebar.isMobile ? undefined : `${panelWidth}px`}
 	transition:slidePanel
 >
+	{#if !sidebar.isMobile}
+		<!-- A focusable separator is the WAI-ARIA window splitter widget. -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+		<div
+			role="separator"
+			tabindex="0"
+			aria-label="Resize details sidebar"
+			aria-orientation="vertical"
+			aria-controls={panelId}
+			aria-valuemin={minWidth}
+			aria-valuemax={maxWidth}
+			aria-valuenow={panelWidth}
+			aria-valuetext={`${Math.round(panelWidth)} pixels`}
+			title="Drag or use arrow keys to resize"
+			class="group/resize absolute inset-y-0 left-0 z-20 flex w-3 cursor-col-resize touch-none items-center justify-center outline-none"
+			onpointerdown={startResize}
+			onpointermove={resize}
+			onpointerup={endResize}
+			onpointercancel={endResize}
+			onlostpointercapture={endResize}
+			onkeydown={resizeWithKeyboard}
+		>
+			<span
+				class="relative flex h-6 w-3 items-center justify-center rounded-sm border bg-background text-muted-foreground group-hover/resize:text-foreground group-focus-visible/resize:ring-2 group-focus-visible/resize:ring-ring"
+				aria-hidden="true"
+			>
+				<GripVertical class="size-2.5" />
+			</span>
+		</div>
+	{/if}
 	<Sidebar.Root
 		side="right"
 		collapsible="none"
-		class="h-full {sidebar.isMobile ? 'w-full' : 'w-[22rem]'}"
+		id={panelId}
+		class="h-full w-full"
+		style={sidebar.isMobile ? undefined : `width: ${panelWidth}px`}
 	>
 		<Tabs.Root bind:value={tab} class="flex min-h-0 flex-1 flex-col">
 			<div
@@ -290,10 +413,10 @@
 
 			<Tabs.Content
 				value="details"
-				class="mt-0 flex min-h-0 flex-col gap-5 overflow-y-auto px-4 pt-1 pb-6"
+				class="mt-0 flex min-h-0 flex-col gap-3 overflow-y-auto px-4 pt-1 pb-6"
 			>
 				{#if image}
-					<LabeledMedia labels={save.labels} class="flex justify-center">
+					<LabeledMedia labels={save.labels} class="flex w-full shrink-0 justify-center">
 						<button
 							type="button"
 							class="flex w-full max-w-full cursor-zoom-in flex-col items-center {native
@@ -306,25 +429,30 @@
 							onpointercancel={onImagePointerEnd}
 							aria-label="View image full screen"
 						>
-							{#if imageLoading}
-								<Skeleton aria-hidden="true" class="h-80 w-full" />
-							{/if}
-							<SaveImage
-								{image}
-								alt={image.alt ?? save.text ?? ''}
-								sizes="22rem"
-								loading="eager"
-								class="max-h-[45vh] w-auto max-w-full object-contain {imageLoading
-									? 'opacity-0'
-									: ''}"
-								style={image.dominantColor ? `background-color: ${image.dominantColor}` : undefined}
-								onLoad={markImageLoaded}
-							/>
+							<div
+								data-detail-preview={previewSrc ? '' : undefined}
+								class="relative flex max-w-full justify-center overflow-hidden md:max-w-80"
+								style={`${image.width && image.height ? `width: min(100%, calc(45vh * ${image.width / image.height})); aspect-ratio: ${image.width} / ${image.height};` : ''}${previewSrc ? ` background-image: url(${JSON.stringify(previewSrc)}); background-size: contain; background-position: center; background-repeat: no-repeat;` : ''}`}
+							>
+								{#if imageLoading && !previewSrc}
+									<Skeleton aria-hidden="true" class="absolute inset-0 h-full min-h-20 w-full" />
+								{/if}
+								<SaveImage
+									{image}
+									alt={image.alt ?? save.text ?? ''}
+									sizes="22rem"
+									loading="eager"
+									class="max-h-[45vh] w-full object-contain {imageLoading ? 'opacity-0' : ''}"
+									wrapperClass="w-full"
+									style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
+									onLoad={markImageLoaded}
+								/>
+							</div>
 						</button>
 					</LabeledMedia>
 				{/if}
 
-				<div class="flex items-center gap-2">
+				<div class="flex w-full items-center gap-2 self-center md:max-w-80">
 					<Button variant="secondary" size="sm" class="flex-1" onclick={() => onFindSimilar(save)}>
 						<Sparkles class="size-4" />
 						Find similar in library
@@ -375,8 +503,11 @@
 				</div>
 
 				{#if palette.length > 0}
-					<section class="flex flex-col gap-1.5">
-						<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
+						<h3 class="flex items-center gap-2 text-sm font-medium">
+							<Palette class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 							Palette
 						</h3>
 						<div class="flex h-9 overflow-hidden rounded-md ring-1 ring-border">
@@ -392,8 +523,11 @@
 					</section>
 				{/if}
 
-				<section class="flex flex-col gap-1.5">
-					<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+				<section
+					class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+				>
+					<h3 class="flex items-center gap-2 text-sm font-medium">
+						<Folder class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						In your collections
 					</h3>
 					<div class="flex flex-wrap items-center gap-1.5">
@@ -454,8 +588,12 @@
 					</div>
 				</section>
 
-				<section class="flex flex-col gap-1.5" data-other-collections>
-					<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+				<section
+					class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					data-other-collections
+				>
+					<h3 class="flex items-center gap-2 text-sm font-medium">
+						<Folders class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 						In other collections
 					</h3>
 					<div class="flex flex-wrap items-center gap-1.5">
@@ -507,15 +645,23 @@
 				</section>
 
 				{#if save.text}
-					<section class="flex flex-col gap-1.5">
-						<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Notes</h3>
-						<p class="text-sm whitespace-pre-wrap">{save.text}</p>
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
+						<h3 class="flex items-center gap-2 text-sm font-medium">
+							<StickyNote class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+							Notes
+						</h3>
+						<p class="text-sm leading-relaxed break-words whitespace-pre-wrap">{save.text}</p>
 					</section>
 				{/if}
 
 				{#if sourceLink}
-					<section class="flex flex-col gap-1.5">
-						<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
+						<h3 class="flex items-center gap-2 text-sm font-medium">
+							<LinkIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 							Source
 						</h3>
 						<a
@@ -531,9 +677,12 @@
 				{/if}
 
 				{#if save.originAtprotoRef || isOwnSave}
-					<section class="flex flex-col gap-1.5">
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
 						<div class="flex items-center justify-between gap-2">
-							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+							<h3 class="flex items-center gap-2 text-sm font-medium">
+								<Network class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 								AT Protocol source
 							</h3>
 							{#if isOwnSave}
@@ -564,9 +713,12 @@
 				{/if}
 
 				{#if hasAttribution || canAttribute}
-					<section class="flex flex-col gap-1.5">
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
 						<div class="flex items-center justify-between gap-2">
-							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+							<h3 class="flex items-center gap-2 text-sm font-medium">
+								<BadgeInfo class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 								Attribution
 							</h3>
 							{#if canAttribute}
@@ -605,11 +757,14 @@
 					</section>
 				{/if}
 
-				{#if canEditLabels || labelVals.length > 0}
-					<section class="flex flex-col gap-1.5">
+				{#if image || labelVals.length > 0}
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
 						<div class="flex items-center justify-between gap-2">
-							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-								Labels
+							<h3 class="flex items-center gap-2 text-sm font-medium">
+								<ShieldCheck class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+								Moderation
 							</h3>
 							{#if canEditLabels}
 								<Button
@@ -618,7 +773,11 @@
 									class="-mr-2 h-7 text-xs"
 									onclick={() => (labelDialogOpen = true)}
 								>
-									Add
+									Add labels
+								</Button>
+							{:else}
+								<Button variant="ghost" size="sm" class="-mr-2 h-7 text-xs" onclick={reportImage}>
+									Report image
 								</Button>
 							{/if}
 						</div>
@@ -630,15 +789,24 @@
 							</div>
 						{:else}
 							<p class="text-sm text-muted-foreground">
-								Flag sensitive or AI-generated content. Labels can be added, not removed.
+								{#if canEditLabels}
+									Flag sensitive or AI-generated content. Labels can be added, not removed.
+								{:else}
+									Report sensitive, harmful, or AI-generated content for review.
+								{/if}
 							</p>
 						{/if}
 					</section>
 				{/if}
 
-				<section class="flex flex-col gap-1.5">
-					<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Info</h3>
-					<dl class="flex flex-col gap-1 text-sm">
+				<section
+					class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+				>
+					<h3 class="flex items-center gap-2 text-sm font-medium">
+						<Info class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+						Info
+					</h3>
+					<dl class="flex flex-col gap-2 text-sm">
 						{#if image?.width && image?.height}
 							<div class="flex justify-between gap-2">
 								<dt class="text-muted-foreground">Dimensions</dt>
@@ -659,9 +827,12 @@
 				</section>
 
 				{#if canEditAlt || alt}
-					<section class="flex flex-col gap-1.5">
+					<section
+						class="flex flex-col gap-3 rounded-xl border border-border/70 bg-card p-3.5 text-card-foreground"
+					>
 						<div class="flex items-center justify-between gap-2">
-							<h3 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+							<h3 class="flex items-center gap-2 text-sm font-medium">
+								<Text class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 								Alt text
 							</h3>
 							{#if canEditAlt}
@@ -675,7 +846,7 @@
 								</Button>
 							{/if}
 						</div>
-						<p class="text-sm {alt ? '' : 'text-muted-foreground'}">
+						<p class="text-sm leading-relaxed break-words {alt ? '' : 'text-muted-foreground'}">
 							{alt || 'Describe the image for people using a screen reader.'}
 						</p>
 					</section>
@@ -720,4 +891,8 @@
 		{save}
 		onSaved={(added) => (addedLabels = [...addedLabels, ...added])}
 	/>
+{/if}
+
+{#if reportDialogOpen}
+	<ReportDialog bind:open={reportDialogOpen} {save} />
 {/if}

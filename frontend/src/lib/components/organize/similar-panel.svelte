@@ -49,7 +49,7 @@
 	});
 </script>
 
-<div bind:this={scrollEl} class="h-full overflow-y-auto p-3 [overflow-anchor:none]">
+<div bind:this={scrollEl} class="h-full overflow-y-auto p-3 [overflow-anchor:none] md:px-4">
 	{#if related.error && visible.length === 0}
 		<div
 			class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground"
@@ -68,7 +68,7 @@
 			<p>No similar images found.</p>
 		</div>
 	{:else}
-		<!-- Desktop cards show Save and image actions on hover. On mobile, tap opens
+		<!-- Desktop cards share Explore's collection and save controls. On mobile, tap opens
 		     the image viewer and long-press opens the shared Quick actions drawer. -->
 		<MasonryGrid
 			items={related.items}
@@ -77,6 +77,7 @@
 			longPressSave
 			{onViewFullScreen}
 			reservePageScrollbarGutter={false}
+			allowSingleColumn
 		/>
 		{#if related.hasMore}
 			<div bind:this={sentinel} class="h-1"></div>

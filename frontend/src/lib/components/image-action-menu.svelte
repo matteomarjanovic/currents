@@ -4,10 +4,11 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import ReportDialog from '$lib/components/report-dialog.svelte';
-	import { copyImage, copyLink, downloadImage, shareLink } from '$lib/save-actions';
+	import { copyImage, copyLink, downloadImage, shareLink, saveLink } from '$lib/save-actions';
 	import { hideFeedImage } from '$lib/stores/hidden-feed-images.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { promptLogin } from '$lib/stores/login-prompt.svelte';
+	import { isNative } from '$lib/platform';
 	import type { SaveView } from '$lib/types';
 	import Scan from '@lucide/svelte/icons/scan';
 	import Copy from '@lucide/svelte/icons/copy';
@@ -17,6 +18,7 @@
 	import Flag from '@lucide/svelte/icons/flag';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import Share2 from '@lucide/svelte/icons/share-2';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 
 	let {
 		item,
@@ -40,6 +42,7 @@
 		buttonVariant?: ButtonVariant;
 	} = $props();
 
+	const native = isNative();
 	const dropdownMenu = DropdownMenu as unknown as typeof ContextMenu;
 	let menuOpen = $state(false);
 	let reportOpen = $state(false);
@@ -69,6 +72,12 @@
 			View full screen
 		</Menu.Item>
 		<Menu.Separator />
+	{/if}
+	{#if !native}
+		<Menu.Item onSelect={() => window.open(saveLink(item), '_blank', 'noopener,noreferrer')}>
+			<ExternalLink />
+			Open in new tab
+		</Menu.Item>
 	{/if}
 	<Menu.Item onSelect={() => run(downloadImage)}>
 		<Download />

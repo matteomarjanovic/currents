@@ -34,6 +34,8 @@
 		onViewFullScreen?: (save: SaveView) => void;
 		onOpen?: () => void;
 		reservePageScrollbarGutter?: boolean;
+		// Narrow desktop panels can use one column; mobile keeps its two-column layout.
+		allowSingleColumn?: boolean;
 	}
 
 	let {
@@ -47,7 +49,8 @@
 		loadMore,
 		onViewFullScreen,
 		onOpen,
-		reservePageScrollbarGutter = true
+		reservePageScrollbarGutter = true,
+		allowSingleColumn = false
 	}: Props = $props();
 
 	// Drop saves the viewer has set to "hide" before the grid sees them: no
@@ -121,14 +124,20 @@
 	const fullHDWidth = 1920;
 	let maxColumns = $derived(viewportWidth !== undefined && viewportWidth > fullHDWidth ? 8 : 7);
 	let frameWidth = $derived(
-		containerWidth !== undefined && containerWidth < 624
-			? Math.max(120, Math.floor((containerWidth - gap - 2) / 2))
-			: containerWidth !== undefined
-				? Math.max(
-						minFrameWidth,
-						Math.floor((containerWidth - (maxColumns - 1) * gap) / maxColumns)
-					)
-				: minFrameWidth
+		allowSingleColumn &&
+			viewportWidth !== undefined &&
+			viewportWidth >= 768 &&
+			containerWidth !== undefined &&
+			containerWidth < minFrameWidth * 2 + gap
+			? containerWidth
+			: containerWidth !== undefined && containerWidth < 624
+				? Math.max(120, Math.floor((containerWidth - gap - 2) / 2))
+				: containerWidth !== undefined
+					? Math.max(
+							minFrameWidth,
+							Math.floor((containerWidth - (maxColumns - 1) * gap) / maxColumns)
+						)
+					: minFrameWidth
 	);
 
 	const skeletonShapes: Array<[number, number]> = [
