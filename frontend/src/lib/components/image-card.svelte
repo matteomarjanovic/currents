@@ -36,6 +36,7 @@
 		// images this tile came from (see $lib/save-sequence).
 		onOpen?: (depth: number) => void;
 		onViewFullScreen?: (save: SaveView) => void;
+		onSelectSave?: (save: SaveView) => void;
 	}
 
 	let {
@@ -47,7 +48,8 @@
 		mobile = false,
 		onOpen,
 		onBusyChange,
-		onViewFullScreen
+		onViewFullScreen,
+		onSelectSave
 	}: Props = $props();
 
 	let dropdownOpen = $state(false);
@@ -109,6 +111,10 @@
 		// Let the browser handle modified clicks (open in new tab, etc.)
 		if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
 		e.preventDefault();
+		if (onSelectSave) {
+			onSelectSave(item);
+			return;
+		}
 		const stack = page.state.saveStack ?? (page.state.save ? [page.state.save] : []);
 		const next = $state.snapshot(item);
 		onOpen?.(stack.length);
@@ -188,7 +194,7 @@
 		{onViewFullScreen}
 	>
 		<LabeledMedia labels={item.labels}>
-			{#if linkToDetail}
+			{#if linkToDetail || onSelectSave}
 				<a {href} class="block" draggable={false} onclick={handleClick}>
 					{@render media()}
 				</a>

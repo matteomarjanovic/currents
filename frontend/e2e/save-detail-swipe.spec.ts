@@ -10,7 +10,7 @@ const APPVIEW = 'https://api-dev.currents.is';
 // fixtures are written against — .env.development gets pointed at production for
 // hands-on testing, and a mock that only knows the dev host silently intercepts
 // nothing and leaves every request to fail on CORS.
-const APPVIEW_ROUTE = /^https:\/\/api(-dev)?\.currents\.is\//;
+const APPVIEW_ROUTE = /^https:\/\/(?:api(?:-dev)?\.)?currents\.is\//;
 const me = { did: 'did:plc:test', handle: 'test.bsky.social', displayName: 'Tester' };
 
 function makeSave(i: number) {
@@ -791,8 +791,14 @@ test('crowded image trail stays between the controls and opens around the pointe
 		.poll(() => target.evaluate((node) => getComputedStyle(node, '::after').borderTopWidth))
 		.toBe('1px');
 	await expect
-		.poll(() => target.evaluate((node) => getComputedStyle(node, '::after').borderTopColor))
-		.toBe('rgba(255, 255, 255, 0.85)');
+		.poll(() =>
+			target.evaluate(
+				(node) =>
+					getComputedStyle(node, '::after').borderTopColor ===
+					getComputedStyle(node).getPropertyValue('--background').trim()
+			)
+		)
+		.toBe(true);
 	const scale = await target.evaluate((node) =>
 		Number((node as HTMLElement).style.getPropertyValue('--scale'))
 	);

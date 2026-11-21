@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { linear, cubicInOut } from 'svelte/easing';
-	import { untrack } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { onDestroy, untrack } from 'svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { Badge, badgeVariants } from '$lib/components/ui/badge';
@@ -11,6 +10,7 @@
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
 	import SimilarPanel from '$lib/components/organize/similar-panel.svelte';
+	import ImageSwipeStage from './image-swipe-stage.svelte';
 	import CollectionSelector from '$lib/components/collection-selector.svelte';
 	import CollectionHoverCard from '$lib/components/collection-hover-card.svelte';
 	import { apiFetch } from '$lib/api';
@@ -38,6 +38,8 @@
 	} from '$lib/types';
 	import { copyLink, copyImage, downloadImage, shareLink } from '$lib/save-actions';
 	import { isNative } from '$lib/platform';
+	import { neighbourOf } from '$lib/save-sequence';
+	import { shouldHide } from '$lib/stores/moderation-prefs.svelte';
 	import X from '@lucide/svelte/icons/x';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -60,8 +62,11 @@
 
 	let {
 		save,
+		initialSequence = [],
 		width = $bindable(352),
+		resizing = $bindable(false),
 		onClose,
+		onSelectSave,
 		onSavesChange,
 		onOriginAtprotoRefChange,
 		onOpenFullScreen,
@@ -70,8 +75,11 @@
 		onColorSearch
 	}: {
 		save: SaveView;
+		initialSequence?: SaveView[];
 		width?: number;
+		resizing?: boolean;
 		onClose: () => void;
+		onSelectSave: (save: SaveView) => void;
 		onSavesChange?: (saves: { collectionUri: string; saveUri: string }[]) => void;
 		onOriginAtprotoRefChange: (ref: SaveView['originAtprotoRef'] | null) => void;
 		onOpenFullScreen: (save: SaveView) => void;
@@ -115,6 +123,7 @@
 		event.preventDefault();
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		drag = { id: event.pointerId, x: event.clientX, width: panelWidth };
+		resizing = true;
 	}
 
 	function resize(event: PointerEvent) {
@@ -123,7 +132,11 @@
 
 	function endResize() {
 		drag = null;
+		resizing = false;
 	}
+	onDestroy(() => {
+		if (drag) endResize();
+	});
 
 	function resizeWithKeyboard(event: KeyboardEvent) {
 		const next = {
@@ -137,28 +150,51 @@
 		resizeTo(next);
 	}
 
+	let mainSequence = $derived(initialSequence.filter((item) => !shouldHide(item.labels)));
+	let mainPrevious = $derived(neighbourOf(mainSequence, save.uri, -1));
+	let mainNext = $derived(neighbourOf(mainSequence, save.uri, 1));
+	function navigateMainImage(direction: -1 | 1): boolean {
+		const target = direction === -1 ? mainPrevious : mainNext;
+		if (!target) return false;
+		onSelectSave(target);
+		return true;
+	}
+	let relatedBrowser = $state<{ handleImageArrow: (direction: -1 | 1) => boolean }>();
+	function onKeydown(event: KeyboardEvent) {
+		if (
+			event.defaultPrevented ||
+			event.altKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			event.shiftKey ||
+			(event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+		)
+			return;
+		const target = event.target;
+		if (
+			(target instanceof HTMLElement &&
+				(target.isContentEditable ||
+					target.closest(
+						'input, textarea, select, [role="separator"], [role="slider"], [role="tablist"]'
+					))) ||
+			document.querySelector(
+				'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"]'
+			)
+		)
+			return;
+		const direction = event.key === 'ArrowLeft' ? -1 : 1;
+		if (tab === 'similar' && relatedBrowser?.handleImageArrow(direction)) {
+			event.preventDefault();
+			return;
+		}
+		if (navigateMainImage(direction)) event.preventDefault();
+	}
+
 	let tab = $state('details');
-	type FocusPointer = { id: number; x: number; y: number };
-	const imagePointers = new SvelteMap<number, FocusPointer>();
-
-	function onImagePointerDown(e: PointerEvent) {
-		if (!native || e.pointerType !== 'touch') return;
-		imagePointers.set(e.pointerId, { id: e.pointerId, x: e.clientX, y: e.clientY });
-		if (imagePointers.size !== 2) return;
-		const imageButton = e.currentTarget as HTMLButtonElement;
-		for (const id of imagePointers.keys()) imageButton.setPointerCapture(id);
-		onContinueFullScreenPinch(save, [...imagePointers.values()]);
-	}
-
-	function onImagePointerMove(e: PointerEvent) {
-		if (!imagePointers.has(e.pointerId)) return;
-		imagePointers.set(e.pointerId, { id: e.pointerId, x: e.clientX, y: e.clientY });
-	}
-
-	function onImagePointerEnd(e: PointerEvent) {
-		imagePointers.delete(e.pointerId);
-	}
-
+	let relatedMounted = $state(false);
+	$effect(() => {
+		if (tab === 'similar') relatedMounted = true;
+	});
 	let image = $derived(getImageContent(save));
 	let palette = $derived(image?.palette ?? (image?.dominantColor ? [image.dominantColor] : []));
 	let loadedImageUrl = $state('');
@@ -233,7 +269,6 @@
 		addedLabels = [];
 		originRefDialogOpen = false;
 		reportDialogOpen = false;
-		imagePointers.clear();
 	});
 
 	let alt = $derived(altOverride ?? image?.alt ?? '');
@@ -351,6 +386,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={onKeydown} />
+
 <!-- On mobile the panel overlays the content full-screen (fixed, out of flow) so the
      grid keeps its width; on desktop it's an in-flow flex sibling that pushes the grid. -->
 <div
@@ -416,40 +453,46 @@
 				class="mt-0 flex min-h-0 flex-col gap-3 overflow-y-auto px-4 pt-1 pb-6"
 			>
 				{#if image}
-					<LabeledMedia labels={save.labels} class="flex w-full shrink-0 justify-center">
-						<button
-							type="button"
-							class="flex w-full max-w-full cursor-zoom-in flex-col items-center {native
-								? 'touch-pan-y'
-								: ''}"
-							onclick={() => onOpenFullScreen(save)}
-							onpointerdown={onImagePointerDown}
-							onpointermove={onImagePointerMove}
-							onpointerup={onImagePointerEnd}
-							onpointercancel={onImagePointerEnd}
-							aria-label="View image full screen"
-						>
-							<div
-								data-detail-preview={previewSrc ? '' : undefined}
-								class="relative flex max-w-full justify-center overflow-hidden md:max-w-80"
-								style={`${image.width && image.height ? `width: min(100%, calc(45vh * ${image.width / image.height})); aspect-ratio: ${image.width} / ${image.height};` : ''}${previewSrc ? ` background-image: url(${JSON.stringify(previewSrc)}); background-size: contain; background-position: center; background-repeat: no-repeat;` : ''}`}
+					<ImageSwipeStage
+						{save}
+						previous={mainPrevious}
+						next={mainNext}
+						enabled={sidebar.isMobile && tab === 'details'}
+						onNavigate={navigateMainImage}
+						onContinuePinch={(pointers) => onContinueFullScreenPinch(save, pointers)}
+					>
+						<LabeledMedia labels={save.labels} class="flex w-full shrink-0 justify-center">
+							<button
+								type="button"
+								class="flex w-full max-w-full cursor-zoom-in flex-col items-center {native
+									? 'touch-pan-y'
+									: ''}"
+								onclick={() => onOpenFullScreen(save)}
+								data-swipe-image
+								aria-label="View image full screen"
 							>
-								{#if imageLoading && !previewSrc}
-									<Skeleton aria-hidden="true" class="absolute inset-0 h-full min-h-20 w-full" />
-								{/if}
-								<SaveImage
-									{image}
-									alt={image.alt ?? save.text ?? ''}
-									sizes="22rem"
-									loading="eager"
-									class="max-h-[45vh] w-full object-contain {imageLoading ? 'opacity-0' : ''}"
-									wrapperClass="w-full"
-									style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
-									onLoad={markImageLoaded}
-								/>
-							</div>
-						</button>
-					</LabeledMedia>
+								<div
+									data-detail-preview={previewSrc ? '' : undefined}
+									class="relative flex max-w-full justify-center overflow-hidden md:max-w-80"
+									style={`${image.width && image.height ? `width: min(100%, calc(45vh * ${image.width / image.height})); aspect-ratio: ${image.width} / ${image.height};` : ''}${previewSrc ? ` background-image: url(${JSON.stringify(previewSrc)}); background-size: contain; background-position: center; background-repeat: no-repeat;` : ''}`}
+								>
+									{#if imageLoading && !previewSrc}
+										<Skeleton aria-hidden="true" class="absolute inset-0 h-full min-h-20 w-full" />
+									{/if}
+									<SaveImage
+										{image}
+										alt={image.alt ?? save.text ?? ''}
+										sizes="22rem"
+										loading="eager"
+										class="max-h-[45vh] w-full object-contain {imageLoading ? 'opacity-0' : ''}"
+										wrapperClass="w-full"
+										style={`${image.width && image.height ? `aspect-ratio: ${image.width} / ${image.height};` : ''}${image.dominantColor ? ` background-color: ${image.dominantColor};` : ''}`}
+										onLoad={markImageLoaded}
+									/>
+								</div>
+							</button>
+						</LabeledMedia>
+					</ImageSwipeStage>
 				{/if}
 
 				<div class="flex w-full items-center gap-2 self-center md:max-w-80">
@@ -853,12 +896,20 @@
 				{/if}
 			</Tabs.Content>
 
-			<Tabs.Content value="similar" class="mt-0 min-h-0 flex-1 overflow-hidden">
-				<!-- Mount the related grid only while its tab is active: the content div
-				     stays in the DOM when hidden, so an always-mounted masonry would
-				     measure clientWidth 0 and fetch before it's ever viewed. -->
-				{#if tab === 'similar'}
-					<SimilarPanel {save} onViewFullScreen={onOpenFullScreen} />
+			<Tabs.Content value="similar" class="mt-0 min-h-0 flex-1">
+				<!-- Keep the browser's history/data across tab switches; only its active markup mounts. -->
+				{#if relatedMounted}
+					<SimilarPanel
+						bind:this={relatedBrowser}
+						{save}
+						active={tab === 'similar'}
+						onViewFullScreen={onOpenFullScreen}
+						{mainPrevious}
+						{mainNext}
+						onMainNavigate={navigateMainImage}
+						{onContinueFullScreenPinch}
+						{onSavesChange}
+					/>
 				{/if}
 			</Tabs.Content>
 		</Tabs.Root>

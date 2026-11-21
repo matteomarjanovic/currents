@@ -199,3 +199,8 @@ Explore can suggest a destination by comparing an image's existing visual-identi
 The suggestion and the collection menu order are deliberately separate. The menu always keeps the persistent last-used collection or section first. The default Quick Save mode recommends per image throughout the app; inside Explore, the first successful save temporarily changes the target to that destination, and later successful choices replace it until the user leaves Explore. The temporary destination is client memory only. Users can instead choose per-image recommendations every time or the persistent last-used destination every time under Settings → Feed. On touch grids, long-press exposes the same Quick Save target in the Quick actions drawer, alongside the shared download/copy/share actions and a path to the full collection selector.
 
 Quick Save excludes empty collections, sections whose indexed parent is missing, and destinations pending deletion. Save writes independently validate the destination against the PDS; recovered sections become eligible as ordinary root collections.
+
+If an image is already saved, the selector shows one of its existing destinations
+and the save button reads Saved. The most recently chosen destination for that
+image takes priority if the image is still saved there. Profile (unsorted) counts
+as a saved destination.

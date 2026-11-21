@@ -32,6 +32,7 @@
 		// is under the overlay and never fires while the detail is open.
 		loadMore?: () => void | Promise<void>;
 		onViewFullScreen?: (save: SaveView) => void;
+		onSelectSave?: (save: SaveView, items: SaveView[]) => void;
 		onOpen?: () => void;
 		reservePageScrollbarGutter?: boolean;
 		// Narrow desktop panels can use one column; mobile keeps its two-column layout.
@@ -48,6 +49,7 @@
 		discoveryFeed = false,
 		loadMore,
 		onViewFullScreen,
+		onSelectSave,
 		onOpen,
 		reservePageScrollbarGutter = true,
 		allowSingleColumn = false
@@ -217,6 +219,9 @@
 							{mobileSave}
 							{longPressSave}
 							{onViewFullScreen}
+							onSelectSave={onSelectSave
+								? (save) => onSelectSave(save, visibleItems.slice())
+								: undefined}
 							mobile={viewportWidth !== undefined && viewportWidth < 768}
 							onOpen={(depth) => {
 								onOpen?.();

@@ -206,8 +206,9 @@
 	// collection it was made in, so switching collections closes the panel for free
 	// (selectedSave derives to null once the collection no longer matches).
 	let sourceKey = $derived(unsorted ? 'unsorted' : selectedUri);
-	let selection = $state<{ source: string; save: SaveView } | null>(null);
+	let selection = $state<{ source: string; save: SaveView; sequence?: SaveView[] } | null>(null);
 	let rightSidebarWidth = $state(352);
+	let rightSidebarResizing = $state(false);
 	let selectedSave = $derived(selection && selection.source === sourceKey ? selection.save : null);
 	type FocusPointer = { id: number; x: number; y: number };
 	let focusSave = $state<SaveView | null>(null);
@@ -700,7 +701,9 @@
 				selected={bulkSelected}
 				{ownContext}
 				selectedSaveUri={selectedSave?.uri ?? null}
-				onSelectSave={(s) => (selection = { source: sourceKey, save: s })}
+				{rightSidebarWidth}
+				{rightSidebarResizing}
+				onSelectSave={(s, sequence) => (selection = { source: sourceKey, save: s, sequence })}
 				onOpenFullScreen={openFullScreen}
 				onFindSimilar={findSimilar}
 			/>
@@ -713,9 +716,14 @@
 
 	{#if selectedSave}
 		<OrganizeSidebarRight
+			initialSequence={selection?.sequence}
 			bind:width={rightSidebarWidth}
+			bind:resizing={rightSidebarResizing}
 			save={selectedSave}
 			onClose={() => (selection = null)}
+			onSelectSave={(save) => {
+				if (selection) selection.save = save;
+			}}
 			onSavesChange={(saves) => {
 				if (selection) selection.save.viewer = { ...(selection.save.viewer ?? {}), saves };
 			}}

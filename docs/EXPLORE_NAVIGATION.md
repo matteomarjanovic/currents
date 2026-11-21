@@ -115,3 +115,78 @@ Both thumbnail and preview use `SaveImage`, as the grid does. Standard images on
 `cdn.currents.is/img/` receive Bunny image-optimizer resize/quality parameters and
 responsive candidates. Other image hosts, including staging `dev.currents.is`,
 are passed through. The larger preview is mounted only when its hover card opens.
+
+
+## Organize Related browser
+
+Organize's Related tab has its own local journey. Selecting a grid image replaces
+its compact hero and related results inside the sidebar, keeping the Organize URL
+and canvas selection in place. Back/Forward and the thumbnail trail restore prior
+steps, including loaded pages/cursors and scroll positions. Starting a different
+canvas selection starts a new journey. Switching between Details and Related keeps
+the journey's data but releases the inactive Related markup, observers and shortcuts.
+
+Only one interactive hero/grid renders, irrespective of journey depth. Older steps
+retain data, not mounted grids. Like Explore, the first related request asks for 12
+images and subsequent pages ask for 50. Pagination is paused while restoring layout
+and scroll so a previous step's deep scroll cannot fetch pages for the next image.
+
+The toolbar keeps Back/Forward only. Unmodified Left/Right keys navigate the main
+Organize grid from Details or the root Related step, updating the real canvas
+selection and keeping that tile in view. In a nested Related step, the keys instead
+follow a snapshot of the parent related grid from which that image was opened,
+replacing the current step as Explore's image arrows do. The Related context owns
+both boundaries too, so reaching its first/last image cannot jump into the main grid.
+Back/Forward traverse nested selections; opening another related image after going
+Back discards the forward branch. Shortcuts yield to tabs, resize handles, text
+fields, menus and dialogs. Android Back returns through the journey before the
+parent handler closes the sidebar.
+
+Changing the right sidebar width reflows the main masonry grid. Pointer dragging
+and keyboard resizing preserve the vertical offset of the top-left visible tile,
+using the same anchor as closing the right sidebar or toggling the left one. A drag
+keeps its initial anchor across width changes. Opening Details anchors the clicked
+tile.
+
+The shared Explore trail accepts an explicit local path and visit callback here.
+Its vertical variant is anchored near the top of the Back and Forward row and
+uses the same right inset as the Related grid. It includes the current image
+once its hero scrolls above the panel
+viewport. The first thumbnail stays at the stack's position as the rest expand
+downward. The trail opens its
+moderated image previews to the left. The horizontal Explore trail keeps using
+shallow browser history and its existing layout.
+
+
+### Organize on touchscreens
+
+The top image in both tabs uses the same `swipe` action as Explore: horizontal
+movement locks to image navigation, vertical movement remains ordinary scrolling,
+two fingers yield to pinch, and touches starting in the 28px OS edge gutters are
+ignored. The shared Organize image stage renders its neighbouring images eagerly
+on mobile, follows the finger and completes/cancels the slide. Details and root
+Related swipes select the main canvas; nested Related swipes keep the same parent
+related-grid snapshot as keyboard navigation. The current image's native pinch
+transfers its active pointers into image focus; moderation overlays retain control
+of unrevealed images.
+
+Mobile Related history lives at the bottom, above the safe-area inset. Back and
+Forward have 48px targets. The thumbnails spread upward in a single column.
+When the column exceeds the screen, native vertical scrolling in either direction
+reveals the rest. Thumbnails preserve their original aspect ratio within 72×88px,
+and the trail uses the theme's background color for every thumbnail border,
+including on desktop Organize and in Explore.
+
+Like the desktop stack, mobile keeps the same image nodes mounted and transitions
+their transforms with `cubic-bezier(0.22, 1, 0.36, 1)` (160ms open, 380ms close).
+There is no per-image stagger or opacity animation. Transform transitions run only
+while opening/closing; input returns control directly to the gesture. The solid X
+fades in alongside the opening animation, just left of the column. It shares its
+size and vertical alignment with the Back and Forward pill and the stack trigger.
+The closed layer is inert and hidden from accessibility APIs, with its three
+recent pictures fitted inside the trigger. Reduced motion disables transitions.
+Opening aligns the current step with
+the bottom of the column and dims the screen. Back and Forward stay beneath that
+layer. Tapping a thumbnail revisits that image, discards later history, and
+closes the trail. A background tap or X also closes the trail. Closing returns
+focus to the stack. Escape and Android Back leave it open.

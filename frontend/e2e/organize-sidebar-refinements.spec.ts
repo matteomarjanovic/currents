@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 const APPVIEW = 'https://api-dev.currents.is';
+const APPVIEW_ROUTE = /^https:\/\/(?:api(?:-dev)?\.)?currents\.is\//;
 const me = { did: 'did:plc:test', handle: 'test.bsky.social', displayName: 'Tester' };
 const collectionUri = (rkey: string) => `at://did:plc:test/is.currents.feed.collection/${rkey}`;
 const saveUri = (rkey: string) => `at://did:plc:test/is.currents.feed.save/${rkey}`;
@@ -30,7 +31,7 @@ type Calls = { resave: string[]; deleted: string[]; unsortedUrls: string[] };
 async function mockApi(page: Page, calls: Calls) {
 	const collectionSave = saveUri('interiors');
 	const unsortedSave = saveUri('unsorted');
-	await page.context().route(`${APPVIEW}/**`, (route) => {
+	await page.context().route(APPVIEW_ROUTE, (route) => {
 		const request = route.request();
 		const url = request.url();
 		const json = (body: unknown) =>
@@ -189,14 +190,15 @@ test.describe('desktop related images', () => {
 		await page.locator('[data-uri]').first().click();
 		await page.getByRole('tab', { name: 'Related' }).click();
 		const panel = page.getByRole('tabpanel', { name: 'Related' });
-		const relatedImage = panel.locator('img').first();
+		const card = panel.locator('[data-save-uri]').first();
+		const relatedImage = card.locator('img');
 		await expect(relatedImage).toBeVisible();
 		await expect
 			.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollbarGutter))
 			.toBe('auto');
 		await relatedImage.hover();
-		const selector = panel.getByRole('button', { name: 'Interiors', exact: true });
-		const saveButton = panel.getByRole('button', { name: 'Save', exact: true });
+		const selector = card.getByRole('button', { name: 'Interiors', exact: true });
+		const saveButton = card.getByRole('button', { name: 'Save', exact: true });
 		await expect(selector).toBeVisible();
 		await expect(saveButton).toHaveClass(/bg-primary/);
 		expect((await selector.boundingBox())!.x).toBeLessThan((await saveButton.boundingBox())!.x);
@@ -206,11 +208,11 @@ test.describe('desktop related images', () => {
 			saveUri: saveUri('related'),
 			collectionUri: INTERIORS
 		});
-		await expect(panel.getByRole('button', { name: 'Saved', exact: true })).toHaveClass(
+		await expect(card.getByRole('button', { name: 'Saved', exact: true })).toHaveClass(
 			/bg-secondary/
 		);
 		await page.mouse.move(700, 20);
-		await expect(panel.locator('[class*="bg-black/20"]')).toHaveCSS('opacity', '0');
+		await expect(card.locator('[class*="bg-black/20"]')).toHaveCSS('opacity', '0');
 		await relatedImage.hover();
 		await selector.click();
 		await expect(page.getByText('Save without a collection')).toBeVisible();
@@ -239,7 +241,7 @@ test.describe('desktop related images', () => {
 		await page.getByRole('tab', { name: 'Related' }).click();
 		await page
 			.getByRole('tabpanel', { name: 'Related' })
-			.locator('img')
+			.locator('[data-save-uri] img')
 			.first()
 			.click({ button: 'right' });
 		const newTab = context.waitForEvent('page');
@@ -269,7 +271,9 @@ test.describe('desktop related images', () => {
 		await page.locator('[data-uri]').first().click();
 		await page.getByRole('tab', { name: 'Related' }).click();
 
-		const images = page.locator('[data-slot="tabs-content"][data-state="active"] img');
+		const images = page.locator(
+			'[data-slot="tabs-content"][data-state="active"] [data-save-uri] img'
+		);
 		await expect(images).toHaveCount(2);
 		await images.first().click({ button: 'right' });
 		await expect(page.getByRole('menuitem', { name: 'View full screen' }).last()).toBeVisible();
@@ -281,7 +285,7 @@ test.describe('desktop related images', () => {
 	});
 });
 
-test('related images open the viewer on tap and Quick actions on long press', async ({ page }) => {
+test('related images navigate on tap and open Quick actions on long press', async ({ page }) => {
 	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
 	await mockApi(page, calls);
 	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
@@ -295,8 +299,16 @@ test('related images open the viewer on tap and Quick actions on long press', as
 	await page.locator('[data-uri]').first().tap();
 	await page.getByRole('tab', { name: 'Related' }).tap();
 
-	const relatedImage = page.getByRole('button', { name: 'View image full screen' });
+	const relatedImage = page
+		.getByRole('tabpanel', { name: 'Related' })
+		.locator('[data-save-uri] a')
+		.first();
 	await relatedImage.tap();
+	await expect(page.locator('[data-related-current]')).toHaveAttribute(
+		'data-related-current',
+		saveUri('related')
+	);
+	await page.getByRole('button', { name: 'View selected image full screen' }).tap();
 	await expect(page.getByRole('dialog', { name: 'Image viewer' })).toBeVisible();
 	await page.getByRole('button', { name: 'Close image viewer' }).tap();
 	await relatedImage.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 1 });
@@ -318,7 +330,11 @@ test('mobile related images never open the desktop context menu', async ({ page 
 	await page.goto('/organize');
 	await page.locator('[data-uri]').first().tap();
 	await page.getByRole('tab', { name: 'Related' }).tap();
-	await page.getByRole('button', { name: 'View image full screen' }).click({ button: 'right' });
+	await page
+		.getByRole('tabpanel', { name: 'Related' })
+		.locator('[data-save-uri] a')
+		.first()
+		.click({ button: 'right' });
 	await expect(page.locator('[data-slot="context-menu-content"]')).toHaveCount(0);
 });
 
@@ -342,7 +358,7 @@ test('Capacitor related images open the drawer without a context menu', async ({
 	});
 	const calls: Calls = { resave: [], deleted: [], unsortedUrls: [] };
 	await mockApi(page, calls);
-	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getRelatedSaves?**`, (route) =>
+	await page.route(/\/xrpc\/is\.currents\.feed\.getRelatedSaves\?/, (route) =>
 		route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -352,7 +368,10 @@ test('Capacitor related images open the drawer without a context menu', async ({
 	await page.goto('/organize');
 	await page.locator('[data-uri]').first().tap();
 	await page.getByRole('tab', { name: 'Related' }).tap();
-	const image = page.getByRole('button', { name: 'View image full screen' });
+	const image = page
+		.getByRole('tabpanel', { name: 'Related' })
+		.locator('[data-save-uri] a')
+		.first();
 	await image.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 1 });
 	await expect(page.getByText('Quick actions', { exact: true })).toBeVisible();
 	await expect(page.locator('[data-slot="context-menu-content"]')).toHaveCount(0);

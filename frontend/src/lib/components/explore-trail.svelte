@@ -2,14 +2,26 @@
 	import { page } from '$app/state';
 	import { fly } from 'svelte/transition';
 	import { prefersReducedMotion } from 'svelte/motion';
-	import { getImageContent } from '$lib/types';
+	import { getImageContent, type SaveView } from '$lib/types';
 	import { effectiveVisibility, prefsPending } from '$lib/stores/moderation-prefs.svelte';
 	import SaveImage from '$lib/components/save-image.svelte';
 	import LabeledMedia from '$lib/components/labeled-media.svelte';
 	import * as HoverCard from '$lib/components/ui/hover-card';
 
-	let { currentHidden, onCurrent }: { currentHidden: boolean; onCurrent: () => void } = $props();
-	let stack = $derived(page.state.saveStack ?? (page.state.save ? [page.state.save] : []));
+	let {
+		currentHidden,
+		onCurrent,
+		saves,
+		onVisit,
+		vertical = false
+	}: {
+		currentHidden: boolean;
+		onCurrent: () => void;
+		saves?: SaveView[];
+		onVisit?: (index: number) => void;
+		vertical?: boolean;
+	} = $props();
+	let stack = $derived(saves ?? page.state.saveStack ?? (page.state.save ? [page.state.save] : []));
 	let entries = $derived(currentHidden ? stack : stack.slice(0, -1));
 	let thumbnails = $derived(
 		entries.map((save) => {
@@ -17,7 +29,7 @@
 			const ratio =
 				image?.width && image.height ? Math.max(0.5, Math.min(2, image.width / image.height)) : 1;
 			const width = Math.min(46 * ratio, 46);
-			return { save, image, width, height: width / ratio };
+			return { save, image, width, height: width / ratio, size: vertical ? width / ratio : width };
 		})
 	);
 	let availableWidth = $state(0);
@@ -31,19 +43,33 @@
 	});
 	let open = $derived(hovered || focused);
 	let activeIndex = $derived(hovered ? hoverIndex : focused ? focusIndex : previewIndex);
+	const verticalCenter = 19;
 	let gap = $derived(thumbnails.length === 2 ? 20 : 12);
 	let expandedWidth = $derived(
 		Math.min(
 			availableWidth,
 			Math.max(
 				76,
-				thumbnails.reduce((sum, t) => sum + t.width, 24) + Math.max(0, thumbnails.length - 1) * gap
+				thumbnails.reduce((sum, t) => sum + t.size, 24) + Math.max(0, thumbnails.length - 1) * gap
 			)
 		)
 	);
 
 	// Keep the trail inside the real gap, including Windows' viewport scrollbar.
 	function measureSpace(node: HTMLElement) {
+		if (vertical) {
+			const root = node.closest<HTMLElement>('[data-related-browser]')!;
+			const measure = () => {
+				availableWidth = Math.max(
+					0,
+					root.getBoundingClientRect().bottom - node.getBoundingClientRect().top - 12
+				);
+			};
+			const resize = new ResizeObserver(measure);
+			resize.observe(root);
+			measure();
+			return () => resize.disconnect();
+		}
 		const root = node.closest<HTMLElement>('[data-save-detail-overlay]') ?? document.body;
 		const measure = () => {
 			const actions =
@@ -72,19 +98,19 @@
 		if (!thumbnails.length) return [];
 		let offset = 0;
 		const natural = thumbnails.map((t) => {
-			const center = offset + t.width / 2;
-			offset += t.width + gap;
+			const center = offset + t.size / 2;
+			offset += t.size + gap;
 			return center;
 		});
 		const first = thumbnails[0];
 		const last = thumbnails[thumbnails.length - 1];
-		const span = Math.max(0, expandedWidth - 24 - first.width / 2 - last.width / 2);
+		const firstCenter = vertical ? verticalCenter : 12 + first.size / 2;
+		const span = Math.max(0, expandedWidth - 12 - last.size / 2 - firstCenter);
+		const singleCenter = vertical ? verticalCenter : expandedWidth / 2;
 		const centers = natural.map((center) =>
 			thumbnails.length === 1
-				? expandedWidth / 2
-				: 12 +
-					first.width / 2 +
-					((center - natural[0]) / (natural[natural.length - 1] - natural[0])) * span
+				? singleCenter
+				: firstCenter + ((center - natural[0]) / (natural[natural.length - 1] - natural[0])) * span
 		);
 		const lo = focus === null ? 0 : Math.floor(focus);
 		const hi = Math.min(lo + 1, centers.length - 1);
@@ -94,8 +120,8 @@
 		const scales = centers.map((center) =>
 			pointer === null ? 1 : 1 + (maxScale - 1) * Math.exp(-(((center - pointer) / 72) ** 2))
 		);
-		const left = 12 + (first.width * scales[0]) / 2;
-		const right = expandedWidth - 12 - (last.width * scales[scales.length - 1]) / 2;
+		const left = vertical ? verticalCenter : 12 + (first.size * scales[0]) / 2;
+		const right = expandedWidth - 12 - (last.size * scales[scales.length - 1]) / 2;
 		// A smooth, monotonic lens normalized at both ends. No per-item branches or
 		// fit/overflow switch: crossing a thumbnail or reaching an end never snaps.
 		const warp = (center: number) =>
@@ -108,9 +134,9 @@
 		return thumbnails.map((t, i) => ({
 			x:
 				(thumbnails.length === 1
-					? expandedWidth / 2
+					? singleCenter
 					: left + ((warp(centers[i]) - start) / (end - start || 1)) * Math.max(0, right - left)) -
-				t.width / 2,
+				t.size / 2,
 			scale: scales[i]
 		}));
 	}
@@ -123,14 +149,15 @@
 	function centerAt(layout: { x: number }[], index: number) {
 		const lo = Math.floor(index);
 		const hi = Math.min(lo + 1, layout.length - 1);
-		const start = layout[lo].x + thumbnails[lo].width / 2;
-		const end = layout[hi].x + thumbnails[hi].width / 2;
+		const start = layout[lo].x + thumbnails[lo].size / 2;
+		const end = layout[hi].x + thumbnails[hi].size / 2;
 		return start + (end - start) * (index - lo);
 	}
 
 	function trackPointer(event: PointerEvent) {
 		if (event.pointerType !== 'mouse') return;
-		const x = event.clientX - (event.currentTarget as HTMLElement).getBoundingClientRect().left;
+		const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = vertical ? event.clientY - bounds.top : event.clientX - bounds.left;
 		for (let i = 0; i < thumbnails.length - 1; i++) {
 			const start = centerAt(restingPositions, i);
 			const end = centerAt(restingPositions, i + 1);
@@ -144,6 +171,10 @@
 
 	function visit(index: number) {
 		previewIndex = null;
+		if (onVisit) {
+			onVisit(index);
+			return;
+		}
 		const delta = index - (stack.length - 1);
 		if (delta) history.go(delta);
 		else onCurrent();
@@ -155,8 +186,11 @@
 		aria-label="Image trail"
 		class="trail"
 		class:open
+		class:vertical
+		data-orientation={vertical ? 'vertical' : 'horizontal'}
 		{@attach measureSpace}
 		style:--expanded-width={`${expandedWidth}px`}
+		style:--vertical-center={vertical ? `${verticalCenter}px` : undefined}
 		onpointerenter={(event) => {
 			if (event.pointerType === 'mouse') {
 				hovered = true;
@@ -175,7 +209,7 @@
 			if (!event.currentTarget.contains(event.relatedTarget as Node)) focused = false;
 		}}
 		transition:fly={{
-			y: prefersReducedMotion.current ? 0 : -6,
+			y: vertical || prefersReducedMotion.current ? 0 : -6,
 			duration: prefersReducedMotion.current ? 0 : 220
 		}}
 	>
@@ -223,7 +257,7 @@
 								aria-current={i === stack.length - 1 ? 'step' : undefined}
 								onclick={() => visit(i)}
 								in:fly={{
-									y: prefersReducedMotion.current ? 0 : -8,
+									y: vertical || prefersReducedMotion.current ? 0 : -8,
 									duration: prefersReducedMotion.current ? 0 : 240
 								}}
 							>
@@ -247,7 +281,7 @@
 						{/snippet}
 					</HoverCard.Trigger>
 					<HoverCard.Content
-						side="bottom"
+						side={vertical ? 'left' : 'bottom'}
 						align="center"
 						sideOffset={12}
 						class="w-auto max-w-[min(18rem,calc(100vw-2rem))] p-1 data-closed:hidden data-closed:animate-none"
@@ -324,13 +358,32 @@
 		content: '';
 		position: absolute;
 		inset: 0;
-		border: 1px solid rgb(255 255 255 / 0.85);
+		border: 1px solid var(--background);
 		border-radius: inherit;
 		pointer-events: none;
 	}
 	.open .picture:focus-visible {
 		outline: 2px solid var(--ring);
 		outline-offset: 1px;
+	}
+
+	.trail.vertical {
+		width: 56px;
+		height: var(--expanded-width);
+		overflow-clip-margin: 10px;
+	}
+	.vertical .pictures {
+		top: 0;
+		height: 100%;
+	}
+	.vertical .picture {
+		left: calc(50% - var(--width) / 2);
+		transform-origin: center;
+		transform: translateY(calc(var(--vertical-center) - var(--height) / 2 + var(--offset) * 1.5px))
+			rotate(var(--rotation)) scale(1.09);
+	}
+	.vertical.open .picture {
+		transform: translateY(var(--x)) rotate(0deg) scale(var(--scale));
 	}
 
 	@media (prefers-reduced-motion: reduce) {

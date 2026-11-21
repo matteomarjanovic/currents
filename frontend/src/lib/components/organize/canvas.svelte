@@ -55,6 +55,8 @@
 		selectedUri = '',
 		unsorted = false,
 		selectedSaveUri = null,
+		rightSidebarWidth,
+		rightSidebarResizing,
 		onSelectSave,
 		onOpenFullScreen,
 		onFindSimilar,
@@ -70,7 +72,9 @@
 		selectedUri?: string;
 		unsorted?: boolean;
 		selectedSaveUri?: string | null;
-		onSelectSave: (save: SaveView) => void;
+		rightSidebarWidth: number;
+		rightSidebarResizing: boolean;
+		onSelectSave: (save: SaveView, sequence: SaveView[]) => void;
 		onOpenFullScreen: (save: SaveView) => void;
 		onFindSimilar: (save: SaveView) => void;
 		// Multi-select: the mode flag (owned by the page's header toggle) and the
@@ -582,7 +586,7 @@
 	// (the column count changes) and the same scroll offset would show different
 	// images. We pin a reference tile to its pre-reflow viewport offset for the
 	// duration of the animation: the clicked image when the detail panel opens,
-	// otherwise the top-left fully-visible image (on close or a left-sidebar toggle).
+	// otherwise the top-left image that's visible from its top edge.
 	const sidebar = useSidebar();
 	let anchorRaf: number | undefined;
 
@@ -598,11 +602,11 @@
 	}
 	function topLeftVisibleUri(): string | null {
 		if (!scrollEl) return null;
-		const top = scrollEl.getBoundingClientRect().top;
+		const { top, bottom } = scrollEl.getBoundingClientRect();
 		let best: { uri: string; top: number; left: number } | null = null;
 		for (const el of scrollEl.querySelectorAll<HTMLElement>('[data-uri]')) {
 			const r = el.getBoundingClientRect();
-			if (r.top < top - 1) continue; // skip tiles cut off at the top
+			if (r.top < top - 1 || r.top >= bottom) continue;
 			if (!best || r.top < best.top - 1 || (r.top <= best.top + 1 && r.left < best.left)) {
 				best = { uri: el.dataset.uri ?? '', top: r.top, left: r.left };
 			}
@@ -638,13 +642,32 @@
 		};
 		anchorRaf = requestAnimationFrame(tick);
 	}
-	// Close / left-toggle: the current layout is the correct reference, so anchor
-	// the top-left fully-visible tile now.
-	function pinTopLeft() {
+	function captureTopLeft() {
+		const sc = scrollEl;
 		const uri = topLeftVisibleUri();
 		const el = uri ? tileByUri(uri) : null;
-		if (el && scrollEl) startPin(el, scrollEl, tileTop(el, scrollEl));
+		return el && sc ? { el, sc, top: tileTop(el, sc) } : null;
 	}
+	function pinTopLeft(anchor = captureTopLeft()) {
+		if (anchor) startPin(anchor.el, anchor.sc, anchor.top);
+	}
+
+	let previousWidth: number | undefined;
+	let resizeAnchor: ReturnType<typeof captureTopLeft> = null;
+	$effect.pre(() => {
+		const width = rightSidebarWidth;
+		const resizing = rightSidebarResizing;
+		untrack(() => {
+			if (!resizing) resizeAnchor = null;
+			const changed = previousWidth !== undefined && width !== previousWidth;
+			previousWidth = width;
+			if (!changed) return;
+			// Capture before the new width changes the layout. Keep that same tile
+			// across drag events, even when the user pauses with the grip held.
+			if (resizing) resizeAnchor ??= captureTopLeft();
+			pinTopLeft(resizing ? resizeAnchor : captureTopLeft());
+		});
+	});
 	// Open: capture the clicked tile's offset BEFORE opening — mounting the panel
 	// reflows the grid immediately, so the post-open layout is already wrong.
 	function selectTile(event: MouseEvent, item: SaveView) {
@@ -659,7 +682,7 @@
 		event.preventDefault();
 		const el = scrollEl ? tileByUri(item.uri) : null;
 		const recorded = el && scrollEl ? tileTop(el, scrollEl) : null;
-		onSelectSave(item);
+		onSelectSave(item, visible.slice());
 		if (el && scrollEl && recorded !== null) startPin(el, scrollEl, recorded);
 	}
 
@@ -673,6 +696,11 @@
 		untrack(() => {
 			if (cur !== prevSelected) {
 				if (!cur && prevSelected) pinTopLeft();
+				else if (cur && prevSelected) {
+					if (anchorRaf) cancelAnimationFrame(anchorRaf);
+					anchorRaf = undefined;
+					tileByUri(cur)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				}
 				prevSelected = cur;
 			}
 			if (state !== prevSidebarState) {
@@ -854,6 +882,7 @@
      misfires on the masonry's transform-based layout; we anchor manually instead. -->
 <div
 	bind:this={scrollEl}
+	data-organize-scroll
 	onscroll={loadNearBottom}
 	class="min-h-0 flex-1 overflow-y-auto p-4 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] [overflow-anchor:none] md:pb-4"
 >
@@ -929,10 +958,7 @@
 		</div>
 	{:else}
 		<div bind:clientWidth={containerWidth}>
-			<!-- The masonry sets the container to overflow:hidden + an explicit height,
-			     which clips the hover ring on edge tiles (the bottom row especially).
-			     Let it overflow so the 2px ring shows; the scroll container's p-4 gives
-			     the ring room on every side. -->
+			<!-- Leave room for selection and keyboard focus outlines on edge tiles. -->
 			<BalancedMasonryGrid {frameWidth} {gap} style="overflow: visible;">
 				{#each visible as item (item.uri)}
 					{@const image = getImageContent(item)}
@@ -983,16 +1009,18 @@
 												href="/profile/{item.author.handle}/save/{item.uri.split('/').pop()}"
 												draggable="false"
 												data-uri={item.uri}
+												aria-current={selectedSaveUri === item.uri ? 'true' : undefined}
 												onclick={(event) => selectTile(event, item)}
-												class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-[box-shadow] select-none [-webkit-touch-callout:none] group-hover:ring-2 {selectedSaveUri ===
-												item.uri
-													? 'ring-2 ring-primary'
-													: ''}"
+												class="relative block h-full w-full cursor-pointer overflow-hidden rounded-lg ring-primary transition-shadow select-none [-webkit-touch-callout:none] aria-[current=true]:ring-2"
 												style={image?.dominantColor
 													? `background-color: ${image.dominantColor}`
 													: undefined}
 											>
 												{@render tileMedia(item, image, ratio)}
+												<span
+													aria-hidden="true"
+													class="pointer-events-none absolute inset-0 bg-black/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
+												></span>
 											</a>
 										{/snippet}
 									</ContextMenu.Trigger>

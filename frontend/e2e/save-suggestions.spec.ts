@@ -125,6 +125,49 @@ test('Explore and save detail use default Save and secondary Saved buttons', asy
 	await expect(detailSaved).toHaveClass(/bg-secondary/);
 });
 
+test('Explore shows existing destinations and Saved even when Quick Save suggests another collection', async ({
+	page
+}) => {
+	const resaves: { saveUri: string; collectionUri: string }[] = [];
+	await mockApi(page, resaves);
+	await page.route(`${APPVIEW}/xrpc/is.currents.feed.getFeed?**`, (route) =>
+		route.fulfill({
+			json: {
+				feed: [
+					saves[0],
+					{ ...saves[1], viewer: { saves: [{ collectionUri: SPORTS_CARS, saveUri: 'saved-2' }] } },
+					{ ...saves[2], viewer: { saves: [{ collectionUri: '', saveUri: 'saved-3' }] } }
+				]
+			}
+		})
+	);
+	await page.goto('/explore/general');
+	const first = card(page, 1);
+	await first.hover();
+	await first.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect.poll(() => resaves.at(-1)?.collectionUri).toBe(FLOWERS);
+
+	const second = card(page, 2);
+	await second.hover();
+	await expect(second.getByRole('button', { name: 'Sports Cars', exact: true })).toBeVisible();
+	await expect(second.getByRole('button', { name: 'Saved', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await second.locator('a').click({ position: { x: 40, y: 40 } });
+	const detail = page.locator('[data-save-detail-overlay][data-active="true"]');
+	await expect(detail.getByRole('button', { name: 'Sports Cars', exact: true })).toBeVisible();
+	await expect(detail.getByRole('button', { name: 'Saved', exact: true })).toBeEnabled();
+	await page.goBack();
+
+	const third = card(page, 3);
+	await third.hover();
+	await expect(
+		third.getByRole('button', { name: 'Profile (unsorted)', exact: true })
+	).toBeVisible();
+	await expect(third.getByRole('button', { name: 'Saved', exact: true })).toBeEnabled();
+});
+
 test('Quick Save recommends, follows successful choices, and resets after leaving Explore', async ({
 	page
 }) => {

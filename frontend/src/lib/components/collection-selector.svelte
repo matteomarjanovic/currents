@@ -119,13 +119,23 @@
 			lastUsedUri: rememberedCollectionUri
 		})
 	);
+	let anySaved = $derived(localSaves.length > 0);
+	let savedCollectionUri = $derived(
+		localSaves.find((save) => save.collectionUri === userSelectedUri)?.collectionUri ??
+			localSaves.find((save) =>
+				collections.items.some((collection) => collection.uri === save.collectionUri)
+			)?.collectionUri ??
+			localSaves[0]?.collectionUri
+	);
 	let selectedCollectionUri = $derived(
 		pickerMode
 			? selectedUri
-			: (userSelectedUri ?? quickSaveCollectionUri ?? localSaves[0]?.collectionUri ?? '')
+			: (savedCollectionUri ?? userSelectedUri ?? quickSaveCollectionUri ?? '')
 	);
 	let recommendationPending = $derived(
 		!!item &&
+			!anySaved &&
+			userSelectedUri === null &&
 			needsImageRecommendation({
 				active: exploreSaveSuggestions.active,
 				mode: exploreSaveSuggestions.mode,
@@ -240,8 +250,6 @@
 	function isSavedInSelected() {
 		return isSavedIn(selectedCollectionUri ?? '');
 	}
-
-	let anySaved = $derived(localSaves.length > 0);
 
 	async function save(collectionUri: string) {
 		if (!item) return;
@@ -551,7 +559,9 @@
 		onPressedChange={handleButtonClick}
 		aria-label={recommendationPending
 			? 'Finding a Quick Save destination'
-			: `Quick save to ${selectedName}`}
+			: isSavedInSelected()
+				? `Saved in ${selectedName}`
+				: `Quick save to ${selectedName}`}
 		class="h-auto min-h-14 w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-foreground hover:bg-muted aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80"
 	>
 		<span class="flex min-w-0 items-center justify-center gap-2.5">
@@ -568,7 +578,9 @@
 			{/if}
 			<span class="flex min-w-0 flex-col items-start text-left">
 				<span class="max-w-full truncate text-sm font-medium">{selectedName}</span>
-				<span class="text-xs text-muted-foreground">Quick save</span>
+				<span class="text-xs text-muted-foreground"
+					>{isSavedInSelected() ? 'Saved' : 'Quick save'}</span
+				>
 			</span>
 		</span>
 	</Toggle>
@@ -613,6 +625,8 @@
 						Choose a section, or save to the whole collection.
 					{:else if pickerMode}
 						Choose a collection for the uploads.
+					{:else if anySaved}
+						Saved in {selectedName}. Pick collections to update where this image is saved.
 					{:else}
 						Pick one or more collections.
 					{/if}
