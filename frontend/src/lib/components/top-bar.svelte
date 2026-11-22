@@ -69,6 +69,7 @@
 	let {
 		user,
 		landing = false,
+		fadeContent = false,
 		showLogo = false,
 		actionsOnly = false,
 		mobileOnly = false,
@@ -76,6 +77,7 @@
 	}: {
 		user: { did: string; handle: string; displayName?: string; avatar?: string } | null;
 		landing?: boolean;
+		fadeContent?: boolean;
 		showLogo?: boolean;
 		actionsOnly?: boolean;
 		mobileOnly?: boolean;
@@ -653,9 +655,9 @@
 	</header>
 {:else if !actionsOnly}
 	<header
-		class="{landing
-			? 'fixed'
-			: 'sticky'} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
+		class="{landing ? 'fixed' : 'sticky'} {fadeContent
+			? 'explore-top-bar'
+			: ''} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
 	>
 		{#if !searchOpen}
 			{#if landing}
@@ -898,3 +900,13 @@
 	<InstallAppDialog bind:open={installAppDialogOpen} />
 	<NotificationsDialog bind:open={notificationsOpen} />
 {/if}
+
+<style>
+	.explore-top-bar::after {
+		content: '';
+		position: absolute;
+		inset: 0 0 -1rem;
+		pointer-events: none;
+		z-index: -1;
+	}
+</style>

@@ -15,15 +15,17 @@
 	let {
 		saves,
 		currentIndex,
-		canGoForward,
+		canGoForward = false,
 		onVisit,
-		onRevisit
+		onRevisit,
+		aboveScrollToTop = false
 	}: {
 		saves: SaveView[];
 		currentIndex: number;
-		canGoForward: boolean;
-		onVisit: (index: number) => void;
+		canGoForward?: boolean;
+		onVisit?: (index: number) => void;
 		onRevisit: (index: number) => void;
+		aboveScrollToTop?: boolean;
 	} = $props();
 	const STEP = 108;
 	const CONTROL_HEIGHT = 58;
@@ -98,14 +100,14 @@
 			variant="ghost"
 			class="size-12 rounded-full"
 			disabled={currentIndex === 0}
-			onclick={() => onVisit(currentIndex - 1)}
+			onclick={() => onVisit?.(currentIndex - 1)}
 			aria-label="Back in related images"><ArrowLeft class="size-5" /></Button
 		>
 		<Button
 			variant="ghost"
 			class="size-12 rounded-full"
 			disabled={!canGoForward}
-			onclick={() => onVisit(currentIndex + 1)}
+			onclick={() => onVisit?.(currentIndex + 1)}
 			aria-label="Forward in related images"><ArrowRight class="size-5" /></Button
 		>
 	</div>
@@ -124,16 +126,19 @@
 >
 	<div
 		data-mobile-related-navigation
-		class="history-controls pointer-events-none absolute right-3 left-3 z-30 flex items-center justify-between gap-3"
+		class="history-controls pointer-events-none left-3 z-30 flex items-center justify-between gap-3 {aboveScrollToTop
+			? 'fixed'
+			: 'absolute'}"
+		class:above-scroll-to-top={aboveScrollToTop}
 		inert={open}
 		style:--control-height={`${CONTROL_HEIGHT}px`}
 		style:--stack-width={`${STACK_WIDTH}px`}
 		style:bottom="var(--control-bottom)"
 	>
-		{@render navigation()}
+		{#if onVisit}{@render navigation()}{/if}
 		<Dialog.Trigger
 			aria-label="Open image history"
-			class="pointer-events-auto h-(--control-height) w-(--stack-width) rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			class="pointer-events-auto ml-auto h-(--control-height) w-(--stack-width) rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		/>
 	</div>
 	<Dialog.Portal>
@@ -171,6 +176,7 @@
 					class="history-layer fixed inset-0 z-60 outline-none"
 					class:open
 					class:transitioning
+					class:above-scroll-to-top={aboveScrollToTop}
 					style:--control-height={`${CONTROL_HEIGHT}px`}
 					style:--stack-width={`${STACK_WIDTH}px`}
 					style:pointer-events={open ? 'auto' : 'none'}
@@ -230,7 +236,7 @@
 					</div>
 					<div
 						class="pointer-events-none absolute right-24 flex justify-end"
-						style:bottom="var(--control-bottom)"
+						style:bottom="var(--close-bottom, var(--control-bottom))"
 						class:invisible={!open}
 					>
 						<Dialog.Close
@@ -250,10 +256,19 @@
 <style>
 	.history-controls,
 	.history-layer {
+		--stack-right: 0.75rem;
 		--control-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
 	}
+	.history-controls {
+		right: var(--stack-right);
+	}
+	.above-scroll-to-top {
+		--stack-right: 0.5rem;
+		--control-bottom: calc(env(safe-area-inset-bottom) + 4.25rem);
+		--close-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+	}
 	.history-layer {
-		--stack-x: calc(100vw - 0.75rem - var(--stack-width) / 2);
+		--stack-x: calc(100vw - var(--stack-right) - var(--stack-width) / 2);
 		--stack-y: calc(100dvh - var(--control-bottom) - var(--control-height) / 2);
 	}
 	.history-scroll {

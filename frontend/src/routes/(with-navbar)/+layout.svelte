@@ -115,7 +115,7 @@
 	<!-- loading -->
 {:else}
 	{#if !(native && isHome)}
-		<TopBar {user} landing={isHome} />
+		<TopBar {user} landing={isHome} fadeContent={!isHome && !displayedSaveStack.length} />
 	{/if}
 	{#if isHome && !auth.user}
 		{@render children()}

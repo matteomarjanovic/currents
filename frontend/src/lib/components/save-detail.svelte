@@ -1176,6 +1176,15 @@
 		/>
 	{/if}
 
+	{#if active && !page.url.pathname.startsWith('/organize')}
+		<div
+			aria-hidden="true"
+			data-save-detail-top-fade
+			class="save-detail-top-fade pointer-events-none fixed top-0 left-0 z-20 h-[calc(5.375rem+env(safe-area-inset-top))]"
+			style:right="{scrollbarInset}px"
+		></div>
+	{/if}
+
 	<!-- Mobile floating home button: full wordmark, pinned at top center. -->
 	<a
 		href={resolve('')}

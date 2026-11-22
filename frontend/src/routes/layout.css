@@ -196,6 +196,24 @@ html[data-explore-feed-return]::view-transition-new(mode-switcher) {
 	}
 }
 
+.explore-top-bar::after,
+.save-detail-top-fade {
+	/* Sample a smoothstep curve so the fade eases into the untouched feed. */
+	background: linear-gradient(
+		to bottom,
+		color-mix(in srgb, var(--background) 80%, transparent),
+		color-mix(in srgb, var(--background) 77%, transparent) 12.5%,
+		color-mix(in srgb, var(--background) 68%, transparent) 25%,
+		color-mix(in srgb, var(--background) 55%, transparent) 37.5%,
+		color-mix(in srgb, var(--background) 40%, transparent) 50%,
+		color-mix(in srgb, var(--background) 25%, transparent) 62.5%,
+		color-mix(in srgb, var(--background) 12%, transparent) 75%,
+		color-mix(in srgb, var(--background) 3%, transparent) 87.5%,
+		color-mix(in srgb, var(--background) 0.9%, transparent) 93.75%,
+		transparent
+	);
+}
+
 @utility app-muted-wash {
 	background-color: color-mix(in oklch, var(--background) 82%, var(--muted) 18%);
 	background-image: linear-gradient(
