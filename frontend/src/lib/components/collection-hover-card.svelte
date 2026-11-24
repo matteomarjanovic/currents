@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { CollectionView } from '$lib/types';
 	import * as HoverCard from '$lib/components/ui/hover-card';
-	import { effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
+	import { previewVisibility } from '$lib/stores/moderation-prefs.svelte';
 	import { bunnyImageUrl } from '$lib/image-url';
 	import FavouriteToggle from '$lib/components/favourite-toggle.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -33,7 +33,7 @@
 	} = $props();
 	let previews = $derived(
 		(collection.previews ?? [])
-			.map((preview) => ({ ...preview, visibility: effectiveVisibilityForVals(preview.labels) }))
+			.map((preview) => ({ ...preview, visibility: previewVisibility(preview) }))
 			.filter((preview) => preview.visibility !== 'hide')
 			.slice(0, 4)
 	);

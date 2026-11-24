@@ -34,7 +34,7 @@
 	import ReportDialog from '$lib/components/report-dialog.svelte';
 	import SaveAttributionDialog from '$lib/components/save-attribution-dialog.svelte';
 	import ContentLabelDialog from '$lib/components/content-label-dialog.svelte';
-	import { shouldHide, effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
+	import { shouldHide, previewVisibility } from '$lib/stores/moderation-prefs.svelte';
 	import { openSettings } from '$lib/stores/settings.svelte';
 	import { useInfiniteScroll } from '$lib/hooks/use-infinite-scroll.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
@@ -620,7 +620,7 @@
 	// their moderation prefs (mirrors collection-card). null when none are visible.
 	function collectionPreview(c: CollectionView) {
 		for (const p of c.previews ?? []) {
-			const vis = effectiveVisibilityForVals(p.labels);
+			const vis = previewVisibility(p);
 			if (vis !== 'hide') return { url: p.url, blur: vis === 'blur' };
 		}
 		return null;

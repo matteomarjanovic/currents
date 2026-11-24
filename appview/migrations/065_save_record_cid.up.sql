@@ -1,0 +1,1 @@
+ALTER TABLE save ADD COLUMN record_cid TEXT;

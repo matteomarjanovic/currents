@@ -368,6 +368,7 @@ func handleSaveUpsert(
 ) error {
 	base := UpsertSaveParams{
 		URI:           atURI,
+		RecordCID:     ev.CID,
 		AuthorDID:     ev.DID,
 		CollectionURI: s.Collection.URI,
 		PdsBlobCID:    pdsBlobCID,

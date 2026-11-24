@@ -362,7 +362,7 @@ type CollectionRow struct {
 	LastSavedAt    *time.Time // newest save in this collection or its sub-collections
 	SaveCount      int
 	SectionCount   int      // number of child collections (sections); populated by GetActorCollectionsPage
-	PreviewBlobs   []string // up to 4; each is "did,cid"
+	PreviewBlobs   []string // up to 4; each is "save URI,blob CID"
 	FavouriteCount int      // total favourites of this collection across the network
 	FavouriteURI   *string  // AT-URI of the viewer's favourite record; nil if not favourited / unauthenticated
 	Pinned         bool     // whether the viewer pinned this own collection in organize mode
@@ -399,7 +399,7 @@ func (m *PgStore) GetCollectionsPage(ctx context.Context, authorDID string, limi
 			(SELECT COUNT(*) FROM save WHERE collection_uri = c.uri
 			   OR collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))::int AS save_count,
 			ARRAY(
-				SELECT s2.author_did || ',' || s2.pds_blob_cid
+				SELECT s2.uri || ',' || s2.pds_blob_cid
 				FROM save s2
 				WHERE (s2.collection_uri = c.uri
 				       OR s2.collection_uri IN (SELECT uri FROM collection WHERE parent_uri = c.uri))
@@ -512,7 +512,7 @@ func (m *PgStore) GetActorCollectionsPage(ctx context.Context, actorDID, viewerD
 			GROUP BY sc.root
 		),
 		preview AS (
-			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+			SELECT sc.root, s.uri || ',' || s.pds_blob_cid AS blob,
 				ROW_NUMBER() OVER (
 					PARTITION BY sc.root
 					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
@@ -631,7 +631,7 @@ func (m *PgStore) GetFavouriteCollectionsPage(ctx context.Context, actorDID, vie
 			GROUP BY sc.root
 		),
 		preview AS (
-			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+			SELECT sc.root, s.uri || ',' || s.pds_blob_cid AS blob,
 				ROW_NUMBER() OVER (
 					PARTITION BY sc.root
 					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
@@ -731,7 +731,7 @@ func (m *PgStore) SearchCollections(ctx context.Context, q, viewerDID string, li
 			SELECT ch.uri, ch.parent_uri FROM collection ch WHERE ch.parent_uri IN (SELECT uri FROM page)
 		),
 		preview AS (
-			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+			SELECT sc.root, s.uri || ',' || s.pds_blob_cid AS blob,
 				ROW_NUMBER() OVER (
 					PARTITION BY sc.root
 					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
@@ -820,7 +820,7 @@ func (m *PgStore) GetImageCollectionsPage(ctx context.Context, saveURI, viewerDI
 			GROUP BY sc.root
 		),
 		preview AS (
-			SELECT sc.root, s.author_did || ',' || s.pds_blob_cid AS blob,
+			SELECT sc.root, s.uri || ',' || s.pds_blob_cid AS blob,
 				ROW_NUMBER() OVER (
 					PARTITION BY sc.root
 					ORDER BY (sc.curi = sc.root) DESC, s.quality_score DESC NULLS LAST, s.uri ASC
@@ -1429,7 +1429,7 @@ func (m *PgStore) GetCollectionByURI(ctx context.Context, collectionURI, viewerD
 			c.created_at,
 			(SELECT count(*) FROM save s JOIN scope sc ON sc.curi = s.collection_uri)::int AS save_count,
 			ARRAY(
-				SELECT s2.author_did || ',' || s2.pds_blob_cid
+				SELECT s2.uri || ',' || s2.pds_blob_cid
 				FROM save s2
 				JOIN scope sc ON sc.curi = s2.collection_uri
 				WHERE s2.content_nsid = 'is.currents.content.image'
@@ -1903,6 +1903,7 @@ func (m *PgStore) GetLibrarySavesPage(ctx context.Context, authorDID, viewerDID 
 
 type UpsertSaveParams struct {
 	URI                string
+	RecordCID          string
 	AuthorDID          string
 	CollectionURI      string
 	PdsBlobCID         string
@@ -1928,10 +1929,11 @@ type UpsertSaveParams struct {
 
 func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 	_, err := m.pool.Exec(ctx, `
-		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors, alt_text, mime_type, origin_atproto_uri, origin_atproto_cid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		INSERT INTO save (uri, author_did, collection_uri, pds_blob_cid, content_nsid, text, origin_url, attribution_url, attribution_license, attribution_credit, resave_of_uri, resave_of_cid, created_at, visual_identity_id, quality_score, width, height, dominant_colors, alt_text, mime_type, origin_atproto_uri, origin_atproto_cid, record_cid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 		ON CONFLICT (uri) DO UPDATE
 			SET collection_uri      = EXCLUDED.collection_uri,
+			    record_cid          = EXCLUDED.record_cid,
 			    pds_blob_cid        = EXCLUDED.pds_blob_cid,
 			    content_nsid       = EXCLUDED.content_nsid,
 			    text                = EXCLUDED.text,
@@ -1950,7 +1952,7 @@ func (m *PgStore) UpsertSave(ctx context.Context, p UpsertSaveParams) error {
 			    dominant_colors     = EXCLUDED.dominant_colors,
 			    alt_text            = EXCLUDED.alt_text,
 			    mime_type           = EXCLUDED.mime_type
-	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors), p.AltText, p.MimeType, p.OriginAtprotoURI, p.OriginAtprotoCID)
+	`, p.URI, p.AuthorDID, p.CollectionURI, p.PdsBlobCID, p.ContentNSID, p.Text, p.OriginURL, p.AttributionURL, p.AttributionLicense, p.AttributionCredit, p.ResaveOfURI, p.ResaveOfCID, p.CreatedAt, p.VisualIdentityID, p.QualityScore, p.Width, p.Height, []byte(p.DominantColors), p.AltText, p.MimeType, p.OriginAtprotoURI, p.OriginAtprotoCID, nullableString(p.RecordCID))
 	return err
 }
 

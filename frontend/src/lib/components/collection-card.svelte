@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { CollectionView } from '$lib/types';
-	import { effectiveVisibilityForVals } from '$lib/stores/moderation-prefs.svelte';
+	import { previewVisibility } from '$lib/stores/moderation-prefs.svelte';
 	import { bunnyImageUrl } from '$lib/image-url';
 
 	let { collection, sectionCount = 0 }: { collection: CollectionView; sectionCount?: number } =
@@ -10,7 +10,7 @@
 	// hidden ones, keep the rest (blurred where the pref says so).
 	const visiblePreviews = $derived(
 		(collection.previews ?? [])
-			.map((p) => ({ url: p.url, vis: effectiveVisibilityForVals(p.labels) }))
+			.map((p) => ({ url: p.url, vis: previewVisibility(p) }))
 			.filter((p) => p.vis !== 'hide')
 			.slice(0, 4)
 	);

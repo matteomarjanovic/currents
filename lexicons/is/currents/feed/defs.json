@@ -90,6 +90,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "externalLabels": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#labelView" }
         }
       }
     },
@@ -163,7 +167,23 @@
           "type": "ref",
           "ref": "#saveViewerState",
           "description": "Viewer-specific state. Only present when the request is authenticated."
+        },
+        "labels": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#labelView" }
         }
+      }
+    },
+    "labelView": {
+      "type": "object",
+      "description": "An active moderation label. The subject is present for external labels.",
+      "required": ["src", "val", "cts"],
+      "properties": {
+        "src": { "type": "string", "format": "did" },
+        "uri": { "type": "string", "format": "uri" },
+        "val": { "type": "string" },
+        "cts": { "type": "string", "format": "datetime" },
+        "exp": { "type": "string", "format": "datetime" }
       }
     },
     "saveViewerState": {

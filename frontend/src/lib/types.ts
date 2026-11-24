@@ -3,6 +3,7 @@
 export interface PreviewItem {
 	url: string;
 	labels?: string[];
+	externalLabels?: LabelView[];
 }
 
 export interface CollectionView {
@@ -72,6 +73,8 @@ export type SaveContentView =
 
 export interface LabelView {
 	src: string;
+	uri?: string;
+	exp?: string;
 	val: string;
 	cts: string;
 }

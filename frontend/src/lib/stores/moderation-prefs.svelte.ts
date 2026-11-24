@@ -1,6 +1,7 @@
 import { apiFetch } from '$lib/api';
 import { auth } from '$lib/stores/auth.svelte';
-import type { LabelView } from '$lib/types';
+import type { LabelView, PreviewItem } from '$lib/types';
+import { resolveVisibility } from '$lib/moderation-visibility';
 
 export type AdultVisibility = 'show' | 'blur' | 'hide';
 export type AiVisibility = 'show' | 'hide';
@@ -100,19 +101,6 @@ export function setAi(val: AiVisibility) {
 // Resolution helpers used by LabeledMedia (blur/badge) and MasonryGrid + save
 // detail (upstream filter).
 
-const RESTRICTIVENESS: Record<'show' | 'blur' | 'hide', number> = {
-	show: 0,
-	blur: 1,
-	hide: 2
-};
-
-function mostRestrictive(
-	a: 'show' | 'blur' | 'hide',
-	b: 'show' | 'blur' | 'hide'
-): 'show' | 'blur' | 'hide' {
-	return RESTRICTIVENESS[a] >= RESTRICTIVENESS[b] ? a : b;
-}
-
 /**
  * Map an atproto label value to the viewer's chosen visibility under the
  * current prefs. Unknown / non-moderation labels return 'show' (no-op).
@@ -176,36 +164,13 @@ export function shouldHide(labels?: LabelView[]): boolean {
 	// Never drop a card on a guess: while prefs are pending the tile stays (empty,
 	// see prefsPending) so the grid doesn't reflow around a provisional decision.
 	if (prefsPending()) return false;
-	for (const l of labels) {
-		if (visibilityFor(l.val) === 'hide') return true;
-	}
-	return false;
+	return effectiveVisibility(labels) === 'hide';
 }
 
-/**
- * The effective visibility for a save's labels — the most restrictive
- * across all of them. Used by LabeledMedia to decide between blur and show.
- */
-export function effectiveVisibility(labels?: LabelView[]): 'show' | 'blur' | 'hide' {
-	if (!labels || labels.length === 0) return 'show';
-	let acc: 'show' | 'blur' | 'hide' = 'show';
-	for (const l of labels) {
-		acc = mostRestrictive(acc, visibilityFor(l.val));
-		if (acc === 'hide') break;
-	}
-	return acc;
+export function effectiveVisibility(labels?: LabelView[]): AdultVisibility {
+	return resolveVisibility(visibilityFor, !!auth.user, labels);
 }
 
-/**
- * Like effectiveVisibility, but for a bare list of label values rather than full
- * LabelViews. Used for collection-preview items, which carry only the vals.
- */
-export function effectiveVisibilityForVals(vals?: string[]): 'show' | 'blur' | 'hide' {
-	if (!vals || vals.length === 0) return 'show';
-	let acc: 'show' | 'blur' | 'hide' = 'show';
-	for (const v of vals) {
-		acc = mostRestrictive(acc, visibilityFor(v));
-		if (acc === 'hide') break;
-	}
-	return acc;
+export function previewVisibility(preview: PreviewItem): AdultVisibility {
+	return resolveVisibility(visibilityFor, !!auth.user, preview.externalLabels, preview.labels);
 }

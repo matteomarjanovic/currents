@@ -14,13 +14,15 @@
 	} from '$lib/stores/notifications.svelte';
 	import { refreshSocial, markSocialSeen } from '$lib/stores/social.svelte';
 	import ActivityList from './activity-list.svelte';
+	import BlueskyModerationNotices from './bluesky-moderation-notices.svelte';
 	import FollowScopeDialog from './follow-scope-dialog.svelte';
 	import { bunnyImageUrl } from '$lib/image-url';
 
 	interface Props {
 		open: boolean;
+		consentOutcome?: string;
 	}
-	let { open = $bindable() }: Props = $props();
+	let { open = $bindable(), consentOutcome }: Props = $props();
 
 	let tab = $state<'activity' | 'moderation'>('activity');
 	let busyId = $state<number | null>(null);
@@ -33,7 +35,7 @@
 	$effect(() => {
 		if (open) {
 			selectedItem = null;
-			tab = 'activity';
+			tab = consentOutcome ? 'moderation' : 'activity';
 			void refreshNotifications();
 			// Fetch first, so the served list reflects the old "seen" mark (keeping
 			// the new-follower highlights), then clear the unread dot.
@@ -240,7 +242,7 @@
 					/>
 				</Tabs.Content>
 
-				<Tabs.Content value="moderation" class="mt-3 flex min-h-0 flex-col">
+				<Tabs.Content value="moderation" class="mt-3 min-h-0 flex-1 overflow-y-auto">
 					{#if notifications.loading && notifications.items.length === 0}
 						<div class="py-6 text-center text-sm text-muted-foreground">Loading…</div>
 					{:else if notifications.error}
@@ -251,10 +253,10 @@
 						</div>
 					{:else if notifications.items.length === 0}
 						<div class="py-8 text-center text-sm text-muted-foreground">
-							All caught up — no pending labels.
+							No pending Currents labels.
 						</div>
 					{:else}
-						<ul class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
+						<ul class="flex flex-col gap-2 px-3 pb-3">
 							{#each notifications.items as item (item.id)}
 								<li
 									class="flex shrink-0 items-stretch gap-3 overflow-hidden rounded-lg border border-border bg-card"
@@ -277,6 +279,7 @@
 									{/if}
 									<div class="flex min-w-0 flex-1 flex-col gap-1 p-2">
 										<div class="flex flex-wrap items-center gap-1.5 text-xs">
+											<Badge variant="outline">Currents</Badge>
 											<Badge variant="secondary">{categoryLabel(item)}</Badge>
 											{#if item.disputed}
 												<Badge variant="outline">disputed</Badge>
@@ -324,6 +327,9 @@
 								</li>
 							{/each}
 						</ul>
+					{/if}
+					{#if open && tab === 'moderation'}
+						<BlueskyModerationNotices {consentOutcome} />
 					{/if}
 				</Tabs.Content>
 			</Tabs.Root>

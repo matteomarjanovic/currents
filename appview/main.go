@@ -519,8 +519,9 @@ func runServer(cctx *cli.Context) error {
 	if oauthHostname == "" {
 		config = oauth.NewLocalhostConfig(
 			fmt.Sprintf("http://127.0.0.1%s/oauth/callback", bind),
-			scopes,
+			withBlueskyInboxReadScopes(scopes),
 		)
+		config.Scopes = scopes
 		slog.Info("configuring localhost OAuth client", "CallbackURL", config.CallbackURL)
 	} else {
 		config = oauth.NewPublicConfig(
@@ -739,6 +740,8 @@ func runServer(cctx *cli.Context) error {
 	http.HandleFunc("GET /api/admin/overview", srv.requireAdmin(srv.APIAdminOverview))
 	http.HandleFunc("GET /api/admin/stats", srv.requireAdmin(srv.APIAdminStats))
 
+	http.HandleFunc("GET /api/me/bluesky-moderation", srv.APIMeBlueskyModeration)
+	http.HandleFunc("POST /oauth/bluesky-moderation", srv.OAuthBlueskyModeration)
 	http.HandleFunc("GET /api/me/attestations", srv.APIMeListAttestations)
 	http.HandleFunc("POST /api/me/attestations/{id}/confirm", srv.APIMeAttestationConfirm)
 	http.HandleFunc("POST /api/me/attestations/{id}/ignore", srv.APIMeAttestationIgnore)
@@ -851,6 +854,7 @@ func runServer(cctx *cli.Context) error {
 	go maintenance.Run()
 	slog.Info("repository maintenance started")
 	go store.RunGlobalFeedRefresh(ctx)
+	go runBlueskyLabelStream(ctx, dir, store)
 
 	var handler http.Handler = http.DefaultServeMux
 	handler = noCacheMiddleware(handler)

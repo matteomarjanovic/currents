@@ -101,7 +101,7 @@ func truncateAll(t *testing.T, s *PgStore) {
 		TRUNCATE save, collection, "user", follow, favourite_collection, pinned_collection,
 			global_feed_snapshot,
 			visual_identity, visual_identity_color, cluster, color_trial, seen_feature, feed_pref, hidden_feed_image,
-			label, blob_moderation_state, review_item, report, moderation_event,
+			label, external_label, external_label_cursor, blob_moderation_state, review_item, report, moderation_event,
 			import_session, import_upload_budget, admin, operations_job_run, operations_host_snapshot, blob_enrichment_failure,
 			collection_delete_job, orphan_record, jetstream_backfill, jetstream_repo, jetstream_cursor, tap_deleted_repo
 		RESTART IDENTITY CASCADE
@@ -326,10 +326,10 @@ func TestSearchCollections(t *testing.T) {
 		t.Fatalf("alpha AuthorDID = %q, want %q", a.AuthorDID, author)
 	}
 	wantPreviews := []string{
-		author + ",blob-a1", // direct saves first, by quality desc
-		author + ",blob-a2",
-		author + ",blob-s1", // then section saves; blocked blob excluded
-		author + ",blob-s2",
+		saveURI("a1") + ",blob-a1", // direct saves first, by quality desc
+		saveURI("a2") + ",blob-a2",
+		saveURI("s1") + ",blob-s1", // then section saves; blocked blob excluded
+		saveURI("s2") + ",blob-s2",
 	}
 	if got := previewsOf(a); !equalStrings(got, wantPreviews) {
 		t.Fatalf("alpha previews = %v, want %v", got, wantPreviews)
@@ -419,7 +419,7 @@ func TestGetImageCollectionsPage(t *testing.T) {
 	if rows[1].FavouriteURI == nil || *rows[1].FavouriteURI != favURI {
 		t.Fatalf("beta FavouriteURI = %v, want %s", rows[1].FavouriteURI, favURI)
 	}
-	if rows[2].SaveCount != 1 || !equalStrings(previewsOf(rows[2]), []string{author + ",blob-x"}) {
+	if rows[2].SaveCount != 1 || !equalStrings(previewsOf(rows[2]), []string{"at://" + author + "/is.currents.feed.save/x1,blob-x"}) {
 		t.Fatalf("alpha row = %+v, want 1 save and its preview", rows[2])
 	}
 
@@ -470,7 +470,7 @@ func TestGetCollectionByURI(t *testing.T) {
 		t.Fatalf("SaveCount = %d, want 2 (direct + section)", row.SaveCount)
 	}
 	// Direct save first despite the section save's higher quality.
-	want := []string{author + ",blob-a1", author + ",blob-s1"}
+	want := []string{"at://" + author + "/is.currents.feed.save/a1,blob-a1", "at://" + author + "/is.currents.feed.save/s1,blob-s1"}
 	if !equalStrings(previewsOf(*row), want) {
 		t.Fatalf("previews = %v, want %v", row.PreviewBlobs, want)
 	}

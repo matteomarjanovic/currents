@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -111,41 +112,46 @@ func (s *Server) optionalAuth(r *http.Request) (*syntax.DID, error) {
 	return &d, nil
 }
 
-// previewItem is one collection-preview image plus the active label values on
-// its blob, so the client can apply the viewer's blur/hide preferences (the same
-// logic save tiles use). Labels are blob-keyed and may be empty.
+// Preview items retain the existing blob label values and carry the issuing
+// DID and subject URI for labels hydrated from Bluesky.
 type previewItem struct {
-	URL    string   `json:"url"`
-	Labels []string `json:"labels,omitempty"`
+	URL            string      `json:"url"`
+	Labels         []string    `json:"labels,omitempty"`
+	ExternalLabels []labelView `json:"externalLabels,omitempty"`
 }
 
-// previewBlobCIDs extracts the blob CIDs from "did,cid" preview-blob entries.
-func previewBlobCIDs(blobs []string) []string {
-	cids := make([]string, 0, len(blobs))
-	for _, b := range blobs {
-		if parts := strings.SplitN(b, ",", 2); len(parts) == 2 {
-			cids = append(cids, parts[1])
+func (s *Server) collectionPreviews(ctx context.Context, rows []CollectionRow) map[string][]previewItem {
+	targets := make(map[string]string)
+	var cids []string
+	for _, row := range rows {
+		for _, blob := range row.PreviewBlobs {
+			uri, cid, _ := strings.Cut(blob, ",")
+			parsed, err := syntax.ParseATURI(uri)
+			if err == nil {
+				targets[uri] = parsed.Authority().String()
+				cids = append(cids, cid)
+			}
 		}
 	}
-	return cids
-}
-
-// buildPreviewItems turns "did,cid" preview-blob entries into previewItems,
-// attaching each blob's active labels (from labelsByCID) for viewer-side blur/hide.
-func buildPreviewItems(blobs []string, labelsByCID map[string][]string, cdnBaseURL string) []previewItem {
-	if len(blobs) == 0 {
-		return nil
+	local, err := s.Store.GetActiveLabelsByBlobCIDs(ctx, cids)
+	if err != nil {
+		slog.Warn("hydrate preview labels", "err", err)
 	}
-	out := make([]previewItem, 0, len(blobs))
-	for _, b := range blobs {
-		parts := strings.SplitN(b, ",", 2)
-		if len(parts) != 2 {
-			continue
+	external, err := s.Store.getBlueskyLabels(ctx, targets)
+	if err != nil {
+		slog.Warn("hydrate Bluesky labels", "err", err)
+	}
+	out := make(map[string][]previewItem)
+	for _, row := range rows {
+		for _, blob := range row.PreviewBlobs {
+			uri, cid, _ := strings.Cut(blob, ",")
+			if did := targets[uri]; did != "" {
+				out[row.URI] = append(out[row.URI], previewItem{
+					URL:    s.CDNBaseURL + "/img/" + did + "/" + cid,
+					Labels: local[cid], ExternalLabels: external[uri],
+				})
+			}
 		}
-		out = append(out, previewItem{
-			URL:    cdnBaseURL + "/img/" + parts[0] + "/" + parts[1],
-			Labels: labelsByCID[parts[1]],
-		})
 	}
 	return out
 }
@@ -243,15 +249,7 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		Viewer         *collectionViewerState `json:"viewer,omitempty"`
 	}
 
-	var previewCIDs []string
-	for _, row := range rows {
-		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
-	}
-	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
-	if err != nil {
-		slog.Warn("hydrate preview labels", "err", err)
-		labelsByCID = map[string][]string{}
-	}
+	previews := s.collectionPreviews(r.Context(), rows)
 
 	views := make([]collectionView, 0, len(rows))
 	for _, row := range rows {
@@ -272,7 +270,7 @@ func (s *Server) XRPCGetActorCollections(w http.ResponseWriter, r *http.Request)
 		if row.LastSavedAt != nil {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
-		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
+		cv.Previews = previews[row.URI]
 		if viewerDID != nil && (row.FavouriteURI != nil || row.Pinned) {
 			cv.Viewer = &collectionViewerState{Pinned: row.Pinned}
 			if row.FavouriteURI != nil {
@@ -476,12 +474,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 	if collRow.CreatedAt != nil {
 		cv.CreatedAt = collRow.CreatedAt.UTC().Format(time.RFC3339)
 	}
-	previewLabels, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewBlobCIDs(collRow.PreviewBlobs))
-	if err != nil {
-		slog.Warn("hydrate preview labels", "err", err)
-		previewLabels = map[string][]string{}
-	}
-	cv.Previews = buildPreviewItems(collRow.PreviewBlobs, previewLabels, s.CDNBaseURL)
+	cv.Previews = s.collectionPreviews(r.Context(), []CollectionRow{*collRow})[cv.URI]
 	if viewerDID != nil && collRow.FavouriteURI != nil {
 		cv.Viewer = &collectionViewerState{Favourite: *collRow.FavouriteURI}
 	}
@@ -497,7 +490,7 @@ func (s *Server) XRPCGetCollectionSaves(w http.ResponseWriter, r *http.Request) 
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getCollectionSaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -581,7 +574,7 @@ func (s *Server) XRPCGetUnsortedSaves(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getUnsortedSaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -667,7 +660,7 @@ func (s *Server) XRPCSearchSaves(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "searchSaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -764,7 +757,7 @@ func (s *Server) XRPCSearchLibrarySaves(w http.ResponseWriter, r *http.Request) 
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], true, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "searchLibrarySaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -874,7 +867,7 @@ func (s *Server) XRPCSearchSavesByColor(w http.ResponseWriter, r *http.Request) 
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], true, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "searchSavesByColor", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -964,7 +957,7 @@ func (s *Server) XRPCGetLibrarySaves(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, author, viewerDID != nil, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getLibrarySaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -1049,7 +1042,7 @@ func (s *Server) XRPCFindSimilarInLibrary(w http.ResponseWriter, r *http.Request
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], true, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "findSimilarInLibrary", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -1136,15 +1129,7 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authorCache := map[string]profileView{}
-	var previewCIDs []string
-	for _, row := range rows {
-		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
-	}
-	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
-	if err != nil {
-		slog.Warn("hydrate preview labels", "err", err)
-		labelsByCID = map[string][]string{}
-	}
+	previews := s.collectionPreviews(r.Context(), rows)
 
 	views := make([]collectionView, 0, len(rows))
 	for _, row := range rows {
@@ -1175,7 +1160,7 @@ func (s *Server) XRPCSearchCollections(w http.ResponseWriter, r *http.Request) {
 		if row.LastSavedAt != nil {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
-		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
+		cv.Previews = previews[row.URI]
 		if viewerDID != nil && row.FavouriteURI != nil {
 			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
 		}
@@ -1263,16 +1248,10 @@ func (s *Server) XRPCGetImageCollections(w http.ResponseWriter, r *http.Request)
 	}
 
 	authorCache := map[string]profileView{}
-	var previewCIDs []string
+	previews := s.collectionPreviews(r.Context(), rows)
 	authorDIDSet := map[string]bool{}
 	for _, row := range rows {
-		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
 		authorDIDSet[row.AuthorDID] = true
-	}
-	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
-	if err != nil {
-		slog.Warn("hydrate preview labels", "err", err)
-		labelsByCID = map[string][]string{}
 	}
 	authorDIDs := make([]string, 0, len(authorDIDSet))
 	for did := range authorDIDSet {
@@ -1313,7 +1292,7 @@ func (s *Server) XRPCGetImageCollections(w http.ResponseWriter, r *http.Request)
 		if row.LastSavedAt != nil {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
-		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
+		cv.Previews = previews[row.URI]
 		if viewerDID != nil && row.FavouriteURI != nil {
 			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
 		}
@@ -1489,15 +1468,7 @@ func (s *Server) XRPCGetFavouriteCollections(w http.ResponseWriter, r *http.Requ
 	}
 
 	authorCache := map[string]profileView{}
-	var previewCIDs []string
-	for _, row := range rows {
-		previewCIDs = append(previewCIDs, previewBlobCIDs(row.PreviewBlobs)...)
-	}
-	labelsByCID, err := s.Store.GetActiveLabelsByBlobCIDs(r.Context(), previewCIDs)
-	if err != nil {
-		slog.Warn("hydrate preview labels", "err", err)
-		labelsByCID = map[string][]string{}
-	}
+	previews := s.collectionPreviews(r.Context(), rows)
 
 	views := make([]collectionView, 0, len(rows))
 	for _, row := range rows {
@@ -1528,7 +1499,7 @@ func (s *Server) XRPCGetFavouriteCollections(w http.ResponseWriter, r *http.Requ
 		if row.LastSavedAt != nil {
 			cv.LastSavedAt = row.LastSavedAt.UTC().Format(time.RFC3339)
 		}
-		cv.Previews = buildPreviewItems(row.PreviewBlobs, labelsByCID, s.CDNBaseURL)
+		cv.Previews = previews[row.URI]
 		if viewerDID != nil && row.FavouriteURI != nil {
 			cv.Viewer = &collectionViewerState{Favourite: *row.FavouriteURI}
 		}
@@ -1718,7 +1689,7 @@ func (s *Server) XRPCGetRelatedSaves(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getRelatedSaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -2089,7 +2060,7 @@ func (s *Server) XRPCGetFeed(w http.ResponseWriter, r *http.Request) {
 	for _, row := range saveRows {
 		views = append(views, buildSaveView(row, authorCache[row.AuthorDID], viewerDID != nil, s.CDNBaseURL))
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getFeed", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {
@@ -2166,7 +2137,7 @@ func (s *Server) XRPCGetSaves(w http.ResponseWriter, r *http.Request) {
 			views = append(views, sv)
 		}
 	}
-	if err := hydrateLabels(r.Context(), s.Store, views); err != nil {
+	if err := s.hydrateLabels(r.Context(), views); err != nil {
 		slog.Error("hydrateLabels", "endpoint", "getSaves", "err", err)
 	}
 	if err := hydrateSuspected(r.Context(), s.Store, views); err != nil {

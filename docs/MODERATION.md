@@ -125,6 +125,14 @@ The Currents-defined labels are declared in the `app.bsky.labeler.service` recor
 
 ---
 
+## Bluesky interoperability
+
+Currents subscribes to the [official Bluesky labeler](https://plc.directory/did:plc:ar7c4by46qjdydhdevvrndac) using [`com.atproto.label.subscribeLabels`](https://github.com/bluesky-social/atproto/blob/main/lexicons/com/atproto/label/subscribeLabels.json). The appview verifies signatures and stores the latest signed event metadata per issuer, subject, record version and label value. It matches Currents save URIs and indexed accounts locally, with a durable stream cursor for reconnects. It sends no save or account identifiers to fetch public labels. A fresh database starts at the live stream and does not backfill older labels.
+
+Save responses and collection previews hydrate these labels with their issuer and subject. A record label applies to its exact URI and, when supplied, its exact record CID. A CID-bound label takes effect once the save's record CID has been indexed. Account labels apply across that author's saves. Currents' existing preferences apply to shared label values. The strictest applicable visibility takes effect. A stream interruption leaves Currents' signed labels, takedowns and review queue available, along with previously received Bluesky labels through their expiration.
+
+The web Notifications → Moderation tab can connect the user's Bluesky inbox through the user's PDS. Normal login requests the existing Currents scopes. Opt-in adds only the service-specific read permissions for [`listActionedSubjects`](https://github.com/bluesky-social/atproto/blob/main/lexicons/tools/ozone/inbox/listActionedSubjects.json) and [`getActionedSubject`](https://github.com/bluesky-social/atproto/blob/main/lexicons/tools/ozone/inbox/getActionedSubject.json). The appview verifies the authenticated account owns each Currents subject before looking up a preview. Bluesky supplies the unread state and appeal availability. Eligible notices link to Bluesky to handle the appeal. External decisions never create Currents review items.
+
 ## Blob-CID keying
 
 Moderation state is keyed by the **exact content-addressed blob CID** (`save.pds_blob_cid`), not the perceptual `visual_identity_id`. This matters:

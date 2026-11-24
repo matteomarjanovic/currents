@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,6 +107,7 @@ func (s *Server) ClientMetadata(w http.ResponseWriter, r *http.Request) {
 	slog.Info("client metadata request", "url", r.URL, "host", r.Host)
 
 	meta := s.OAuth.Config.ClientMetadata()
+	meta.Scope = strings.Join(withBlueskyInboxReadScopes(s.OAuth.Config.Scopes), " ")
 	oauthBaseURL := strings.TrimSuffix(s.OAuth.Config.ClientID, "/oauth-client-metadata.json")
 	if s.OAuth.Config.IsConfidential() {
 		meta.JWKSURI = strPtr(oauthBaseURL + "/oauth/jwks.json")
@@ -193,7 +195,12 @@ func (s *Server) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	params := r.URL.Query()
-	slog.Info("received callback", "params", params)
+	if state := params.Get("state"); state != "" {
+		if request, err := s.OAuth.Store.GetAuthRequestInfo(ctx, state); err == nil && slices.Contains(request.Scopes, blueskyListScope) {
+			s.completeBlueskyModerationConsent(w, r, request.AccountDID)
+			return
+		}
+	}
 
 	sessData, err := s.OAuth.ProcessCallback(ctx, r.URL.Query())
 	if err != nil {

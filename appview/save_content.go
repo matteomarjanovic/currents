@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -66,6 +67,8 @@ type saveView struct {
 // Full label transport (with sig/ver/exp/neg) goes through the labeler's subscribeLabels/queryLabels.
 type labelView struct {
 	Src string `json:"src"`
+	URI string `json:"uri,omitempty"`
+	Exp string `json:"exp,omitempty"`
 	Val string `json:"val"`
 	CTS string `json:"cts"`
 }
@@ -342,7 +345,7 @@ func buildSaveView(row SaveRow, author profileView, includeViewer bool, cdnBaseU
 
 // hydrateLabels batch-fetches active labels for the given save views and assigns
 // them to each view's Labels field. A no-op when views is empty.
-func hydrateLabels(ctx context.Context, store *PgStore, views []saveView) error {
+func (s *Server) hydrateLabels(ctx context.Context, views []saveView) error {
 	if len(views) == 0 {
 		return nil
 	}
@@ -350,20 +353,25 @@ func hydrateLabels(ctx context.Context, store *PgStore, views []saveView) error 
 	for i, v := range views {
 		uris[i] = v.URI
 	}
-	byURI, err := store.GetLabelsByURIs(ctx, uris)
+	byURI, err := s.Store.GetLabelsByURIs(ctx, uris)
 	if err != nil {
 		return err
 	}
+	targets := make(map[string]string, len(views))
+	for _, view := range views {
+		targets[view.URI] = view.Author.DID
+	}
+	external, err := s.Store.getBlueskyLabels(ctx, targets)
+	if err != nil {
+		slog.Warn("hydrate Bluesky labels", "err", err)
+	}
 	for i := range views {
 		rows := byURI[views[i].URI]
-		if len(rows) == 0 {
-			continue
-		}
 		out := make([]labelView, len(rows))
 		for j, r := range rows {
 			out[j] = labelView{Src: r.Src, Val: r.Val, CTS: r.CTS.UTC().Format(time.RFC3339)}
 		}
-		views[i].Labels = out
+		views[i].Labels = append(out, external[views[i].URI]...)
 	}
 	return nil
 }

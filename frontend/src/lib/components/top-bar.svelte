@@ -106,6 +106,11 @@
 	let browserExtensionDialogOpen = $state(false);
 	let installAppDialogOpen = $state(false);
 	let notificationsOpen = $state(false);
+	let moderationConsent = $derived(page.url.searchParams.get('bluesky-moderation') ?? undefined);
+
+	$effect(() => {
+		if (user && moderationConsent) notificationsOpen = true;
+	});
 	// Which cluster menu is open, if any. Opening one closes the rest: a touch tap
 	// on a second trigger never reaches bits-ui's interact-outside handler, so
 	// without this the first menu stays open behind the second one on phones
@@ -899,7 +904,7 @@
 	<CollectionCreateDialog bind:open={createCollectionOpen} onCreated={handleCollectionCreated} />
 	<BrowserExtensionDialog bind:open={browserExtensionDialogOpen} />
 	<InstallAppDialog bind:open={installAppDialogOpen} />
-	<NotificationsDialog bind:open={notificationsOpen} />
+	<NotificationsDialog bind:open={notificationsOpen} consentOutcome={moderationConsent} />
 {/if}
 
 <style>
