@@ -148,11 +148,6 @@
 		showEntry();
 	}
 
-	function revisitFromMobileTrail(target: number) {
-		visit(target);
-		entries = entries.slice(0, index + 1);
-	}
-
 	// Return whether this journey owns the arrow, even at a sibling-list boundary.
 	export function handleImageArrow(direction: -1 | 1): boolean {
 		if (index === 0) return false;
@@ -385,11 +380,9 @@
 		</div>
 		{#if mobile.current}
 			<MobileRelatedHistory
-				saves={trail}
 				currentIndex={index}
 				canGoForward={index < entries.length - 1}
 				onVisit={visit}
-				onRevisit={revisitFromMobileTrail}
 			/>
 		{/if}
 	{/if}

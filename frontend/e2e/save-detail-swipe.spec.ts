@@ -627,59 +627,50 @@ for (const [platform, emulate] of [
 	});
 }
 
-test('mobile image trail opens above the scroll-to-top button and returns to an earlier image', async ({
-	page
-}) => {
+test('Explore gradients fade in only after the first ten pixels of scrolling', async ({ page }) => {
+	await mockApi(page, { related: true });
+	await page.route(/getFeed/, (route) =>
+		route.fulfill({ json: { feed: Array.from({ length: 24 }, (_, i) => makeSave(i + 1)) } })
+	);
+	await page.goto('/explore/general');
+	const firstImage = page.locator('a.block:has(img[src*="bafy1?"])').first();
+	await expect(firstImage).toBeVisible();
+
+	const feedOpacity = () =>
+		page.locator('.explore-top-bar').evaluate((el) => getComputedStyle(el, '::after').opacity);
+	await expect.poll(feedOpacity).toBe('0');
+	await page.evaluate(() => window.scrollTo(0, 11));
+	await expect.poll(feedOpacity).toBe('1');
+	await page.evaluate(() => window.scrollTo(0, 10));
+	await expect.poll(feedOpacity).toBe('0');
+	await page.evaluate(() => window.scrollTo(0, 0));
+
+	await firstImage.tap();
+	const active = page.locator('[data-save-detail-overlay][data-active="true"]');
+	const gradient = active.locator('[data-save-detail-top-fade]');
+	await expect(gradient).toHaveCSS('opacity', '0');
+	await expect(gradient).toHaveCSS('transition-duration', '0.2s');
+	await active.evaluate((el) => el.scrollTo(0, 11));
+	await expect(gradient).toHaveCSS('opacity', '1');
+	await active.evaluate((el) => el.scrollTo(0, 10));
+	await expect(gradient).toHaveCSS('opacity', '0');
+});
+
+test('mobile Explore keeps nested Back navigation without a thumbnail stack', async ({ page }) => {
 	await mockApi(page, { related: true });
 	await page.goto('/explore/general');
 	await page.locator('a.block:has(img[src*="bafy1"])').first().tap();
 
 	const active = page.locator('[data-save-detail-overlay][data-active="true"]');
-	const trigger = page.getByRole('button', { name: 'Open image history' });
-	await expect(active.locator('[data-save-detail-top-fade]')).toHaveCSS(
-		'background-image',
-		/^linear-gradient/
-	);
 	await active.evaluate((el) => el.scrollTo(0, 1100));
 	await active.locator('section a.block').first().tap();
 	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(2);
 
 	await active.evaluate((el) => el.scrollTo(0, 1100));
-	const toTop = active.getByRole('button', { name: 'Scroll to top', exact: true });
-	await expect(toTop).toBeVisible();
-	await expect(trigger).toBeVisible();
-	await toTop.evaluate(async (el) => {
-		await Promise.all(el.parentElement!.getAnimations().map((animation) => animation.finished));
-	});
-	const stackBox = (await trigger.boundingBox())!;
-	const buttonBox = (await toTop.boundingBox())!;
-	expect(stackBox.y + stackBox.height).toBeLessThan(buttonBox.y);
-	expect(Math.abs(stackBox.x + stackBox.width - buttonBox.x - buttonBox.width)).toBeLessThan(1);
-	// The collapsed thumbnails are drawn through a portal and the trigger is
-	// transparent. Test the visible thumbnail's position and tap that exact spot.
-	const cover = page.locator('[data-mobile-history-layer] button[aria-current="step"]');
-	const coverBox = (await cover.boundingBox())!;
-	const x = coverBox.x + coverBox.width / 2;
-	const y = coverBox.y + coverBox.height / 2;
-	expect(Math.abs(x - (stackBox.x + stackBox.width / 2))).toBeLessThan(1);
-	expect(y).toBeGreaterThan(stackBox.y);
-	expect(y).toBeLessThan(stackBox.y + stackBox.height);
-	await page.touchscreen.tap(x, y);
-	const history = page.getByRole('dialog', { name: 'Image history' });
-	await expect(history).toBeVisible();
-	const earlier = history.getByRole('button', { name: 'Return to image 1', exact: true });
-	const current = history.getByRole('button', { name: 'Return to image 2', exact: true });
-	await expect(current).toHaveAttribute('aria-current', 'step');
-	await expect
-		.poll(async () => (await current.boundingBox())!.y - (await earlier.boundingBox())!.y)
-		.toBeGreaterThan(50);
-	const close = history.getByRole('button', { name: 'Close image history' });
-	const closeBox = (await close.boundingBox())!;
-	expect(Math.abs(closeBox.y + closeBox.height - buttonBox.y - buttonBox.height)).toBeLessThan(1);
-	await close.tap();
-	await expect(history).toBeHidden();
-	await trigger.tap();
-	await earlier.tap();
+	await expect(active.getByRole('button', { name: 'Scroll to top', exact: true })).toBeVisible();
+	await expect(page.locator('[data-mobile-history-layer]')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Open image history' })).toHaveCount(0);
+	await active.getByRole('button', { name: 'Go back', exact: true }).last().tap();
 	await expect(page).toHaveURL(/\/save\/s1$/);
 	await expect(page.locator('[data-save-detail-overlay]')).toHaveCount(1);
 });

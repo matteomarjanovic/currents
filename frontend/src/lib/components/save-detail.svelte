@@ -1180,6 +1180,7 @@
 		<div
 			aria-hidden="true"
 			data-save-detail-top-fade
+			data-scrolled={showScrolledActions ? '' : undefined}
 			class="save-detail-top-fade pointer-events-none fixed top-0 left-0 z-20 h-[calc(5.375rem+env(safe-area-inset-top))]"
 			style:right="{scrollbarInset}px"
 		></div>

@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { devicePixelRatio } from 'svelte/reactivity/window';
+	import { devicePixelRatio, scrollY } from 'svelte/reactivity/window';
 	import { apiFetch, logoutUrl } from '$lib/api';
 	import { clearAuthToken } from '$lib/auth-storage';
 	import { isNative, isAndroid, isIos, isMobileWeb, isStandalonePwa } from '$lib/platform';
@@ -655,6 +655,7 @@
 	</header>
 {:else if !actionsOnly}
 	<header
+		data-scrolled={fadeContent && (scrollY.current ?? 0) > 10 ? '' : undefined}
 		class="{landing ? 'fixed' : 'sticky'} {fadeContent
 			? 'explore-top-bar'
 			: ''} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"

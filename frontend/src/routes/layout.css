@@ -198,6 +198,8 @@ html[data-explore-feed-return]::view-transition-new(mode-switcher) {
 
 .explore-top-bar::after,
 .save-detail-top-fade {
+	opacity: 0;
+	transition: opacity 200ms ease-out;
 	/* Sample a smoothstep curve so the fade eases into the untouched feed. */
 	background: linear-gradient(
 		to bottom,
@@ -212,6 +214,18 @@ html[data-explore-feed-return]::view-transition-new(mode-switcher) {
 		color-mix(in srgb, var(--background) 0.9%, transparent) 93.75%,
 		transparent
 	);
+}
+
+.explore-top-bar[data-scrolled]::after,
+.save-detail-top-fade[data-scrolled] {
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.explore-top-bar::after,
+	.save-detail-top-fade {
+		transition: none;
+	}
 }
 
 @utility app-muted-wash {

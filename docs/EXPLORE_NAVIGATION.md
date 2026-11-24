@@ -170,23 +170,6 @@ related-grid snapshot as keyboard navigation. The current image's native pinch
 transfers its active pointers into image focus; moderation overlays retain control
 of unrevealed images.
 
-Mobile Related history lives at the bottom, above the safe-area inset. Back and
-Forward have 48px targets. The thumbnails spread upward in a single column.
-When the column exceeds the screen, native vertical scrolling in either direction
-reveals the rest. Thumbnails preserve their original aspect ratio within 72×88px,
-and the trail uses the theme's background color for every thumbnail border,
-including on desktop Organize and in Explore.
-
-Like the desktop stack, mobile keeps the same image nodes mounted and transitions
-their transforms with `cubic-bezier(0.22, 1, 0.36, 1)` (160ms open, 380ms close).
-There is no per-image stagger or opacity animation. Transform transitions run only
-while opening/closing; input returns control directly to the gesture. The solid X
-fades in alongside the opening animation, just left of the column. It shares its
-size and vertical alignment with the Back and Forward pill and the stack trigger.
-The closed layer is inert and hidden from accessibility APIs, with its three
-recent pictures fitted inside the trigger. Reduced motion disables transitions.
-Opening aligns the current step with
-the bottom of the column and dims the screen. Back and Forward stay beneath that
-layer. Tapping a thumbnail revisits that image, discards later history, and
-closes the trail. A background tap or X also closes the trail. Closing returns
-focus to the stack. Escape and Android Back leave it open.
+On mobile, the Related tab keeps its Back and Forward buttons above the safe-area
+inset with 48px targets. The thumbnail trails in Explore and Organize Related are
+desktop-only.

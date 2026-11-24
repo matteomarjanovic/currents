@@ -677,7 +677,7 @@ for (const tab of ['Details', 'Related']) {
 	});
 }
 
-test('mobile nested swipes stay in the parent related list and keep large history controls at the bottom', async ({
+test('mobile nested swipes stay in the parent related list and keep Back and Forward without a thumbnail stack', async ({
 	page
 }) => {
 	await mockApi(page);
@@ -699,6 +699,8 @@ test('mobile nested swipes stay in the parent related list and keep large histor
 		'data-related-current',
 		uri('root-a')
 	);
+	await expect(page.locator('[data-mobile-history-layer]')).toHaveCount(0);
+	await expect(panel.getByRole('button', { name: 'Open image history' })).toHaveCount(0);
 	const controls = panel.locator('[data-mobile-related-navigation]');
 	const back = controls.getByRole('button', { name: 'Back in related images' });
 	const box = (await back.boundingBox())!;
@@ -712,166 +714,6 @@ test('mobile nested swipes stay in the parent related list and keep large histor
 	);
 	await controls.getByRole('button', { name: 'Forward in related images' }).tap();
 	await expect(panel.locator('[data-related-current]')).toHaveAttribute(
-		'data-related-current',
-		uri('root-a')
-	);
-});
-
-test('mobile image history spreads upward and scrolls in both directions', async ({ page }) => {
-	await mockApi(page);
-	const panel = await openRelated(page, 393);
-	let key = 'root';
-	for (let depth = 0; depth < 10; depth++) {
-		key += '-a';
-		await panel.locator(`[data-save-uri="${uri(key)}"] a`).tap();
-		await expect(panel.locator('[data-related-current]')).toHaveAttribute(
-			'data-related-current',
-			uri(key)
-		);
-	}
-	const layer = page.locator('[data-mobile-history-layer]');
-	const pictures = layer.locator('.picture');
-	const selected = pictures.nth(10);
-	const original = await selected.elementHandle();
-	await expect
-		.poll(() =>
-			selected.evaluate(
-				(element) =>
-					element.getAnimations().filter((animation) => animation.playState === 'running').length
-			)
-		)
-		.toBe(0);
-	const stack = (await selected.boundingBox())!;
-	const arrowBox = (await panel
-		.getByRole('button', { name: 'Back in related images' })
-		.boundingBox())!;
-	const pill = (await panel.getByRole('group', { name: 'Related navigation' }).boundingBox())!;
-	const trigger = panel.getByRole('button', { name: 'Open image history' });
-	const triggerBox = (await trigger.boundingBox())!;
-	expect(triggerBox.y).toBe(pill.y);
-	expect(triggerBox.height).toBe(pill.height);
-	expect(stack.y).toBeCloseTo(pill.y, 1);
-	expect(stack.height).toBeCloseTo(pill.height, 1);
-	await trigger.tap();
-	const history = page.locator('[data-mobile-image-history]');
-	const list = history.locator('[data-mobile-history-list]');
-	await expect(history).toBeVisible();
-	// One persistent picture moves with the desktop stack's CSS easing, without stagger or fade.
-	expect(await selected.evaluate((element, before) => element === before, original)).toBe(true);
-	await expect(selected).toHaveCSS('transition-timing-function', 'cubic-bezier(0.22, 1, 0.36, 1)');
-	await expect(selected).toHaveCSS('transition-duration', '0.16s');
-	const start = await selected.evaluate((element) => {
-		const animation = element
-			.getAnimations()
-			.find((animation) => animation.playState === 'running')!;
-		const matrix = new DOMMatrix(
-			String((animation.effect as KeyframeEffect).getKeyframes()[0].transform)
-		);
-		const close = element
-			.closest('[data-mobile-history-layer]')!
-			.querySelector('[data-history-close]')!;
-		const closeAnimation = close
-			.getAnimations()
-			.find((motion) => motion instanceof CSSTransition && motion.transitionProperty === 'opacity');
-		return {
-			x: matrix.e + element.offsetWidth / 2,
-			y: matrix.f + element.offsetHeight / 2,
-			closeVisibility: getComputedStyle(close).visibility,
-			closeDelay: closeAnimation?.effect?.getTiming().delay,
-			closeStartsWithStack: closeAnimation?.startTime === animation.startTime
-		};
-	});
-	expect(start.x).toBeCloseTo(stack.x + stack.width / 2, 0);
-	expect(start.y).toBeCloseTo(stack.y + stack.height / 2, 0);
-	expect(start.closeVisibility).toBe('visible');
-	expect(start.closeDelay).toBe(0);
-	expect(start.closeStartsWithStack).toBe(true);
-
-	await expect(selected).toHaveCSS('transition-delay', '0s');
-	await expect(selected).toHaveCSS('opacity', '1');
-	await expect
-		.poll(() =>
-			selected.evaluate(
-				(element) =>
-					element.getAnimations().filter((animation) => animation.playState === 'running').length
-			)
-		)
-		.toBe(0);
-	const expanded = (await selected.boundingBox())!;
-	expect(expanded.width).toBeCloseTo(70.4, 1);
-	expect(expanded.height).toBe(88);
-	const previous = (await pictures.nth(9).boundingBox())!;
-	expect(previous.x + previous.width / 2).toBeCloseTo(expanded.x + expanded.width / 2, 1);
-	expect(expanded.y - (previous.y + previous.height)).toBeCloseTo(20, 1);
-	const close = history.getByRole('button', { name: 'Close image history' });
-	await expect(close).toBeVisible();
-	const closeBox = (await close.boundingBox())!;
-	expect(closeBox.x + closeBox.width).toBeLessThan(expanded.x);
-	expect(closeBox.y).toBe(pill.y);
-	expect(closeBox.height).toBe(pill.height);
-	await expect(selected).toHaveCSS('border-top-width', '1px');
-	await expect(pictures.nth(9)).toHaveCSS('border-top-width', '1px');
-	expect(await list.boundingBox()).toEqual({ x: 0, y: 0, width: 393, height: 850 });
-	const backdrop = page.locator('[data-mobile-history-backdrop]');
-	expect(await backdrop.boundingBox()).toEqual({ x: 0, y: 0, width: 393, height: 850 });
-	await page.touchscreen.tap(arrowBox.x + arrowBox.width / 2, arrowBox.y + arrowBox.height / 2);
-	await expect(history).toHaveCount(0);
-	await expect(page.locator('[data-related-current]')).toHaveAttribute(
-		'data-related-current',
-		uri(key)
-	);
-	await panel.getByRole('button', { name: 'Open image history' }).tap();
-	await expect(history.getByRole('button', { name: 'Close image history' })).toBeVisible();
-	await page.keyboard.press('Escape');
-	await expect(history).toBeVisible();
-	await expect(page.locator('[data-related-current]')).toHaveAttribute(
-		'data-related-current',
-		uri(key)
-	);
-	const first = pictures.first();
-	await expect(first).not.toBeInViewport();
-	const bottom = await list.evaluate((element) => element.scrollTop);
-	const client = await page.context().newCDPSession(page);
-	async function swipe(dy: number) {
-		await client.send('Input.dispatchTouchEvent', {
-			type: 'touchStart',
-			touchPoints: [{ x: 345, y: 425 }]
-		});
-		for (let step = 1; step <= 8; step++) {
-			await client.send('Input.dispatchTouchEvent', {
-				type: 'touchMove',
-				touchPoints: [{ x: 345, y: 425 + (dy * step) / 8 }]
-			});
-		}
-		await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-	}
-	await swipe(330);
-	await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBeLessThan(bottom - 100);
-	await expect(history).toBeVisible();
-	await swipe(-330);
-	await expect
-		.poll(() => list.evaluate((element) => element.scrollTop))
-		.toBeGreaterThan(bottom - 100);
-	await expect(history).toBeVisible();
-	await list.evaluate((element) => {
-		element.scrollTop = 0;
-	});
-	await expect(first).toBeInViewport({ ratio: 1 });
-	await pictures.nth(1).tap({ timeout: 4000 });
-	await expect(history).toHaveCount(0);
-	await expect(page.locator('[data-related-current]')).toHaveAttribute(
-		'data-related-current',
-		uri('root-a')
-	);
-	await expect(pictures).toHaveCount(2);
-	await expect(backdrop).toHaveCount(0);
-	await expect(pictures.nth(1)).toHaveCSS('transition-duration', '0.38s');
-	await expect(panel.getByRole('button', { name: 'Forward in related images' })).toBeDisabled();
-	await expect(panel.getByRole('button', { name: 'Open image history' })).toBeFocused();
-	await panel.getByRole('button', { name: 'Open image history' }).tap();
-	await page.touchscreen.tap(40, 160);
-	await expect(history).toHaveCount(0);
-	await expect(page.locator('[data-related-current]')).toHaveAttribute(
 		'data-related-current',
 		uri('root-a')
 	);
@@ -945,89 +787,3 @@ for (const tab of ['Details', 'Related']) {
 		});
 	}
 }
-
-test('mobile history respects reduced motion', async ({ page }) => {
-	await page.emulateMedia({ reducedMotion: 'reduce' });
-	await mockApi(page);
-	const panel = await openRelated(page, 393);
-	await panel.getByRole('button', { name: 'Open image history' }).tap();
-	const history = page.locator('[data-mobile-image-history]');
-	await expect(history).toBeVisible();
-	expect(
-		await history.evaluate(
-			(element) =>
-				element
-					.getAnimations({ subtree: true })
-					.filter((animation) => Number(animation.effect?.getTiming().duration) > 0).length
-		)
-	).toBe(0);
-	await history.getByRole('button', { name: 'Close image history' }).tap();
-	await expect(history).toHaveCount(0);
-});
-
-test('mobile history preserves portrait, landscape, square and tall image aspect ratios', async ({
-	page
-}) => {
-	await mockApi(page);
-	const dimensions: Record<string, [number, number]> = {
-		root: [400, 500],
-		'root-a': [800, 400],
-		'root-a-a': [500, 500],
-		'root-a-a-a': [200, 800]
-	};
-	await page.route(
-		/^https:\/\/(?:api(?:-dev)?\.)?currents\.is\/xrpc\/is\.currents\.feed\.getRelatedSaves/,
-		(route) => {
-			const key = new URL(route.request().url()).searchParams.get('uri')!.split('/').pop()! + '-a';
-			const save = image(key);
-			const size = dimensions[key];
-			return route.fulfill({
-				json: {
-					saves: size
-						? [{ ...save, content: { ...save.content, width: size[0], height: size[1] } }]
-						: []
-				}
-			});
-		}
-	);
-	await page.setViewportSize({ width: 393, height: 850 });
-	await page.goto('/organize');
-	await page.locator(`[data-uri="${uri('root')}"]`).tap();
-	await page.getByRole('tab', { name: 'Related' }).tap();
-	const panel = page.getByRole('tabpanel', { name: 'Related' });
-	for (const key of ['root-a', 'root-a-a', 'root-a-a-a']) {
-		await panel.locator(`[data-save-uri="${uri(key)}"] a`).tap();
-		await expect(panel.locator('[data-related-current]')).toHaveAttribute(
-			'data-related-current',
-			uri(key)
-		);
-	}
-	await panel.getByRole('button', { name: 'Open image history' }).tap();
-	const history = page.locator('[data-mobile-image-history]');
-	const pictures = history.locator('.picture');
-	await expect
-		.poll(() =>
-			pictures.evaluateAll(
-				(elements) =>
-					elements
-						.flatMap((element) => element.getAnimations())
-						.filter((animation) => animation.playState === 'running').length
-			)
-		)
-		.toBe(0);
-	for (const [index, [width, height]] of Object.values(dimensions).entries()) {
-		const picture = pictures.nth(index);
-		const box = (await picture.boundingBox())!;
-		expect(box.width / box.height).toBeCloseTo(width / height, 2);
-		expect(box.width).toBeLessThanOrEqual(72);
-		expect(box.height).toBeLessThanOrEqual(88);
-		await expect(picture.locator('img')).toHaveCSS('object-fit', 'contain');
-		expect(
-			new URL((await picture.locator('img').getAttribute('src'))!).searchParams.has('crop')
-		).toBe(false);
-	}
-	const selectedBox = (await pictures.last().boundingBox())!;
-	expect(selectedBox.x + selectedBox.width / 2).toBeCloseTo(345, 1);
-	await history.getByRole('button', { name: 'Close image history' }).tap();
-	await expect(history).toHaveCount(0);
-});
