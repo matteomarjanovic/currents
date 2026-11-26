@@ -3,7 +3,7 @@
 @import 'shadcn-svelte/tailwind.css';
 @import '@fontsource-variable/instrument-sans';
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *, :where(:root):has([data-web-landing]) *));
 @plugin '@tailwindcss/typography';
 
 /* Preserve the outgoing page while a cached feed restores its masonry/scroll.
@@ -81,7 +81,13 @@ html[data-explore-feed-return]::view-transition-new(mode-switcher) {
 	--sidebar-ring: oklch(0.723 0.014 214.4);
 }
 
-.dark {
+/* The web landing uses the dark palette without changing the saved app theme. */
+:root:has([data-web-landing]) {
+	color-scheme: dark !important;
+}
+
+.dark,
+:root:has([data-web-landing]) {
 	--background: oklch(0.148 0.004 228.8);
 	--foreground: oklch(0.987 0.002 197.1);
 	--card: oklch(0.218 0.008 223.9);
@@ -182,9 +188,10 @@ html[data-explore-feed-return]::view-transition-new(mode-switcher) {
 	html {
 		@apply font-sans;
 	}
-	/* Reserve the scrollbar gutter for masonry without making <html> the scroll container:
-	   sticky header controls must continue to track the body scroll. */
-	html:has([data-masonry-grid]):not(:has(body.scroll-locked)) {
+	/* Keep the header aligned while the public feed loads and while masonry is visible. */
+	html:has([data-masonry-grid], [data-web-landing], [data-guest-explore]):not(
+			:has(body.scroll-locked)
+		) {
 		scrollbar-gutter: stable;
 	}
 }
@@ -216,7 +223,7 @@ html[data-explore-feed-return]::view-transition-new(mode-switcher) {
 	);
 }
 
-.explore-top-bar[data-scrolled]::after,
+.explore-top-bar:is([data-scrolled], .landing-top-bar)::after,
 .save-detail-top-fade[data-scrolled] {
 	opacity: 1;
 }

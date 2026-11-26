@@ -81,7 +81,8 @@ export default defineConfig({
 							// mobile browsers don't offer). Netlify serves HTML with `must-revalidate`,
 							// so letting these hit the network costs one conditional request and is always
 							// current. Content pages don't belong in a precache.
-							globIgnores: ['prerendered/**'],
+							// Landing images load through normal browser caching as visitors scroll.
+							globIgnores: ['prerendered/**', 'client/landing/**'],
 							// The integration adds a prerendered glob that we intentionally exclude.
 							globStrict: false
 						},

@@ -4,8 +4,14 @@ currents.is {
 	}
 
 	@appview path /api/* /xrpc/* /oauth/* /oauth-client-metadata.json /img/*
+	@homepage path /
+	encode @homepage zstd gzip
 	reverse_proxy @appview appview:8080
 	reverse_proxy frontend:3000
+}
+
+www.currents.is {
+	redir https://currents.is{uri} 308
 }
 
 api.currents.is {

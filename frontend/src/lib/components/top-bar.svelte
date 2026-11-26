@@ -10,8 +10,6 @@
 	import { shouldOpenExternally, openExternal } from '$lib/external';
 	import { pwaInstall, promptInstall } from '$lib/stores/pwa-install.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import * as InputGroup from '$lib/components/ui/input-group';
-	import * as Select from '$lib/components/ui/select';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Avatar from '$lib/components/ui/avatar';
 	import { setMode, resetMode, userPrefersMode } from 'mode-watcher';
@@ -23,9 +21,7 @@
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Monitor from '@lucide/svelte/icons/monitor';
-	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
-	import X from '@lucide/svelte/icons/x';
 	import Plus from '@lucide/svelte/icons/plus';
 	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
@@ -37,6 +33,7 @@
 	import Bell from '@lucide/svelte/icons/bell';
 	import Heart from '@lucide/svelte/icons/heart';
 	import Logo from '$lib/assets/logo.svelte';
+	import LogoIcon from '$lib/assets/logo-icon.svelte';
 	import SearchLensIcon from '$lib/components/search-lens-icon.svelte';
 	import ThemeToggle from '$lib/components/theme-toggle.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -86,21 +83,11 @@
 
 	// Android and web need the raised mobile bar; iOS keeps extra room for its native layout.
 	const raisedMobileBar = isAndroid() || !isNative();
+	const logoPillId = $props.id();
 	let routeMode = $derived<'organize' | 'explore'>(
 		page.url.pathname.startsWith('/organize') ? 'organize' : 'explore'
 	);
 
-	const SEARCH_TYPES = [
-		{ value: 'saves', label: 'Images' },
-		{ value: 'collections', label: 'Collections' },
-		{ value: 'users', label: 'Users' }
-	] as const;
-	type SearchType = (typeof SEARCH_TYPES)[number]['value'];
-
-	let query = $state('');
-	let searchType = $state<SearchType>('saves');
-	let searchLabel = $derived(SEARCH_TYPES.find((t) => t.value === searchType)?.label ?? 'Images');
-	let searchOpen = $state(false);
 	let searchCommandOpen = $state(false);
 	let createCollectionOpen = $state(false);
 	let browserExtensionDialogOpen = $state(false);
@@ -125,6 +112,12 @@
 	// The mobile bottom bar; its menus anchor to it (centered) instead of to their buttons.
 	let bottomBarEl = $state<HTMLElement | undefined>();
 	let showFlowField = $derived(page.route.id === '/(with-navbar)/explore/[level]');
+	const guestExplore = $derived(
+		!actionsOnly &&
+			!isNative() &&
+			!user &&
+			(showFlowField || page.route.id === '/(with-navbar)/explore')
+	);
 
 	// Only items the user hasn't acted on yet count toward the unread indicator —
 	// disputes are waiting on a moderator, not on the author.
@@ -281,77 +274,12 @@
 		else goto(resolve('support-us'));
 	}
 
-	$effect(() => {
-		if (page.url.pathname.startsWith('/explore') || page.url.pathname === '/') query = '';
-		else if (page.params.query) query = page.params.query;
-		const t = page.params.type;
-		if (t === 'collections' || t === 'users' || t === 'saves') searchType = t;
-	});
-
-	function onsubmit(e: Event) {
-		e.preventDefault();
-		const trimmed = query.trim();
-		if (!trimmed) return;
-		goto(
-			resolve('/(with-navbar)/search/[type]/[query]', {
-				type: searchType,
-				query: encodeURIComponent(trimmed)
-			})
-		);
-	}
-
 	// Shared shell for the floating button clusters (add display per instance).
 	const glassGroup =
 		'pointer-events-auto shrink-0 items-center gap-0.5 rounded-full border bg-primary-foreground/80 bg-clip-padding p-1 backdrop-blur-sm';
+	const floatingTheme =
+		'pointer-events-auto size-10 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground';
 </script>
-
-{#snippet searchBar(autofocus: boolean, compact: boolean)}
-	<InputGroup.Root
-		class="{landing
-			? 'bg-accent/50 backdrop-blur-sm'
-			: 'bg-primary-foreground/80 shadow-sm backdrop-blur-sm'} {compact
-			? 'h-9'
-			: 'h-11'} w-full rounded-full"
-	>
-		<InputGroup.Addon align="inline-start">
-			<InputGroup.Button
-				size="icon-sm"
-				aria-label="Search"
-				disabled
-				class="rounded-full text-muted-foreground"
-			>
-				<SearchIcon class="size-4" />
-			</InputGroup.Button>
-		</InputGroup.Addon>
-
-		<InputGroup.Input
-			type="search"
-			placeholder="Search..."
-			bind:value={query}
-			{autofocus}
-			autocorrect="off"
-			autocapitalize="off"
-			autocomplete="off"
-			spellcheck={false}
-			class={landing ? 'placeholder:text-white/70' : ''}
-		/>
-
-		<InputGroup.Addon align="inline-end">
-			<Select.Root type="single" bind:value={searchType}>
-				<Select.Trigger
-					class="h-8 gap-1 rounded-full border-0 bg-transparent px-2.5 text-muted-foreground shadow-none hover:bg-accent focus-visible:ring-0"
-				>
-					{searchLabel}
-				</Select.Trigger>
-				<Select.Content align="end" class="rounded-2xl">
-					{#each SEARCH_TYPES as t (t.value)}
-						<Select.Item value={t.value} label={t.label}>{t.label}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</InputGroup.Addon>
-	</InputGroup.Root>
-{/snippet}
 
 {#snippet searchQuery()}
 	{#if activeSearch?.text}
@@ -395,9 +323,17 @@
 {/snippet}
 
 {#snippet loginButton(size: 'default' | 'lg')}
-	<a href={resolve('login')} class="pointer-events-auto shrink-0">
-		<Button variant="default" {size} class="rounded-full px-5">Log in</Button>
-	</a>
+	<Button href={resolve('login')} {size} class="pointer-events-auto shrink-0 rounded-full px-5">
+		Log in
+	</Button>
+{/snippet}
+
+{#snippet guestActions(showTheme: boolean)}
+	<div class="pointer-events-auto flex h-12 shrink-0 items-center gap-2 sm:h-13">
+		{#if showTheme}<ThemeToggle class={floatingTheme} />{/if}
+		{@render searchButton('glass', 'size-10', false)}
+		{@render loginButton('lg')}
+	</div>
 {/snippet}
 
 {#snippet burgerIcon(open: boolean, mobile = false)}
@@ -658,143 +594,129 @@
 		<div class="flex-1"></div>
 		{#if user}{@render desktopActions()}{/if}
 	</header>
+{:else if landing}
+	<header
+		class="explore-top-bar landing-top-bar pointer-events-none fixed inset-x-0 top-0 z-20 flex items-center justify-between gap-2 px-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-6"
+	>
+		<a
+			href={resolve('')}
+			aria-label="Currents home"
+			class="pointer-events-auto relative inline-flex h-12 shrink-0 items-center rounded-full px-3.5 text-foreground focus-visible:outline-2 sm:h-13 sm:px-4"
+		>
+			<span
+				class="pointer-events-none absolute inset-0 bg-primary-foreground/80 backdrop-blur-sm"
+				style:clip-path="url(#logo-pill-clip-{logoPillId})"
+				aria-hidden="true"
+			></span>
+			<svg
+				class="pointer-events-none absolute inset-0 size-full"
+				viewBox="0 0 1 1"
+				preserveAspectRatio="none"
+				aria-hidden="true"
+			>
+				<defs>
+					<!-- Capsule ends with a shallow bow along each long edge. -->
+					<path
+						id="logo-pill-{logoPillId}"
+						d="M.15 .04 Q.5 .021 .85 .04 C.9375 .04475 .996 .24 .996 .5 C.996 .76 .9375 .95525 .85 .96 Q.5 .979 .15 .96 C.0625 .95525 .004 .76 .004 .5 C.004 .24 .0625 .04475 .15 .04 Z"
+						vector-effect="non-scaling-stroke"
+					/>
+					<clipPath id="logo-pill-clip-{logoPillId}" clipPathUnits="objectBoundingBox">
+						<use href="#logo-pill-{logoPillId}" />
+					</clipPath>
+				</defs>
+				<use href="#logo-pill-{logoPillId}" fill="none" stroke="var(--border)" stroke-width="1" />
+			</svg>
+			<span class="relative block h-[1.125rem] sm:h-[1.375rem]"><Logo /></span>
+		</a>
+		{#if user}
+			{@render desktopActions()}
+		{:else}
+			{@render guestActions(false)}
+		{/if}
+	</header>
 {:else if !actionsOnly}
 	<header
 		data-scrolled={fadeContent && (scrollY.current ?? 0) > 10 ? '' : undefined}
-		class="{landing ? 'fixed' : 'sticky'} {fadeContent
+		data-guest-explore={guestExplore ? '' : undefined}
+		class="{fadeContent
 			? 'explore-top-bar'
-			: ''} pointer-events-none top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent px-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 md:px-4"
+			: ''} pointer-events-none sticky top-0 z-10 flex min-h-[calc(3.75rem+env(safe-area-inset-top))] w-full items-center gap-2 bg-transparent pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 {guestExplore
+			? 'px-3 md:px-6'
+			: 'px-2 md:px-4'}"
 	>
-		{#if !searchOpen}
-			{#if landing}
-				<a
-					in:fade={{ duration: 250, easing: cubicOut }}
-					href={resolve('')}
-					class="pointer-events-auto h-5 shrink-0 text-lg font-semibold text-foreground"><Logo /></a
-				>
-			{:else}
-				{#if showLogo}
-					<a
-						in:fade={{ duration: 250, easing: cubicOut }}
-						href={resolve('')}
-						aria-label="Go to home"
-						class="pointer-events-auto hidden h-5 shrink-0 text-lg font-semibold text-foreground md:block"
-						><Logo /></a
-					>
-				{:else}
-					<div
-						in:fade={{ duration: 250, easing: cubicOut }}
-						class="pointer-events-auto hidden shrink-0 items-center gap-2 md:flex"
-					>
-						<div class="h-[46px] {user ? 'w-56' : 'w-[46px]'} shrink-0" aria-hidden="true"></div>
-					</div>
-				{/if}
-				<!-- Mobile: the logo floats centered on its own (same box and position as the
-			     save-detail home button, so it doesn't jump between views); the buttons
-			     live in the bottom cluster instead. -->
-				<a
-					in:fade={{ duration: 250, easing: cubicOut }}
-					href={resolve('')}
-					aria-label="Go to home"
-					class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
-					style="top: calc(env(safe-area-inset-top) + 2rem)"
-				>
-					<span class="block h-5"><Logo /></span>
-				</a>
-				{#if showBack}
-					<!-- The positioning translate lives on a wrapper: on the button itself the
-				     pressed-state translate-y-px would override it and jump the button down. -->
-					<div
-						class="pointer-events-auto fixed left-2 -translate-y-1/2 md:hidden"
-						style="top: calc(env(safe-area-inset-top) + 2rem)"
-					>
-						<Button
-							variant="glass"
-							size="icon-lg"
-							class="size-11 rounded-full"
-							onclick={goBack}
-							aria-label="Go back"
-						>
-							<ArrowLeft class="size-5" />
-						</Button>
-					</div>
-				{/if}
-			{/if}
-		{/if}
-
-		{#if landing}
-			<!-- The landing hero keeps the prominent search bar; everywhere else search
-		     lives behind an icon button that opens the search command. -->
-			<div
-				class="pointer-events-auto absolute inset-y-0 left-1/2 hidden w-full -translate-x-1/2 items-center justify-center md:flex md:max-w-sm lg:max-w-md"
+		{#if showLogo}
+			<a
+				in:fade={{ duration: 250, easing: cubicOut }}
+				href={resolve('')}
+				aria-label="Go to home"
+				class="pointer-events-auto hidden h-5 shrink-0 text-lg font-semibold text-foreground md:block"
+				><Logo /></a
 			>
-				<form {onsubmit} class="w-full md:max-w-xs lg:max-w-sm">
-					{@render searchBar(false, false)}
-				</form>
+		{:else}
+			<div
+				in:fade={{ duration: 250, easing: cubicOut }}
+				class="pointer-events-auto hidden shrink-0 items-center gap-2 md:flex"
+			>
+				<div class="h-[46px] {user ? 'w-56' : 'w-[46px]'} shrink-0" aria-hidden="true"></div>
 			</div>
 		{/if}
-
-		{#if !searchOpen}
-			<div class="flex-1"></div>
-
-			{#if user}
-				<!-- Desktop top-right cluster: search, add, burger, profile. On mobile these
-			     live in the bottom cluster instead. -->
-				{@render desktopActions()}
-			{:else if landing}
-				<!-- The hero already has a search bar on desktop; on mobile the icon expands
-			     it inline rather than opening the command dialog. -->
-				<Button
-					variant="ghost"
-					size="icon"
-					class="pointer-events-auto shrink-0 rounded-full md:hidden"
-					type="button"
-					aria-label="Search"
-					onclick={() => (searchOpen = true)}
-				>
-					<SearchIcon class="size-4" />
-				</Button>
-				{@render loginButton('lg')}
-			{:else}
-				<!-- Desktop top-right cluster for logged-out viewers. On mobile these live in
-			     the bottom cluster instead, mirroring the logged-in bar. -->
-				<div class="hidden shrink-0 items-center gap-2 md:flex">
-					{@render searchButton('glass', 'pointer-events-auto shrink-0', true)}
-					<ThemeToggle
-						class="pointer-events-auto h-9 shrink-0 rounded-full bg-primary-foreground/80 text-foreground shadow-sm backdrop-blur-sm hover:bg-primary-foreground aria-expanded:bg-primary-foreground"
-					/>
-					{@render loginButton('lg')}
-				</div>
-			{/if}
-		{/if}
-
-		{#if searchOpen}
-			<!-- Flow content (not absolute) so the header grows to fit the input and inherits the
-		     header's safe-area top padding + bottom padding, instead of overflowing its box. -->
-			<div
-				transition:fade={{ duration: 250, easing: cubicOut }}
-				class="pointer-events-auto flex flex-1 items-center gap-2 md:hidden"
+		{#if guestExplore}
+			<a
+				href={resolve('')}
+				aria-label="Go to home"
+				class="pointer-events-auto flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-primary-foreground/80 bg-clip-padding text-foreground shadow-sm backdrop-blur-sm md:hidden"
 			>
-				<form {onsubmit} class="flex-1">
-					{@render searchBar(true, true)}
-				</form>
+				<span class="block size-8"><LogoIcon /></span>
+			</a>
+		{:else}
+			<!-- This position matches the mobile save-detail home button. -->
+			<a
+				in:fade={{ duration: 250, easing: cubicOut }}
+				href={resolve('')}
+				aria-label="Go to home"
+				class="pointer-events-auto fixed left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-transparent bg-primary-foreground/80 bg-clip-padding px-4 py-2.5 text-foreground shadow-sm backdrop-blur-sm md:hidden"
+				style="top: calc(env(safe-area-inset-top) + 2rem)"
+			>
+				<span class="block h-5"><Logo /></span>
+			</a>
+		{/if}
+		{#if showBack}
+			<!-- The positioning translate lives on a wrapper: on the button itself the
+		     pressed-state translate-y-px would override it and jump the button down. -->
+			<div
+				class="pointer-events-auto fixed left-2 -translate-y-1/2 md:hidden"
+				style="top: calc(env(safe-area-inset-top) + 2rem)"
+			>
 				<Button
 					variant="glass"
-					size="icon"
-					class="shrink-0 rounded-full"
-					onclick={() => (searchOpen = false)}
+					size="icon-lg"
+					class="size-11 rounded-full"
+					onclick={goBack}
+					aria-label="Go back"
 				>
-					<X class="size-4" />
+					<ArrowLeft class="size-5" />
 				</Button>
+			</div>
+		{/if}
+		<div class="flex-1"></div>
+		{#if user}
+			<!-- The mobile bar carries its own actions. -->
+			{@render desktopActions()}
+		{:else if guestExplore}
+			{@render guestActions(true)}
+		{:else}
+			<div class="hidden shrink-0 items-center gap-2 md:flex">
+				{@render searchButton('glass', 'pointer-events-auto size-10 shrink-0', true)}
+				<ThemeToggle class={floatingTheme} />
+				{@render loginButton('lg')}
 			</div>
 		{/if}
 	</header>
 {/if}
 
-<!-- Mobile bottom-center cluster. Logged in: profile, menu, add, mode switch, search;
-     logged out: log in, theme, search. Scale the compact controls up slightly so
-     the bar and its icons are easier to hit without changing its composition. -->
-{#if !landing && !mobileBottomBarState.hidden}
+<!-- Public Explore keeps the feed selector here on mobile. -->
+{#if !landing && !mobileBottomBarState.hidden && (!guestExplore || showFlowField)}
 	{#if activeSearch}
 		<!-- The bottom cluster has no room beside the lens, so the active query rides
 		     just above it (44px cluster + 0.5rem gap over the cluster's own offset). -->
@@ -818,17 +740,7 @@
 				? '[&_[data-slot=avatar]]:size-10 [&_button]:size-11 [&_svg]:size-[1.375rem]'
 				: ''}"
 		>
-			{#if !user}
-				{@render loginButton('default')}
-				<!-- Bare like the logged-in cluster's ghost buttons: the trigger's own
-			     bg-input/50 would read as a pressed state inside the glass pill. The
-			     asymmetric padding is optical, not arithmetic: the chevron already
-			     carries trailing space of its own, while the solid Log in pill needs
-			     room to breathe — that lands both gaps at ~18px of visible space. -->
-				<ThemeToggle
-					class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
-				/>
-			{:else}
+			{#if user}
 				{@render avatarMenu('avatar-mobile', 'top', 'center', bottomBarEl)}
 				<DropdownMenu.Root
 					bind:open={() => openMenu === 'burger-mobile', (v) => toggleMenu('burger-mobile', v)}
@@ -863,17 +775,20 @@
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 				{@render plusMenu('plus-mobile', 'top', 'center', bottomBarEl)}
-				{#if user}
-					<ModeSwitcher
-						mode={routeMode}
-						variant="icon"
-						side="top"
-						anchor={bottomBarEl}
-						bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
-					/>
-				{/if}
+				<ModeSwitcher
+					mode={routeMode}
+					variant="icon"
+					side="top"
+					anchor={bottomBarEl}
+					bind:open={() => openMenu === 'mode-mobile', (v) => toggleMenu('mode-mobile', v)}
+				/>
+			{:else if !guestExplore}
+				{@render loginButton('default')}
+				<ThemeToggle
+					class="h-9 gap-1 rounded-full bg-transparent pr-1 pl-4 text-foreground hover:bg-muted aria-expanded:bg-muted dark:hover:bg-muted/50"
+				/>
 			{/if}
-			{@render searchButton('ghost', '', false)}
+			{#if !guestExplore}{@render searchButton('ghost', '', false)}{/if}
 			<div
 				inert={!showFlowField}
 				aria-hidden={!showFlowField}

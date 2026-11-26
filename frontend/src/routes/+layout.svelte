@@ -195,7 +195,10 @@
 		if (isNative() || m === undefined) return;
 		document
 			.querySelector('meta[name="theme-color"]')
-			?.setAttribute('content', m === 'dark' ? '#090b0c' : '#ffffff');
+			?.setAttribute(
+				'content',
+				m === 'dark' || page.route.id === '/(with-navbar)' ? '#090b0c' : '#ffffff'
+			);
 	});
 </script>
 
